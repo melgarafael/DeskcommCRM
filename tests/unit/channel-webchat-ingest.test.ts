@@ -21,6 +21,8 @@ import {
  *   • efeitos pós-entrada recebem `canal: 'webchat'`, senão o negócio nasce
  *     com a origem errada.
  *   • toda escrita e toda RPC carregam a organização, e nenhuma cadeia sai dela.
+ *   • LGPD: a primeira mensagem do visitante só entra com o aceite; sem ele, ou sem um
+ *     campo obrigatório, a ingestão recusa e não cria contato, conversa nem mensagem.
  */
 
 vi.mock("@/lib/channels/pos-entrada", () => ({
@@ -38,9 +40,20 @@ const ORG = "org-1";
 const CS = "cs-1";
 const VIS = "vis-1";
 const AGORA = new Date("2026-11-20T12:00:00.000Z");
+/** Versão do aviso (a constante `TEXTO_DO_AVISO_VERSAO` de config.ts; literal aqui para não carregar o env). */
+const VERSAO = "v1";
 
 type Linhas = Record<string, Record<string, unknown>[]>;
 type Falso = ReturnType<typeof criarClienteAdminFalso>;
+type Sobre = Partial<{
+  organizationId: string;
+  visitanteId: string;
+  mensagemId: string;
+  texto: string;
+  aceite: { versao: string; em: string } | undefined;
+  contato: { nome?: string; telefone?: string; email?: string } | undefined;
+  coleta: Partial<Record<"nome" | "telefone" | "email", "oculto" | "opcional" | "obrigatorio">> | undefined;
+}>;
 
 function cenario(linhas: Linhas = {}): Falso {
   return criarClienteAdminFalso({
@@ -70,6 +83,8 @@ function clienteComUnique(falso: Falso) {
     from(tabela: string) {
       if (tabela !== "messages") return bruto.from(tabela);
       return {
+        select: (...args: unknown[]) =>
+          (bruto.from("messages") as { select: (...a: unknown[]) => unknown }).select(...args),
         insert(payload: { external_id: string }) {
           const duplicada = linhasDaTabela(falso, "messages").some(
             (l) => l.external_id === payload.external_id,
@@ -86,7 +101,7 @@ function clienteComUnique(falso: Falso) {
   };
 }
 
-function ingerir(falso: Falso, sobre: Partial<{ organizationId: string; visitanteId: string; mensagemId: string; texto: string }> = {}) {
+function ingerir(falso: Falso, sobre: Sobre = {}) {
   return ingerirMensagemDoChat(clienteComUnique(falso) as never, {
     organizationId: ORG,
     channelSessionId: CS,
@@ -94,8 +109,27 @@ function ingerir(falso: Falso, sobre: Partial<{ organizationId: string; visitant
     mensagemId: "m-1",
     texto: "oi",
     agora: AGORA,
+    aceite: { versao: VERSAO, em: AGORA.toISOString() },
     ...sobre,
   });
+}
+
+/**
+ * O dublê não grava a conversa que a RPC `fn_upsert_wa_conversation` cria. Depois da
+ * primeira entrada, esta função dá à conversa do cenário o contato e a sessão que a RPC
+ * daria, para a checagem "é a primeira mensagem?" enxergar a conversa existente.
+ */
+function vincularConversa(falso: Falso): void {
+  const contato = linhasDaTabela(falso, "contacts")[0];
+  const conversa = linhasDaTabela(falso, "conversations").find((l) => l.id === "conv-1");
+  if (!contato || !conversa) throw new Error("cenário sem contato ou conversa para vincular");
+  Object.assign(conversa, { contact_id: contato.id, channel_session_id: CS });
+}
+
+function escritasEm(falso: Falso, tabela: string): number {
+  return falso.cadeias.filter(
+    (c) => c.tabela === tabela && (c.operacao === "insert" || c.operacao === "upsert"),
+  ).length;
 }
 
 beforeEach(() => {
@@ -196,6 +230,142 @@ describe("ingestão de uma mensagem do visitante", () => {
   });
 });
 
+describe("aceite de LGPD na primeira mensagem", () => {
+  it("(a) primeira mensagem sem aceite é recusada e não cria contato, conversa nem mensagem", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, { aceite: undefined });
+
+    expect(r).toMatchObject({ status: "recusada", motivo: "aceite_ausente" });
+    expect(linhasDaTabela(falso, "contacts")).toHaveLength(0);
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(0);
+    expect(escritasEm(falso, "contacts")).toBe(0);
+    expect(escritasEm(falso, "messages")).toBe(0);
+    expect(falso.rpcs).toHaveLength(0);
+    expect(marcarConversaComMensagem).not.toHaveBeenCalled();
+    expect(aplicarEfeitosPosEntrada).not.toHaveBeenCalled();
+  });
+
+  it("(b) com aceite, a mensagem grava metadata.webchat_aceite com a hora que o servidor mandou", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, { aceite: { versao: VERSAO, em: AGORA.toISOString() } });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const msg = linhasDaTabela(falso, "messages")[0];
+    expect(msg?.metadata).toEqual({ webchat_aceite: { versao: "v1", em: AGORA.toISOString() } });
+  });
+
+  it("(c) a segunda mensagem não exige aceite e não o regrava", async () => {
+    const falso = cenario();
+    await ingerir(falso);
+    vincularConversa(falso);
+
+    const semAceite = await ingerir(falso, { mensagemId: "m-2", texto: "segunda", aceite: undefined });
+    const comAceiteDeNovo = await ingerir(falso, {
+      mensagemId: "m-3",
+      texto: "terceira",
+      aceite: { versao: "v2", em: "2026-11-21T09:00:00.000Z" },
+    });
+
+    expect(semAceite).toMatchObject({ status: "ingested" });
+    expect(comAceiteDeNovo).toMatchObject({ status: "ingested" });
+    const mensagens = linhasDaTabela(falso, "messages");
+    expect(mensagens).toHaveLength(3);
+    expect(mensagens[1]?.metadata?.webchat_aceite).toBeUndefined();
+    expect(mensagens[2]?.metadata?.webchat_aceite).toBeUndefined();
+    expect(mensagens[0]?.metadata).toEqual({ webchat_aceite: { versao: "v1", em: AGORA.toISOString() } });
+  });
+
+  it("(g) reenvio de uma mensagem já gravada não pede aceite de novo: devolve duplicate", async () => {
+    const falso = cenario();
+    await ingerir(falso);
+    const reenvio = await ingerir(falso, { aceite: undefined });
+
+    expect(reenvio).toMatchObject({ status: "duplicate", conversationId: "conv-1", messageId: null });
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(1);
+  });
+});
+
+describe("coleta de contato na primeira mensagem", () => {
+  it("(d) campo obrigatório ausente é recusado, e nada é criado", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, {
+      coleta: { nome: "obrigatorio", telefone: "opcional", email: "oculto" },
+      contato: { telefone: "+5511999999999" },
+    });
+
+    expect(r).toMatchObject({ status: "recusada", motivo: "campo_obrigatorio" });
+    expect(linhasDaTabela(falso, "contacts")).toHaveLength(0);
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(0);
+    expect(falso.rpcs).toHaveLength(0);
+  });
+
+  it("(d) campo obrigatório vazio (só espaços) conta como ausente", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, {
+      coleta: { nome: "obrigatorio" },
+      contato: { nome: "   " },
+    });
+    expect(r).toMatchObject({ status: "recusada", motivo: "campo_obrigatorio" });
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(0);
+  });
+
+  it("(d) campo oculto enviado é ignorado: não grava e não recusa", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, {
+      coleta: { nome: "opcional", telefone: "opcional", email: "oculto" },
+      contato: { nome: "Ana", email: "ana@example.com" },
+    });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const contato = linhasDaTabela(falso, "contacts")[0];
+    expect(contato?.name).toBe("Ana");
+    expect(contato).not.toHaveProperty("email");
+  });
+
+  it("(e) nome enviado substitui o provisório; telefone e e-mail vão para o contato, aparados", async () => {
+    const falso = cenario();
+    await ingerir(falso, {
+      coleta: { nome: "obrigatorio", telefone: "opcional", email: "opcional" },
+      contato: { nome: "  Ana Souza  ", telefone: " +5511999999999 ", email: " ana@example.com " },
+    });
+
+    const contato = linhasDaTabela(falso, "contacts")[0];
+    expect(contato).toMatchObject({
+      name: "Ana Souza",
+      display_name: "Ana Souza",
+      phone_number: "+5511999999999",
+      email: "ana@example.com",
+    });
+  });
+
+  it("(e) campo opcional vazio não apaga valor que o contato já tem", async () => {
+    const falso = cenario({
+      contacts: [
+        {
+          id: "contact-9",
+          organization_id: ORG,
+          social_identity: "webchat:cs-1:vis-1",
+          is_merged_into: null,
+          name: "Ana Souza",
+          display_name: "Ana Souza",
+          phone_number: "+5511999999999",
+          email: "ana@example.com",
+        },
+      ],
+    });
+    await ingerir(falso, {
+      coleta: { nome: "opcional", telefone: "opcional", email: "opcional" },
+      contato: { nome: "", telefone: "", email: "" },
+    });
+
+    expect(linhasDaTabela(falso, "contacts")[0]).toMatchObject({
+      name: "Ana Souza",
+      phone_number: "+5511999999999",
+      email: "ana@example.com",
+    });
+  });
+});
+
 describe("idempotência — o widget reenvia o que não recebeu resposta", () => {
   it("mesmo mensagemId do mesmo visitante: `duplicate`, sem lançar, sem nova marcação", async () => {
     const falso = cenario();
@@ -226,5 +396,17 @@ describe("isolamento — nenhuma cadeia nem RPC sai da organização", () => {
 
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG)).toEqual([]);
     expect(rpcsForaDaOrganizacao(falso.rpcs, ORG)).toEqual([]);
+  });
+
+  it("a checagem de primeira mensagem e a atualização do contato também ficam na organização", async () => {
+    const falso = cenario();
+    await ingerir(falso, {
+      coleta: { nome: "opcional" },
+      contato: { nome: "Ana" },
+    });
+    vincularConversa(falso);
+    await ingerir(falso, { mensagemId: "m-2", texto: "de novo", aceite: undefined, contato: { nome: "Ana B" } });
+
+    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG)).toEqual([]);
   });
 });

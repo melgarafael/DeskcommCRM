@@ -27,6 +27,30 @@ const TEXTO_MAXIMO = 2000;
 const PROIBIDOS =
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F‪-‮⁦-⁩]/;
 
+/** Telefone só em formato internacional (+ e 8 a 15 dígitos), depois de tirar os separadores. */
+const TELEFONE_INTERNACIONAL = /^\+[0-9]{8,15}$/;
+
+/**
+ * O que o visitante informa no primeiro contato. Vazio é aceito (campo opcional em branco);
+ * a ingestão decide o que fazer com ele. A hora do aceite não vem aqui: é a do servidor.
+ */
+const contatoSchema = z.object({
+  nome: z.string().trim().max(120).optional(),
+  telefone: z
+    .string()
+    .trim()
+    .max(30)
+    .transform((t) => t.replace(/[\s().-]/g, ""))
+    .refine((t) => t === "" || TELEFONE_INTERNACIONAL.test(t))
+    .optional(),
+  email: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((e) => e === "" || z.string().email().safeParse(e).success)
+    .optional(),
+});
+
 const corpoSchema = z
   .object({
     mensagem_id: z.string().uuid(),
@@ -34,6 +58,9 @@ const corpoSchema = z
       .string()
       .transform((t) => t.trim())
       .pipe(z.string().min(1).max(TEXTO_MAXIMO).refine((t) => !PROIBIDOS.test(t))),
+    // Só a versão do aviso. Qualquer `em` que o cliente mandar é descartado (não é schema estrito).
+    aceite: z.object({ versao: z.string().trim().min(1).max(40) }).optional(),
+    contato: contatoSchema.optional(),
   })
   .strict();
 
@@ -104,7 +131,13 @@ export async function POST(req: Request) {
       mensagemId: corpo.mensagem_id,
       texto: corpo.texto,
       agora,
+      // A hora do aceite é a do servidor, nunca a do corpo.
+      ...(corpo.aceite ? { aceite: { versao: corpo.aceite.versao, em: agora.toISOString() } } : {}),
+      ...(corpo.contato ? { contato: corpo.contato } : {}),
+      coleta: conexao.config.coleta,
     });
+    // Primeira mensagem sem aceite ou sem campo obrigatório: 422 genérico, nada foi criado.
+    if (resultado.status === "recusada") return fail("validation_failed", "Dados inválidos.", 422);
 
     return ok(
       {

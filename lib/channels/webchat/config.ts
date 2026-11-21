@@ -19,7 +19,16 @@ const ORIGEM_HTTPS =
 /** A exceção de loopback é desta rota, não do banco: depende da instalação. */
 const ORIGEM_LOCALHOST = /^http:\/\/localhost(:[0-9]{1,5})?$/i;
 
+/**
+ * Versão do texto do aviso de privacidade que o visitante aceita na primeira mensagem (LGPD).
+ * Quem mostra o texto é a tela do widget; o servidor só grava a versão que o widget mandou.
+ */
+export const TEXTO_DO_AVISO_VERSAO = "v1";
+
 const campoDaColeta = z.enum(["oculto", "opcional", "obrigatorio"]);
+
+/** O que a conexão pede do visitante no primeiro contato. Campo ausente vale `opcional`. */
+export type ModoDeColeta = z.infer<typeof campoDaColeta>;
 
 export const configuracaoDoChatSchema = z
   .object({

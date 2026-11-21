@@ -80,14 +80,14 @@ function bancoFalso(tabelas: Record<string, Array<Record<string, unknown>>>) {
   };
 }
 
-function cenario(opcao: Cenario): void {
+function cenario(opcao: Cenario, metadata: Record<string, unknown> = {}): void {
   const conexao = {
     id: CS,
     organization_id: ORG,
     provider: "webchat",
     webchat_public_key: CHAVE,
     archived_at: null,
-    metadata: {},
+    metadata,
   };
   const linhas =
     opcao === "inexistente"
@@ -367,4 +367,74 @@ describe("POST /api/v1/webchat/mensagens", () => {
     for (const r of respostas) expect(r).toEqual(primeira);
     expect(h.ingerir).not.toHaveBeenCalled();
   });
+
+  it("recusa da ingestão vira 422 genérico, sem dizer qual campo falta", async () => {
+    h.ingerir.mockResolvedValueOnce({
+      status: "recusada",
+      motivo: "campo_obrigatorio",
+      conversationId: null,
+      messageId: null,
+    });
+    const r = await resposta(
+      await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante())),
+    );
+    expect(r.status).toBe(422);
+    expect(r.body).toMatchObject({ error: { code: "validation_failed", message: "Dados inválidos." } });
+    expect(JSON.stringify(r.body)).not.toContain("campo_obrigatorio");
+  });
+
+  it("o aceite vai à ingestão com a hora do servidor; a hora enviada é ignorada", async () => {
+    const antes = Date.now();
+    await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", aceite: { versao: "v1", em: "2000-01-01T00:00:00.000Z" } },
+        tokenDeVisitante(),
+      ),
+    );
+    const p = h.ingerir.mock.calls[0]![1] as { aceite?: { versao: string; em: string } };
+    expect(p.aceite?.versao).toBe("v1");
+    const em = Date.parse(p.aceite!.em);
+    expect(em).toBeGreaterThanOrEqual(antes);
+    expect(em).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("sem aceite no corpo, a ingestão não recebe aceite", async () => {
+    await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante()));
+    const p = h.ingerir.mock.calls[0]![1] as Record<string, unknown>;
+    expect(p).not.toHaveProperty("aceite");
+  });
+
+  it("o contato chega aparado e a coleta da conexão segue junto para a ingestão", async () => {
+    cenario("ok", { webchat: { coleta: { nome: "obrigatorio", telefone: "oculto", email: "opcional" } } });
+    await mensagens(
+      pedido(
+        "mensagens",
+        {
+          mensagem_id: randomUUID(),
+          texto: "oi",
+          aceite: { versao: "v1" },
+          contato: { nome: "  Ana Souza ", telefone: "+55 (11) 99999-9999", email: " ana@example.com " },
+        },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(h.ingerir.mock.calls[0]![1]).toMatchObject({
+      contato: { nome: "Ana Souza", telefone: "+5511999999999", email: "ana@example.com" },
+      coleta: { nome: "obrigatorio", telefone: "oculto", email: "opcional" },
+    });
+  });
+
+  it.each([{ email: "nao-e-email" }, { telefone: "abc" }, { telefone: "11999999999" }, { nome: "x".repeat(121) }])(
+    "contato inválido (%j) dá 422 e nada é ingerido",
+    async (contato) => {
+      const r = await resposta(
+        await mensagens(
+          pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi", aceite: { versao: "v1" }, contato }, tokenDeVisitante()),
+        ),
+      );
+      expect(r.status).toBe(422);
+      expect(h.ingerir).not.toHaveBeenCalled();
+    },
+  );
 });

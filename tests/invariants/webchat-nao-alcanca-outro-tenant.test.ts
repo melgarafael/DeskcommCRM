@@ -23,9 +23,10 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { TEXTO_DO_AVISO_VERSAO } from "@/lib/channels/webchat/config";
 import { conexaoPelaChave } from "@/lib/channels/webchat/conexao-pela-chave";
 import { conversaDoVisitante, lerSaidasNovas } from "@/lib/channels/webchat/eventos";
-import { ingerirMensagemDoChat } from "@/lib/channels/webchat/ingest";
+import { ingerirMensagemDoChat, type IngerirMensagemDoChatInput } from "@/lib/channels/webchat/ingest";
 
 import { routingPgSupabase } from "../support/routing-pg-supabase";
 
@@ -68,6 +69,19 @@ async function conexaoDe(chave: string) {
   const conexao = await conexaoPelaChave(admin, chave);
   if (!conexao) throw new Error("conexao_do_chat_nao_resolvida");
   return conexao;
+}
+
+/**
+ * A entrada como o widget a manda: a primeira mensagem de cada visitante leva o aceite (LGPD).
+ * Uma recusa aqui é falha do teste, não resultado a medir.
+ */
+async function entrar(p: Omit<IngerirMensagemDoChatInput, "aceite" | "coleta" | "contato">) {
+  const r = await ingerirMensagemDoChat(admin, {
+    ...p,
+    aceite: { versao: TEXTO_DO_AVISO_VERSAO, em: p.agora.toISOString() },
+  });
+  if (r.status === "recusada") throw new Error(`entrada_recusada_no_teste: ${r.motivo}`);
+  return r;
 }
 
 async function contagemNaConversa(conversaId: string): Promise<number> {
@@ -145,7 +159,7 @@ describe("chat no site · a entrada fica na organização da conexão", () => {
 
   beforeAll(async () => {
     const conexaoB = await conexaoDe(CHAVE_B);
-    mensagemDeB = await ingerirMensagemDoChat(admin, {
+    mensagemDeB = await entrar({
       organizationId: conexaoB.organizationId,
       channelSessionId: conexaoB.id,
       visitanteId: VISITANTE_B1,
@@ -157,7 +171,7 @@ describe("chat no site · a entrada fica na organização da conexão", () => {
 
   it("a entrada pela conexão de A grava a conversa e a mensagem só em A", async () => {
     const conexaoA = await conexaoDe(CHAVE_A);
-    const r = await ingerirMensagemDoChat(admin, {
+    const r = await entrar({
       organizationId: conexaoA.organizationId,
       channelSessionId: conexaoA.id,
       visitanteId: VISITANTE_A1,
@@ -175,7 +189,7 @@ describe("chat no site · a entrada fica na organização da conexão", () => {
   it("a chave de A, com o id de um visitante de B, não cria mensagem na conversa de B", async () => {
     const antes = await contagemNaConversa(mensagemDeB.conversationId);
     const conexaoA = await conexaoDe(CHAVE_A);
-    const cruzada = await ingerirMensagemDoChat(admin, {
+    const cruzada = await entrar({
       organizationId: conexaoA.organizationId,
       channelSessionId: conexaoA.id,
       visitanteId: VISITANTE_B1,
@@ -226,7 +240,7 @@ describe("chat no site · a leitura das respostas não atravessa organização",
 
   it("dois visitantes da mesma organização não leem a conversa um do outro", async () => {
     const conexaoA = await conexaoDe(CHAVE_A);
-    await ingerirMensagemDoChat(admin, {
+    await entrar({
       organizationId: conexaoA.organizationId,
       channelSessionId: conexaoA.id,
       visitanteId: VISITANTE_A2,
@@ -297,7 +311,7 @@ describe("chat no site · anonimizar o contato limpa a identidade social", () =>
       [antiga?.contact_id as string, ORG_A],
     );
 
-    const volta = await ingerirMensagemDoChat(admin, {
+    const volta = await entrar({
       organizationId: conexaoA.organizationId,
       channelSessionId: conexaoA.id,
       visitanteId: VISITANTE_A1,
