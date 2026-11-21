@@ -665,6 +665,38 @@
       "type": "lib",
       "label": "lib/escalacao/modelo-do-aviso.ts",
       "sublabel": "o modelo aprovado que leva o aviso pelo número oficial (9094) — uma variável só, o texto numa linha"
+    },
+    {
+      "id": "opcaoRetomar",
+      "lane": "humano",
+      "col": 7,
+      "type": "frontend",
+      "label": "Editor do agente › Quando ele entra em ação",
+      "sublabel": "Continuar a conversa assim que a equipe devolver ao automático — trigger_config.resume_on_handback, desligada por padrão"
+    },
+    {
+      "id": "retomadaAoDevolver",
+      "lane": "regra",
+      "col": 6,
+      "type": "service",
+      "label": "lib/escalacao/retomada-ao-devolver.ts",
+      "sublabel": "consumidor retomada-ao-devolver.v1 de ai.handoff_resolved: opção ligada + última fala da equipe + sem follow-up vivo + contato liberado → UM job"
+    },
+    {
+      "id": "falaDaEquipe",
+      "lane": "regra",
+      "col": 7,
+      "type": "lib",
+      "label": "lib/escalacao/fala-da-equipe.ts",
+      "sublabel": "a régua pura (sent_via user/crm/external_device) — a MESMA no consumidor e no worker"
+    },
+    {
+      "id": "turnoDeRetomada",
+      "lane": "motor",
+      "col": 9,
+      "type": "service",
+      "label": "followup-turn.ts mode 'retomada'",
+      "sublabel": "confere de novo antes de falar (cliente escreveu, IA falou, follow-up nasceu → no-op sem modelo) e abre com as falas da equipe na íntegra"
     }
   ],
   "edges": [
@@ -1557,6 +1589,72 @@
       "from": "modeloDoAviso",
       "to": "avisoSuporteRegistro",
       "label": "lê config_aviso_de_caso.modelo_id"
+    },
+    {
+      "id": "rd151",
+      "from": "opcaoRetomar",
+      "to": "retomadaAoDevolver",
+      "label": "a opção do agente que está com a conversa (ou do publicado no número)"
+    },
+    {
+      "id": "rd152",
+      "from": "evento",
+      "to": "retomadaAoDevolver",
+      "label": "o MESMO sinal da devolução, manual e automática — consumidor novo, nenhum produtor novo"
+    },
+    {
+      "id": "rd153",
+      "from": "retomadaAoDevolver",
+      "to": "falaDaEquipe",
+      "label": "a última fala é da equipe?"
+    },
+    {
+      "id": "rd154",
+      "from": "retomadaAoDevolver",
+      "to": "conversas",
+      "label": "lê dono, silêncio e active_ai_agent_id — quem assumiu de novo não é atropelado"
+    },
+    {
+      "id": "rd155",
+      "from": "retomadaAoDevolver",
+      "to": "reactivity",
+      "label": "cede a vez: com follow-up vivo, o fluxo pausado que retoma neste evento é quem fala"
+    },
+    {
+      "id": "rd156",
+      "from": "retomadaAoDevolver",
+      "to": "turnoDeRetomada",
+      "label": "job_queue followup_turn, source_event_id = o evento (dedup), com a fronteira atual"
+    },
+    {
+      "id": "rd157",
+      "from": "turnoDeRetomada",
+      "to": "falaDaEquipe",
+      "label": "a mesma régua, na hora de rodar"
+    },
+    {
+      "id": "rd158",
+      "from": "turnoDeRetomada",
+      "to": "ritual",
+      "label": "o checkpoint de retomada que a devolução grava entra pelo ritual de sempre"
+    },
+    {
+      "id": "rd159",
+      "from": "turnoDeRetomada",
+      "to": "guarda",
+      "label": "handoff/force_human, janela e before-send seguem valendo — o turno não tem portão próprio de envio"
+    },
+    {
+      "id": "rd160",
+      "from": "turnoDeRetomada",
+      "to": "modelo",
+      "label": "só chama o modelo depois de conferir"
+    },
+    {
+      "id": "rd161",
+      "from": "opcaoRetomar",
+      "to": "cabecalho",
+      "label": "muda o que o botão Devolver ao automático faz: com ela ligada, o agente continua na hora"
     }
   ],
   "cards": [

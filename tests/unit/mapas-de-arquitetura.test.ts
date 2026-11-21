@@ -167,6 +167,24 @@ describe("mapas de arquitetura — coerência interna", () => {
     ).toContain("telaauditoria");
   });
 
+  it("retomar ao devolver está no mapa: nenhuma peça é ilha e a decisão cede ao follow-up", () => {
+    // DoD 13 para a retomada ao devolver: a opção da tela chega ao consumidor do
+    // evento, ele CEDE a vez à reatividade (uma voz só) e o turno passa pelos
+    // guards de sempre — sem portão de envio próprio.
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "escalacao-ciclo-humano.architecture.json"), "utf8"),
+    ) as Mapa;
+    const arestas = m.edges ?? [];
+    const grau = (id: string) => arestas.filter((e) => e.from === id || e.to === id).length;
+    const liga = (de: string, para: string) => arestas.some((e) => e.from === de && e.to === para);
+    for (const peca of ["opcaoRetomar", "retomadaAoDevolver", "falaDaEquipe", "turnoDeRetomada"]) {
+      expect(grau(peca), `${peca} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
+    }
+    expect(liga("evento", "retomadaAoDevolver"), "o consumidor não lê o sinal da devolução").toBe(true);
+    expect(liga("retomadaAoDevolver", "reactivity"), "a decisão não declara que cede ao follow-up").toBe(true);
+    expect(liga("turnoDeRetomada", "guarda"), "o turno de retomada escapa dos guards de envio").toBe(true);
+  });
+
   it("o índice de atrito está no mapa, e com mais de duas arestas", () => {
     // O caso concreto do DoD 13 para o trabalho desta branch. Genérico demais
     // não guardaria nada: "algum mapa existe" é verdade desde sempre.
