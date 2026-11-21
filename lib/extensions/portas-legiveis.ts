@@ -124,6 +124,69 @@ export function portasLegiveis(
   return t("Abre {portas}; não lê seus dados.").replace("{portas}", lista);
 }
 
+/** Uma permissão de área do vocabulário (`area.<área>.<leitura|escrita>`). */
+export type PermissaoDeArea = Extract<ExtensionPermission, `area.${string}`>;
+
+/**
+ * As áreas que mexem no funcionamento da organização e do atendimento. Só quem administra a
+ * organização as consente (decisão 5 da spec 33), e a tela as avisa como sensíveis.
+ */
+export function ehAreaSensivel(permissao: PermissaoDeArea): boolean {
+  return (
+    permissao.startsWith("area.configuracao.") || permissao.startsWith("area.agentes_ia.")
+  );
+}
+
+/**
+ * A frase de CADA permissão de área para a tela de consentimento, em português simples: o que o
+ * módulo passa a poder fazer. Cada `t()` é LITERAL de propósito: passado por variável, o texto
+ * escaparia do gate de espanhol (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`). O `switch` é
+ * exaustivo: permissão de área nova sem frase não compila.
+ */
+export function fraseDaPermissaoDeArea(
+  permissao: PermissaoDeArea,
+  t: (texto: string) => string = (texto) => texto,
+): string {
+  switch (permissao) {
+    case "area.contatos.leitura":
+      return t("Ver seus contatos: nomes, telefones, etiquetas e empresas.");
+    case "area.contatos.escrita":
+      return t("Criar e alterar contatos, etiquetas e empresas.");
+    case "area.negocios.leitura":
+      return t("Ver os negócios, as propostas e a previsão de vendas.");
+    case "area.negocios.escrita":
+      return t("Criar e alterar negócios e propostas.");
+    case "area.conversas.leitura":
+      return t("Ler as conversas com seus clientes e as notas internas.");
+    case "area.conversas.escrita":
+      return t("Escrever nas conversas, criar notas e passar atendimentos adiante.");
+    case "area.agenda.leitura":
+      return t("Ver a agenda e os agendamentos.");
+    case "area.agenda.escrita":
+      return t("Marcar, mudar e cancelar agendamentos.");
+    case "area.funis.leitura":
+      return t("Ver os funis, as etapas e as regras de automação.");
+    case "area.funis.escrita":
+      return t("Alterar os funis e as etapas.");
+    case "area.agentes_ia.leitura":
+      return t("Ver como seus agentes de IA estão configurados: orientações, estilo, regras e memória.");
+    case "area.agentes_ia.escrita":
+      return t("Alterar seus agentes de IA: o que eles dizem e como decidem.");
+    case "area.catalogo.leitura":
+      return t("Ver produtos, serviços e modelos de mensagem.");
+    case "area.catalogo.escrita":
+      return t("Criar e alterar produtos, serviços e modelos de mensagem.");
+    case "area.configuracao.leitura":
+      return t("Ver as configurações da organização e da equipe.");
+    case "area.configuracao.escrita":
+      return t("Alterar as configurações da organização e da equipe.");
+    case "area.analise.leitura":
+      return t("Ver relatórios e números de desempenho.");
+    case "area.analise.escrita":
+      return t("Alterar relatórios e análises.");
+  }
+}
+
 /** Os destinos correspondentes, para quem quiser conferir para onde cada porta leva. */
 export function destinosLegiveis(permissoes: readonly ExtensionPermission[]): string[] {
   return Object.entries(PORTA_DA_CAPACIDADE)

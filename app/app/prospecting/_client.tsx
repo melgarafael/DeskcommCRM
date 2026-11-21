@@ -46,6 +46,7 @@ import {
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
+import { agruparPorNicho } from "@/lib/prospecting/grupos-por-nicho";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
 import { previaAprovadaDoAgente, previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
@@ -396,6 +397,11 @@ export function ProspectingClient() {
   // some das duas. A seleção acima continua olhando TODAS: quem arquivou com o
   // cartão aberto vê o próprio cartão, com o aviso de que ele saiu da lista.
   const campanhasDaLista = campanhasVisiveis(data?.campaigns ?? [], verArquivadas);
+  // #4956 (PR9): a lista é AGRUPADA por nicho — só apresentação. A ordem continua
+  // sendo a do servidor: cada grupo aparece onde a primeira campanha dele apareceria,
+  // e nenhuma contagem do cartão é recalculada aqui. Campanha sem nicho (jsonb antigo,
+  // busca que nunca gravou `niche`) ganha o grupo "Sem nicho" e não some da lista.
+  const gruposDaLista = agruparPorNicho(campanhasDaLista);
   const quantasArquivadas = (data?.campaigns ?? []).filter(
     (c) => arquivadaEm(c.config) !== null,
   ).length;
@@ -1447,39 +1453,59 @@ export function ProspectingClient() {
                 </button>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {campanhasDaLista.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   {verArquivadas ? t("Nenhuma campanha arquivada.") : t("Nenhuma campanha aqui.")}
                 </p>
               )}
-              {campanhasDaLista.map((c) => (
-                <div
-                  key={c.id}
-                  className={`flex items-stretch gap-2 rounded-lg border ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => abrirCampanha(c.id)}
-                    className="min-w-0 flex-1 p-3 text-left"
+              {gruposDaLista.map((grupo) => {
+                const rotuloDoGrupo = grupo.nicho ?? t("Sem nicho");
+                return (
+                  // #4956 (PR9): um cabeçalho por nicho, e as campanhas embaixo. O
+                  // `role="group"` com o mesmo rótulo dá ao leitor de tela o agrupamento
+                  // que o olho vê. A chave não colide: nicho vazio vira `null` na régua,
+                  // e nenhum nicho real é a string vazia.
+                  <div
+                    key={`nicho:${grupo.chave ?? ""}`}
+                    role="group"
+                    aria-label={rotuloDoGrupo}
+                    className="space-y-2"
                   >
-                    <span className="block text-sm font-medium">{c.name}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
-                      {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void alternarArquivamento(c)}
-                    title={t("Some da lista sem apagar negócios nem conversas")}
-                    className="shrink-0 px-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                  >
-                    {arquivadaEm(c.config) !== null ? t("Desarquivar") : t("Arquivar")}
-                  </button>
-                </div>
-              ))}
+                    <h3 className="px-1 text-xs font-semibold text-muted-foreground">
+                      {rotuloDoGrupo}
+                    </h3>
+                    {grupo.campanhas.map((c) => (
+                      <div
+                        key={c.id}
+                        className={`flex items-stretch gap-2 rounded-lg border ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => abrirCampanha(c.id)}
+                          className="min-w-0 flex-1 p-3 text-left"
+                        >
+                          <span className="block text-sm font-medium">{c.name}</span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
+                            {t(labels[c.status] ?? c.status)} · {c.result_count}{" "}
+                            {t("empresas")}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void alternarArquivamento(c)}
+                          title={t("Some da lista sem apagar negócios nem conversas")}
+                          className="shrink-0 px-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        >
+                          {arquivadaEm(c.config) !== null ? t("Desarquivar") : t("Arquivar")}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </section>
         </aside>

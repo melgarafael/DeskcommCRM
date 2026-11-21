@@ -181,3 +181,56 @@ describe("a lacuna de tradução (passo 4)", () => {
     expect(screen.queryByTestId("agente-funis-mudos")).toBeNull();
   });
 });
+
+/**
+ * #4940 — DEPOIS DO #4921, CADA NÚMERO ESCOLHE O SEU FUNIL DE ENTRADA.
+ *
+ * O aviso existe para o caso "o assistente conversa e os cards se acumulam onde
+ * ele não pode mexer". Com o funil de entrada por número, esse lugar é o funil
+ * que o número DESTE assistente aponta — não necessariamente o padrão.
+ */
+describe("o funil de entrada dos números do assistente (#4940)", () => {
+  const ATACADO = { id: "44444444-4444-4444-8444-444444444444", nome: "Atacado", funilDeEntradaId: SUPORTE.id };
+
+  it("avisa quando o número aponta para um funil que não está marcado, dizendo qual número e qual funil", () => {
+    render(
+      <FunisDoAgente funis={TODOS} value={[PEDIDOS.id, ANDREA.id]} onChange={() => {}} numeros={[ATACADO]} />,
+    );
+    const aviso = screen.getByTestId("agente-entrada-de-fora");
+    expect(aviso.textContent).toContain("Atacado");
+    expect(aviso.textContent).toContain("Suporte - IA");
+    expect(aviso.textContent).not.toContain("Pedidos");
+  });
+
+  it("não avisa quando o funil do número está marcado, mesmo com o padrão de fora", () => {
+    // O padrão não recebe as conversas novas deste número: avisar sobre ele seria falso.
+    render(<FunisDoAgente funis={TODOS} value={[SUPORTE.id]} onChange={() => {}} numeros={[ATACADO]} />);
+    expect(screen.queryByTestId("agente-entrada-de-fora")).toBeNull();
+  });
+
+  it("número sem escolha segue o funil padrão, como o nascimento do lead", () => {
+    const semEscolha = { id: "55555555-5555-4555-8555-555555555555", nome: "Varejo", funilDeEntradaId: null };
+    render(<FunisDoAgente funis={TODOS} value={[ANDREA.id]} onChange={() => {}} numeros={[semEscolha]} />);
+    expect(screen.getByTestId("agente-entrada-de-fora").textContent).toContain("Pedidos");
+  });
+
+  it("funil escolhido que não está mais na lista (arquivado) cai no padrão", () => {
+    const arquivado = { ...ATACADO, funilDeEntradaId: "66666666-6666-4666-8666-666666666666" };
+    render(<FunisDoAgente funis={TODOS} value={[PEDIDOS.id]} onChange={() => {}} numeros={[arquivado]} />);
+    expect(screen.queryByTestId("agente-entrada-de-fora")).toBeNull();
+  });
+
+  it("marca como entrada o funil que o número aponta", () => {
+    const { container } = render(
+      <FunisDoAgente funis={TODOS} value={[]} onChange={() => {}} numeros={[ATACADO]} />,
+    );
+    const rotulo = (id: string) => container.querySelector(`label[for="funil-${id}"]`)?.textContent ?? "";
+    expect(rotulo(SUPORTE.id)).toMatch(/conversas novas/);
+    expect(rotulo(PEDIDOS.id)).not.toMatch(/conversas novas/);
+  });
+
+  it("continua calado quando nada foi marcado", () => {
+    render(<FunisDoAgente funis={TODOS} value={[]} onChange={() => {}} numeros={[ATACADO]} />);
+    expect(screen.queryByTestId("agente-entrada-de-fora")).toBeNull();
+  });
+});

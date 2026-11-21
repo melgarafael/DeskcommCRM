@@ -37,11 +37,12 @@ import {
   type ExtensionConfiguration,
   type ExtensionManifest,
 } from "@/lib/extensions/manifest";
-import { portasLegiveis } from "@/lib/extensions/portas-legiveis";
+import { portasLegiveis, type PermissaoDeArea } from "@/lib/extensions/portas-legiveis";
 import type { PaletaDeTema } from "@/lib/extensions/tema";
 import type { InstalledExtensionView } from "@/lib/extensions/view";
 import { BookOpen, CircleNotch, Lightbulb, ListChecks } from "@/lib/ui/icons";
 
+import { ConsentimentoPorArea } from "./ConsentimentoPorArea";
 import { deixamDeVer, organizacoesAtivas } from "./frases-de-versao";
 
 const ICONS: Record<ExtensionManifest["display"]["icon"], typeof ListChecks> = {
@@ -87,6 +88,7 @@ export function InstalledExtensionCard({
   onRemove,
   onSwitch,
   onRotateSecret,
+  onConsent,
 }: {
   extension: InstalledExtensionView;
   canManage: boolean;
@@ -121,6 +123,8 @@ export function InstalledExtensionCard({
    * vez, ou `null` quando o pedido falhou (a mensagem já foi dada por quem chama).
    */
   onRotateSecret?: (extension: InstalledExtensionView) => Promise<string | null>;
+  /** Grava as áreas consentidas do módulo `connected`; `true` quando salvou (a mensagem é de quem chama). */
+  onConsent?: (extension: InstalledExtensionView, areas: PermissaoDeArea[]) => Promise<boolean>;
 }) {
   const t = useT();
   const locale = useIdioma();
@@ -452,6 +456,20 @@ export function InstalledExtensionCard({
           ) : null}
         </div>
       )}
+
+      {extension.profile === "connected" && extension.compatible ? (
+        <ConsentimentoPorArea
+          extension={extension}
+          canEdit={canManage && !supportMode}
+          blockedReason={
+            supportMode
+              ? t("Saia do acompanhamento para alterar o consentimento.")
+              : t("Só um administrador da organização pode alterar este consentimento.")
+          }
+          actionsDisabled={actionsDisabled}
+          onSave={onConsent}
+        />
+      ) : null}
 
       {canInstall && onRevert && onRemove ? (
         <PlatformBlock

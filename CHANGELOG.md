@@ -8,6 +8,177 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.122.0] — 2026-11-21
+
+### Adicionado
+
+- **O funil passa a aceitar 100 campos do negócio, o dobro do teto de 50** O teto de campos do funil era de 50 para o **negócio**, e uma agência de viagens
+  que precisava de mais 5 campos condicionais batia nele no meio do funil: para
+  seguir trabalhando era preciso apagar um campo que já estava em uso. O teto agora
+  é de **100**.
+
+  O que conta não mudou: os campos do **contato** continuam fora da conta. Um funil
+  com 100 campos do negócio e outros 100 do contato é aceito, porque só os do
+  negócio disputam a cota — o campo do contato não aparece no card e o valor dele
+  mora na ficha do contato, não no negócio.
+
+  Ao passar de 100 campos do negócio, a recusa continua legível e diz o número novo
+  e quantos chegaram: «O funil aceita no máximo 100 campos do negócio. Os campos do
+  contato não entram nesta conta. Recebidos 101.» Nada a fazer na atualização: os
+  funis que já existem seguem gravados como estão, e o botão «Adicionar campo» some
+  no teto novo, não no antigo.
+
+  Ficaram fora, por serem decisão de produto: contar os campos condicionais à parte
+  e agrupar campos por produto.
+  Contribuição de @webtecnica (#4954).
+
+- **Desligar um módulo para uma empresa passa a valer em Configurações › Propostas, na rota de propostas e na tela de Empresas** A tela `/admin/sistema` › "Por empresa" já deixava o administrador da instalação desligar um módulo só para um cliente, mas a decisão só aparecia no menu: a lista de propostas em Configurações, a rota `/api/v1/settings/proposals` e a tela de Empresas (pessoas e importação) continuavam respondendo como se o módulo estivesse disponível, porque decidiam apenas pela chave da instalação. Agora essas três portas consultam também a linha da empresa: módulo desligado para ela responde 404, como se não existisse; módulo ligado (ou sem linha nenhuma, que é o caso de quem nunca configurou por empresa) segue exatamente como antes. A instalação continua sendo o teto — desligada lá, nada é liberado pela linha da empresa. Nenhum cliente precisa fazer nada: quem nunca usou o desligamento por empresa não vê diferença nenhuma.
+  Contribuição de @webtecnica (#4960).
+
+- **"Suas campanhas" agrupa a lista de prospecção por nicho, com um grupo nomeado para as campanhas sem nicho** Quem roda mais de uma oferta para o mesmo público — padarias de um lado, clínicas de outro — lia a lista inteira de campanhas para descobrir onde estavam as daquele nicho: o nicho só aparecia com a campanha já aberta. Agora a lista "Suas campanhas" desenha um cabeçalho por nicho e põe as campanhas embaixo. Nicho escrito com outra caixa ("Padarias" e "padarias") cai no mesmo grupo, que mostra o texto da primeira campanha do grupo.
+
+  O agrupamento é só de apresentação: nenhuma campanha muda de lugar no banco, nenhuma contagem do cartão é recalculada e as ações do cartão (abrir, arquivar, desarquivar) continuam iguais. A ordem também não mudou — cada grupo aparece onde a primeira campanha dele apareceria, e dentro do grupo as campanhas seguem a ordem que já vinham; não há uma segunda ordenação.
+
+  Campanha sem nicho gravado (busca antiga, `search` nulo) ganha o grupo próprio "Sem nicho" e continua na lista — antes ela aparecia misturada, agora tem cabeçalho e não some. O filtro "Ver arquivadas" agrupa do mesmo jeito, e a lista vazia continua com o aviso de sempre. Regra em `lib/prospecting/grupos-por-nicho.ts`, testada sem DOM e pela tela.
+  Contribuição de @webtecnica (#4961).
+
+- **O resumo das 7h da agenda pode sair só nos dias com agendamento** Em **Agenda › Avisos**, o aviso de agendamento no WhatsApp ganhou a opção **"Enviar o resumo do dia só quando houver agendamento"**. Com ela ligada, o resumo das 7h não sai no dia sem nenhum horário — quem usa a agenda poucas vezes por semana deixa de receber "Nenhum agendamento para hoje. Total: 0" quase todo dia. Se algo foi marcado, remarcado ou cancelado durante a noite (22h às 7h), o resumo sai mesmo com a agenda de hoje vazia, para a mudança não se perder. Um horário marcado para hoje antes das 10h faz o resumo sair na rodada seguinte. Os avisos de cada horário marcado, remarcado ou cancelado e o lembrete antes do horário não mudam, e o dia sem resumo não aparece em "Últimos avisos". A opção nasce **desligada**: quem já recebe o resumo continua recebendo todo dia. A atualização aplica a migration 9434 (uma coluna nova, sem mexer nos dados); nenhuma ação é necessária. Contribuição de @officialasishkumar, a partir da issue #4988.
+
+- **Pelo MCP, a mensagem de WhatsApp pode levar um arquivo já enviado ao CRM, sem link público** A ferramenta `crm_send_whatsapp_message` aceita `media_storage_path` (o caminho que
+  `POST /api/v1/conversations/{id}/media` devolve) e `media_filename`. Assim um contrato ou um
+  laudo vai para o cliente sem precisar ser publicado na internet. O arquivo precisa ser da
+  própria conversa: o envio confere isso, como no Inbox. A `crm_start_conversation_and_send`
+  continua só com `media_url`.
+
+  Contribuição de @yunshu0909, a partir da issue #5034.
+
+- **Bloquear chamadas de voz recebidas no WhatsApp** Em Configurações › Segurança, o administrador da empresa ganha a opção "Bloquear chamadas recebidas": quando alguém liga por voz para o WhatsApp dos números da empresa, a chamada é recusada sozinha. As mensagens continuam chegando. Vem desligada: nada muda para quem não ligar. Chamada de grupo não é recusada, e se a leitura da opção ou o WAHA falharem, a ligação toca como antes.
+
+  A atualização passa a assinar o evento `call.received` do WAHA; o contêiner do WAHA é recriado pelo `update.sh`, sem edição manual.
+
+  Contribuição de @vinicoretecnologia-svg.
+
+- **O card do funil mostra a foto do contato** Cada card do funil passou a mostrar, ao lado do nome do negócio, a foto de perfil do WhatsApp do contato — a mesma que já aparecia na lista de conversas do Inbox. Quando o contato não tem foto, o card fica como antes, sem disco nenhum: o disco de iniciais do rodapé continua sendo o do responsável. A foto só é pedida quando o card aparece na tela, para não gastar tráfego do Supabase com os cards que ninguém está vendo, e contato anonimizado (LGPD) nunca aparece com foto. Nenhuma configuração nova, e nenhuma ação é necessária na atualização. Contribuição de @tec7alex.
+
+- **Você escolhe quais áreas do CRM um módulo conectado pode acessar** Agora, ao ativar um módulo conectado em /app/extensions, quem administra a organização vê, em frases simples, as áreas que o módulo pediu, como contatos, conversas e agenda, e marca só as que autoriza. O módulo só alcança uma área se o pacote a declarou e a sua organização consentiu, e só no modo permitido: ler ou escrever. Nesta versão, o módulo só consegue ler, mesmo nas áreas em que a escrita foi consentida. Quando uma pessoa usa a tela do módulo, o acesso vale o menor entre o do módulo e o da pessoa, e o registro de auditoria passa a mostrar por qual pessoa o módulo agiu. A chave opcional MODULE_JWT_PRIVATE_KEY só é necessária para essa identificação da pessoa, e você não precisa fazer nada ao atualizar. Se a sua instalação não tem módulo conectado, nada muda.
+
+  Crédito: @paulolimajr77.
+  Contribuição de @paulolimajr77 (#5076).
+
+- **Você pode desligar um módulo conectado sem desinstalá-lo** A instalação passa a aceitar o pacote de um módulo conectado: um serviço externo que declara, antes de ser instalado, quais áreas do CRM quer usar (contatos, conversas, agenda e as outras seis). Quem administra a instalação pode desligar esse módulo na tela de Extensões da empresa (/app/extensions), no bloco da instalação, e ele continua instalado, com a data do desligamento registrada, até ser ligado de novo. /admin/extensoes mostra quando ele está desligado. Nesta versão o módulo ainda não acessa nada: o acesso do serviço vem nas próximas etapas, e desligar só guarda e mostra a decisão. Se a sua instalação não tem módulo conectado, a tela de extensões continua igual.
+
+  Crédito: @paulolimajr77.
+  Contribuição de @paulolimajr77 (#5069).
+
+- **Seu módulo conectado já recebe o próprio token, que só abre as áreas que você autorizar** Agora um módulo conectado pode pegar o próprio token sem que você crie um token para ele. Esse token só alcança as áreas do CRM que a sua organização autorizar para o módulo, por enquanto só para ler, e o MCP o recusa sempre. Em /app/extensions, no bloco da instalação, quem administra a instalação gera o segredo do módulo, que aparece uma única vez, e o entrega ao módulo; com esse segredo, o módulo pede um token curto, que vale uma hora e aparece na sua tela de tokens como "Módulo <slug>". Desligar o módulo, removê-lo ou revogar esse token na tela de tokens encerra o acesso dele: revogar desativa o módulo naquela organização, e gerar um novo segredo derruba os tokens que já estavam em uso. Se a sua instalação não tem módulo conectado, nada disso aparece e a tela de tokens continua igual.
+
+  Crédito: @paulolimajr77.
+  Contribuição de @paulolimajr77 (#5075).
+
+- **O contador de Tarefas no menu avisa quando alguma venceu** O número ao lado de "Tarefas" no menu lateral agora distingue o que já passou do prazo. Continua contando as tarefas em aberto do usuário logado (pendente e em andamento, responsável = ele) e, quando alguma delas venceu, o selo ganha o ícone de aviso e o "· N atrasadas" na descrição lida pelo leitor de tela.
+
+  A regra de atraso é a MESMA da lista e do selo do card: tem prazo, o prazo passou e ninguém encerrou. Concluída e cancelada com prazo estourado não viram atraso. A contagem de abertas não muda de significado, e os contadores de Casos e de Inbox continuam exatamente como eram.
+  Contribuição de @webtecnica (#4959).
+
+### Corrigido
+
+- **O módulo desligado para uma empresa passa a valer nos portões de CRM B2B, setores e avisos** O interruptor "Módulos por empresa" já gravava a escolha de cada empresa, mas três portões de biblioteca que decidem se a rota do módulo existe — o de empresas, pessoas e importação, o de setores de atendimento e o de avisos — perguntavam só pela instalação. Agora eles recebem a empresa e aplicam a mesma regra da tela: a linha da empresa vence, sem linha ela herda a instalação, a instalação desligada continua valendo para todas e a leitura que falha fecha a porta. O filtro por setor da lista de tarefas é o primeiro chamador a passar a empresa: com o setor desligado só para ela, o filtro responde 404 como as rotas de setor. Os demais chamadores perguntam antes de saber de que empresa é a requisição e continuam, por ora, com o comportamento de antes — sem mudança para quem nunca configurou módulo por empresa. Nada a fazer na VPS.
+  Contribuição de @webtecnica (#4963).
+
+- **Os crons de proposta param de agir sobre a empresa que desligou o módulo** Na tela Módulos por empresa, desligar Propostas escondia a tela daquela empresa, mas três trabalhos de fundo continuavam agindo nas propostas dela: a expiração diária vencia as propostas com prazo passado, o destravamento de envio devolvia a rascunho a proposta presa em "enviando", e o aviso de promessa de proposta sem proposta criada continuava abrindo na Central. Os três agora perguntam o módulo POR EMPRESA: a empresa que desligou fica de fora da rodada, as outras são processadas na mesma execução, a empresa sem linha continua herdando a instalação e um erro de leitura não processa ninguém. A instalação desligada não roda nenhum deles, e a resposta da rodada diz que foi por isso, em vez de devolver zero. Nada a fazer na VPS.
+  Contribuição de @webtecnica (#4971).
+
+- **Os trabalhos de fundo respeitam o módulo que a empresa desligou** O aviso de queda na taxa de aceite de propostas e a conferência de WhatsApp da prospecção rodam sozinhos, sem ninguém olhando, e percorrem várias empresas na mesma execução. Até aqui eles decidiam pela instalação: uma empresa que desligasse Propostas (ou a conferência de WhatsApp) em Módulos por empresa continuava recebendo o aviso e tendo o número dos leads conferido em massa, porque o interruptor do servidor estava ligado. Agora os dois trabalhos leem também a linha da empresa, uma vez por rodada, e pulam só quem desligou — as demais seguem sendo processadas na mesma execução. O servidor continua sendo o teto: com o módulo desligado na instalação, nada roda, nem para quem tem a linha "ligado" na empresa; empresa sem linha continua herdando a instalação; e se a leitura das linhas por empresa falhar, a rodada não processa ninguém em vez de processar todo mundo. Não muda nada de banco, de tela nem de payload de job. Contribuição de @webtecnica (issue #4871).
+
+- **A lista de horários livres que o agente acabou de consultar deixa de ser vetada como promessa** Um agente de agendamento consultava a agenda, escrevia os horários livres que ela devolveu e a conferência de promessa barrava o envio como "promessa fora do playbook". Os horários barrados eram exatamente os que a consulta tinha devolvido. Depois de algumas recusas, o modelo desistia da lista e mandava uma frase vaga, sem data e sem horário, e a pessoa ficava sem saber quando podia marcar. O contorno era desligar a conferência de promessa, o que tirava a barreira contra promessa inventada em todas as outras mensagens.
+
+  A causa era a evidência não existir para esse caminho: o retorno das ferramentas de agenda do próprio sistema — a consulta de horários livres e a lista de tipos de atendimento com a duração de cada um — não era registrado como evidência do turno, embora o retorno do catálogo, do material de conhecimento e das leituras do servidor externo já fosse. Sem lastro, a conferência lia a lista copiada da ferramenta como "vaga confirmada sem comprovação".
+
+  Agora esse retorno entra na mesma evidência das outras leituras: os horários livres, o fuso da agenda, a duração do atendimento e as ressalvas que a própria consulta devolve (lista cortada, jornada não publicada, agenda externa nunca lida). A conferência não mudou de critério: a mesma frase sem a consulta continua vetada, e promessa de desconto, cortesia ou prazo sem ferramenta que a sustente continua vetada com o mesmo código. Consulta que falha não vira evidência de sucesso, e o preço cadastrado do tipo de atendimento fica de fora — a agenda relata data, horário e situação, não autoriza condição comercial.
+
+  Ajuste a partir da issue #4927.
+  Contribuição de @webtecnica (#4933).
+
+- **Editar o contato pela lista mostra os mesmos campos personalizados que a ficha** Quem edita um contato pelo lápis da lista de contatos via o nome, o telefone e as etiquetas, mas não os campos personalizados do contato — os mesmos campos apareciam ao abrir a ficha do contato. A lista não tem funil, e era do funil que a seção de campos vinha. Agora o diálogo da lista mostra os campos de contato de todos os funis da organização, que é exatamente o conjunto que a gravação já conferia, e diz de onde eles vêm. Campo de negócio continua fora do diálogo do contato, como antes. Nada muda no que é gravado: quem salva sem tocar nos campos não altera valor nenhum. Nenhuma ação é necessária na atualização.
+  Contribuição de @webtecnica (#4932).
+
+- **A tela do agente avisa quando o número dele manda as conversas novas para um funil que ele não cuida** Desde que cada número pode escolher o próprio funil de entrada, o aviso da tela do
+  agente olhava só o funil padrão. Agora ele olha o funil que o número do agente (e o
+  do roteador em que ele está) escolheu: se esse funil não está marcado, o aviso diz
+  qual número e qual funil. Número sem escolha continua no funil padrão, como antes.
+
+  Contribuição de @yunshu0909, a partir da issue #4940.
+
+- **O aviso de repetição no Inbox agora diz o que fazer para liberar a resposta** Quando o número segurava uma resposta por repetição em massa, o aviso no Inbox dizia só o que tinha acontecido — quem operava entendia que precisava desligar a proteção, não achava onde e pedia a remoção da trava. Agora o aviso diz o próximo passo: no prompt, descrever o objetivo de cada mensagem em vez do texto exato e personalizar com o nome e o contexto do lead; e, quando quem repetiu foi um passo de follow-up com texto fixo, acrescentar outras redações ao passo. Diz também o que a trava não conta: mensagens curtas e links de pagamento. Em espanhol, o mesmo texto.
+
+  A trava não mudou: janela, limiar de semelhança e número de repetições seguem os mesmos.
+  Contribuição de @webtecnica (#4946).
+
+- **O cartão da campanha conta as empresas que estão na lista** O "N empresas" do cartão de uma campanha lia um total guardado que só as operações de ENTRADA de linha atualizavam. Quando empresas saíam — ao levar a lista para outra campanha, ao excluir as desmarcadas ou no expurgo por retenção —, o cartão da campanha de origem continuava com o número antigo. Agora a contagem é feita das empresas que estão na lista, então ela cai junto com a saída, e uma campanha que fica sem nenhuma aparece com 0 em vez de sumir da tela. Nada a fazer na sua instalação.
+  Contribuição de @webtecnica (#4958).
+
+- **A tela de atualização não diz mais que você está em dia com uma release mais nova publicada** Quando uma release é publicada e a imagem dela ainda não está pronta no
+  registro, o servidor continua, com razão, sem oferecer o botão de atualizar. O
+  que muda é o que a tela diz nesse intervalo: antes ela mostrava "Última release
+  oficial: <versão>" e, logo abaixo, "É a mais recente. Não há nada a fazer." — a
+  mesma tela afirmando as duas coisas ao mesmo tempo, numa instalação atrasada.
+
+  Agora ela diz que a versão saiu e ainda está sendo preparada, e que o botão
+  aparece sozinho quando estiver pronta. Ninguém precisa fazer nada, e a
+  instalação que ainda não atualizou o kit do servidor também não: a informação
+  usada para isso já vinha em todo batimento.
+  Contribuição de @webtecnica (#4957).
+
+- **A busca ⌘K acha a tela pelo nome no idioma da tela** Com a interface em espanhol, a busca do topo (⌘K) mostrava os nomes traduzidos — "Productos",
+  "Servicios" —, mas só achava digitando o termo em português ("Produtos", "Serviços").
+
+  Agora a busca casa também o nome e a descrição que a tela mostra no idioma ativo: em espanhol,
+  digitar "productos" acha Produtos. O termo em português continua achando, e em português nada muda.
+
+  Nada muda em quem já opera uma instalação: é só a busca da tela.
+
+  Contribuição de @yunshu0909, a partir da issue #4999.
+
+- **Trocar o período do Faturamento zera o funil ou a tag que sumiu dele** No bloco "Negócios ganhos" do Faturamento (Análise › Faturamento), escolher um
+  funil ou uma tag e depois trocar o período no topo da tela podia deixar o
+  recorte preso a um funil ou a uma tag que não existe no período novo: o
+  seletor mostrava "Todos os funis", mas os rankings e a lista continuavam
+  recortados. Agora, quando o período novo chega, o funil ou a tag que não estão
+  mais entre as opções voltam para "Todos", e o seletor mostra o recorte que está
+  valendo. Nenhuma ação é necessária na atualização. Contribuição de @tec7alex
+  (#5033).
+
+- **A catraca do host da Graph passa a reconhecer as formas em que ele é escrito à mão** O host da Graph já tinha um lugar só no código, e uma catraca que reprovava o literal em qualquer outro arquivo de produção — mas ela reconhecia uma forma só: `https://` logo depois de uma aspa. As outras duas formas do mesmo endereço passavam verdes, e são justamente as que o código escreve: o endereço protocolo-relativo, que é como um template monta a URL quando o esquema vem de variável, e o host sozinho numa string, que é a forma de allowlist e de comparação de `hostname`. A varredura também não olhava `components/`, `hooks/`, `workers/` nem os `.mjs` de `scripts/`.
+
+  Agora ela olha o domínio, e não a URL inteira, e separa código de comentário pelo parser do TypeScript — comentário que cita o endereço continua sem reprovar, e JSDoc deixou de ser falso positivo. A varredura cobre as seis raízes de produção e os `.mjs`. A régua da versão passou a usar a mesma função de "tirar comentário", em vez de manter a sua cópia. Nenhuma mudança de comportamento para quem usa: é cerca de teste. Nada a fazer na VPS.
+  Contribuição de @webtecnica (#4974).
+
+- **Instalação com provedor Google deixa de escolher, para o tier econômico, Gemini que o provedor aposentou** Quatro modelos que o catálogo do Google oferecia — `gemini-2.0-flash`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` e `gemini-2.5-pro` — respondem 404 hoje: o 2.0 saiu de linha e os três 2.5 estão fechados para contas novas. Numa instalação com provedor Google, o tier econômico dos pontos (`checkpoint`, `promise_semantic` e os demais) escolhia o 2.0 Flash justamente por ser o mais barato e tomava 404 em todo turno, com o fail-open do motor escondendo a causa — o que aparecia era custo e latência, não erro.
+
+  A escolha automática passou a exigir duas coisas do candidato: que o motor saiba cobrá-lo e que o provedor ainda o sirva. O modelo aposentado continua com preço na tabela — instalação antiga e roteador ainda o chamam, e custo nulo calado é o defeito oposto —, mas sai da corrida do econômico. O escolhido passa a ser `gemini-3.1-flash-lite`, a US$ 0,25 de entrada e US$ 1,50 de saída por milhão de tokens, o mais barato que o Google hoje serve; uma organização cujo modelo é o 2.5 Flash ou o 2.5 Pro passa a ter os pontos econômicos no 3.1 Flash-Lite, em vez de cair em outro modelo morto; quem está no 2.0 Flash ou no 2.5 Flash-Lite continua nele, porque a escolha econômica nunca sobe de preço, e o modelo principal precisa ser trocado na tela. A tela de provedores anuncia a mesma escolha que o motor faz. Preço, modelos e escolha dos outros provedores não mudaram, e a instalação que não usa Google não sente diferença.
+  Contribuição de @webtecnica (#4965).
+
+- **O custo gravado do Gemini 3.5 Flash deixa de cobrar o dobro do que o Google fatura** Toda instalação com provedor Google atende no `gemini-3.5-flash` — é o modelo padrão do provedor no
+  catálogo. A tabela de preços do motor cobrava por ele 1,50 de entrada e 9,00 de saída por milhão de
+  tokens. Esse preço não existe na página oficial: o Google aposentou o 3.5 Flash em 19 de maio de
+  2026 e o endpoint não foi desligado — ele encaminha toda requisição ao Gemini 3.6 Flash e fatura na
+  tarifa do 3.6, que é 0,75/3,75 até 31 de dezembro de 2026 e 1,50/7,50 a partir de 1º de janeiro de
+  2027.
+
+  Na prática, cada turno de atendimento em Google gravava em Uso e orçamento 2× a entrada e 2,4× a
+  saída do que o provedor cobra, e o teto mensal disparava cedo demais. Agora a linha do 3.5 Flash é a
+  mesma do 3.6 Flash, com a mesma virada de ano — porque o faturamento é o mesmo.
+
+  A linha do modelo não sai da tabela: instalação antiga e roteador continuam chamando esse id, e
+  preço ausente gravaria custo nulo em silêncio. O que muda é o número. A tarifa de modelo aposentado
+  que não aparece mais na página — os Gemini 2.x — segue preservada.
+
+  Nada muda no que o cliente vê além do valor correto na tela de uso: nenhuma configuração, nenhum
+  modelo novo, nenhum passo de atualização.
+
+  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4968).
+
 ## [1.121.0] — 2026-11-20
 
 ### ⚠️ Requer atenção
@@ -18355,7 +18526,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...HEAD
+[1.122.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...v1.122.0
 [1.121.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.1...v1.121.0
 [1.120.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.0...v1.120.1
 [1.120.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.119.0...v1.120.0

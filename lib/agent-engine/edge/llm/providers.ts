@@ -413,6 +413,10 @@ export function createDefaultRegistry(opts?: {
       // /responses e recebia a página do chat), enquanto gpt-4o/4.1 passavam
       // por sorte do roteamento. `.chat()` fixa o formato que a OpenRouter
       // realmente serve, para qualquer família de modelo.
+      // O id do exemplo acima foi APOSENTADO pelo Google (404 "no longer
+      // available to new users", medido em 18/11/2026, #4925): a medição do
+      // FORMATO continua valendo para qualquer modelo, o id não. Para Google na
+      // OpenRouter, use um que o provedor sirva (`google/gemini-3.1-flash-lite`).
       return provider.chat(modelId);
     },
     /**
