@@ -82,7 +82,7 @@
     "@tanstack/react-query-devtools": "^5.108.0",
     "@tanstack/react-virtual": "^3.14.26",
     "@upstash/redis": "^1.41.0",
-    "@xyflow/react": "^12.12.1",
+    "@xyflow/react": "^13.0.2",
     "ai": "^7.0.177",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
