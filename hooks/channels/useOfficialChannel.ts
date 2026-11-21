@@ -101,8 +101,10 @@ export function useConnectOfficialChannel() {
 
 export interface EmbeddedSignupInput {
   code: string;
-  phone_number_id: string;
+  /** Na coexistência a Meta pode não mandar o número; o servidor o busca pela conta. */
+  phone_number_id?: string;
   waba_id: string;
+  modo?: "coexistencia" | "padrao";
 }
 
 /** Conecta o número escolhido na janela da Meta (Embedded Signup, #4074). */

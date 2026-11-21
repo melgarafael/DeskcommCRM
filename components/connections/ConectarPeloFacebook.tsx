@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useConnectOfficialEmbeddedSignup } from "@/hooks/channels/useOfficialChannel";
 import { useT } from "@/hooks/i18n/useT";
+import { lerMensagemDoEmbeddedSignup, type ModoDaConexao } from "@/lib/channels/meta/sessao-do-embedded-signup";
 
 interface FacebookSdk {
   init(opcoes: { appId: string; autoLogAppEvents?: boolean; xfbml?: boolean; version: string }): void;
@@ -59,15 +60,6 @@ function carregarSdk(appId: string, versao: string): Promise<FacebookSdk> {
   });
 }
 
-function ehOrigemDaMeta(origem: string): boolean {
-  try {
-    const host = new URL(origem).hostname;
-    return host === "facebook.com" || host.endsWith(".facebook.com");
-  } catch {
-    return false;
-  }
-}
-
 export function ConectarPeloFacebook({
   appId,
   configId,
@@ -83,7 +75,7 @@ export function ConectarPeloFacebook({
   const conectar = useConnectOfficialEmbeddedSignup();
   const [abrindo, setAbrindo] = useState(false);
   const codigo = useRef<string | null>(null);
-  const sessao = useRef<{ phone_number_id: string; waba_id: string } | null>(null);
+  const sessao = useRef<{ phone_number_id?: string; waba_id: string; modo: ModoDaConexao } | null>(null);
   const enviado = useRef(false);
 
   const tentarEnviar = useCallback(async () => {
@@ -103,35 +95,21 @@ export function ConectarPeloFacebook({
 
   useEffect(() => {
     function aoReceber(evento: MessageEvent) {
-      if (!ehOrigemDaMeta(evento.origin)) return;
-      let dados: unknown = evento.data;
-      if (typeof dados === "string") {
-        try {
-          dados = JSON.parse(dados);
-        } catch {
-          return;
-        }
-      }
-      const msg = dados as {
-        type?: string;
-        event?: string;
-        data?: { phone_number_id?: string; waba_id?: string; error_message?: string };
-      } | null;
-      if (msg?.type !== "WA_EMBEDDED_SIGNUP") return;
-      if (msg.event === "CANCEL") {
+      const leitura = lerMensagemDoEmbeddedSignup(evento.origin, evento.data);
+      if (leitura.tipo === "ignorar") return;
+      if (leitura.tipo === "cancelado") {
         toast.info(t("A conexão pelo Facebook foi cancelada antes do fim."));
         setAbrindo(false);
         return;
       }
-      if (msg.event === "ERROR") {
-        toast.error(`${t("A Meta recusou a conexão:")} ${msg.data?.error_message ?? ""}`.trim());
+      if (leitura.tipo === "erro") {
+        toast.error(`${t("A Meta recusou a conexão:")} ${leitura.mensagem}`.trim());
         setAbrindo(false);
         return;
       }
-      if (msg.data?.phone_number_id && msg.data?.waba_id) {
-        sessao.current = { phone_number_id: msg.data.phone_number_id, waba_id: msg.data.waba_id };
-        void tentarEnviar();
-      }
+      const { tipo: _tipo, ...dadosDaSessao } = leitura;
+      sessao.current = dadosDaSessao;
+      void tentarEnviar();
     }
     window.addEventListener("message", aoReceber);
     return () => window.removeEventListener("message", aoReceber);
@@ -166,7 +144,7 @@ export function ConectarPeloFacebook({
         config_id: configId,
         response_type: "code",
         override_default_response_type: true,
-        extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+        extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
       },
     );
   }
@@ -181,6 +159,9 @@ export function ConectarPeloFacebook({
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("Abre a janela oficial da Meta: entre com o Facebook da empresa, escolha (ou cadastre) o número e confirme. O CRM recebe a conexão sozinho — sem copiar token nem IDs.")}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("Já usa o número no app WhatsApp Business? Escolha esse número na janela: o app continua funcionando e as conversas passam a chegar também aqui.")}
         </p>
       </div>
       <div>

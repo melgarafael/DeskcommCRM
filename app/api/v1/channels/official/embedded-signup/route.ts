@@ -8,8 +8,9 @@
  *
  * 1. troca o `code` pelo token da empresa (`/oauth/access_token`, com o App ID e o
  *    App Secret da instalação — o segredo nunca sai do servidor);
- * 2. registra o número na Cloud API (`/{phone}/register`), best-effort: número já
- *    registrado ou em coexistência recusa, e isso não impede a conexão;
+ * 2. registra o número na Cloud API (`/{phone}/register`), best-effort — exceto na
+ *    coexistência (`modo`), onde o número já está registrado e o registro NÃO é
+ *    chamado; sem `phone_number_id`, o número vem de `/{waba}/phone_numbers`;
  * 3. grava o canal pelo MESMO caminho do token colado à mão
  *    (`gravarCanalOficial`), com a origem `embedded_signup` — validação com a Meta
  *    antes de gravar, cifra, webhook do número apontado para esta instalação.
@@ -35,8 +36,11 @@ export const runtime = "nodejs";
 
 const entradaSchema = z.object({
   code: z.string().min(10).max(2000),
-  phone_number_id: z.string().regex(/^\d{5,30}$/),
+  // Na coexistência a Meta pode mandar só a conta (`waba_id`); o número sai da
+  // consulta à conta, depois da troca do código.
+  phone_number_id: z.string().regex(/^\d{5,30}$/).optional(),
   waba_id: z.string().regex(/^\d{5,30}$/),
+  modo: z.enum(["coexistencia", "padrao"]).default("padrao"),
 });
 
 const TEMPO_LIMITE_MS = 15_000;
@@ -65,6 +69,33 @@ async function trocarCodigoPorToken(input: {
     return { ok: false, motivo: motivoDaMeta(corpo) ?? `a Meta respondeu ${resposta.status}` };
   } catch (err) {
     return { ok: false, motivo: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * O número da conta, quando a janela da Meta não o mandou. Mais de um número é
+ * recusado: escolher um por palpite conectaria a linha errada.
+ */
+async function numeroDaConta(input: {
+  wabaId: string;
+  token: string;
+}): Promise<{ ok: true; phoneNumberId: string } | { ok: false; motivo: "nenhum" | "varios" | "falha"; detalhe?: string }> {
+  try {
+    const url = new URL(`${graphBaseUrl()}/${input.wabaId}/phone_numbers`);
+    url.searchParams.set("fields", "id");
+    const resposta = await fetch(url, {
+      headers: { Authorization: `Bearer ${input.token}` },
+      signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+    });
+    const corpo = (await resposta.json().catch(() => null)) as { data?: Array<{ id?: unknown }> } | null;
+    if (!resposta.ok) return { ok: false, motivo: "falha", detalhe: motivoDaMeta(corpo) ?? `a Meta respondeu ${resposta.status}` };
+    const ids = (corpo?.data ?? []).map((n) => n?.id).filter((id): id is string => typeof id === "string" && /^\d{5,30}$/.test(id));
+    const [unico, ...resto] = ids;
+    if (unico === undefined) return { ok: false, motivo: "nenhum" };
+    if (resto.length > 0) return { ok: false, motivo: "varios" };
+    return { ok: true, phoneNumberId: unico };
+  } catch (err) {
+    return { ok: false, motivo: "falha", detalhe: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -103,7 +134,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       requestId,
     });
   }
-  const { code, phone_number_id, waba_id } = parsed.data;
+  const { code, waba_id, modo } = parsed.data;
+  const coexistencia = modo === "coexistencia";
 
   const embedded = await embeddedSignupDaInstalacao();
   const { appSecret } = await appDaMeta();
@@ -122,20 +154,46 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("invalid_request", `${t("A Meta não aceitou a conexão:")} ${troca.motivo}`, 422, { requestId });
   }
 
-  // Registro na Cloud API — best-effort. O PIN é o da verificação em duas etapas
-  // do NÚMERO (não da conta de ninguém); guardado cifrado no canal para quem
-  // precisar registrar de novo.
-  const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
-  const registro = await registrarNumero({ phoneNumberId: phone_number_id, token: troca.token, pin });
+  let phone_number_id = parsed.data.phone_number_id;
+  if (!phone_number_id) {
+    const achado = await numeroDaConta({ wabaId: waba_id, token: troca.token });
+    if (!achado.ok) {
+      logger.warn("[meta.embedded] número da conta não resolvido", { requestId, motivo: achado.motivo, detalhe: achado.detalhe });
+      if (achado.motivo === "varios") {
+        return fail(
+          "invalid_request",
+          t("A conta da Meta tem mais de um número. Conecte um número por vez, escolhendo só um na janela da Meta."),
+          422,
+          { requestId },
+        );
+      }
+      if (achado.motivo === "nenhum") {
+        return fail("invalid_request", t("A Meta não devolveu nenhum número para essa conta. Tente de novo."), 422, { requestId });
+      }
+      return fail("invalid_request", `${t("A Meta não aceitou a conexão:")} ${achado.detalhe ?? ""}`.trim(), 422, { requestId });
+    }
+    phone_number_id = achado.phoneNumberId;
+  }
+
+  // Registro na Cloud API — best-effort, e NUNCA na coexistência: o número já está
+  // registrado (roda no app WhatsApp Business) e o registro o tiraria de lá. O PIN
+  // é o da verificação em duas etapas do NÚMERO (não da conta de ninguém); guardado
+  // cifrado no canal para quem precisar registrar de novo.
   const metadataExtra: Record<string, unknown> = {};
-  if (registro.ok) {
-    const pinCifrado = await encryptWebhookSecret(createAdminClient(), pin);
-    if (pinCifrado) metadataExtra.meta_registro_pin_cifrado = pinCifrado;
+  if (coexistencia) {
+    metadataExtra.meta_coexistencia = true;
   } else {
-    logger.info("[meta.embedded] registro do número não aplicado (segue a conexão)", {
-      requestId,
-      motivo: registro.motivo,
-    });
+    const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const registro = await registrarNumero({ phoneNumberId: phone_number_id, token: troca.token, pin });
+    if (registro.ok) {
+      const pinCifrado = await encryptWebhookSecret(createAdminClient(), pin);
+      if (pinCifrado) metadataExtra.meta_registro_pin_cifrado = pinCifrado;
+    } else {
+      logger.info("[meta.embedded] registro do número não aplicado (segue a conexão)", {
+        requestId,
+        motivo: registro.motivo,
+      });
+    }
   }
 
   return gravarCanalOficial({
