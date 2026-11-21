@@ -73,6 +73,16 @@ describe("cursor de eventos do módulo", () => {
   });
 });
 
+describe("incompatibilidade não prende a LGPD (F6, decisão D2)", () => {
+  it("a leitura de eventos e a prova do módulo não consultam a faixa host_api", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const arquivo of ["lib/extensions/eventos-do-modulo.ts", "lib/extensions/prova-do-modulo.ts", "app/api/v1/extensions/events/route.ts"]) {
+      const fonte = readFileSync(arquivo, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
+      expect(fonte, arquivo).not.toMatch(/checkCompatibility|host_api|module_incompatible|autorizarModulo/);
+    }
+  });
+});
+
 describe("atraso do módulo (F5 T3)", () => {
   const AGORA = Date.parse("2026-11-05T12:00:00.000Z");
   const h = (horas: number) => new Date(AGORA - horas * 3_600_000).toISOString();
