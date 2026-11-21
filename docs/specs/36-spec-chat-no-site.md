@@ -143,7 +143,7 @@ página do cliente ── <script webchat.js?k=wck_…> ──> cria a bolha e u
   cliente. Ela aparece no corpo e na URL do script sem violar "API key nunca em query string",
   porque não autoriza nada sozinha. A proteção é o limite de chamadas e o teto do anônimo (F4).
 
-### F1 — A base: canal, rotas e tela mínima de conexão
+### F1 — A base: canal e rotas (sem tela)
 
 **Banco.** Uma migration, com a tripla: o arquivo, a linha `-- manifest:` e o apêndice no
 `baseline.sql`, somando os valores novos nos blocos únicos de cada CHECK, como a migration 9342 fez

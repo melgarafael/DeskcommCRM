@@ -2,7 +2,7 @@
 
 > **Para quem executa:** use superpowers:subagent-driven-development (um implementador por tarefa, uma revisão por tarefa, revisão final do branch). Os passos usam `- [ ]`. **Teste só no GitHub:** não rode suíte, vitest nem Docker nesta máquina; o veredito é o CI do fork. Antes de empurrar: skills `deskcomm-doutrina` e `deskcomm-contribuir`, `pre-voo.sh`, `pnpm lint:channels`, revisão cega do diff.
 
-**Meta:** quem tem um site cola uma linha de código e a janela do chat aparece; quem recebe um link direto (bio, e-mail, QR) abre a mesma janela. Quem administra configura tudo numa aba "Chat no site" em Conexões.
+**Meta:** (F2 da #1333, em dois PRs: F2-A e F2-B) quem tem um site cola uma linha de código e a janela do chat aparece; quem recebe um link direto (bio, e-mail, QR) abre a mesma janela. Quem administra configura tudo numa aba "Chat no site" em Conexões.
 
 **Arquitetura:** a janela `/chat/<chave>` é uma resposta de route handler (HTML pequeno, sem React) para o cabeçalho `Content-Security-Policy: frame-ancestors` poder ser montado por conexão, a partir da lista de domínios. O comportamento da janela vive em JavaScript simples servido de `public/`, e conversa com as três rotas públicas da F1. A aba de administração é um componente de cliente nos moldes de `CanalBotClient`.
 
@@ -27,9 +27,17 @@
 4. **Aceite de LGPD ausente ou forjado.** A primeira mensagem sem aceite é recusada; o aceite grava a versão do texto e a hora. Teste na Tarefa 2.
 5. **`postMessage` de página estranha.** A janela só aceita mensagens de `window.parent`; o script da bolha só aceita mensagens da origem do CRM. Teste nas Tarefas 4 e 5.
 
-## Decisões do plano (podem ser trocadas na revisão)
+## Como a F2 se divide em dois PRs
 
-- **Pausa fica fora da F2.** A spec a lista na aba, mas a F1 não tem campo nem regra de servidor para ela. Entra na F3 (horário) com o resto do "quando o chat responde". Custo se errado: um campo e um botão a mais depois.
+A #1333 define a F2 como "widget: `widget.js` + `/chat/<slug>` + aparência/formatos + textos + coleta + consentimento", e a tela do canal lista também a pausa. O escopo é o da issue, inteiro, entregue em dois PRs:
+
+- **F2-A — a janela e o link (Tarefas 1 a 6 e 8):** a janela, o script da bolha, o link direto, cor, título e saudação, coleta, consentimento, domínios, código para colar, giro da chave e pausa. É o que dá chamador às rotas da F1.
+- **F2-B — formatos e ajustes (Tarefas 9 e 10):** painel lateral, embutido e página inteira; posição, avatar, auto-abrir, som, badge e respostas rápidas.
+
+O horário (janela por dia, feriados, mensagem fora do expediente, captura offline) continua sendo a F3 da issue.
+
+## Decisões técnicas do plano (podem ser trocadas na revisão)
+
 - **`/webchat.js` e `/webchat-janela.js` são arquivos estáticos em `public/`.** A chave vai em `?k=` e o script a lê do próprio endereço. Estático é cacheável pela borda e não toca banco. Custo se errado: virar route handler é trocar o arquivo por uma rota.
 - **A janela é HTML de route handler, não página React.** É o único jeito de o CSP variar por conexão sem consultar o banco em `proxy.ts`.
 
@@ -126,18 +134,80 @@
 - [ ] **Step 3: Implementar** no molde de `CanalBotClient` (mesmos componentes, mesmo tratamento de erro e de viewer). `page.tsx` consulta `moduloLigado(createAdminClient(), "canal_webchat")` e passa `chat={ligado ? { label: "Chat no site" } : null}`.
 - [ ] **Step 4:** CI verde. **Step 5: Commit** `feat(chat): aba Chat no site em Conexões`.
 
-### Task 7: Prova pela tela, documentos e fechamento
+### Task 7: Pausa do chat
+
+**Files:**
+- Modify: `app/api/v1/channels/webchat/route.ts`, `lib/channels/webchat/conexao-pela-chave.ts`, `lib/audit/actions.ts` (ação `channel.webchat_paused`), `components/connections/CanalChatClient.tsx`
+- Test: `app/api/v1/channels/webchat/route.test.ts`, `tests/unit/webchat-rotas-publicas.test.ts`
+
+**Interfaces:**
+- Produces: `PATCH /api/v1/channels/webchat` aceita `pausado: boolean`. Pausado, `/sessao` responde o mesmo 404 dos outros casos; `/mensagens` e `/eventos` também. O implementador lê os valores válidos de `channel_sessions.status` e usa o que já existe para "parado"; se nenhum servir, guarda `metadata.webchat.pausado` e o diz na revisão.
+
+- [ ] **Step 1: Testes que falham** — pausar e retomar pela rota de quem administra (com `requireSupportWrite(` e audit); com o chat pausado as três rotas públicas dão o mesmo 404; retomar volta a funcionar.
+- [ ] **Step 2:** o CI mostra o vermelho. **Step 3: Implementar.** Botão "Pausar o chat" na aba. **Step 4:** CI verde. **Step 5: Commit** `feat(chat): pausa do chat no site`.
+
+### Task 8: Prova pela tela da F2-A, documentos e fechamento
 
 **Files:**
 - Create: `tests/e2e/chat-no-site.spec.ts`, `docs/testing/chat-no-site.md`, `.changes/chat-no-site-parte-2.md`
 - Modify: `.github/workflows/e2e.yml` (a spec entra em um `SPECS_PARTE_N`), `docs/architecture/canal-do-chat-no-site.architecture.json`, `docs/specs/36-spec-chat-no-site.md` (estado da F2 e a decisão sobre a pausa)
 
 - [ ] **Step 1: Spec de ponta a ponta**, como um leigo: banco fresco, envs opcionais ausentes, módulo ligado em `/admin/sistema`; na aba, ativar o chat e cadastrar o domínio de um servidor de teste; abrir a página de teste com o código colado; ver a bolha, abrir, aceitar o aviso, mandar uma mensagem; ver a conversa no Inbox com o canal "Chat no site" e responder; ver a resposta na janela. Casos extras: site fora da lista não mostra a janela (o iframe não carrega); girar a chave faz a página antiga receber "indisponível" ao abrir conversa nova.
-- [ ] **Step 2:** registrar em `docs/testing/chat-no-site.md` o roteiro e a evidência; fragmento `.changes/` com `impacto: capacidade_nova` (o texto é nota pública); mapa de arquitetura com as peças novas e suas arestas (janela ⇄ rotas públicas ⇄ Inbox).
+- [ ] **Step 2:** registrar em `docs/testing/chat-no-site.md` o roteiro e a evidência; fragmento `.changes/chat-no-site-parte-2a.md` com `impacto: capacidade_nova` (o texto é nota pública; `pnpm release:conferir` confere a forma); mapa de arquitetura com as peças novas e suas arestas (janela ⇄ rotas públicas ⇄ Inbox).
 - [ ] **Step 3:** atualizar a spec (F2 entregue, pausa para a F3) e declarar o destino no PR: núcleo, com módulo opcional desligado de fábrica.
 - [ ] **Step 4:** sabotagem: sobre o commit verde, tirar de propósito (1) a exclusão do `DENY` em `/chat/` e (2) a lista de domínios do `frame-ancestors`; os testes das Tarefas 3 e a spec e2e devem ficar vermelhos, e o controle verde fica em outro PR.
 - [ ] **Step 5: Commit** `test(chat): prova pela tela da janela e do link`.
 
+### Task 9: Formatos da janela (F2-B)
+
+**Files:**
+- Modify: `lib/channels/webchat/config.ts`, `lib/channels/webchat/janela-html.ts`, `public/webchat.js`, `components/connections/CanalChatClient.tsx`
+- Test: `lib/channels/webchat/config.test.ts`, `lib/channels/webchat/janela-html.test.ts`, `tests/unit/webchat-bolha.test.ts`
+
+**Interfaces:**
+- Produces: `configuracaoDoChatSchema` ganha `formato: "bolha" | "painel" | "embutido" | "pagina"` (padrão `bolha`) e `posicao: "direita" | "esquerda"`. `public/webchat.js` monta o formato pedido: bolha flutuante, painel lateral fixo, iframe dentro de um elemento da página (`data-webchat-alvo`, seletor simples) ou redireciona para `/chat/<chave>` em página inteira. O formato é escolhido na aba, e o código para colar muda com ele.
+
+- [ ] **Step 1: Testes que falham** — schema recusa formato fora da lista e posição fora da lista; `webchat.js` com `formato=embutido` e sem alvo na página não cria nada e não quebra a página; com alvo, cria o iframe dentro dele; `painel` e `bolha` respeitam a posição.
+- [ ] **Step 2:** o CI mostra o vermelho. **Step 3: Implementar.** **Step 4:** CI verde. **Step 5: Commit** `feat(chat): formatos da janela do chat no site`.
+
+### Task 10: Ajustes de aparência e comportamento (F2-B)
+
+**Files:**
+- Modify: `lib/channels/webchat/config.ts`, `lib/channels/webchat/janela-html.ts`, `public/webchat-janela.js`, `public/webchat.js`, `components/connections/CanalChatClient.tsx`, `lib/channels/webchat/codigo-para-colar.ts`
+- Test: `lib/channels/webchat/config.test.ts`, `tests/unit/webchat-janela-cliente.test.ts`, `tests/unit/webchat-bolha.test.ts`, `components/connections/CanalChatClient.test.tsx`
+
+**Interfaces:**
+- Produces: no schema, `avatar_url?: string` (https, máx. 300), `auto_abrir_segundos?: number` (0 a 120; 0 desliga), `som?: boolean`, `respostas_rapidas?: string[]` (até 5, cada uma de 1 a 80 caracteres). A bolha mostra a contagem de mensagens não lidas (badge) quando a janela está fechada; a janela toca o som só quando `som` é verdadeiro e o visitante já interagiu com a página. As respostas rápidas aparecem como botões antes da primeira mensagem e enviam o texto como mensagem normal.
+
+- [ ] **Step 1: Testes que falham** — schema recusa `avatar_url` que não seja https, mais de 5 respostas rápidas e `auto_abrir_segundos` fora de 0–120; as respostas rápidas entram na tela por `textContent`; o badge conta só mensagens de resposta e zera ao abrir; `auto_abrir_segundos = 0` nunca abre sozinho.
+- [ ] **Step 2:** o CI mostra o vermelho. **Step 3: Implementar**, com os campos novos na aba. **Step 4:** CI verde. **Step 5: Commit** `feat(chat): avatar, auto-abrir, som, badge e respostas rápidas`.
+
+Ao fechar a Tarefa 10: repetir a prova pela tela (Tarefa 8) para os formatos e ajustes novos, e escrever o fragmento `.changes/chat-no-site-parte-2b.md` (`capacidade_nova`).
+
+## Living System Checklist (Definition of Done, item 13)
+
+Peça: a janela do chat e a aba de administração. Cada resposta nomeia o artefato.
+
+1. **Quem me alimenta?** O visitante, pelo script `public/webchat.js` ou pelo link `/chat/<chave>`; quem administra, pela aba `CanalChatClient`.
+2. **Quem eu alimento?** As rotas da F1 (`/api/v1/webchat/*`) → `ingerirMensagemDoChat` → `aplicarEfeitosPosEntrada` → conversa no Inbox.
+3. **Que registro eu emito?** `audit()` com `channel.webchat_created/updated/key_rotated` (F1) e `channel.webchat_paused` (Tarefa 7); o aceite de LGPD em `messages.metadata.webchat_aceite` (Tarefa 2).
+4. **Onde apareço na tela?** Na aba "Chat no site" (Conexões) e, para a conversa, no Inbox com o selo do canal (F1, `lib/channels/presentation.ts`).
+5. **Por qual porta se chega?** A aba é filha de `/app/connections?aba=chat`, que já tem porta em `lib/navigation/catalogo.ts`; `/chat/<chave>` é página pública de visitante e não entra na navegação (justificativa para a allowlist de `tests/unit/navegacao-completude.test.ts`, se o teste a cobrar).
+6. **Qual meu anti-morte?** A mensagem do visitante vira conversa e lead pelo `pos-entrada`, e a partir daí valem o follow-up e o Radar de Risco como em qualquer canal. Sem agente na conexão, a conversa espera a equipe (a mensagem "Recebemos sua mensagem" é da F3).
+7. **Onde se configura?** Na aba: ver o estado, mudar tudo, e o que aparece se faltar (sem controlador cadastrado a janela mostra o aviso sem link; sem domínios, `frame-ancestors 'none'` e só o link direto abre).
+8. **Qual a continuidade IA↔humano?** Na F2, o atendente responde pelo composer do Inbox e a resposta chega à janela pelo stream da F1. O handoff estruturado é a F4.
+9. **Qual meu laço de retorno?** **Nenhum na F2, declarado:** a janela mostra "indisponível" quando a chave é recusada, mas o sistema ainda não conta recusas (`metadata.webchat.recusas` ficou pendente na F1). Entra junto com o teto do anônimo, na F4.
+10. **Atualizei o mapa?** Sim, na Tarefa 8: `docs/architecture/canal-do-chat-no-site.architecture.json` ganha a janela e a aba, cada uma com duas arestas.
+
+## Regras de cada PR da F2
+
+- Base `main`; a F2 só compila com a F1 dentro, então os dois PRs esperam o #5095 entrar (ou usam a F1 como base de prova no fork, como a F1 fez).
+- Corpo com `Refs #1333` (nunca `Closes`: a issue é fatiada), o que muda para quem opera, o destino ("núcleo, com módulo opcional desligado de fábrica"), o que foi medido (rodapé do CI, sabotagem com controle verde) e o bloco "O que NÃO medi".
+- Antes de empurrar: `pre-voo.sh`, `pnpm lint:channels`, `pnpm checar:colisao-de-migration` (a F2 não tem migration; o comando confirma), trazer a `main`, revisão cega do diff. Texto público assinado "— Paulo Lima Jr", sem decisão interna.
+- Terminada a F2-A, avisar na #1333 que a F2 está com o Paulo (a oferta ao SPYDeEp1 ficou sem resposta desde 20/11).
+
 ## O que este plano não cobre (de propósito)
 
-Horário de atendimento (F3), agente, passagem para humano e teto do visitante anônimo (F4), origem do negócio e relatório (F5), e a pausa do chat (decisão acima). Também não cobre o corte dos tokens já emitidos ao girar a chave, que a F1 deixou declarado como pendência.
+Horário de atendimento (janela por dia, feriados, mensagem fora do expediente e captura offline: F3 da issue), agente, passagem para humano e teto do visitante anônimo (F4), origem do negócio e relatório (F5). Também não cobre o corte dos tokens já emitidos ao girar a chave, que a F1 deixou declarado como pendência.
+
+**Origem do site:** a lista de domínios só vale dentro da janela (`frame-ancestors`). Quem chama as rotas públicas direto, sem navegador, não é barrado por ela; o que protege essas rotas são o token, o limite por IP e o teto de corpo da F1. A issue pedia validar a origem na entrada, e isso fica registrado aqui como diferença aberta para o Rafael decidir.
