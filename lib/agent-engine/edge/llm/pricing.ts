@@ -121,9 +121,21 @@ const USD_PER_MTOK: Record<string, Preco> = {
   'gpt-5.4-nano': { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite5m: 0.2, cacheWrite1h: 0.2 },
   'gpt-5.4-pro': { input: 30, output: 180, cacheRead: 30, cacheWrite5m: 30, cacheWrite1h: 30 },
 
-  // Google — os seis Gemini do catálogo curado (migrations 0023 e 0101), com o
+  // Google — os Gemini do catálogo curado (migrations 0023 e 0101), com o
   // preço do `ai_pricing` em vigor (centavos/100). Sem estas linhas o custo de
   // toda org em Google saía NULL e o teto mensal não disparava.
+  //
+  // Os quatro Gemini 2.x abaixo (2.5 Pro, 2.5 Flash, 2.5 Flash-Lite, 2.0 Flash)
+  // são APOSENTADOS: 404 medido em 18/11/2026 com chave real (#4925) — o 2.0
+  // "no longer available", os três 2.5 "no longer available to new users". O
+  // preço deles fica porque instalação antiga e roteador (Requesty serve
+  // `google/gemini-2.5-flash`) ainda os chamam, e custo NULL calado é o defeito
+  // da #3013. O que NÃO pode acontecer é ESCOLHÊ-LOS — quem barra é o sexto
+  // parâmetro de `escolherModeloEconomico`, alimentado por
+  // `modelos-aposentados.ts`. Sem esse barramento o tier econômico os pegava por
+  // serem os mais baratos (10/40) e tomava 404 em todo turno. O econômico do
+  // Google é o `gemini-3.1-flash-lite` (0.25 / 1.50; Standard em
+  // aistudio.google.com/docs/pricing, 18/11/2026).
   // Cache: o caching implícito liga sozinho do 2.5 em diante e o motor monta um
   // prefixo estável para reaproveitá-lo, então num turno típico a maior parte da
   // entrada chega como `cacheReadTokens` (o @ai-sdk/google mapeia
@@ -152,7 +164,17 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // 0.05× a entrada, não o 0.1× do resto do Google. Só cache implícito.
   'gemini-4-argon': { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 4, cacheWrite1h: 4 },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite5m: 0.25, cacheWrite1h: 0.25 },
-  'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  // 3.5 Flash: APOSENTADO em 19/05/2026 e o endpoint NÃO morreu — toda requisição
+  // é roteada ao 3.6 Flash e faturada na tarifa dele (tabela de aposentados de
+  // aistudio.google.com/docs/deprecations, lida em 18/11/2026; a página de preços,
+  // aistudio.google.com/docs/pricing, não tem mais seção do 3.5 Flash). A linha
+  // fica porque este é o DEFAULT do Google no catálogo (`ai_models`, migration
+  // 0101) e instalação antiga continua chamando — custo NULL calado é o defeito da
+  // #3013. Valores iguais aos do 3.6 Flash de propósito: mesmo roteamento, mesma
+  // fatura, mesma promo até 2027-01-01. O 1,50/9,00 que ficava aqui não existe na
+  // página oficial em faixa nenhuma: cobrava 2× a entrada e 2,4× a saída do que o
+  // Google fatura hoje (0,75/3,75).
+  'gemini-3.5-flash': { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
   // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
   // (06/10/2026). O armazenamento de cache ($1/MTok/h) não é por chamada.
   'gemini-3.5-flash-lite': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },
@@ -227,7 +249,9 @@ const PROMO_GEMINI_FLASH_36_38: Preco = {
 
 /**
  * Ids cuja tabela (e `ai_pricing`, PK só em `model`) guarda a tarifa POSTERIOR
- * à promo. Gemini 3.6/3.7/3.8 Flash: "January 1, 2027". Gemini 4 Argon: promo
+ * à promo. Gemini 3.5/3.6/3.7/3.8 Flash: "January 1, 2027" — o 3.5 entra na
+ * lista porque o endpoint dele roteia ao 3.6 Flash e é a tarifa do 3.6 que o
+ * Google fatura (deprecations, lida em 18/11/2026). Gemini 4 Argon: promo
  * "through Nov 30, 2026" e o dobro "from Dec 1, 2026" (página de pricing,
  * lida em 19/10/2026).
  */
@@ -235,6 +259,7 @@ const PROMOCOES: Record<string, { ateMs: number; preco: Preco }> = {
   'gemini-3.8-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-3.7-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-3.6-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
+  'gemini-3.5-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-4-argon': {
     ateMs: Date.parse('2026-12-01T00:00:00.000Z'),
     preco: { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2, cacheWrite1h: 2 },
@@ -294,7 +319,7 @@ export function temPrecoNoMotor(model: string): boolean {
  *
  * `em` é o instante da chamada. Sem ele, vale agora — é o que grava
  * `llm_calls.cost_cents`. Só os ids de PROMOCOES trocam de tarifa com ele
- * (3.6/3.7/3.8 Flash em 2027-01-01T00:00:00Z, 4 Argon em 2026-12-01T00:00:00Z);
+ * (3.5/3.6/3.7/3.8 Flash em 2027-01-01T00:00:00Z, 4 Argon em 2026-12-01T00:00:00Z);
  * os outros ids ignoram o instante.
  */
 export function costCents(
