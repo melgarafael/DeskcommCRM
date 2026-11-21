@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureConversation } from "@/lib/automation/start-conversation";
-import type { EventRow } from "@/lib/event-log/dispatcher";
+import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import "@/lib/automation/actions/register-all";
 import { runAutomationForEvent } from "@/lib/automation/engine";
 import { GOV_ADMIN, GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
@@ -28,12 +28,13 @@ import { GOV_ADMIN, GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
  * a agenda. Adiar só uma parte das regras foi tentado e recusado: a pronta
  * mudava o estado (etiqueta, etapa) e a adiada era julgada sobre ele (F).
  *
- *   A  — duas regras, reavaliação nos `retry_at` que o próprio motor devolve;
+ *   A  — duas regras, reavaliações até a proteção vencer;
  *   A2 — duas regras, operador conclui o compromisso (`fn_appointment_change`);
  *   A3 — A com a ordem invertida: a `adiar` vem antes, e a `nao_enviar` ainda
  *        é consultada depois do adiamento;
  *   C  — controle: só a `nao_enviar`, pula na hora;
- *   D  — controle: só a `adiar`, espera e envia depois (o comportamento de sempre);
+ *   D  — controle: só a `adiar`, relê a agenda antes do início e só envia depois da proteção;
+ *   D2 — compromisso cancelado: a `adiar` envia na primeira rechecagem, antes do início original;
  *   E  — `enviar` ao lado de `adiar`: espera junto e sai uma vez só;
  *   F  — `adiar` com condição "sem a etiqueta atendido" ao lado de uma `add_tag
  *        atendido`: as duas são julgadas sobre o estado do gatilho, como na main.
@@ -388,8 +389,10 @@ function rows(query: string): Array<Record<string, unknown>> {
 }
 
 const T0 = "2026-07-17T13:00:00Z"; // 10h em São Paulo, janela aberta; compromisso às 12h–13h locais
-/** Os instantes de volta que o próprio motor devolve em `retry_at` (medidos na main 0781f19b5). */
-const VOLTAS = ["2026-07-17T15:00:00Z", "2026-07-17T16:00:00Z", "2026-07-17T16:01:00Z", "2026-07-18T16:00:00Z"];
+const PRIMEIRA_VOLTA = "2026-07-17T14:00:00.000Z";
+// Rechecagem em uma hora (#5078), início, fim e primeira volta com presença pendente.
+const VOLTAS = [PRIMEIRA_VOLTA, "2026-07-17T15:00:00.000Z", "2026-07-17T16:00:00.000Z", "2026-07-17T16:01:00.000Z"];
+const FIM_DA_PROTECAO = "2026-07-18T16:00:00Z";
 
 beforeAll(async () => {
   seedGov();
@@ -438,6 +441,15 @@ function semearCena(n: string, telefone: string): { contato: string; sessao: str
   return { contato, sessao, compromisso };
 }
 
+/** O caminho de produção da tela, com auth.uid() do membro humano. */
+function alterarStatusDoCompromisso(compromisso: string, status: "completed" | "cancelled"): void {
+  sql(`begin;
+    select set_config('request.jwt.claims', '{"sub":"${GOV_ADMIN}","role":"authenticated"}', true);
+    select public.fn_appointment_change('${GOV_ORG}', '${compromisso}', (select revision from public.calendar_appointments where id = '${compromisso}'), '${JSON.stringify({ status })}'::jsonb);
+    commit;`);
+  expect(rows(`select status from public.calendar_appointments where id = '${compromisso}'`)[0]?.status).toBe(status);
+}
+
 function regra(id: string, nome: string, sessao: string, escolha: string | null): void {
   const cfg: Record<string, unknown> = { channel_session_id: sessao, template: `${nome} {{contact.name}}` };
   if (escolha) cfg.quando_ha_compromisso = escolha;
@@ -466,13 +478,20 @@ function runs(regraId: string, eventoId: string): Run[] {
  */
 const execucoes = (r: Run[]) => r.filter((x) => x.actions_result[0]?.detail?.reason !== "fora_da_janela_de_envio");
 
-async function voltarNasHoras(ev: string): Promise<string> {
-  let ultimo = "";
+async function voltarNasHoras(ev: string, contato: string, primeiraPassagem: HandlerResult): Promise<void> {
+  let resultado = primeiraPassagem;
   for (const quando of VOLTAS) {
+    expect(resultado).toMatchObject({ status: "retry", retry_at: quando });
+    expect(mensagens(contato), `nada sai antes da rechecagem de ${quando}`).toEqual([]);
     vi.setSystemTime(new Date(quando));
-    ultimo = (await runAutomationForEvent(admin, evento(ev))).status;
+    resultado = await runAutomationForEvent(admin, evento(ev));
   }
-  return ultimo;
+  expect(resultado.status).toBe("retry");
+  expect(mensagens(contato), "nada sai enquanto a presença está pendente").toEqual([]);
+
+  // Depois da primeira volta com presença pendente, pule as repetições a cada minuto.
+  vi.setSystemTime(new Date(FIM_DA_PROTECAO));
+  expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("ok");
 }
 
 /** A `nao_enviar` pulou UMA vez, na primeira passagem, com o motivo da agenda — e nunca mais rodou. */
@@ -494,10 +513,7 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     regra(RA, "ADIAR", sessao, null);
     const ev = emitirTag(contato);
 
-    const r1 = await runAutomationForEvent(admin, evento(ev));
-    expect(r1.status, "a regra adiar ainda segura o evento").toBe("retry");
-
-    expect(await voltarNasHoras(ev)).toBe("ok");
+    await voltarNasHoras(ev, contato, await runAutomationForEvent(admin, evento(ev)));
     expect(mensagens(contato).filter((b) => b.startsWith("NAO_ENVIAR")), "a regra nao_enviar ENVIOU").toEqual([]);
     expect(mensagens(contato).filter((b) => b.startsWith("ADIAR")), "a regra adiar envia, e uma vez só").toEqual(["ADIAR Bia"]);
     esperarPuloUnico(RN, ev);
@@ -516,12 +532,7 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
 
     const r1 = await runAutomationForEvent(admin, evento(ev));
     expect(r1.status).toBe("retry");
-    // O caminho de produção da tela: fn_appointment_change como membro humano (auth.uid()).
-    sql(`begin;
-      select set_config('request.jwt.claims', '{"sub":"${GOV_ADMIN}","role":"authenticated"}', true);
-      select public.fn_appointment_change('${GOV_ORG}', '${compromisso}', (select revision from public.calendar_appointments where id = '${compromisso}'), '{"status":"completed"}'::jsonb);
-      commit;`);
-    expect(rows(`select status from public.calendar_appointments where id = '${compromisso}'`)[0]?.status).toBe("completed");
+    alterarStatusDoCompromisso(compromisso, "completed");
 
     vi.setSystemTime(new Date("2026-07-17T16:30:00Z"));
     expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("ok");
@@ -540,8 +551,7 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     regra(RN, "NAO_ENVIAR", sessao, "nao_enviar");
     const ev = emitirTag(contato);
 
-    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("retry");
-    expect(await voltarNasHoras(ev)).toBe("ok");
+    await voltarNasHoras(ev, contato, await runAutomationForEvent(admin, evento(ev)));
     expect(mensagens(contato).filter((b) => b.startsWith("NAO_ENVIAR")), "a regra nao_enviar ENVIOU").toEqual([]);
     expect(mensagens(contato).filter((b) => b.startsWith("ADIAR"))).toEqual(["ADIAR Bia"]);
     esperarPuloUnico(RN, ev);
@@ -568,12 +578,28 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     regra(RA, "ADIAR", sessao, null);
     const ev = emitirTag(contato);
 
-    const r1 = await runAutomationForEvent(admin, evento(ev));
-    expect(r1.status).toBe("retry");
-    expect(r1.retry_at).toBe(new Date(VOLTAS[0]!).toISOString());
-    expect(mensagens(contato), "nada sai enquanto o compromisso protege").toEqual([]);
+    await voltarNasHoras(ev, contato, await runAutomationForEvent(admin, evento(ev)));
+    expect(mensagens(contato)).toEqual(["ADIAR Bia"]);
+    expect(execucoes(runs(RA, ev))).toHaveLength(1);
+  });
 
-    expect(await voltarNasHoras(ev)).toBe("ok");
+  it("D2. cancelar o compromisso libera um único envio na primeira rechecagem", async () => {
+    vi.setSystemTime(new Date(T0));
+    const { contato, sessao, compromisso } = semearCena("d2", "+5511977770008");
+    const RA = "55555555-1111-4000-8000-0000000002d2";
+    await ensureConversation(admin, GOV_ORG, contato, sessao);
+    regra(RA, "ADIAR", sessao, null);
+    const ev = emitirTag(contato);
+
+    const r1 = await runAutomationForEvent(admin, evento(ev));
+    expect(r1).toMatchObject({ status: "retry", retry_at: PRIMEIRA_VOLTA });
+    expect(mensagens(contato)).toEqual([]);
+
+    vi.setSystemTime(new Date("2026-07-17T13:30:00Z"));
+    alterarStatusDoCompromisso(compromisso, "cancelled");
+
+    vi.setSystemTime(new Date(PRIMEIRA_VOLTA));
+    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("ok");
     expect(mensagens(contato)).toEqual(["ADIAR Bia"]);
     expect(execucoes(runs(RA, ev))).toHaveLength(1);
   });
@@ -588,8 +614,7 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     regra(RA, "ADIAR", sessao, null);
     const ev = emitirTag(contato);
 
-    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("retry");
-    expect(await voltarNasHoras(ev)).toBe("ok");
+    await voltarNasHoras(ev, contato, await runAutomationForEvent(admin, evento(ev)));
     expect(mensagens(contato).filter((b) => b.startsWith("ENVIAR")), "a regra enviar saiu em dobro").toEqual(["ENVIAR Bia"]);
     expect(mensagens(contato).filter((b) => b.startsWith("ADIAR"))).toEqual(["ADIAR Bia"]);
     expect(runs(RE, ev), "um run só da regra enviar, o da execução").toHaveLength(1);
@@ -613,9 +638,9 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
         ${sqlString(JSON.stringify([{ type: "add_tag", config: { tags: ["atendido"], destino: "contato" } }]))}::jsonb, true);`);
     const ev = emitirTag(contato);
 
-    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("retry");
+    const r1 = await runAutomationForEvent(admin, evento(ev));
     expect(rows(`select tags from public.contacts where id = '${contato}'`)[0]?.tags, "nada roda enquanto a vizinha espera").toEqual(["vip"]);
-    expect(await voltarNasHoras(ev)).toBe("ok");
+    await voltarNasHoras(ev, contato, r1);
     expect(mensagens(contato), "a regra adiada deixou de enviar").toEqual(["ADIAR Bia"]);
     expect(execucoes(runs(RT, ev)), "a add_tag rodou uma vez").toHaveLength(1);
   });
