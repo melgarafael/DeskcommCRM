@@ -88,6 +88,29 @@ it("abre uma autorização específica de relatórios e preserva o fallback das 
   expect(screen.queryByRole("button", { name: "Remover acesso de leitura" })).toBeNull();
 });
 
+it("o Continuar no Google navega pela URL, porque o envio nativo do formulário é barrado pela CSP no redirect", () => {
+  const assign = vi.fn();
+  const original = window.location;
+  Object.defineProperty(window, "location", { configurable: true, value: { ...original, assign } });
+  try {
+    render(<MidiaGoogleAds {...props} podeGerenciar />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconectar para leitura" }));
+    const form = screen.getByRole("form", { name: "Autorização de relatórios" }) as HTMLFormElement;
+    const evento = new Event("submit", { bubbles: true, cancelable: true });
+    form.dispatchEvent(evento);
+    // Sem o preventDefault, o navegador enviaria o formulário e a CSP cancelaria o redirect.
+    expect(evento.defaultPrevented).toBe(true);
+    expect(assign).toHaveBeenCalledTimes(1);
+    const destino = new URL(String(assign.mock.calls[0]?.[0]), "http://localhost");
+    expect(destino.pathname).toBe("/api/v1/plataformas-de-anuncio/google/connect");
+    expect(Object.fromEntries(destino.searchParams)).toEqual({
+      purpose: "reporting", customer_id: conta, login_customer_id: "9999999999", label: "Conta A",
+    });
+  } finally {
+    Object.defineProperty(window, "location", { configurable: true, value: original });
+  }
+});
+
 it("pede a primeira conta sem consultar o Google enquanto o cadastro está vazio", () => {
   const ler = vi.fn(carregar);
   render(<MidiaGoogleAds {...props} contas={[]} carregar={ler} podeGerenciar />);

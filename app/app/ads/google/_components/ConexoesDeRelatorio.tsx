@@ -9,6 +9,7 @@ export type RemoverConta = (id: string) => Promise<{ ok: true } | { ok: false; d
 const campo = "min-h-9 rounded-md border border-border-strong bg-surface px-3 text-sm text-text";
 const botao = "min-h-9 cursor-pointer rounded-md border border-border-strong bg-surface px-3 text-sm font-semibold text-accent hover:bg-accent-soft disabled:opacity-60";
 const padraoId = "[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4}";
+const ROTA_DE_CONEXAO = "/api/v1/plataformas-de-anuncio/google/connect";
 
 export function ConexoesDeRelatorio({ conta, remover }: { conta?: ContaDeRelatorio; remover: RemoverConta }) {
   const t = useT();
@@ -44,9 +45,22 @@ export function ConexoesDeRelatorio({ conta, remover }: { conta?: ContaDeRelator
       )}
       {(modo === "nova" || modo === "reconectar") && (
         <form
-          method="get" action="/api/v1/plataformas-de-anuncio/google/connect"
+          method="get" action={ROTA_DE_CONEXAO}
           className="w-full rounded-lg border border-border bg-surface p-4"
           aria-label={t("Autorização de relatórios")}
+          onSubmit={(evento) => {
+            // A CSP global tem `form-action 'self'`, e o Chromium a aplica também ao
+            // redirect: o envio nativo do formulário para a rota, que responde 307 para
+            // accounts.google.com, era cancelado em silêncio (medido na prova do #5041).
+            // Navegar pela URL não passa por form-action. A validação nativa (required,
+            // pattern) já rodou: o submit só dispara com o formulário válido.
+            evento.preventDefault();
+            const dados = new URLSearchParams();
+            new FormData(evento.currentTarget).forEach((valor, chave) => {
+              if (typeof valor === "string") dados.append(chave, valor);
+            });
+            window.location.assign(`${ROTA_DE_CONEXAO}?${dados.toString()}`);
+          }}
         >
           <input type="hidden" name="purpose" value="reporting" />
           <p className="mb-3 text-sm text-muted-foreground">{t("Use um login Google com acesso a esta conta de anúncios. Esta conexão serve apenas para consultar relatórios.")}</p>
