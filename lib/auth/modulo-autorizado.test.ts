@@ -9,7 +9,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { autorizarModulo, modeloDoCaminho } from "./modulo-autorizado";
+import { HOST_API_VERSION } from "@/lib/extensions/manifest";
+
+import { autorizarModulo, MENSAGEM_DA_RECUSA_DO_MODULO, modeloDoCaminho } from "./modulo-autorizado";
 
 const ORG = "bbbbbbbb-2222-4222-8222-222222222222";
 const TOKEN = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -38,6 +40,7 @@ function banco(): Banco {
       extension_artifacts: {
         manifest: {
           profile: "connected",
+          host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
           permissions: ["area.contatos.leitura", "area.contatos.escrita", "area.negocios.leitura"],
         },
       },
@@ -136,6 +139,59 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
     expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({
       ok: false,
       codigo: "module_area_not_granted",
+    });
+  });
+
+  describe("faixa host_api (F6)", () => {
+    const manifesto = (b: Banco) =>
+      (b.instalacao!.extension_artifacts as { manifest: Record<string, unknown> }).manifest;
+
+    it("dentro da faixa passa, inclusive com a faixa mais larga que a versão do CRM", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION + 3 };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
+    });
+
+    it("CRM acima da faixa do pacote: module_incompatible, com o token ainda vivo", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION - 1 };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({
+        ok: false,
+        codigo: "module_incompatible",
+      });
+    });
+
+    it("pacote que exige CRM mais novo: module_incompatible", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: HOST_API_VERSION + 1, max: HOST_API_VERSION + 1 };
+      expect(await decide(b, "POST", "/api/v1/contacts")).toEqual({
+        ok: false,
+        codigo: "module_incompatible",
+      });
+    });
+
+    it("voltar à faixa volta a valer na chamada seguinte (sem cache)", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION - 1 };
+      expect((await decide(b, "GET", "/api/v1/contacts")).ok).toBe(false);
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
+    });
+
+    it.each([
+      ["sem host_api", (m: Record<string, unknown>) => delete m.host_api],
+      ["faixa não numérica", (m: Record<string, unknown>) => (m.host_api = { min: "2", max: "2" })],
+      ["faixa nula", (m: Record<string, unknown>) => (m.host_api = null)],
+      ["permissões que não são lista", (m: Record<string, unknown>) => (m.permissions = "area.contatos.leitura")],
+    ])("manifesto ilegível (%s): recusa, lado seguro", async (_nome, quebra) => {
+      const b = banco();
+      quebra(manifesto(b));
+      const r = await decide(b, "GET", "/api/v1/contacts");
+      expect(r.ok).toBe(false);
+    });
+
+    it("a mensagem do código novo existe e fala em português", () => {
+      expect(MENSAGEM_DA_RECUSA_DO_MODULO.module_incompatible).toMatch(/não é compatível/);
     });
   });
 

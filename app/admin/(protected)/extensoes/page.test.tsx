@@ -31,12 +31,19 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
+import { HOST_API_VERSION } from "@/lib/extensions/manifest";
+
 import Page from "./page";
 
 const AGORA = Date.parse("2026-11-05T12:00:00.000Z");
 const horasAtras = (h: number) => new Date(AGORA - h * 3_600_000).toISOString();
 
-function instalacao(id: string, name: string, profile: "connected" | "declarative") {
+function instalacao(
+  id: string,
+  name: string,
+  profile: "connected" | "declarative",
+  hostApi: { min: number; max: number } = { min: HOST_API_VERSION, max: HOST_API_VERSION },
+) {
   return {
     id,
     publisher: "acme",
@@ -44,7 +51,9 @@ function instalacao(id: string, name: string, profile: "connected" | "declarativ
     version: "1.0.0",
     installed_at: horasAtras(500),
     disabled_at: null,
-    extension_artifacts: { manifest: { profile } },
+    extension_artifacts: {
+      manifest: { profile, host_api: hostApi, permissions: ["area.contatos.leitura"] },
+    },
   };
 }
 
@@ -137,6 +146,36 @@ describe("/admin/extensoes: atraso do módulo conectado", () => {
     expect(b).toContain("em dia");
     expect(b).not.toContain("Atrasado");
     expect(screen.queryByTestId("selo-atrasado-acme-servico-1")).toBeNull();
+  });
+
+  it("módulo dentro da faixa host_api: nenhuma nota de suspensão", async () => {
+    mocks.instalacoes = [instalacao("i1", "servico", "connected")];
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await abrir();
+    expect(screen.queryByTestId("extensao-suspensa-acme-servico")).toBeNull();
+  });
+
+  it("módulo fora da faixa host_api: mostra o motivo em português simples", async () => {
+    mocks.instalacoes = [
+      instalacao("i1", "servico", "connected", { min: 1, max: HOST_API_VERSION - 1 }),
+    ];
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await abrir();
+    expect(screen.getByTestId("extensao-suspensa-acme-servico").textContent).toContain(
+      "foi feito para outra versão do CRM",
+    );
+  });
+
+  it("módulo sem faixa legível: suspenso por segurança; declarativo fora da faixa não é tocado", async () => {
+    const quebrada = instalacao("i1", "servico", "connected");
+    (quebrada.extension_artifacts.manifest as Record<string, unknown>).host_api = null;
+    mocks.instalacoes = [quebrada, instalacao("i2", "guia", "declarative", { min: 9, max: 9 })];
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await abrir();
+    expect(screen.getByTestId("extensao-suspensa-acme-servico").textContent).toContain(
+      "não foi possível conferir",
+    );
+    expect(screen.queryByTestId("extensao-suspensa-acme-guia")).toBeNull();
   });
 
   it("falha ao ler o atraso: a tela segue sem inventar número", async () => {
