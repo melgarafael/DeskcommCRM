@@ -56,6 +56,11 @@ function conversationRow(botSilencedUntil: string | null): Row {
     is_group: false,
     group_chat_id: null,
     bot_silenced_until: botSilencedUntil,
+    // Quem falou por último foi o CLIENTE (#4797): é a precondição do aviso de
+    // passagem, e é o caso que estes testes encenam — o cliente escreveu, o
+    // atendente/IA respondeu por cima, e o aviso ainda faz sentido.
+    last_inbound_at: new Date().toISOString(),
+    last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
     contacts: { phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
     channel_sessions: { provider: 'waha', waha_session_name: 'default', status: 'WORKING' },
   };

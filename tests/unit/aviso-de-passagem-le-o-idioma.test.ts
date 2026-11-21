@@ -87,13 +87,35 @@ function adminComIdioma(locale: string | null | Error) {
     from: (tabela: string) => {
       if (tabela === "messages") {
         const falas = { data: [{ metadata: null, created_at: new Date().toISOString() }], error: null };
+        /** A leitura da resposta de GENTE (guarda 3, `sent_via in (...)`) — aqui, ninguém da equipe falou. */
+        let filtroDeGente = false;
         const cadeia = {
           select: () => cadeia,
           eq: () => cadeia,
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
+            return cadeia;
+          },
           order: () => cadeia,
-          limit: async () => falas,
+          limit: async () => (filtroDeGente ? { data: [], error: null } : falas),
         };
         return cadeia;
+      }
+      if (tabela === "conversations") {
+        // Guarda 3 (#4797): cliente esperando = entrada mais nova que a saída.
+        const cadeiaConversa = {
+          select: () => cadeiaConversa,
+          eq: () => cadeiaConversa,
+          maybeSingle: async () => ({
+            data: {
+              last_inbound_at: new Date().toISOString(),
+              last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+              channel_session_id: null,
+            },
+            error: null,
+          }),
+        };
+        return cadeiaConversa;
       }
       if (tabela !== "organizations") throw new Error(`tabela inesperada: ${tabela}`);
       if (locale instanceof Error) throw locale;

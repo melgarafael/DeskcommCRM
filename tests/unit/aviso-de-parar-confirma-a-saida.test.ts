@@ -68,15 +68,26 @@ function banco() {
             if (coluna === "direction") direcao = String(valor);
             return cadeia;
           },
+          /** A resposta de gente (guarda 3): filtro por `sent_via`. */
+          in: (coluna: string, valores: unknown) => {
+            filtros.push([coluna, valores]);
+            return cadeia;
+          },
           order: () => cadeia,
           limit: () =>
             Object.assign(
               // leitura das falas da IA: aguardada direto
               Promise.resolve({
                 data:
-                  direcao === "outbound"
-                    ? [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }]
-                    : null,
+                  direcao !== "outbound"
+                    ? null
+                    : // A leitura que filtra por `sent_via` é a da resposta de
+                      // uma PESSOA: nestes casos ninguém da equipe falou, e o
+                      // aviso tem a quem responder. A das FALAS DA IA (também
+                      // filtra `sent_via`, mas por `ai`) recebe a fala dela.
+                      filtros.some(([coluna, valores]) => coluna === "sent_via" && !(valores as unknown[]).includes("ai"))
+                      ? []
+                      : [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }],
                 error: null,
               }),
               {
@@ -93,6 +104,24 @@ function banco() {
             ),
         };
         return cadeia;
+      }
+      if (tabela === "conversations") {
+        // Guarda 3 (#4797): cliente esperando = entrada mais nova que a saída.
+        // Sem este ramo a leitura lançaria, o emissor calaria (fail-closed) e os
+        // casos abaixo — que medem a FRASE — reprovariam pelo motivo errado.
+        const cadeiaConversa: Record<string, unknown> = {
+          select: () => cadeiaConversa,
+          eq: () => cadeiaConversa,
+          maybeSingle: async () => ({
+            data: {
+              last_inbound_at: new Date().toISOString(),
+              last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+              channel_session_id: null,
+            },
+            error: null,
+          }),
+        };
+        return cadeiaConversa;
       }
       if (tabela === "organizations") {
         const cadeia: Record<string, unknown> = {
