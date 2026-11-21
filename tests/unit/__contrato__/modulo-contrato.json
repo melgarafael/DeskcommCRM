@@ -182,6 +182,7 @@
       "GET /api/v1/reports/activities",
       "GET /api/v1/reports/comercial",
       "GET /api/v1/reports/financeiro",
+      "GET /api/v1/reports/painel-de-vendas",
       "GET /api/v1/reports/tags",
       "GET /api/v1/reports/vendas/export",
       "PATCH /api/v1/metrics/atrito"
@@ -560,12 +561,17 @@
         {
           "nome": "agentCreateSchema",
           "origem": "@/lib/ai/guardrails-schema",
-          "hash": "c2e5ac95cf75516a"
+          "hash": "2d60e3aa13d0828b"
         },
         {
           "nome": "agentMcpCreateSchema",
           "origem": "@/lib/ai/agents/validation",
           "hash": "0973df2a57fee0b8"
+        },
+        {
+          "nome": "agenteDeVozCreateSchema",
+          "origem": "@/lib/ai/guardrails-schema",
+          "hash": "3eaa867f7e1a3cdc"
         }
       ],
       "resposta": []
@@ -1661,6 +1667,16 @@
           "nome": "periodoSchema",
           "origem": "local",
           "hash": "b5415df7c9d81027"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/painel-de-vendas": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "7ab3a0cdc9f09a29"
         }
       ],
       "resposta": []

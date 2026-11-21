@@ -8,6 +8,139 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.123.0] — 2026-11-21
+
+### ⚠️ Requer atenção
+
+- **SENTRY_DSN vazio deixa de ligar o Sentry do projeto; o aceite passa a ser o token comunidade** Quem já havia aceitado a telemetria tem `SENTRY_DSN=""` no `.env`, e vazio agora desliga. Rodar o `update.sh` (uma vez, como de costume) converte a chave para `SENTRY_DSN=comunidade` e o envio continua; quem não roda nada simplesmente para de enviar. Não descomente a linha da telemetria no `.env.hostgator.example`: chave vazia deixou de ser consentimento.
+- **Na véspera e no dia do feriado nacional, o agente volta a marcar nos horários livres da Agenda** Desde a v1.100.0, o agente recusava marcar compromisso na véspera e no dia do feriado
+  nacional. A partir desta versão, com a opção "Não atender em feriado nacional" desligada
+  (o padrão), ele passa a oferecer os horários que aparecem livres na Agenda nesse dia. Se
+  a sua empresa fecha em feriado nacional, antes de atualizar ligue essa opção no agente,
+  junto de "Só atender em horário de funcionamento", ou bloqueie o dia na Agenda.
+
+### Adicionado
+
+- **Mude o tempo de um compromisso puxando a borda do card na agenda** Na visão de dia e de semana, com mouse, trackpad ou caneta, puxe a borda de
+  baixo de um compromisso para mudar quanto tempo ele dura. O fim anda de 15 em
+  15 minutos, alinhado ao relógio, e o fim original continua disponível para
+  voltar atrás. Antes de gravar, a agenda pergunta e mostra o novo intervalo; o
+  início não muda e não há aviso de remarcação. Pelo teclado, `Alt+Shift+↑/↓`
+  faz o mesmo. Serviços, compromissos já realizados ou com falta e fins que já
+  passaram não mudam pela borda.
+
+  Contribuição de @yunshu0909, a partir da issue #4450.
+
+- **A importação de empresas e pessoas confere o arquivo antes de gravar e não duplica o que já existe** Antes, reimportar a mesma planilha criava pessoas repetidas e o lote dizia "sucesso". Agora, em **Importações**, o botão **Conferir arquivo** mostra quantas linhas são novas, quantas já existem, quantas estão em conflito ou repetidas, quantas não têm telefone e quantas são inválidas, **sem gravar nada**. Há só duas saídas: **importar só as novas** ou **baixar o CSV do que ficou de fora**, que diz o motivo de cada linha e de quem é o que já existe. "Já existe" é celular ou e-mail iguais (o nome não conta, e e-mail de caixa compartilhada como `contato@` ou `vendas@` vale só pelo celular); essa linha não é reaproveitada nem sobrescrita. Se o CNPJ da linha já é de uma empresa da base, a linha entra **anexada** a ela: a empresa é reaproveitada e a pessoa e o contato nascem ligados a ela, sem empresa duplicada (o nome da empresa nunca é usado para conferir). Dentro da planilha, linha idêntica é descartada e celular ou e-mail iguais com dados diferentes viram conflito. **Linha de pessoa ou contato sem telefone não entra**, com ou sem a empresa na base: a linha volta no CSV para a pessoa completar e reimportar. **A linha só de empresa** (sem pessoa e sem telefone, com nome ou CNPJ) **continua entrando**, como antes, porque listas de empresas costumam chegar sem número; se o CNPJ já está na base ela aparece como "já existe". **Mudança de comportamento da API:** `POST /api/v1/imports` sem `previa` passa a pular linhas que já existem, repetidas e de pessoa sem telefone (antes criava duplicatas). A API aceita `previa=true` no `POST /api/v1/imports`, e sem ele o servidor confere de novo e grava só as novas. Nenhuma ação é necessária na VPS.
+  Contribuição de @xofrd (#4899).
+
+- **Marque quem não deve receber aviso de caso no WhatsApp** Em Casos › Avisos, com "Quem está com o atendimento", cada pessoa da equipe
+  ganha o interruptor "Não enviar aviso de caso". Quando a vez do aviso chega a
+  alguém marcado, o aviso do caso não sai para ninguém, nem para o número da
+  empresa; o caso continua no painel Casos. Quem só não tem WhatsApp continua
+  sendo pulado para o próximo da ordem, como antes. O aviso de proposta não muda.
+
+  Contribuição de @yunshu0909, a partir da issue #4989.
+
+- **Atualizar o CRM agora suspende, com aviso claro, um módulo conectado que ficou para trás** Quando o CRM sobe de versão e um módulo conectado foi feito para uma faixa que já não inclui essa versão, o módulo deixa de aparecer no menu e o acesso dele é recusado com um aviso próprio, em vez de continuar valendo por engano. Em Extensões da instalação você vê, na linha do módulo, o motivo em português simples. O módulo continua instalado e volta a funcionar quando você instala uma versão compatível dele. Os avisos de contato anonimizado continuam chegando ao módulo mesmo suspenso, para que a LGPD não fique presa a uma atualização. Também ficou registrada uma lista do que um módulo pode alcançar, por área, e uma checagem automática que impede mudar essa lista sem avisar os módulos. Se a sua instalação não tem módulo conectado, nada muda e você não precisa fazer nada ao atualizar.
+  Contribuição de @paulolimajr77 (#5094).
+
+- **Um módulo conectado agora fica sabendo de contatos anonimizados e de módulos desligados** Quando um contato é anonimizado, quando você desliga um módulo conectado ou quando uma organização é suspensa, o CRM guarda um aviso curto, só com identificadores, para o módulo buscar. O módulo faz a busca por conta própria, com a mesma assinatura que já usa para pedir o acesso, e lê apenas os avisos da organização dele. Um módulo desligado ainda consegue ler por 30 dias, para apagar os dados de quem pediu para ser esquecido. Em Extensões da instalação você vê até onde cada módulo leu, quando foi a última leitura e quantos avisos faltam, com um selo de atrasado se passar de 24 horas. Se a sua instalação não tem módulo conectado, nada muda e você não precisa fazer nada ao atualizar.
+  Contribuição de @paulolimajr77 (#5093).
+
+- **A tela de um módulo conectado agora abre dentro do seu CRM** Quando a sua organização ativa um módulo conectado, ele ganha um lugar no CRM: aparece num grupo chamado Módulos no menu, no atalho Ctrl+K e num botão no topo que abre a tela dele ao lado, sem sair da página em que você está. O módulo continua sendo um serviço separado, em outro endereço: ele só mostra a tela dele, e conversa com o CRM por poucas mensagens combinadas, sem acesso ao seu login. Se o serviço do módulo não responder, o CRM avisa em português simples e o resto continua funcionando. Se a sua instalação não tem módulo conectado, nada muda e você não precisa fazer nada ao atualizar.
+  Contribuição de @paulolimajr77 (#5089).
+
+### Alterado
+
+- **SENTRY_DSN vazio deixa de ligar o Sentry do projeto; o aceite passa a ser o token comunidade** `SENTRY_DSN` vazio (ou ausente) passou a significar telemetria DESLIGADA. Quem aceita o Sentry do projeto escreve `SENTRY_DSN=comunidade`, e é esse token que o `install.sh` grava quando a pessoa responde "sim" — a chave do ingest não vai para o `.env` de quem instala. O instalador da VM local passou a perguntar em vez de gravar vazio, e o `update.sh` converte sozinho o `SENTRY_DSN=""` de quem já havia aceitado, sem edição manual do arquivo.
+  Contribuição de @webtecnica (#4948).
+
+### Corrigido
+
+- **O manual do banco externo deixa de exigir a ferramenta de descoberta para listar receitas** Com uma única conexão ativa, a ferramenta de receitas escolhe a conexão sozinha — a capacidade "Ver as tabelas do banco conectado" deixou de ser obrigatória para listar receitas. O manual do leigo ainda dizia que o código da conexão vinha sempre da ferramenta de descoberta e que ela era necessária mesmo para a receita; agora ele diz o que vale: uma conexão ativa resolve sozinha, e com duas ou mais o agente precisa escolher pelo código.
+
+  O mesmo manual passa a registrar o caminho do negócio aberto com funil à mão: quando o funil é o destino do interesse de uma receita ativa, o negócio só nasce com a referência de um item conferido; sem ela, o agente é instruído a buscar a referência ou a passar a conversa para a equipe (#4763).
+  Contribuição de @webtecnica (#4979).
+
+- **A publicação recusa imagem cujo servidor e estáticos venham de builds diferentes** A imagem `1.118.0` do serviço principal foi publicada com dois builds dentro dela: o servidor Next dizia que o build era `L0Ae8OxIf-v2KzwJoCU0E` e os arquivos estáticos eram de `K2qYwFMofIRXoOdBpIUbx`. O Next embute o identificador do build no caminho de cada chunk que o HTML carrega, então as telas pediam arquivos que não existiam naquela imagem. O login, a caixa de entrada e os Funis quebravam com erro de carregamento de chunk, com o contêiner de pé e o `/health` respondendo normalmente — nenhum gate do pipeline olhava para isso.
+
+  A causa foi medida no log da publicação: o cache de build do GitHub veio incompleto (`blob … not found`), o `pnpm build` foi reexecutado do zero e as duas cópias do artefato — o servidor e os estáticos — foram servidas de momentos diferentes do cache. Uma de cada build, a imagem com as duas.
+
+  Agora os estáticos viajam dentro do mesmo diretório que o servidor, copiado uma vez só, e a esteira confere os dois identificadores dentro da imagem antes de deixar a publicação seguir: se não baterem, a esteira reprova, a versão pública e o canal `stable` não são criados e a imagem não chega a quem instala. A verificação também roda no PR, quando a imagem é construída sem ser publicada.
+
+  Nada muda para quem já tem o produto instalado; a atualização não exige passo nenhum.
+  Contribuição de @webtecnica (#4973).
+
+- **Na véspera e no dia do feriado nacional, o agente volta a marcar nos horários livres da Agenda** O aviso de feriado nacional que o agente recebe dizia "nem marque compromisso lá" na
+  véspera, mesmo com a opção "Não atender em feriado nacional" desligada e com horários
+  livres publicados na Agenda para o dia. Com a opção desligada (o padrão), o aviso
+  continua informando o feriado, mas manda seguir os horários livres da Agenda: horário
+  que aparece livre pode ser oferecido. Com a opção ligada, nada muda.
+
+  Contribuição de @yunshu0909, a partir da issue #5039.
+
+- **Crie agentes de voz pela aba Telefone** Em Conexões › Telefone, crie um agente de voz e abra o editor para configurá-lo e ativá-lo. A mesma criação está disponível pela API de agentes. Contribuição de @yunshu0909, a partir da issue #5066.
+
+- **O seletor do agente esconde os modelos Gemini aposentados** Ao escolher um modelo do Google para o agente, você vê apenas os modelos que continuam disponíveis no catálogo. Se o agente já usava um dos modelos aposentados, o nome ainda aparece com um aviso para você escolher outro. Contribuição de @yunshu0909, a partir da issue #5088.
+
+- **IA › Provedores esconde os modelos Gemini aposentados** Ao escolher o modelo padrão da organização ou o modelo de um ponto de uso com o Google, você vê apenas os modelos que continuam disponíveis. Se um deles já usava um modelo aposentado, o nome ainda aparece com um aviso para você escolher outro. Contribuição de @mateuscmtropical, a partir da issue #5103.
+
+- **A verificação de saúde do app tem prazo durante a instalação e a atualização** Cada tentativa de conferir se o app voltou ao ar usa o mesmo prazo de 30 segundos do diagnóstico manual. Se uma chamada ao Docker travar, o kit pode seguir para a próxima tentativa e informar a falha quando elas se esgotarem. Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#4985).
+
+- **O cartão do módulo conectado deixa de mostrar as opções de cartão da extensão declarativa** Em Extensões, o cartão de um módulo conectado mostrava "Densidade dos cards" e "Mostrar descrição nos cards", que só servem para a extensão declarativa desenhar os próprios cartões e não faziam efeito nenhum ali. As duas opções saem do cartão do módulo conectado. A ativação nesta organização continua no cartão, porque é ela que libera a escolha das áreas e o módulo no menu. O cartão da extensão declarativa segue igual (#5079).
+
+  Crédito: @Yshuro.
+  Contribuição de @Yshuro (#5080).
+
+- **Legenda do anexo é preservada ao tentar enviar novamente** Se o áudio já tiver saído e o envio da imagem falhar, a legenda digitada fica na prévia para a nova tentativa.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5022).
+
+- **A prévia dos anexos fica aberta durante o envio** O botão Fechar, o Escape e o clique fora da prévia só voltam a fechar a janela depois que o envio termina.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5023).
+
+- **Conclusão pelo MCP já cria a próxima tarefa da série** Ao concluir uma tarefa recorrente por uma integração MCP, a próxima ocorrência
+  é criada no mesmo momento, seguindo o prazo da série.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5058).
+
+- **Um módulo conectado sem a área Contatos não recebe mais o contato dentro de outras respostas** Quando você autoriza um módulo conectado a ver, por exemplo, conversas ou negócios, mas não autoriza a área Contatos, ele passa a receber só o identificador do contato nessas respostas, e não mais o nome, o telefone, o e-mail e a foto. A busca por texto e por contato nessas áreas também deixa de funcionar para ele, para não revelar quem é cliente. Nada muda para quem não tem módulo conectado, nem para módulos que têm a área Contatos.
+
+  Crédito: @paulolimajr77.
+  Contribuição de @paulolimajr77 (#5098).
+
+- **Relatórios respeitam a data escolhida na virada do horário de verão** Os relatórios comercial e por etiqueta incluem as vendas e conversas do dia correto quando o relógio local pula a meia-noite. Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5002).
+
+- **Mensagens agendadas continuam saindo para empresas ativas** A fila reserva as vagas de cada lote para os envios das empresas ativas.
+  As mensagens das empresas suspensas aguardam a reativação.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5057).
+
+- **Transferência em lote mostra o negócio criado quando a operação fica incompleta** Quando o negócio é criado no funil de destino e a transferência falha antes de terminar, o resultado mostra um link para conferir o negócio antes de tentar novamente.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5026).
+
+- **Percentuais do relatório por etiqueta fecham em 100%** O relatório distribui os pontos de arredondamento proporcionalmente entre as etiquetas, evitando percentuais negativos. Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5004).
+
+- **Relatório por etiqueta continua a leitura quando o servidor devolve páginas menores** Quando o banco entrega menos conversas por página, o relatório lê as próximas páginas e avisa se atingir o limite de leitura. Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5003).
+
+- **Tarefas recorrentes continuam sendo geradas para empresas ativas** O agendador reserva as vagas de cada lote para as séries das empresas ativas.
+  Uma empresa suspensa volta a gerar tarefas quando é reativada.
+
+  Crédito: @samirhvbr.
+  Contribuição de @samirhvbr (#5056).
+
 ## [1.122.0] — 2026-11-21
 
 ### Adicionado
@@ -18526,7 +18659,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...HEAD
+[1.123.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...v1.123.0
 [1.122.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...v1.122.0
 [1.121.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.1...v1.121.0
 [1.120.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.0...v1.120.1
