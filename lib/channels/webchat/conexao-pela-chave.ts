@@ -44,7 +44,7 @@ export async function conexaoPeloId(admin: SupabaseClient, id: string): Promise<
 export function tokenDoBearer(headers: Headers): string | null {
   const bruto = headers.get("authorization") ?? "";
   const casou = /^Bearer\s+(\S+)$/i.exec(bruto.trim());
-  return casou ? casou[1] : null;
+  return casou?.[1] ?? null;
 }
 
 async function conexaoPor(

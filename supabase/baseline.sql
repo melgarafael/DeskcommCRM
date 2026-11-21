@@ -81927,6 +81927,156 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
+-- ---- canal de chat no site (migration 9443, Spec 36 F1) ----
+-- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
+-- `channel_sessions_webchat_allowed_origins_check` e `conversations_channel_check`)
+-- e as colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
+-- bloco acrescenta o índice, os comentários e a nova versão da trava do plano (que
+-- passa a ignorar 'webchat' como ignora 'wacalls'). A função das origens já está
+-- definida lá em cima, antes do CHECK que a usa.
+create unique index if not exists channel_sessions_webchat_public_key_ativa_unique
+  on public.channel_sessions (webchat_public_key)
+  where archived_at is null;
+
+-- Uma conexão de chat ATIVA por organização. Sem isto, dois POST simultâneos passam pela
+-- checagem da rota e criam duas caixas de entrada para a mesma empresa.
+create unique index if not exists channel_sessions_webchat_org_ativa_unique
+  on public.channel_sessions (organization_id)
+  where provider = 'webchat' and archived_at is null;
+
+do $canal_do_chat$
+begin
+  if to_regclass('public.channel_sessions') is not null then
+    comment on column public.channel_sessions.webchat_public_key is
+      'Chave pública do widget do chat no site (wck_...). Identifica a conexão para o navegador do visitante; NÃO é segredo e não dá acesso ao CRM. Única entre conexões não arquivadas.';
+    comment on column public.channel_sessions.webchat_allowed_origins is
+      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. O localhost (loopback) passa no banco; a rota decide se vale.';
+  end if;
+end
+$canal_do_chat$;
+
+-- A trava do plano ignora o chat como ignora a voz (wacalls): o chat não é número
+-- de WhatsApp e não ocupa vaga. Mesmo corpo da definição anterior, com 'webchat'
+-- ao lado de 'wacalls' nos três pontos. É a ÚLTIMA definição do arquivo (rfind).
+create or replace function public.fn_trava_canais_do_plano()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer;
+  v_em_uso integer;
+begin
+  if new.archived_at is not null or new.provider in ('wacalls', 'webchat') then
+    return new;
+  end if;
+  -- Só no WAHA: nos outros provedores o número não identifica a conexão, e a
+  -- linha sem número segue sendo uma conexão da empresa.
+  if new.provider = 'waha' and new.phone_number is null and new.status in ('FAILED', 'STOPPED') then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    if old.archived_at is null
+       and old.provider not in ('wacalls', 'webchat')
+       and new.organization_id is not distinct from old.organization_id then
+      return new;
+    end if;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(new.organization_id, 'canais');
+  if v_limite is null then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text, 2281));
+
+  select count(*) into v_em_uso
+    from public.channel_sessions cs
+   where cs.organization_id = new.organization_id
+     and cs.archived_at is null
+     and cs.provider not in ('wacalls', 'webchat')
+     and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+     and cs.id <> new.id;
+
+  if v_em_uso >= v_limite then
+    raise exception 'limite_do_plano:canais:%', v_limite
+      using errcode = 'PT402',
+            detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
+
+notify pgrst, 'reload schema';
+
+-- O reviver (9036) conta a vaga com a MESMA régua do gatilho: voz e chat no site
+-- (webchat) não são número de WhatsApp. Última definição do arquivo (rfind).
+create or replace function public.fn_vaga_ao_reviver_canal(p_org uuid, p_canal uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_canal public.channel_sessions;
+  v_limite integer;
+  v_em_uso integer;
+begin
+  -- A MESMA trava de `fn_trava_canais_do_plano` e da reserva: contagem e
+  -- tomada da vaga nunca correm em paralelo com outra conexão da empresa.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 2281));
+
+  select * into v_canal
+    from public.channel_sessions
+   where organization_id = p_org and id = p_canal
+   for update;
+
+  -- Só interessa a linha que hoje NÃO ocupa vaga (WAHA morta e sem número, 0809) e
+  -- vai voltar a ocupar. Número pareado, conexão em curso, arquivada e voz
+  -- seguem como antes: reconectar um número que já é da empresa nunca é recusado.
+  if not found
+     or v_canal.archived_at is not null
+     or v_canal.provider <> 'waha'
+     or v_canal.phone_number is not null
+     or v_canal.status not in ('FAILED', 'STOPPED') then
+    return;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(p_org, 'canais');
+  if v_limite is not null then
+    select count(*) into v_em_uso
+      from public.channel_sessions cs
+     where cs.organization_id = p_org
+       and cs.archived_at is null
+       and cs.provider not in ('wacalls', 'webchat')
+       and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+       and cs.id <> p_canal;
+
+    if v_em_uso >= v_limite then
+      raise exception 'limite_do_plano:canais:%', v_limite
+        using errcode = 'PT402',
+              detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+    end if;
+  end if;
+
+  -- A vaga é TOMADA aqui, ainda dentro da trava: a linha passa a ser conexão
+  -- em curso, que ocupa. Conferir e tomar são um passo só.
+  update public.channel_sessions
+     set status = 'STARTING',
+         status_reason = 'connection_pending',
+         last_status_change_at = now()
+   where organization_id = p_org and id = p_canal;
+end;
+$$;
+
+revoke execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -82763,156 +82913,6 @@ revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
 
-
--- ---- canal de chat no site (migration 9443, Spec 36 F1) ----
--- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
--- `channel_sessions_webchat_allowed_origins_check` e `conversations_channel_check`)
--- e as colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
--- bloco acrescenta o índice, os comentários e a nova versão da trava do plano (que
--- passa a ignorar 'webchat' como ignora 'wacalls'). A função das origens já está
--- definida lá em cima, antes do CHECK que a usa.
-create unique index if not exists channel_sessions_webchat_public_key_ativa_unique
-  on public.channel_sessions (webchat_public_key)
-  where archived_at is null;
-
--- Uma conexão de chat ATIVA por organização. Sem isto, dois POST simultâneos passam pela
--- checagem da rota e criam duas caixas de entrada para a mesma empresa.
-create unique index if not exists channel_sessions_webchat_org_ativa_unique
-  on public.channel_sessions (organization_id)
-  where provider = 'webchat' and archived_at is null;
-
-do $canal_do_chat$
-begin
-  if to_regclass('public.channel_sessions') is not null then
-    comment on column public.channel_sessions.webchat_public_key is
-      'Chave pública do widget do chat no site (wck_...). Identifica a conexão para o navegador do visitante; NÃO é segredo e não dá acesso ao CRM. Única entre conexões não arquivadas.';
-    comment on column public.channel_sessions.webchat_allowed_origins is
-      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. O localhost (loopback) passa no banco; a rota decide se vale.';
-  end if;
-end
-$canal_do_chat$;
-
--- A trava do plano ignora o chat como ignora a voz (wacalls): o chat não é número
--- de WhatsApp e não ocupa vaga. Mesmo corpo da definição anterior, com 'webchat'
--- ao lado de 'wacalls' nos três pontos. É a ÚLTIMA definição do arquivo (rfind).
-create or replace function public.fn_trava_canais_do_plano()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_limite integer;
-  v_em_uso integer;
-begin
-  if new.archived_at is not null or new.provider in ('wacalls', 'webchat') then
-    return new;
-  end if;
-  -- Só no WAHA: nos outros provedores o número não identifica a conexão, e a
-  -- linha sem número segue sendo uma conexão da empresa.
-  if new.provider = 'waha' and new.phone_number is null and new.status in ('FAILED', 'STOPPED') then
-    return new;
-  end if;
-  if tg_op = 'UPDATE' then
-    if old.archived_at is null
-       and old.provider not in ('wacalls', 'webchat')
-       and new.organization_id is not distinct from old.organization_id then
-      return new;
-    end if;
-  end if;
-
-  v_limite := public.fn_limite_do_plano(new.organization_id, 'canais');
-  if v_limite is null then
-    return new;
-  end if;
-
-  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text, 2281));
-
-  select count(*) into v_em_uso
-    from public.channel_sessions cs
-   where cs.organization_id = new.organization_id
-     and cs.archived_at is null
-     and cs.provider not in ('wacalls', 'webchat')
-     and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
-     and cs.id <> new.id;
-
-  if v_em_uso >= v_limite then
-    raise exception 'limite_do_plano:canais:%', v_limite
-      using errcode = 'PT402',
-            detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
-  end if;
-  return new;
-end;
-$$;
-
-revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
-
-notify pgrst, 'reload schema';
-
--- O reviver (9036) conta a vaga com a MESMA régua do gatilho: voz e chat no site
--- (webchat) não são número de WhatsApp. Última definição do arquivo (rfind).
-create or replace function public.fn_vaga_ao_reviver_canal(p_org uuid, p_canal uuid)
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_canal public.channel_sessions;
-  v_limite integer;
-  v_em_uso integer;
-begin
-  -- A MESMA trava de `fn_trava_canais_do_plano` e da reserva: contagem e
-  -- tomada da vaga nunca correm em paralelo com outra conexão da empresa.
-  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 2281));
-
-  select * into v_canal
-    from public.channel_sessions
-   where organization_id = p_org and id = p_canal
-   for update;
-
-  -- Só interessa a linha que hoje NÃO ocupa vaga (WAHA morta e sem número, 0809) e
-  -- vai voltar a ocupar. Número pareado, conexão em curso, arquivada e voz
-  -- seguem como antes: reconectar um número que já é da empresa nunca é recusado.
-  if not found
-     or v_canal.archived_at is not null
-     or v_canal.provider <> 'waha'
-     or v_canal.phone_number is not null
-     or v_canal.status not in ('FAILED', 'STOPPED') then
-    return;
-  end if;
-
-  v_limite := public.fn_limite_do_plano(p_org, 'canais');
-  if v_limite is not null then
-    select count(*) into v_em_uso
-      from public.channel_sessions cs
-     where cs.organization_id = p_org
-       and cs.archived_at is null
-       and cs.provider not in ('wacalls', 'webchat')
-       and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
-       and cs.id <> p_canal;
-
-    if v_em_uso >= v_limite then
-      raise exception 'limite_do_plano:canais:%', v_limite
-        using errcode = 'PT402',
-              detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
-    end if;
-  end if;
-
-  -- A vaga é TOMADA aqui, ainda dentro da trava: a linha passa a ser conexão
-  -- em curso, que ocupa. Conferir e tomar são um passo só.
-  update public.channel_sessions
-     set status = 'STARTING',
-         status_reason = 'connection_pending',
-         last_status_change_at = now()
-   where organization_id = p_org and id = p_canal;
-end;
-$$;
-
-revoke execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) to service_role;
-
-notify pgrst, 'reload schema';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

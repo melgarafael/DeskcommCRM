@@ -104,7 +104,7 @@ beforeAll(async () => {
   ] as const) {
     await consulta(
       `insert into organizations (id, slug, legal_name, display_name, status)
-       values ($1, $2, $2, $2, 'active') on conflict (id) do nothing`,
+       values ($1, $2::citext, $2::text, $2::text, 'active') on conflict (id) do nothing`,
       [id, slug],
     );
   }

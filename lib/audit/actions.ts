@@ -1708,6 +1708,11 @@ export const AUDIT_ACTIONS = [
   // A pessoa gravou as próprias abas da Inbox (#3313): a ordem da faixa e quais
   // ficam no menu "Mais". Metadata com a ordem, as visíveis e as ocultas.
   "user.inbox_tabs_updated",
+  // Chat no site (Spec 36, F1): a conexão de chat criada, editada e com a chave pública
+  // girada. Metadata leva só o canal e, na edição, os NOMES dos campos alterados.
+  "channel.webchat_created",
+  "channel.webchat_updated",
+  "channel.webchat_key_rotated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -4,7 +4,7 @@
  *
  * A entrega é pelo estado da mensagem, sem cursor: sai o que está `sent`, e vira `delivered`
  * logo depois de escrito. O banco é um dublê que aplica os filtros que a rota pede (eq, in,
- * order, limit e update), como o cliente real. O relógio é falso: os 60 s do stream passam em
+ * is, order, limit, maybeSingle e update), como o cliente real. O relógio é falso: os 60 s do stream passam em
  * milissegundos. A nota interna não aparece aqui de propósito: ela mora em `conversation_notes`,
  * fora de `messages`, e a consulta de eventos nem a enxerga.
  */
@@ -84,6 +84,10 @@ class Consulta {
     this.filtrosDaConsulta.push((l) => valores.includes(l[coluna]));
     return this;
   }
+  is(coluna: string, valor: null): Consulta {
+    this.filtrosDaConsulta.push((l) => (l[coluna] ?? null) === valor);
+    return this;
+  }
   order(coluna: string, opcoes?: { ascending?: boolean }): Consulta {
     this.ordem.push({ coluna, asc: opcoes?.ascending !== false });
     return this;
@@ -91,6 +95,12 @@ class Consulta {
   limit(n: number): Consulta {
     this.teto = n;
     return this;
+  }
+  /** Como o cliente real: a primeira linha casada, ou `null` quando não há nenhuma. */
+  async maybeSingle(): Promise<{ data: unknown; error: null }> {
+    const { data } = await this.executar();
+    const linhas = data as Linha[];
+    return { data: linhas[0] ?? null, error: null };
   }
   then<A = { data: unknown; error: null }, B = never>(
     ok?: ((valor: { data: unknown; error: null }) => A | PromiseLike<A>) | null,
@@ -226,9 +236,11 @@ function eventos(texto: string): EventoLido[] {
     .filter((bloco) => bloco.startsWith("event: "))
     .map((bloco) => {
       const [linhaEvento, linhaDados] = bloco.split("\n");
+      expect(linhaEvento).toBeDefined();
+      expect(linhaDados).toBeDefined();
       return {
-        evento: linhaEvento.slice("event: ".length),
-        dados: JSON.parse(linhaDados.slice("data: ".length)) as Record<string, unknown>,
+        evento: linhaEvento!.slice("event: ".length),
+        dados: JSON.parse(linhaDados!.slice("data: ".length)) as Record<string, unknown>,
       };
     });
 }
@@ -315,7 +327,8 @@ describe("GET /api/v1/webchat/eventos", () => {
     expect(await entregasDe(token)).toEqual([]);
   });
 
-  it("com duas conversas do mesmo visitante, usa a mais antiga e não quebra", async () => {
+  it("com duas conversas do mesmo visitante, usa a MAIS RECENTE e não quebra", async () => {
+    // CONV_3 é de 11:00 e CONV (a de `CONVERSA_DO_VISITANTE`) é de 12:00: a mais recente é CONV.
     preparar("ok", [
       { ...CONVERSA_DO_VISITANTE, id: CONV_3, created_at: "2026-11-20T11:00:00.000+00:00" },
       CONVERSA_DO_VISITANTE,
@@ -323,7 +336,10 @@ describe("GET /api/v1/webchat/eventos", () => {
 
     const res = await GET(abrir(tokenDeVisitante()));
     expect(res.status).toBe(200);
-    expect(eventos(await lerAteFechar(res)).map((e) => e.dados.id)).toEqual([id(9)]);
+    const ids = eventos(await lerAteFechar(res)).map((e) => e.dados.id);
+    // Sai a saída `sent` da conversa mais recente (id 2), e não a da mais antiga (id 9).
+    expect(ids).toEqual([id(2)]);
+    expect(ids).not.toContain(id(9));
   });
 
   it("a conversa sai do token, e nem a organização nem a conversa vindas da URL entram", async () => {

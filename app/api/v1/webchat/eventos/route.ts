@@ -9,7 +9,7 @@
  * O stream lê o banco a cada 2 s e fecha em 60 s: a janela reabre e recebe o que ainda está
  * `sent`.
  */
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { conexaoPeloId, tokenDoBearer } from "@/lib/channels/webchat/conexao-pela-chave";
 import { descreverErro } from "@/lib/channels/webchat/entrada-publica";
@@ -67,14 +67,17 @@ export async function GET(req: Request) {
       sinal: req.signal,
     });
 
-    return new Response(corpo, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        // Proxy reverso (nginx e afins) não pode segurar o stream em buffer.
-        "X-Accel-Buffering": "no",
-      },
-    });
+    return comIdDaRequisicao(
+      new Response(corpo, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          // Proxy reverso (nginx e afins) não pode segurar o stream em buffer.
+          "X-Accel-Buffering": "no",
+        },
+      }),
+      req,
+    );
   } catch (erro) {
     logger.error("webchat: erro na rota pública de eventos", {
       rota: "eventos",
