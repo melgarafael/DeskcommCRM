@@ -425,7 +425,7 @@ describe("POST /api/v1/webchat/mensagens", () => {
     });
   });
 
-  it.each([{ email: "nao-e-email" }, { telefone: "abc" }, { telefone: "11999999999" }, { nome: "x".repeat(121) }])(
+  it.each([{ nome: "x".repeat(121) }])(
     "contato inválido (%j) dá 422 e nada é ingerido",
     async (contato) => {
       const r = await resposta(
@@ -437,4 +437,57 @@ describe("POST /api/v1/webchat/mensagens", () => {
       expect(h.ingerir).not.toHaveBeenCalled();
     },
   );
+
+  it("telefone sem + em campo opcional não recusa: chega à ingestão vazio, e o e-mail inválido também", async () => {
+    const r = await resposta(
+      await mensagens(
+        pedido(
+          "mensagens",
+          {
+            mensagem_id: randomUUID(),
+            texto: "oi",
+            aceite: { versao: "v1" },
+            contato: { telefone: "11999999999", email: "nao-e-email" },
+          },
+          tokenDeVisitante(),
+        ),
+      ),
+    );
+    expect(r.status).toBe(201);
+    expect(h.ingerir.mock.calls[0]![1]).toMatchObject({ contato: { telefone: "", email: "" } });
+  });
+
+  it("telefone sem + em campo obrigatório chega vazio: quem recusa é a ingestão", async () => {
+    cenario("ok", { webchat: { coleta: { telefone: "obrigatorio" } } });
+    await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", aceite: { versao: "v1" }, contato: { telefone: "11999999999" } },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(h.ingerir.mock.calls[0]![1]).toMatchObject({
+      contato: { telefone: "" },
+      coleta: { telefone: "obrigatorio" },
+    });
+  });
+
+  it("campo oculto com formato inválido não dá 422: a ingestão o ignora", async () => {
+    cenario("ok", { webchat: { coleta: { telefone: "oculto", email: "oculto" } } });
+    const r = await resposta(
+      await mensagens(
+        pedido(
+          "mensagens",
+          {
+            mensagem_id: randomUUID(),
+            texto: "oi",
+            aceite: { versao: "v1" },
+            contato: { telefone: "abc", email: "nao-e-email" },
+          },
+          tokenDeVisitante(),
+        ),
+      ),
+    );
+    expect(r.status).toBe(201);
+  });
 });

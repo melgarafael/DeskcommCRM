@@ -202,6 +202,36 @@ describe("chat no site · a entrada fica na organização da conexão", () => {
     const onde = await consulta("select organization_id from messages where body = 'tentativa cruzada'");
     expect(onde.map((l) => l.organization_id)).toEqual([ORG_A]);
   });
+
+  it("primeira mensagem sem aceite é recusada e não cria contato, conversa nem mensagem em A", async () => {
+    const conexaoA = await conexaoDe(CHAVE_A);
+    const visitante = uuid(20);
+    const r = await ingerirMensagemDoChat(admin, {
+      organizationId: ORG_A,
+      channelSessionId: conexaoA.id,
+      visitanteId: visitante,
+      mensagemId: "m-sem-aceite",
+      texto: "oi sem aceite",
+      agora: new Date(),
+    });
+    expect(r).toMatchObject({ status: "recusada", motivo: "aceite_ausente" });
+
+    const contatos = await consulta(
+      "select id from contacts where organization_id = $1 and social_identity = $2",
+      [ORG_A, `webchat:${conexaoA.id}:${visitante}`],
+    );
+    const conversas = await consulta(
+      "select id from conversations where organization_id = $1 and provider_conversation_id = $2",
+      [ORG_A, visitante],
+    );
+    const mensagens = await consulta(
+      "select id from messages where organization_id = $1 and external_id = $2",
+      [ORG_A, `wc:${conexaoA.id}:${visitante}:m-sem-aceite`],
+    );
+    expect(contatos).toHaveLength(0);
+    expect(conversas).toHaveLength(0);
+    expect(mensagens).toHaveLength(0);
+  });
 });
 
 describe("chat no site · a leitura das respostas não atravessa organização", () => {

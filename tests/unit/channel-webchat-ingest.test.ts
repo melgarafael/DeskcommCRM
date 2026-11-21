@@ -74,6 +74,16 @@ function cenario(linhas: Linhas = {}): Falso {
  * envoltório impõe, do mesmo jeito que o banco: um INSERT com o `external_id`
  * já gravado volta `23505`, e nenhuma cadeia de escrita é registrada.
  */
+/** Atualização que o banco recusa: encadeia `eq` e resolve com o erro, como o cliente real. */
+function atualizacaoRecusada(erro: { code: string; message: string }) {
+  const cadeia = {
+    eq: () => cadeia,
+    then: (ok: (v: unknown) => unknown, falha?: (m: unknown) => unknown) =>
+      Promise.resolve({ data: null, error: erro }).then(ok, falha),
+  };
+  return cadeia;
+}
+
 function clienteComUnique(falso: Falso) {
   const bruto = falso.cliente as {
     from: (tabela: string) => unknown;
@@ -81,6 +91,25 @@ function clienteComUnique(falso: Falso) {
   };
   return {
     from(tabela: string) {
+      if (tabela === "contacts") {
+        // `uniq_contacts_org_phone` e `uniq_contacts_org_email`: o telefone e o e-mail são únicos
+        // por organização. Um UPDATE que repete o de outro contato volta 23505.
+        return {
+          select: (...args: unknown[]) =>
+            (bruto.from("contacts") as { select: (...a: unknown[]) => unknown }).select(...args),
+          insert: (payload: unknown) =>
+            (bruto.from("contacts") as { insert: (p: unknown) => unknown }).insert(payload),
+          update(payload: Record<string, unknown>) {
+            const colidiu = linhasDaTabela(falso, "contacts").some(
+              (l) =>
+                (payload.phone_number !== undefined && l.phone_number === payload.phone_number) ||
+                (payload.email !== undefined && l.email === payload.email),
+            );
+            if (colidiu) return atualizacaoRecusada({ code: "23505", message: "duplicate key" });
+            return (bruto.from("contacts") as { update: (p: unknown) => unknown }).update(payload);
+          },
+        };
+      }
       if (tabela !== "messages") return bruto.from(tabela);
       return {
         select: (...args: unknown[]) =>
@@ -363,6 +392,108 @@ describe("coleta de contato na primeira mensagem", () => {
       phone_number: "+5511999999999",
       email: "ana@example.com",
     });
+  });
+});
+
+describe("dados do contato — colisão, segunda mensagem e formato", () => {
+  it("(a) telefone já usado por outro contato: a mensagem entra, o telefone não é gravado e o nome é", async () => {
+    const falso = cenario({
+      contacts: [
+        {
+          id: "outro",
+          organization_id: ORG,
+          social_identity: "webchat:cs-9:vis-9",
+          is_merged_into: null,
+          name: "Outra",
+          phone_number: "+5511999999999",
+        },
+      ],
+    });
+    const r = await ingerir(falso, {
+      contato: { nome: "Ana", telefone: "+5511999999999" },
+      coleta: { nome: "opcional", telefone: "opcional" },
+    });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const contato = linhasDaTabela(falso, "contacts").find((l) => l.social_identity === "webchat:cs-1:vis-1");
+    expect(contato).toMatchObject({ name: "Ana", display_name: "Ana" });
+    expect(contato).not.toHaveProperty("phone_number");
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(1);
+  });
+
+  it("(a) e-mail já usado por outro contato: a mensagem entra, o e-mail não é gravado e o nome é", async () => {
+    const falso = cenario({
+      contacts: [
+        {
+          id: "outro",
+          organization_id: ORG,
+          social_identity: "webchat:cs-9:vis-9",
+          is_merged_into: null,
+          name: "Outra",
+          email: "ana@example.com",
+        },
+      ],
+    });
+    const r = await ingerir(falso, {
+      contato: { nome: "Ana", email: "ana@example.com" },
+      coleta: { nome: "opcional", email: "opcional" },
+    });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const contato = linhasDaTabela(falso, "contacts").find((l) => l.social_identity === "webchat:cs-1:vis-1");
+    expect(contato).toMatchObject({ name: "Ana" });
+    expect(contato).not.toHaveProperty("email");
+  });
+
+  it("(b) contato enviado na segunda mensagem não altera nada do contato", async () => {
+    const falso = cenario();
+    await ingerir(falso, { contato: { nome: "Ana" } });
+    vincularConversa(falso);
+
+    const r = await ingerir(falso, {
+      mensagemId: "m-2",
+      texto: "segunda",
+      aceite: undefined,
+      contato: { nome: "Outro nome", telefone: "+5511888888888", email: "outro@example.com" },
+      coleta: { nome: "opcional", telefone: "opcional", email: "opcional" },
+    });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const contato = linhasDaTabela(falso, "contacts")[0];
+    expect(contato).toMatchObject({ name: "Ana", display_name: "Ana" });
+    expect(contato).not.toHaveProperty("phone_number");
+    expect(contato).not.toHaveProperty("email");
+  });
+
+  it("(c) telefone vazio (formato inválido, vindo da rota) em campo opcional: a mensagem entra sem telefone", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, { contato: { telefone: "" }, coleta: { telefone: "opcional" } });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    expect(linhasDaTabela(falso, "contacts")[0]).not.toHaveProperty("phone_number");
+  });
+
+  it("(d) telefone vazio (formato inválido) em campo obrigatório recusa e não cria nada", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, { contato: { telefone: "" }, coleta: { telefone: "obrigatorio" } });
+
+    expect(r).toMatchObject({ status: "recusada", motivo: "campo_obrigatorio" });
+    expect(linhasDaTabela(falso, "contacts")).toHaveLength(0);
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(0);
+    expect(falso.rpcs).toHaveLength(0);
+  });
+
+  it("(e) campo oculto com formato inválido é ignorado: a mensagem entra e nada é gravado", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, {
+      contato: { telefone: "abc", email: "nao-e-email" },
+      coleta: { telefone: "oculto", email: "oculto" },
+    });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    const contato = linhasDaTabela(falso, "contacts")[0];
+    expect(contato).not.toHaveProperty("phone_number");
+    expect(contato).not.toHaveProperty("email");
   });
 });
 

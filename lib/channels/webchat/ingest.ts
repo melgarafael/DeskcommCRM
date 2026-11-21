@@ -112,12 +112,16 @@ export async function ingerirMensagemDoChat(
     visitanteId: p.visitanteId,
   });
 
-  await atualizarDadosDoContato(admin, {
-    organizationId: p.organizationId,
-    contactId,
-    contato: p.contato,
-    coleta: p.coleta,
-  });
+  // Só a primeira mensagem grava os dados que o visitante informou. Nas seguintes o `contato`
+  // é ignorado por completo: não sobrescreve o que o operador corrigiu no CRM.
+  if (primeira) {
+    await atualizarDadosDoContato(admin, {
+      organizationId: p.organizationId,
+      contactId,
+      contato: p.contato,
+      coleta: p.coleta,
+    });
+  }
 
   const inserted = await insertMessage(admin, {
     organizationId: p.organizationId,
