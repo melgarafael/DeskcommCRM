@@ -12118,8 +12118,62 @@ export const DICIONARIO: Traducoes = {
   "Este funil está arquivado: o quadro abre em leitura, e nada aqui grava até você tirá-lo do arquivo em Funis.": {
     es: "Este embudo está archivado: el tablero se abre en modo lectura y nada aquí se guarda hasta que lo desarchives en Embudos.",
   },
-  "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.": {
-    es: "Esta acción no se puede deshacer: el embudo y sus etapas desaparecen. Si ya recibió negocios, no se puede eliminar y sigue archivado.",
+  "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, escolha abaixo o que fazer com os negócios — ou tire o funil do arquivo e resolva antes.": {
+    es: "Esto no tiene vuelta: el embudo y sus etapas desaparecen. Si ya recibió negocios, elige abajo qué hacer con ellos — o desarchiva el embudo y resuélvelo antes.",
+  },
+  // #4802 (item 3) — a escolha sobre os negócios ao arquivar ou excluir um funil.
+  "Conferindo quantos negócios estão vinculados…": {
+    es: "Comprobando cuántos negocios están vinculados…",
+  },
+  "Não consegui contar os negócios deste funil agora. Tente de novo em instantes.": {
+    es: "No pude contar los negocios de este embudo ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "«{nome}» tem 1 negócio vinculado. Escolha o que fazer com ele antes de continuar.": {
+    es: "«{nome}» tiene 1 negocio vinculado. Elige qué hacer con él antes de continuar.",
+  },
+  "«{nome}» tem {n} negócios vinculados. Escolha o que fazer com eles antes de continuar.": {
+    es: "«{nome}» tiene {n} negocios vinculados. Elige qué hacer con ellos antes de continuar.",
+  },
+  "O que fazer com os negócios": { es: "Qué hacer con los negocios" },
+  "Transferir todos para outro funil": { es: "Transferir todos a otro embudo" },
+  "Transferir para uma etapa específica do funil de destino": {
+    es: "Transferir a una etapa específica del embudo de destino",
+  },
+  "Remover os negócios da estrutura dos funis, mantendo contatos e históricos": {
+    es: "Quitar los negocios de la estructura de los embudos, conservando contactos e historiales",
+  },
+  "Nenhum outro funil disponível": { es: "Ningún otro embudo disponible" },
+  "Remover os negócios e continuar": { es: "Quitar los negocios y continuar" },
+  "Transferir e continuar": { es: "Transferir y continuar" },
+  "Não consegui mover os negócios. Tente de novo.": {
+    es: "No pude mover los negocios. Inténtalo de nuevo.",
+  },
+  "O negócio já está neste funil — escolha OUTRO para receber os negócios.": {
+    es: "El negocio ya está en este embudo — elige OTRO para recibir los negocios.",
+  },
+  "O funil de destino não está mais na sua lista. Recarregue a página e escolha outro.": {
+    es: "El embudo de destino ya no está en tu lista. Recarga la página y elige otro.",
+  },
+  "«{nome}» está arquivado e não recebe negócio. Tire-o do arquivo ou escolha outro funil.": {
+    es: "«{nome}» está archivado y no recibe negocios. Desarchívalo o elige otro embudo.",
+  },
+  "A etapa escolhida não é de «{nome}» ou não existe mais. Recarregue a página e escolha de novo.": {
+    es: "La etapa elegida no es de «{nome}» o ya no existe. Recarga la página y elige de nuevo.",
+  },
+  "A etapa «{etapa}» está arquivada e não recebe negócio. Escolha outra.": {
+    es: "La etapa «{etapa}» está archivada y no recibe negocios. Elige otra.",
+  },
+  "«{etapa}» é etapa de fechamento: transferir para lá encerraria TODOS os negócios de uma vez. Escolha uma etapa de andamento.": {
+    es: "«{etapa}» es una etapa de cierre: transferir allí cerraría TODOS los negocios de una vez. Elige una etapa de avance.",
+  },
+  "«{nome}» não tem etapa de andamento para receber os negócios. Crie uma etapa nele primeiro.": {
+    es: "«{nome}» no tiene etapa de avance para recibir los negocios. Crea una etapa en él primero.",
+  },
+  "Não entendi o que fazer com os negócios deste funil.": {
+    es: "No entendí qué hacer con los negocios de este embudo.",
+  },
+  "Este funil não tem mais negócios vinculados.": {
+    es: "Este embudo ya no tiene negocios vinculados.",
   },
   // #2559 — as duas recusas novas, ambas com `{nome}` por preencher: a rota
   // traduz primeiro e só então cola o nome do funil (`t(x).replace("{nome}", …)`).

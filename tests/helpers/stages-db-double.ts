@@ -715,11 +715,33 @@ export function makeDb(opts: DbOpts = {}): Registro {
     return b;
   }
 
-  // `rpc` só existe para o aviso de atividade perdida (`emit_event`): sem ele, a
-  // rota estouraria no caminho de falha e o teste mediria um TypeError em vez do
-  // comportamento ("o arquivamento não é desfeito por causa do rastro").
+  // `rpc` cobre o aviso de atividade perdida (`emit_event`) e, desde a #4802
+  // (item 3), `fn_mover_leads_em_lote`: a transferência em massa de negócios entre
+  // funis passa por ESTA função, e um dublê que devolvesse `null` deixaria a rota
+  // responder "movi 0" justamente no caminho que se quer medir. Ele aplica a
+  // escrita como o banco aplica — `stage_id` E `pipeline_id` da etapa de destino —
+  // para a contagem de depois ser a do "banco", não a do otimismo da rota.
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
+    if (nome === "fn_mover_leads_em_lote") {
+      const a = args as { p_organization_id: string; p_lead_ids: string[]; p_stage_id: string };
+      const etapa = registro.tabelas.crm_stages.find((s) => s.id === a.p_stage_id) as
+        | { pipeline_id?: string }
+        | undefined;
+      const movidos: Array<{ lead_id: string; from_stage_id: string; pipeline_id: string }> = [];
+      for (const linha of registro.tabelas.crm_leads) {
+        if (linha.organization_id !== a.p_organization_id) continue;
+        if (!a.p_lead_ids.includes(linha.id as string)) continue;
+        movidos.push({
+          lead_id: linha.id as string,
+          from_stage_id: linha.stage_id as string,
+          pipeline_id: linha.pipeline_id as string,
+        });
+        linha.stage_id = a.p_stage_id;
+        if (etapa?.pipeline_id) linha.pipeline_id = etapa.pipeline_id;
+      }
+      return { data: movidos, error: null };
+    }
     return { data: null, error: null };
   };
 
