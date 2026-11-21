@@ -36,6 +36,13 @@
  * não só para esta rota. Desligada, nenhuma fonte é lida — nem a de quem
  * configurou o feed antes de o dono do servidor desligar.
  *
+ * A chave é perguntada DUAS vezes desde o #4871: uma sem empresa, que é o TETO
+ * da instalação e sai da rodada inteira; e outra por fonte, com o
+ * `organization_id` dela (`organization_modules`). Numa instalação que hospeda
+ * várias empresas, a que desligou o módulo não pode continuar tendo o feed
+ * buscado e o preço reescrito — e a que não desligou tem de rodar na MESMA
+ * batida. Empresa sem linha herda a instalação; leitura ilegível fecha.
+ *
  * ─── Falha repetida não fica muda ───────────────────────────────────────────
  *
  * Toda rodada grava o desfecho na própria fonte (`ultimo_resumo`,
@@ -122,7 +129,10 @@ export interface ResultadoDaFonte {
 export async function sincronizarFontes(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<ResultadoDaFonte[] | null> {
-  // O PORTÃO DO MÓDULO, antes de ler qualquer fonte. `null` = desligado.
+  // O TETO, antes de ler qualquer fonte. `null` = a INSTALAÇÃO não tem o módulo,
+  // e a rodada inteira sai sem consultar nada. A exceção da empresa é perguntada
+  // no laço, com o `organization_id` da própria fonte — o servidor é teto, a
+  // linha da empresa tira (a mesma ordem de `modulosLigados`).
   if (!(await moduloLigado(admin, "catalogo_por_feed"))) return null;
 
   const { data: fontes, error } = await admin
@@ -151,6 +161,23 @@ export async function sincronizarFontes(
         inalterados: 0,
         erros: 0,
         falhou: "organizacao_parada",
+      });
+      continue;
+    }
+    // A EMPRESA que desligou o módulo (#4871): a fonte dela não é lida, nada sai
+    // para a internet e nenhum campo da fonte é tocado — nem `ultima_leitura_em`,
+    // nem `falhas_seguidas`. Não é falha da origem; é a chave desligada, e o
+    // resumo da rodada diz isso. Leitura ilegível da empresa também fecha aqui:
+    // `moduloLigado` responde `false` quando a camada por empresa não respondeu.
+    if (!(await moduloLigado(admin, "catalogo_por_feed", fonte.organization_id))) {
+      resultados.push({
+        organization_id: fonte.organization_id,
+        criados: 0,
+        atualizados: 0,
+        desativados: 0,
+        inalterados: 0,
+        erros: 0,
+        falhou: "modulo_desligado_na_empresa",
       });
       continue;
     }
