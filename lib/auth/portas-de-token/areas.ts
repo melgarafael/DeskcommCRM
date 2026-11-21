@@ -281,6 +281,11 @@ const LEITURAS_COM_CONTATO_EMBUTIDO: readonly string[] = [
   "financeiro/comandas/pendentes", // traz o `title` do agendamento, que pode ter o nome do cliente
   "leads/[id]/conversas-e-ligacoes", // lista nome e telefone dos números do negócio
   "reports/comercial", // os rankings de negócios ganhos trazem nome e telefone do contato
+  "ai/cases", // o chamado traz nome e telefone do contato da conversa (lib/escalacao/chamados.ts)
+  "ai/cases/[id]",
+  "leads/at-risk", // o radar de risco traz o nome do contato (lib/leads/radar-de-risco.ts)
+  "reports/activities", // cada linha traz o nome do contato (lib/reports/atividades.ts)
+  "proposals/[id]/previa", // o PDF leva nome, e-mail e telefone do contato, como o documento
 ];
 
 export function leituraExigeAreaContatos(modelo: string, metodo: string): boolean {

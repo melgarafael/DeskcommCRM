@@ -148,8 +148,13 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       `/api/v1/leads/${ID}/contatos-relacionados`,
       "/api/v1/leads/proposals",
       `/api/v1/proposals/${ID}/documento`,
+      "/api/v1/ai/cases",
+      `/api/v1/ai/cases/${ID}`,
+      "/api/v1/leads/at-risk",
+      "/api/v1/reports/activities",
+      `/api/v1/proposals/${ID}/previa`,
     ];
-    const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"];
+    const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura", "area.analise.leitura"];
     const montar = (consentidas: string[]): Banco => {
       const b = banco();
       b.instalacao = {
@@ -165,7 +170,7 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       b.vinculo = { enabled: true, consented_areas: consentidas };
       return b;
     };
-    const semContatos = montar(["area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"]);
+    const semContatos = montar(["area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura", "area.analise.leitura"]);
     const comContatos = montar(declara);
     for (const caminho of LEITURAS) {
       expect(await decide(semContatos, "GET", caminho), `sem contatos: ${caminho}`).toEqual({

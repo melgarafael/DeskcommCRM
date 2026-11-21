@@ -107,7 +107,7 @@ describe("rota que o módulo alcança e traz contato na resposta", () => {
       for (const metodo of metodosExportados(rota)) {
         const porta = areaDaPorta(modelo, metodo);
         if (!porta || porta.area === "contatos") continue; // sem área: módulo recusado; contatos: a área é dele
-        if (rota.includes("redigirContatoParaModulo")) continue;
+        if (/\bredigirContatoParaModulo\s*\(/.test(rota)) continue;
         if (leituraExigeAreaContatos(modelo, metodo)) continue;
         if (JUSTIFICADAS[`${metodo} ${modelo}`]) continue;
         sem.push(`${metodo} ${modelo} (área ${porta.area})`);
@@ -139,7 +139,7 @@ describe("rota que o módulo alcança e traz contato na resposta", () => {
       "pipelines/[id]/board/route.ts",
     ]) {
       const texto = semComentarios(readFileSync(join(API, rel), "utf8"));
-      expect(texto, rel).toContain("redigirContatoParaModulo");
+      expect(texto, rel).toMatch(/\bredigirContatoParaModulo\s*\(/);
     }
   });
 });
