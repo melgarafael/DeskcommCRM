@@ -59,13 +59,18 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
   // vez, e o laço abaixo só consulta o conjunto. Sem isto, a empresa que desligou
   // `propostas` na tela de Módulos por empresa continuava recebendo o aviso — a
   // instalação ligada vencia a linha dela.
-  const desligadas = await empresasComModuloDesligado(admin, "propostas");
+  // Com a instalação desligada ninguém entra, e a leitura por empresa não mudaria
+  // a resposta: ela só acontece quando pode tirar alguém (mesma régua do tick).
+  const modulos = await modulosLigados(admin);
+  const desligadas = modulos.includes("propostas")
+    ? await empresasComModuloDesligado(admin, "propostas")
+    : new Set<string>();
   // Falha de leitura fecha: um aviso a menos é reversível na próxima rodada; um
   // aviso para quem desligou o módulo é ruído que ninguém pediu.
   if (desligadas === null) throw new Error("query_modulos_failed: organization_modules ilegível");
 
   let avisadas = 0;
-  for (const orgId of organizacoesComPropostas(orgs ?? [], await modulosLigados(admin), desligadas)) {
+  for (const orgId of organizacoesComPropostas(orgs ?? [], modulos, desligadas)) {
     const org = { id: orgId };
     const { data: propostas, error: propErr } = await admin
       .from("crm_proposals")
