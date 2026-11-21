@@ -205,7 +205,8 @@ export function CanvasDaAutomacao({ regra }: Props) {
     (base: Desenho) => {
       const alturas = new Map(nos.map((n) => [n.id, n.measured?.height ?? 0] as const).filter(([, h]) => h > 0));
       aplicar(organizar(base, alturas));
-      window.setTimeout(() => void fitView({ padding: 0.2, duration: 200 }), 0);
+      // @xyflow 13 lê número em pixels (0.2 → 0 px); "8%" é a folga que a v12 dava com 0.2.
+      window.setTimeout(() => void fitView({ padding: "8%", duration: 200 }), 0);
     },
     [nos, aplicar, fitView],
   );
@@ -535,7 +536,7 @@ export function CanvasDaAutomacao({ regra }: Props) {
             defaultEdgeOptions={{ type: "smoothstep" }}
             connectionLineType={ConnectionLineType.SmoothStep}
             fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+            fitViewOptions={{ padding: "8%", maxZoom: 1 }}
           >
             <Background />
             <Controls />
