@@ -241,7 +241,12 @@ services:
       # O WAHA trata reação como evento PRÓPRIO — sem assiná-lo, um gesto que o
       # CRM recebe pela API oficial nunca chegaria pelo canal por QR. `message.any`
       # NÃO o cobre (a reação não vem como mensagem).
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
+      #
+      # `call.received` entra: é a ligação de voz que chega no número. Só tem
+      # efeito quando a empresa liga "Bloquear chamadas recebidas" em
+      # Configurações › Segurança — aí ela é recusada na hora
+      # (lib/organizacao/bloqueio-de-chamadas.ts). Desligado, o evento é ignorado.
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change,call.received"
       # Nome EXATO da doc do WAHA (events#hmac-authentication): WHATSAPP_HOOK_HMAC
       # não existe nele — sem o _KEY ele ignora e nunca assina.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}

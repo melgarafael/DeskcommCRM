@@ -44,6 +44,8 @@ interface OpcoesFake {
   missing?: boolean;
   /** Quantos vínculos RESTRICT a pré-checagem encontra na agenda. */
   vinculos?: number;
+  /** Quantos negócios ABERTOS o contato tem (A6): barram a exclusão. */
+  cardsAbertos?: number;
   /** A contagem do vínculo falha (tabela/RLS fora do ar). */
   erroContagem?: { message: string };
   /** A função nova devolve erro (23503 de corrida, 42501 residual, 500…). */
@@ -84,7 +86,7 @@ function clienteFalso(opts?: OpcoesFake): unknown {
                 return resolve(
                   opts?.erroContagem
                     ? { count: null, error: opts.erroContagem }
-                    : { count: opts?.vinculos ?? 0, error: null },
+                    : { count: (tabela === "crm_leads" ? opts?.cardsAbertos : opts?.vinculos) ?? 0, error: null },
                 );
               },
             };
@@ -161,6 +163,15 @@ describe("deleteContactHandler", () => {
           ["or", "status.neq.cancelled,service_occurrence_id.not.is.null"],
         ],
       },
+      // A6: negócio ABERTO também barra (ganho e perdido são histórico e não).
+      {
+        tabela: "crm_leads",
+        filtros: [
+          ["contact_id", CONTATO],
+          ["organization_id", ORG],
+          ["or", "status.eq.open"],
+        ],
+      },
     ]);
     expect(ultimaAuditoria()).toMatchObject({
       action: "contact.deleted",
@@ -203,6 +214,27 @@ describe("deleteContactHandler", () => {
       resourceId: CONTATO,
       organizationId: ORG,
       metadata: { motivo: "vinculo_restrict", vinculos: ["1 compromisso(s) na agenda"], apagados: [] },
+    });
+  });
+
+  it("contato com negócio aberto no funil: 409 e nada é apagado nem fechado (A6)", async () => {
+    const { deleteContactHandler } = await import("@/app/api/v1/contacts/_handler");
+    await expect(
+      deleteContactHandler(clienteFalso({ cardsAbertos: 2 }) as never, ctxFalso(), CONTATO),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "state_conflict",
+      details: {
+        vinculos: ["2 negócio(s) aberto(s) no funil"],
+        por_tabela: { crm_leads: 2 },
+      },
+    });
+    expect(chamadas).toEqual([]);
+    expect(rpcs.some((r) => r.nome === FUNCAO)).toBe(false);
+    expect(revogarAcessosSpy).not.toHaveBeenCalled();
+    expect(ultimaAuditoria()).toMatchObject({
+      action: "contact.delete_blocked",
+      metadata: { motivo: "vinculo_restrict", vinculos: ["2 negócio(s) aberto(s) no funil"], apagados: [] },
     });
   });
 

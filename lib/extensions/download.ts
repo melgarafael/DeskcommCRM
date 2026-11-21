@@ -85,6 +85,21 @@ export function assertCatalogOrigin(origin: string, policy: DownloadPolicy): voi
   validateCatalogOrigin(origin, policy);
 }
 
+/**
+ * A origem do SERVIÇO de um módulo conectado (spec 33, F1) passa pela MESMA regra da origem do
+ * catálogo: origem exata, HTTPS, sem credencial/caminho/query/fragmento, nada de endereço especial
+ * (localhost, IP privado, loopback), e a única exceção é o loopback de laboratório, que exige a
+ * política local e a mesma origem. Por isso reaproveita `validateCatalogOrigin` em vez de copiar
+ * as checagens; só troca o código de erro, porque aqui a falha é de conteúdo do catálogo.
+ */
+export function assertServiceOrigin(origin: string, policy: DownloadPolicy): void {
+  try {
+    validateCatalogOrigin(origin, policy);
+  } catch (error) {
+    throw new ExtensionError("extension_invalid_package", { cause: error });
+  }
+}
+
 function isPublicAddress(address: string) {
   try {
     return ipaddr.process(address).range() === "unicast";

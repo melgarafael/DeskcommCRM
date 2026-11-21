@@ -74,6 +74,8 @@ interface RegraTexto {
   readonly categoria: CategoriaVazamento;
   readonly re: RegExp;
   readonly rotulo?: string;
+  /** Exceção que só vale na mensagem ao cliente (`linkDoCliente`); a tradução de erro fica estrita. */
+  readonly ignoraSe?: (match: RegExpExecArray, texto: string) => boolean;
 }
 
 /**
@@ -257,10 +259,15 @@ const REGRAS: ReadonlyArray<RegraTexto> = [
   // medidos passando limpo. Um identificador assim NUNCA significa nada para quem
   // lê: se o agente precisa referenciar algo, referencia pelo nome ou pelo número
   // que o cliente conhece.
+  //
+  // ⚠️ EXCLUI UUID EM LINK http(s): se o UUID faz parte de uma URL do portal do
+  // cliente (ex.: https://portal.empresa.com/projeto/<uuid>), ele é o próprio link
+  // legítimo de navegação que o cliente pediu — não é identificador de sistema solto.
   {
     categoria: 'erro_cru',
     rotulo: 'identificador interno',
     re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+    ignoraSe: (m, texto) => uuidEmLinkPublico(texto, m.index ?? 0, (m.index ?? 0) + m[0].length),
   },
   // (E3) CÓDIGO DE ERRO OPACO — a outra metade da terceira porta: o código veio do
   // DADO que a tool devolveu, não do nome dela.
@@ -369,6 +376,43 @@ function pareceEnderecoOuArquivo(token: string): boolean {
   return token.includes('@') || token.includes('/') || /\.[a-z]{2,4}(?:\.[a-z]{2,3})?$/.test(token);
 }
 
+/** Host de infraestrutura nunca é link do cliente, nem com o UUID no caminho. */
+const HOST_DE_INFRA = /(^localhost$|^\d{1,3}(\.\d{1,3}){3}$|^\[|\.supabase\.(co|in)$|\.local$|\.internal$)/;
+/** Prefixo de caminho de API/armazenamento: o UUID ali é identificador de sistema. */
+const CAMINHO_DE_API = /^\/(api|rest|storage|auth|functions|realtime)\//;
+
+/**
+ * True se o UUID em [inicio, fim) é um segmento INTEIRO do caminho de um link
+ * http(s) público («https://portal.empresa.com/projeto/<uuid>»). É o endereço que
+ * o cliente precisa receber; barrá-lo calava a mensagem legítima.
+ *
+ * Fica estrito em tudo o mais: UUID em query string, link para host de
+ * infraestrutura (IP, localhost, Supabase, `.local`/`.internal`) ou para caminho de
+ * API/armazenamento continua sendo identificador de sistema.
+ */
+function uuidEmLinkPublico(texto: string, inicio: number, fim: number): boolean {
+  const antes = texto.slice(0, inicio);
+  const depois = texto.slice(fim);
+  const espacoAntes = antes.search(/\s\S*$/);
+  const inicioToken = espacoAntes === -1 ? 0 : espacoAntes + 1;
+  const espacoDepois = depois.search(/\s/);
+  const fimToken = espacoDepois === -1 ? texto.length : fim + espacoDepois;
+  const token = texto
+    .slice(inicioToken, fimToken)
+    .replace(/^[^\w]*/, "")
+    .replace(/[.,;:!?)\]}>»"']+$/, "");
+  let url: URL;
+  try {
+    url = new URL(token);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (HOST_DE_INFRA.test(url.hostname) || CAMINHO_DE_API.test(url.pathname)) return false;
+  const uuid = texto.slice(inicio, fim);
+  return url.pathname.split("/").includes(uuid);
+}
+
 /**
  * Remove diacríticos (NFD) e PRESERVA a caixa. É esta a base das duas visões do texto: a
  * regra (A) varre esta (a caixa é o dado que separa `crm_leads` de `PED_2024_001`), as
@@ -426,7 +470,15 @@ function achaSnakeCase(texto: string): Achado[] {
  * True se a candidata leva vocabulário interno ao cliente. Determinístico, sem I/O.
  * Vazio/whitespace = false.
  */
-export function detectarVazamentoInterno(body: string): VazamentoInterno {
+export function detectarVazamentoInterno(
+  body: string,
+  /**
+   * `linkDoCliente`: a mensagem vai ao cliente, e o UUID que é segmento do caminho
+   * de um link público pode passar (`uuidEmLinkPublico`). Padrão `false`: a
+   * tradução de erro de ferramenta (`traduzirErroCru`) segue barrando qualquer UUID.
+   */
+  opcoes: { linkDoCliente?: boolean } = {},
+): VazamentoInterno {
   if (body.trim() === '') return { achou: false, termos: [], categorias: [] };
   // Duas visões do MESMO texto: a regra (A) precisa da caixa (ver `RE_SNAKE_CASE`), todas
   // as outras precisam da uniformidade de minúsculas.
@@ -439,6 +491,7 @@ export function detectarVazamentoInterno(body: string): VazamentoInterno {
   }
   for (const regra of REGRAS) {
     for (const m of texto.matchAll(regra.re)) {
+      if (opcoes.linkDoCliente === true && regra.ignoraSe?.(m, texto)) continue;
       achados.push({ termo: regra.rotulo ?? m[0], categoria: regra.categoria, posicao: m.index });
     }
   }
