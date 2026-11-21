@@ -16249,15 +16249,13 @@ export const DICIONARIO: Traducoes = {
   "IA, depois time humano": { es: "La IA y después el equipo humano" },
   "Agente de voz": { es: "Agente de voz" },
   "Nenhum agente": { es: "Ningún agente" },
-  "Novo agente de voz": { es: "Nuevo agente de voz", en: "New voice agent" },
-  "Criar agente de voz": { es: "Crear agente de voz", en: "Create voice agent" },
+  "Novo agente de voz": { es: "Nuevo agente de voz" },
+  "Criar agente de voz": { es: "Crear agente de voz" },
   "Ative um agente de voz para selecioná-lo aqui.": {
     es: "Activa un agente de voz para seleccionarlo aquí.",
-    en: "Activate a voice agent to select it here.",
   },
   "Depois de criar, configure e ative o agente no editor de voz.": {
     es: "Después de crearlo, configura y activa el agente en el editor de voz.",
-    en: "After creating the agent, configure and activate it in the voice editor.",
   },
   "Sem rótulo": { es: "Sin etiqueta" },
 
