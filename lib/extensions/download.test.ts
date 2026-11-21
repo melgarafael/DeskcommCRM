@@ -3,9 +3,48 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { assertCatalogOrigin, downloadArtifact, type DownloadPolicy } from "./download";
+import {
+  assertCatalogOrigin,
+  assertServiceOrigin,
+  downloadArtifact,
+  type DownloadPolicy,
+} from "./download";
 import { ExtensionError } from "./errors";
 import type { CatalogEntry } from "./manifest";
+
+describe("origem do serviço de um módulo conectado (spec 33, F1)", () => {
+  const publico = { localCatalogOrigin: null, appUrl: "https://crm.exemplo.com" };
+  const laboratorio = {
+    localCatalogOrigin: "http://127.0.0.1:4010",
+    appUrl: "http://localhost:3000",
+  };
+
+  it("aceita a origem HTTPS exata de um serviço público", () => {
+    expect(() => assertServiceOrigin("https://modulo.exemplo.com", publico)).not.toThrow();
+  });
+
+  it.each([
+    ["http sem laboratório", "http://modulo.exemplo.com", publico],
+    ["credencial embutida", "https://user:senha@modulo.exemplo.com", publico],
+    ["caminho", "https://modulo.exemplo.com/caminho", publico],
+    ["barra final", "https://modulo.exemplo.com/", publico],
+    ["query", "https://modulo.exemplo.com?q=1", publico],
+    ["fragmento", "https://modulo.exemplo.com#f", publico],
+    ["localhost", "https://localhost", publico],
+    ["IP privado", "https://10.0.0.1", publico],
+    ["IPv6 de loopback", "https://[::1]", publico],
+    ["loopback sem a política de laboratório", "http://127.0.0.1:4010", publico],
+  ])("recusa %s", (_nome, origem, politica) => {
+    expect(() => assertServiceOrigin(origem, politica)).toThrow(ExtensionError);
+  });
+
+  it("o loopback de laboratório passa só com a política local ligada e a mesma origem", () => {
+    expect(() => assertServiceOrigin("http://127.0.0.1:4010", laboratorio)).not.toThrow();
+    expect(() => assertServiceOrigin("http://127.0.0.1:4011", laboratorio)).toThrow(
+      ExtensionError,
+    );
+  });
+});
 
 const servers: Server[] = [];
 

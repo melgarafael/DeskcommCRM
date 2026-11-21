@@ -58,3 +58,21 @@ describe("isMediaPathOwnedBy", () => {
     expect(isMediaPathOwnedBy(`${orgId}/${conversationId}/2026/foto..final.jpg`, orgId, conversationId)).toBe(true);
   });
 });
+describe("isMediaPathOwnedBy — o que o Storage normaliza não passa (#5034)", () => {
+  const ORG = "11111111-1111-4111-8111-111111111111";
+  const CONV = "44444444-4444-4444-8444-444444444444";
+  it.each([
+    `${ORG}/${CONV}/%2e%2e/%2e%2e/outra-org/segredo.pdf`,
+    `${ORG}/${CONV}/%2E%2E/x.pdf`,
+    `${ORG}/${CONV}/a?b.pdf`,
+    `${ORG}/${CONV}/a#b.pdf`,
+    `${ORG}/${CONV}/x.pdf `,
+  ])("recusa %s", (path) => {
+    expect(isMediaPathOwnedBy(path, ORG, CONV)).toBe(false);
+  });
+
+  it("o caminho que o upload gera continua valendo", () => {
+    expect(isMediaPathOwnedBy(`${ORG}/${CONV}/out-0b8d3c2e.pdf`, ORG, CONV)).toBe(true);
+  });
+});
+

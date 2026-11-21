@@ -1,7 +1,10 @@
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import type { Lead } from "@/lib/types/leads";
 
-type DadosDoContato = Pick<Lead, "contact_phone" | "contact_email" | "contact_links">;
+type DadosDoContato = Pick<
+  Lead,
+  "contact_phone" | "contact_email" | "contact_links" | "contact_has_avatar"
+>;
 
 /** A linha de `contacts` como o quadro a lê — as colunas que esta regra usa. */
 export interface LinhaDoContatoNoQuadro {
@@ -10,6 +13,8 @@ export interface LinhaDoContatoNoQuadro {
   email: string | null;
   custom_fields: Record<string, unknown> | null;
   is_anonymized: boolean | null;
+  /** Só se pergunta se EXISTE: o caminho do arquivo não sai no payload. */
+  avatar_storage_path?: string | null;
 }
 
 /**
@@ -39,6 +44,7 @@ export function anexarDadosDoContato(leads: Lead[], contatos: LinhaDoContatoNoQu
       ...(contato.phone_number ? { contact_phone: contato.phone_number } : {}),
       ...(contato.email ? { contact_email: contato.email } : {}),
       ...(links.length > 0 ? { contact_links: links } : {}),
+      ...(contato.avatar_storage_path ? { contact_has_avatar: true as const } : {}),
     };
     if (Object.keys(dados).length > 0) porContato.set(contato.id, dados);
   }

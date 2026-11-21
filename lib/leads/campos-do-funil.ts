@@ -36,6 +36,39 @@ export function camposPorEscopo(
 }
 
 /**
+ * Os campos de um escopo em TODOS os funis, unidos por CHAVE (#4929).
+ *
+ * O CONTATO não tem funil próprio: a ficha lê o funil padrão (`useDefaultPipeline`)
+ * e o lapis da lista não tem funil nenhum para ler. O servidor já resolve isso
+ * perguntando a todos os funis (`defsDoPadraoDaOrg`, que é o que o PATCH usa para
+ * julgar o `custom_fields`), então a tela precisa do MESMO conjunto — senão o
+ * diálogo esconde um campo que a gravação conhece.
+ *
+ * A união é por CHAVE, nunca por rótulo: dois funis podem ter o mesmo rótulo em
+ * campos diferentes (dois "Código"), e juntá-los por rótulo apagaria um deles. A
+ * PRIMEIRA definição de cada chave vence, na ordem em que os funis chegam — a
+ * mesma ordem de `defsDoPadraoDaOrg` (`created_at`), para que a definição exibida
+ * seja a primeira que o servidor julga quando a chave aparece em dois funis.
+ */
+export function camposPorEscopoDosFunis(
+  settingsDosFunis: readonly unknown[],
+  escopo: EscopoDoCampo,
+): CustomFieldDef[] {
+  const vistos = new Set<string>();
+  const out: CustomFieldDef[] = [];
+  for (const settings of settingsDosFunis) {
+    // `settings` de funil é jsonb livre: lixo vira lista vazia, nunca exceção.
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) continue;
+    for (const campo of camposPorEscopo(camposDoFunil(settings as Record<string, unknown>), escopo)) {
+      if (vistos.has(campo.key)) continue;
+      vistos.add(campo.key);
+      out.push(campo);
+    }
+  }
+  return out;
+}
+
+/**
  * O campo está liberado para o MODELO? (issue #4669)
  *
  * Só o `true` EXPLÍCITO libera. A ausência da marca — toda definição que já

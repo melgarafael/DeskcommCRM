@@ -119,7 +119,12 @@ const DESCRICAO_RESULTADO_SEM_ATIVIDADE =
 export function descricaoResultado(
   outcome: EvolutionPayload["outcome"],
   t: (texto: string) => string = (texto) => texto,
+  recebidasIncompletas = false,
 ): string {
+  // Contagem de mensagens que falhou dá 0, e 0 aqui viraria "não houve
+  // atendimento" — uma afirmação sem evidência (#5016). Sem a contagem, a frase
+  // neutra.
+  if (recebidasIncompletas) return t(DESCRICAO_RESULTADO);
   return t(outcome.messages_received > 0 ? DESCRICAO_RESULTADO : DESCRICAO_RESULTADO_SEM_ATIVIDADE);
 }
 
@@ -341,6 +346,106 @@ function Carregando() {
   );
 }
 
+/**
+ * De tabela para o nome do bloco na tela (#5016). A rota avisa pela TABELA que
+ * veio cortada ou falhou; o dono do negócio não sabe o que é `ai_router_decisions`,
+ * sabe o que é "Conversas encaminhadas". Os rótulos são os mesmos dos cards,
+ * então a tradução já existe. Uma tabela pode alimentar mais de um card, e três
+ * tabelas alimentam o mesmo (a taxa de ajuda): o aviso lista cada nome uma vez.
+ */
+const ROTULO_DO_BLOCO = {
+  regras: "Regras que você ensinou",
+  melhorias: "Melhorias que você aprovou",
+  instaladas: "Habilidades instaladas",
+  linhaDoTempo: "Linha do tempo do aprendizado",
+  usadas: "Habilidades usadas",
+  maisUsadas: "Habilidades mais usadas",
+  encaminhadas: "Conversas encaminhadas",
+  assuntos: "Assuntos mais procurados",
+  materiais: "Consultas aos seus materiais",
+  equipe: "Consultas da equipe ao acervo",
+  fechados: "Negócios fechados pelo agente",
+  perdidos: "Negócios perdidos pelo agente",
+  mudancas: "Mudanças de passo no atendimento",
+  custo: "Custo da IA no período",
+  ajuda: "Casos que precisaram de uma pessoa",
+  resultado: "O que mudou no resultado",
+  travando: "O que está travando",
+} as const;
+
+type Bloco = keyof typeof ROTULO_DO_BLOCO;
+
+/**
+ * Cada tabela → TODO bloco da tela que ela alimenta. Faltar um aqui é o bloco
+ * mostrar recorte sem aviso — o defeito que esta faixa existe para impedir.
+ * `messages` também decide a frase do bloco de resultado ("não houve
+ * atendimento"), e `ai_router_decisions`, `knowledge_searches` e `crm_stages`
+ * alimentam as lacunas de "O que está travando".
+ */
+const BLOCOS_DA_FONTE: Record<string, Bloco[]> = {
+  org_memory_entries: ["regras", "linhaDoTempo"],
+  flywheel_distiller_proposals: ["melhorias", "linhaDoTempo"],
+  skill_pointers: ["instaladas", "linhaDoTempo"],
+  skill_activations: ["usadas", "maisUsadas"],
+  ai_router_decisions: ["encaminhadas", "assuntos", "travando"],
+  knowledge_searches: ["materiais", "equipe", "travando"],
+  lead_state_transitions: ["fechados", "perdidos", "mudancas"],
+  llm_calls: ["custo"],
+  messages: ["ajuda", "resultado"],
+  agent_inbox_items: ["ajuda"],
+  event_log: ["ajuda"],
+  crm_stages: ["travando"],
+};
+
+/** Fontes sem janela de data: encurtar o período não as completa. */
+const FONTES_SEM_DATA = new Set(["crm_stages"]);
+
+/** As três contagens da taxa de ajuda. */
+const FONTES_DA_AJUDA = new Set(["messages", "agent_inbox_items", "event_log"]);
+
+/** As fontes de onde "O que está travando" tira as lacunas e a boa notícia. */
+const FONTES_DAS_LACUNAS = new Set(["ai_router_decisions", "knowledge_searches", "crm_stages"]);
+
+function nomesDosBlocos(fontes: EvolutionPayload["fontes_incompletas"], t: (s: string) => string): string {
+  const blocos: Bloco[] = [];
+  for (const f of fontes) {
+    for (const b of BLOCOS_DA_FONTE[f.fonte] ?? []) if (!blocos.includes(b)) blocos.push(b);
+  }
+  return blocos.map((b) => t(ROTULO_DO_BLOCO[b])).join(", ");
+}
+
+/**
+ * Número cortado ou zerado por falha não pode passar por número exato (#5016):
+ * a rota devolve as fontes incompletas e esta faixa nomeia os blocos afetados.
+ * Sem fonte incompleta, não aparece nada.
+ */
+export function AvisoDeFontesIncompletas({ fontes }: { fontes: EvolutionPayload["fontes_incompletas"] }) {
+  const t = useT();
+  const cortadas = fontes.filter((f) => f.motivo === "cortada");
+  const falharam = fontes.filter((f) => f.motivo === "falhou");
+  if (cortadas.length === 0 && falharam.length === 0) return null;
+
+  return (
+    <Card className="flex flex-col gap-2 border-warning bg-warning-bg p-4 text-sm text-warning-fg" role="status">
+      {cortadas.length > 0 && (
+        <p data-testid="evolution-fontes-cortadas">
+          {t("Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte:")}{" "}
+          <strong>{nomesDosBlocos(cortadas, t)}</strong>
+          {cortadas.some((f) => !FONTES_SEM_DATA.has(f.fonte)) && (
+            <> {t("Nos blocos que dependem das datas, encurte o período para ver tudo.")}</>
+          )}
+        </p>
+      )}
+      {falharam.length > 0 && (
+        <p data-testid="evolution-fontes-falharam">
+          {t("Não foi possível ler agora, e estes números podem aparecer zerados ou incompletos — recarregue a página em alguns instantes:")}{" "}
+          <strong>{nomesDosBlocos(falharam, t)}</strong>
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function EvolutionClient({ defaultRange }: { defaultRange: { from: string; to: string } }) {
   const t = useT();
   const [from, setFrom] = React.useState(defaultRange.from);
@@ -395,7 +500,10 @@ export function EvolutionClient({ defaultRange }: { defaultRange: { from: string
       ) : !q.data ? (
         <Carregando />
       ) : (
-        <Conteudo payload={q.data} />
+        <>
+          <AvisoDeFontesIncompletas fontes={q.data.fontes_incompletas ?? []} />
+          <Conteudo payload={q.data} />
+        </>
       )}
     </div>
   );
@@ -404,6 +512,14 @@ export function EvolutionClient({ defaultRange }: { defaultRange: { from: string
 function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolution>["data"]> }) {
   const t = useT();
   const { learned, activity, outcome, gaps } = payload;
+  const incompletas = payload.fontes_incompletas ?? [];
+  const recebidasIncompletas = incompletas.some((f) => f.fonte === "messages");
+  // A taxa de ajuda é razão de três contagens: qualquer uma que falhou faz o
+  // número não querer dizer nada — um 0 ali seria "ninguém precisou de pessoa".
+  const ajudaIncompleta = incompletas.some(
+    (f) => f.motivo === "falhou" && FONTES_DA_AJUDA.has(f.fonte),
+  );
+  const lacunasIncompletas = incompletas.some((f) => FONTES_DAS_LACUNAS.has(f.fonte));
 
   const soma = (s: Array<{ value: number }>) => s.reduce((a, p) => a + p.value, 0);
   // Contagens SEPARADAS, não um booleano só: cada frase de "nada travando" é uma
@@ -575,7 +691,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
       <Bloco
         testId="bloco-resultado"
         titulo={t("O que mudou no resultado")}
-        descricao={descricaoResultado(outcome, t)}
+        descricao={descricaoResultado(outcome, t, recebidasIncompletas)}
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
@@ -595,7 +711,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
           />
           <StatCard
             rotulo={t("Casos que precisaram de uma pessoa")}
-            valor={taxaDeAjuda(outcome.handoff_rate, t)}
+            valor={ajudaIncompleta ? t("Indisponível agora") : taxaDeAjuda(outcome.handoff_rate, t)}
             significa={t(SIGNIFICA_AJUDA)}
           />
           <StatCard
@@ -613,7 +729,7 @@ function Conteudo({ payload }: { payload: NonNullable<ReturnType<typeof useEvolu
           "Cada linha aqui é uma coisa que está limitando seu agente, e o que fazer a respeito — às vezes você mesmo, às vezes quem cuida da sua instalação.",
         )}
       >
-        <EvolutionGaps gaps={gaps} buscas={buscas} decisoes={decisoes} />
+        <EvolutionGaps gaps={gaps} buscas={buscas} decisoes={decisoes} incompleto={lacunasIncompletas} />
       </Bloco>
     </>
   );

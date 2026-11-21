@@ -8679,6 +8679,8 @@ export type Database = {
         Row: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at: string | null;
+          disabled_by: string | null;
           id: string;
           installed_at: string;
           installed_by: string | null;
@@ -8694,6 +8696,8 @@ export type Database = {
         Insert: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -8708,6 +8712,8 @@ export type Database = {
         Update: {
           artifact_id?: string;
           catalog_id?: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -16295,6 +16301,16 @@ export type Database = {
       fn_extensions_revert_install: {
         Args: {
           p_actor: string;
+          p_expected_installation_revision: number;
+          p_installation: string;
+          p_operation: string;
+        };
+        Returns: Json;
+      };
+      fn_extensions_set_switch: {
+        Args: {
+          p_actor: string;
+          p_disabled: boolean;
           p_expected_installation_revision: number;
           p_installation: string;
           p_operation: string;

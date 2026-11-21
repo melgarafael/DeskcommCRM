@@ -32,6 +32,7 @@ import { linkDoNegocio, urlPublicaUsavel } from "@/lib/escalacao/url-publica";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
 import { nomeLegivel } from "@/lib/kanban/nome-do-dono";
+import { logger } from "@/lib/logger";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
 import {
@@ -107,19 +108,40 @@ async function nomeDoResponsavel(
   }
 }
 
-/** `crm_pipelines.name`, filtrado pela organização à mão (o admin bypassa a RLS). */
+/**
+ * `crm_pipelines.name`, filtrado pela organização à mão (o admin bypassa a RLS).
+ *
+ * Na falha, a linha "Funil" some do aviso — o aviso sai mesmo assim, porque o
+ * nome é cortesia. Mas a falha é DITA no log (revisão do #5006): o `error` do
+ * PostgREST é lido e, com a exceção, vira `logger.warn`, como já faz
+ * `nomesDosAtendentesCom`. Sem isso, quem investigasse "por que o aviso veio sem
+ * funil?" não teria por onde começar.
+ */
 async function nomeDoFunil(admin: Admin, organizationId: string, pipelineId: string | null): Promise<string | null> {
   if (!pipelineId) return null;
   try {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("crm_pipelines")
       .select("name")
       .eq("organization_id", organizationId)
       .eq("id", pipelineId)
       .maybeSingle();
+    if (error) {
+      logger.warn("[resumo-do-evento] nome do funil não lido: a linha Funil sai do aviso", {
+        organizationId,
+        pipelineId,
+        erro: error.message,
+      });
+      return null;
+    }
     const nome = (data as { name?: string | null } | null)?.name;
     return typeof nome === "string" ? nome : null;
-  } catch {
+  } catch (err) {
+    logger.warn("[resumo-do-evento] leitura do nome do funil lançou: a linha Funil sai do aviso", {
+      organizationId,
+      pipelineId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

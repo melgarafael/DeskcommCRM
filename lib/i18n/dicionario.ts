@@ -3403,6 +3403,12 @@ export const DICIONARIO: Traducoes = {
   "As conversas novas viram negócio em": {
     es: "Las conversaciones nuevas se convierten en negocio en",
   },
+  "As conversas novas do número": {
+    es: "Las conversaciones nuevas del número",
+  },
+  "viram negócio em": {
+    es: "se convierten en negocio en",
+  },
   ", que não está marcado. O assistente vai atender e os negócios vão se acumular ali sem que ele possa organizá-los.": {
     es: ", que no está marcado. El asistente atenderá y los negocios se acumularán ahí sin que pueda organizarlos.",
   },
@@ -5281,6 +5287,11 @@ export const DICIONARIO: Traducoes = {
   "Ação desconhecida para o link do Meet.": { es: "Acción desconocida para el enlace de Meet." },
   "Não foi possível registrar a ação. O motivo ficou registrado no servidor com o identificador abaixo.": { es: "No se pudo registrar la acción. El motivo quedó registrado en el servidor con el identificador de abajo." },
   "Custo da IA no período": { es: "Costo de la IA en el período" },
+  "Este período tem mais registros do que o painel consegue ler de uma vez. Estes números mostram só uma parte:": { es: "Este período tiene más registros de los que el panel puede leer de una vez. Estos números muestran solo una parte:" },
+  "Nos blocos que dependem das datas, encurte o período para ver tudo.": { es: "En los bloques que dependen de las fechas, acorta el período para verlo todo." },
+  "Indisponível agora": { es: "No disponible ahora" },
+  "Não foi possível ler agora, e estes números podem aparecer zerados ou incompletos — recarregue a página em alguns instantes:": { es: "No se pudo leer ahora, y estos números pueden aparecer en cero o incompletos; recarga la página en unos instantes:" },
+  "Não dá para dizer que nada está travando: parte dos dados deste período não pôde ser lida (veja o aviso no topo da página).": { es: "No se puede decir que nada esté frenando: parte de los datos de este período no se pudo leer (mira el aviso arriba en la página)." },
   "Custo no período": { es: "Costo en el período" },
   "Chamadas de IA": { es: "Llamadas a la IA" },
   "cada resposta do agente pode fazer várias": { es: "cada respuesta del agente puede hacer varias" },
@@ -7493,6 +7504,8 @@ export const DICIONARIO: Traducoes = {
   Automações: { es: "Automatizaciones" },
   Atividade: { es: "Actividad" },
   Funil: { es: "Embudo" },
+  "Funil:": { es: "Embudo:" },
+  "Organização inteira": { es: "Organización completa" },
   "Todos os funis": { es: "Todos los embudos" },
   "Escolha o funil": { es: "Elige el embudo" },
   "Escolha o funil primeiro": { es: "Elige primero el embudo" },
@@ -8878,6 +8891,11 @@ export const DICIONARIO: Traducoes = {
   Escopos: { es: "Alcances" },
   Expira: { es: "Expira" },
   "Token revogado.": { es: "Token revocado." },
+  "Módulo": { es: "Módulo" },
+  "Módulo conectado": { es: "Módulo conectado" },
+  "Módulo desativado e token revogado.": { es: "Módulo desactivado y token revocado." },
+  "Saia do acompanhamento para desativar módulos.": { es: "Sal del modo de seguimiento para desactivar módulos." },
+  "O escopo actor:module é reservado aos módulos conectados.": { es: "El alcance actor:module está reservado a los módulos conectados." },
   Revogar: { es: "Revocar" },
   "Criar novo token": { es: "Crear nuevo token" },
   "O plaintext será mostrado apenas uma vez.": {
@@ -9152,6 +9170,15 @@ export const DICIONARIO: Traducoes = {
   },
   "Você está na versão": { es: "Estás en la versión" },
   "É a mais recente. Não há nada a fazer.": { es: "Es la más reciente. No hay nada que hacer." },
+  // #4955 — a release saiu e o host ainda não pode oferecê-la.
+  "A versão": { es: "La versión" },
+  "já saiu": { es: "ya salió" },
+  "Ela foi publicada oficialmente, mas a imagem que esta instalação precisa baixar ainda não está pronta — isso costuma levar poucos minutos.": {
+    es: "Se publicó oficialmente, pero la imagen que esta instalación necesita descargar todavía no está lista: suele tardar pocos minutos.",
+  },
+  "Assim que estiver pronta, o botão Atualizar agora aparece aqui sozinho; você não precisa fazer nada. Por enquanto, a sua instalação segue na versão": {
+    es: "En cuanto esté lista, el botón Actualizar ahora aparece aquí solo; no tienes que hacer nada. Por ahora, tu instalación sigue en la versión",
+  },
   // #3488 — o retrato do host envelheceu: a tela não afirma que está em dia.
   "Não sei se há versão nova": { es: "No sé si hay una versión nueva" },
   "O servidor não fala comigo desde": { es: "El servidor no se comunica conmigo desde" },
@@ -10381,8 +10408,10 @@ export const DICIONARIO: Traducoes = {
   "O limite diário de envios do número foi atingido — proteção contra bloqueio do WhatsApp. Libera de novo amanhã, a partir das": {
     es: "El número alcanzó su límite diario de envíos. Es una protección para evitar que WhatsApp lo bloquee. Se restablece mañana, a partir de las",
   },
-  "A mesma mensagem estava se repetindo em massa por este número. O envio foi segurado para variar o texto e não parecer robô para o WhatsApp.": {
-    es: "Este número estaba repitiendo el mismo mensaje en masa. Se retuvo el envío para variar el texto y que WhatsApp no lo tome por un robot.",
+  // #4943: o aviso diz o próximo passo (o que escrever no prompt) e o que o
+  // gate isenta. A chave é o texto em português, então o texto antigo sai.
+  "A mesma mensagem estava se repetindo em massa por este número — o envio foi segurado para não parecer robô para o WhatsApp. Para liberar: no prompt, descreva o objetivo de cada mensagem em vez do texto exato e peça para personalizar com o nome e o contexto do lead; se for um passo de follow-up com texto fixo, acrescente outras redações ao passo. Mensagens curtas e links de pagamento não entram nessa conta.": {
+    es: "El mismo mensaje se estaba repitiendo en masa por este número: el envío se retuvo para no parecer un robot para WhatsApp. Para liberarlo: en el prompt, describe el objetivo de cada mensaje en lugar del texto exacto y pide que se personalice con el nombre y el contexto del lead; si es un paso de seguimiento con texto fijo, agrega otras redacciones al paso. Los mensajes cortos y los enlaces de pago no cuentan en esta regla.",
   },
   "O contato pediu para não receber mensagens (opt-out). Nada será enviado a ele.": {
     es: "El contacto pidió no recibir mensajes (opt-out). No se le enviará nada.",
@@ -10430,6 +10459,9 @@ export const DICIONARIO: Traducoes = {
   "Campos personalizados": { es: "Campos personalizados" },
   "Campos definidos no funil padrão da organização.": {
     es: "Campos definidos en el embudo predeterminado de la organización.",
+  },
+  "Campos personalizados definidos nos funis da organização.": {
+    es: "Campos personalizados definidos en los embudos de la organización.",
   },
   // ─── Onde criar campo do contato (#4744, `ComoCriarCamposDoContato`) ───
   // Uma frase em pedaços: entre o primeiro e o segundo vem o NOME do funil
@@ -16444,6 +16476,28 @@ export const DICIONARIO: Traducoes = {
   "Guarda fichas próprias nesta instalação; não lê seus dados.": { es: "Guarda fichas propias en esta instalación; no lee tus datos." },
   "Abre {portas} e guarda fichas próprias nesta instalação; não lê seus dados.": { es: "Abre {portas} y guarda fichas propias en esta instalación; no lee tus datos." },
   "Fichas próprias": { es: "Fichas propias" },
+  "Abre {portas}.":{ es: "Abre {portas}." },
+  "Lê {areas}.": { es: "Lee {areas}." },
+  "Altera {areas}.": { es: "Modifica {areas}." },
+  "Guarda fichas próprias nesta instalação.": { es: "Guarda fichas propias en esta instalación." },
+  "Contatos (leitura)": { es: "Contactos (lectura)" },
+  "Contatos (escrita)": { es: "Contactos (escritura)" },
+  "Negócios (leitura)": { es: "Negocios (lectura)" },
+  "Negócios (escrita)": { es: "Negocios (escritura)" },
+  "Conversas (leitura)": { es: "Conversaciones (lectura)" },
+  "Conversas (escrita)": { es: "Conversaciones (escritura)" },
+  "Agenda (leitura)": { es: "Agenda (lectura)" },
+  "Agenda (escrita)": { es: "Agenda (escritura)" },
+  "Funis (leitura)": { es: "Embudos (lectura)" },
+  "Funis (escrita)": { es: "Embudos (escritura)" },
+  "Agentes de IA (leitura)": { es: "Agentes de IA (lectura)" },
+  "Agentes de IA (escrita)": { es: "Agentes de IA (escritura)" },
+  "Catálogo (leitura)": { es: "Catálogo (lectura)" },
+  "Catálogo (escrita)": { es: "Catálogo (escritura)" },
+  "Configuração (leitura)": { es: "Configuración (lectura)" },
+  "Configuração (escrita)": { es: "Configuración (escritura)" },
+  "Análise (leitura)": { es: "Análisis (lectura)" },
+  "Análise (escrita)": { es: "Análisis (escritura)" },
   "Nada guardado aqui ainda.": { es: "Nada guardado aquí todavía." },
   "Não foi possível carregar o que este módulo guarda. O resto da ficha segue normal.": { es: "No se pudo cargar lo que guarda este módulo. El resto de la ficha sigue normal." },
   "Publicado por": { es: "Publicado por" },
@@ -16531,6 +16585,21 @@ export const DICIONARIO: Traducoes = {
   "Instalação": { es: "Instalación" },
   "Operação da plataforma": { es: "Operación de la plataforma" },
   "Instalação de módulo": { es: "Instalación de módulo" },
+  "Interruptor do módulo": { es: "Interruptor del módulo" },
+  "Desligado nesta instalação": { es: "Desactivado en esta instalación" },
+  "O responsável pela instalação desligou este módulo em {data}. Ele continua instalado e pode ser ligado de novo.": { es: "El responsable de la instalación desactivó este módulo el {data}. Sigue instalado y se puede volver a activar." },
+  "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo.": { es: "Desactivar no desinstala: el módulo sigue instalado y se puede volver a activar." },
+  "Módulo desligado nesta instalação.": { es: "Módulo desactivado en esta instalación." },
+  "Módulo ligado de novo nesta instalação.": { es: "Módulo activado de nuevo en esta instalación." },
+  "Gerar novo segredo": { es: "Generar nuevo secreto" },
+  "Gerar um novo segredo para {titulo}?": { es: "¿Generar un nuevo secreto para {titulo}?" },
+  "Gerar um segredo para {titulo}?": { es: "¿Generar un secreto para {titulo}?" },
+  "O módulo atual deixará de funcionar até receber o novo segredo. Os acessos que ele tem agora são revogados.": { es: "El módulo actual dejará de funcionar hasta recibir el nuevo secreto. Los accesos que tiene ahora se revocan." },
+  "Esta instalação ainda não tem segredo. Ele aparece uma única vez, logo depois de gerado.": { es: "Esta instalación aún no tiene secreto. Aparece una sola vez, justo después de generarlo." },
+  "Segredo do módulo": { es: "Secreto del módulo" },
+  "Copie agora: este segredo não será mostrado de novo.": { es: "Cópialo ahora: este secreto no se volverá a mostrar." },
+  "Não consegui copiar — selecione e copie o segredo manualmente.": { es: "No pude copiar. Selecciona el secreto y cópialo manualmente." },
+  "Só um módulo conectado tem o que ligar ou desligar nesta instalação.": { es: "Solo un módulo conectado tiene algo que activar o desactivar en esta instalación." },
   "Módulo {nome}": { es: "Módulo {nome}" },
   "Confira o catálogo admitido e tente a instalação novamente.": { es: "Revisa el catálogo admitido e intenta instalar de nuevo." },
   "Revise o arquivo ou a configuração indicada e tente novamente.": { es: "Revisa el archivo o la configuración indicada e inténtalo de nuevo." },

@@ -284,9 +284,29 @@ não declara (`lib/mcp/conferencia-de-campos.ts`).
 ```ts
 inputSchema: z.object({
   conversation_id: z.string().uuid(),
-  body: z.string().min(1).max(4096),
-  media_url: z.string().url().optional()
+  body: z.string().min(1).max(4096).optional(),
+  type: z.enum(['text', 'image', 'audio', 'document', 'sticker', 'video', 'location', 'contact']).default('text'),
+  media_url: z.string().url().optional(),
+  media_storage_path: z.string().optional(),   // #5034
+  media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
+  media_mime: z.string().optional()
 })
+// Precisa de body, media_url ou media_storage_path.
+```
+
+**Arquivo sem link público (#5034)**: suba o arquivo com `POST /api/v1/conversations/{id}/media`
+(multipart, campo `file`; sessão do navegador ou token de integração com escrita — o token OAuth do MCP
+não serve para a rota REST). A resposta (`data`) traz `storage_path`, `kind`, `media_mime` e `media_filename` (o nome original). Envie com:
+
+```ts
+{ conversation_id, type: kind /* 'image' | 'video' | 'audio' | 'document' */,
+  media_storage_path: storage_path, media_mime, body /* legenda, opcional */,
+  ...(media_filename ? { media_filename } : {}) /* o nome da resposta do upload; null não é aceito, então fica de fora */ }
+```
+
+O envio confere que o arquivo é da organização E desta conversa; caminho de outra conversa é recusado.
+
+```ts
 
 outputSchema: z.object({
   message_id: z.string().uuid(),

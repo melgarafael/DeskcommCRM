@@ -376,8 +376,10 @@ describe("a fiação — quem usa a regra a chama", () => {
     expect(inicio, "a etapa dos marcadores sumiu da rota").toBeGreaterThan(-1);
     const etapa = rota.slice(inicio, fim);
 
-    expect(etapa, "a consulta não traz telefone, e-mail e custom_fields").toMatch(
-      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized"\s*\)/,
+    // `avatar_storage_path` entra na MESMA consulta (a foto do card): nenhuma
+    // leitura nova de `contacts` por quadro.
+    expect(etapa, "a consulta não traz telefone, e-mail, custom_fields e a foto").toMatch(
+      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized, avatar_storage_path"\s*\)/,
     );
     expect(etapa, "anexarDadosDoContato não é chamada na etapa").toMatch(
       /anexarDadosDoContato\(\s*leadsDoQuadro,\s*linhas\s*\)/,

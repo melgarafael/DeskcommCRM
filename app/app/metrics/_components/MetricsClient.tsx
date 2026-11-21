@@ -16,6 +16,7 @@ import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
 import { PerdasPanel } from "./PerdasPanel";
 import { PrevisaoPanel } from "./PrevisaoPanel";
 import { SeriePanel } from "./SeriePanel";
+import { type FunilDaSerie } from "@/hooks/metrics/useSerieTemporal";
 import { useMetasDoMes } from "@/hooks/metrics/useMetasDoMes";
 import { janelaDoMes, mesLocal } from "@/lib/metas/periodo";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
@@ -53,9 +54,16 @@ function attendantLabel(a: AttendantMetric, t: (texto: string) => string): strin
 interface Props {
   canCompare: boolean;
   currentUserId: string;
+  /**
+   * Os funis da organização, para o recorte dos ganhos (#4918). Vêm do
+   * componente de SERVIDOR, como no Kanban: `GET /api/v1/pipelines` exige
+   * manager+ e `/app/metrics` é de qualquer papel — um agent que pedisse a
+   * lista por ali levaria 403 e ficaria sem o seletor.
+   */
+  funis: FunilDaSerie[];
 }
 
-export function MetricsClient({ canCompare, currentUserId }: Props) {
+export function MetricsClient({ canCompare, currentUserId, funis }: Props) {
   const t = useT();
   const [owner, setOwner] = useState<string>(ALL);
   const selectedOwner = owner === ALL ? null : owner;
@@ -318,7 +326,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
       <CanaisPanel owner={selectedOwner} />
-      <SeriePanel />
+      <SeriePanel funis={funis} />
     </div>
   );
 }
