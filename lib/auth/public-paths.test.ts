@@ -150,4 +150,13 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/webchat/mensagens/qualquer")).toBe(false);
     expect(isPublicPath("/api/v1/webchat")).toBe(false);
   });
+
+  /**
+   * A GET de eventos do chat no site (spec 36, F1): o visitante também não tem sessão. O token
+   * vai no cabeçalho, e a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera a GET de eventos do chat no site, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/api/v1/webchat/eventos")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/eventos/qualquer")).toBe(false);
+  });
 });
