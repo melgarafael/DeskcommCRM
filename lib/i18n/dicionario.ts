@@ -23021,6 +23021,15 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  // #5012 (T1): criar a etiqueta com nome e cor, em Configurações › Tags.
+  "Nova tag": { es: "Nueva etiqueta" },
+  "Nome da tag": { es: "Nombre de la etiqueta" },
+  "Ex.: Atacado": { es: "Ej.: Mayorista" },
+  "Essa tag já existe. Para mudar a cor dela, use o botão Cor na lista.": {
+    es: "Esa etiqueta ya existe. Para cambiar su color, use el botón Color de la lista.",
+  },
+  "Criar tag": { es: "Crear etiqueta" },
+  "Tag criada:": { es: "Etiqueta creada:" },
 };
 
 /**

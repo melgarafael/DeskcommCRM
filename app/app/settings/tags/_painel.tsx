@@ -102,8 +102,8 @@ export const CHAVES_COM_NOME_DE_ETIQUETA = [
 const DESTINO_INEXISTENTE =
   "Essa etiqueta não existe. Juntar só leva para uma etiqueta que já existe; para dar um nome novo, use Renomear.";
 
-/** Cada recusa do servidor vira uma frase que diz O QUE FAZER. */
-const ERRO_EM_PORTUGUES: Record<string, string> = {
+/** Cada recusa do servidor vira uma frase que diz O QUE FAZER. Também usada por "Nova tag". */
+export const ERRO_EM_PORTUGUES: Record<string, string> = {
   validation_failed: "Confira a etiqueta, o novo nome e a cor.",
   forbidden: "Só um gerente ou administrador da organização pode mudar as etiquetas.",
   unauthenticated: "Sua sessão expirou. Entre de novo.",
