@@ -119,8 +119,8 @@ export function AttachmentPreviewDialog({
     );
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-md">
+    <Dialog open onOpenChange={(open) => !open && !sending && onCancel()}>
+      <DialogContent className="max-w-md" disableCloseButton={sending}>
         <DialogHeader>
           <DialogTitle>{t("Enviar anexo")}</DialogTitle>
         </DialogHeader>

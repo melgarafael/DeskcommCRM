@@ -349,7 +349,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   if (pedido.escolha === "transferir") {
-    const settingsDoDestino = await settingsDoFunil(supabase, destinoPipelineId);
+    const settingsDoDestino = await settingsDoFunil(supabase, destinoPipelineId, orgId);
 
     // ── O FUNIL QUE RETOMA COMO NOVO NEGÓCIO É RESPEITADO ────────────────────
     // A MESMA função do lote do quadro, com o `settings` do DESTINO: é lá que o

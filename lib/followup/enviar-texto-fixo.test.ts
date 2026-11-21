@@ -30,6 +30,15 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 
+/**
+ * Os dois lados da janela, pela CAPACIDADE e nunca pelo nome do provedor
+ * (doutrina `restricao-de-canal`, invariante 1): o canal oficial só aceita
+ * mensagem livre DENTRO da janela de 24 h, o pareado por QR aceita fora dela.
+ * A mesma régua que o teste de mídia usa mais abaixo.
+ */
+const CANAL_OFICIAL = PROVIDERS_DE_MENSAGEM.find((p) => !CHANNEL_CAPABILITIES[p].freeformOutsideWindow)!;
+const CANAL_POR_QR = PROVIDERS_DE_MENSAGEM.find((p) => CHANNEL_CAPABILITIES[p].freeformOutsideWindow)!;
+
 const boundary = { organization_id: "org-1", contact_id: "contact-1", conversation_id: "conv-1", service_revision: 1, demanda_id: null, demanda_revision: null };
 const JOB = {
   id: "job-1",
@@ -342,6 +351,9 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
       kind: "deferred",
       until: new Date("2026-10-08T11:00:00Z"),
       reason: "outside_window",
+      // Sem provedor legível, o escopo NÃO anuncia a janela de 24 h: só o canal
+      // que a tem pode ser descrito por ela.
+      janelaRegulatoria: false,
     });
     // E o job volta pra `pending` com `run_after` na abertura, SEM gastar
     // tentativa (p_hold) — o envio sai sozinho quando a janela abrir.
@@ -351,6 +363,46 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
     expect(settle.p_hold).toBe(true);
     expect(statusUpdates).toContain("pending");
     expect(statusUpdates).not.toContain("done");
+  });
+
+  /**
+   * #4913 — O MESMO ADIAMENTO, DOIS CANAIS, DUAS FRASES.
+   *
+   * O horário de envio da conexão (Proteção de envio) fecha para todo canal:
+   * isso é cortesia, não regra da plataforma. O que muda é o ESCOPO gravado no
+   * evento — e é ele que impede o dossiê de anunciar a janela de 24 h da Meta
+   * numa conexão por QR, onde essa janela não existe.
+   */
+  it("03h: conexão por QR adia pelo horário de envio e grava janela_regulatoria=false", async () => {
+    configurarJanelaReal();
+    decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
+    CONFIG.provider = CANAL_POR_QR;
+
+    const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({
+      kind: "deferred",
+      until: new Date("2026-10-08T11:00:00Z"),
+      reason: "outside_window",
+      janelaRegulatoria: false,
+    });
+  });
+
+  it("03h: canal oficial adia no MESMO instante, pelo MESMO motivo, e marca o escopo", async () => {
+    configurarJanelaReal();
+    decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
+    CONFIG.provider = CANAL_OFICIAL;
+
+    const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({
+      kind: "deferred",
+      until: new Date("2026-10-08T11:00:00Z"),
+      reason: "outside_window",
+      janelaRegulatoria: true,
+    });
   });
 
   // #3974 — a opção libera a POSSE da conversa, não o relógio: liberado o veto
@@ -370,6 +422,7 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
       kind: "deferred",
       until: new Date("2026-10-08T11:00:00Z"),
       reason: "outside_window",
+      janelaRegulatoria: false,
     });
   });
 
@@ -387,6 +440,7 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
       kind: "deferred",
       until: new Date("2026-10-12T11:00:00Z"),
       reason: "followup_send_window",
+      janelaRegulatoria: false,
     });
     expect(settleCalls.at(-1)!.p_retry_at).toBe("2026-10-12T11:00:00.000Z");
   });
@@ -637,6 +691,27 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
     expect(settle.p_done).toBe(true);
     expect(String(settle.p_error)).toContain("janela de 24 horas");
     expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({ kind: "skipped", reason: settle.p_error });
+  });
+
+  it("conexão por QR com a janela de 24 h fechada: a imagem SAI — ali não há janela regulatória (#4913)", async () => {
+    // O caso do relato, no lado que TEM de enviar: número pareado por QR,
+    // cliente sem escrever há 30 h, passo de mensagem com mídia. A janela de
+    // 24 h da API oficial não existe neste canal (capacidade, não nome), então
+    // nada é recusado e nada é adiado por ela.
+    decidir.mockResolvedValue({ permite: true });
+    CONFIG.provider = CANAL_POR_QR;
+    CONFIG.ultimoInbound = new Date(Date.now() - 30 * HORA).toISOString();
+    comMidia("https://cdn.exemplo.com/oferta.png");
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
+    expect(sendMessageHandler.mock.calls[0]![2]).toMatchObject({
+      type: "image",
+      body: "Oi, tudo bem?",
+    });
+    // E o histórico não ganha linha de espera: não houve adiamento a registrar.
+    const desfechos = completeTurnForEnrollment.mock.calls.map((c) => (c[4] as { kind: string }).kind);
+    expect(desfechos).not.toContain("deferred");
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({ kind: "sent" });
   });
 
   it("controle: o mesmo canal com a janela ABERTA manda a imagem", async () => {

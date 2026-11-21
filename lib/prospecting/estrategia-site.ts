@@ -15,14 +15,15 @@ import {
   trocarMarcadores,
   type TradutorDeTexto,
 } from "@/lib/prospecting/site-classify";
-import type { OfertaDaCampanha } from "./schema";
+import { usaFichaDigital, type OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
-import { sinaisDaEmpresa } from "./sinais-da-empresa";
+import { linhaDoTelefone, sinaisDaEmpresa } from "./sinais-da-empresa";
 import {
   dadosDoContextoDaEquipe,
   lerContextoDaEquipe,
   ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
   ORIGEM_DOS_DADOS_DA_ABORDAGEM_FRIA,
+  temContextoDaEquipe,
 } from "./contexto-da-equipe";
 export type { OfertaDaCampanha } from "./schema";
 
@@ -499,7 +500,8 @@ export const ROTULOS_DO_CHECKLIST = {
   tel: "Telefone",
   mailto: "E-mail",
   social: "Redes sociais",
-  mapa: "Endereço e mapa",
+  endereco: "Endereço",
+  mapa: "Mapa",
   fotos: "Fotos",
   titulo: "Título",
   description: "Descrição no Google",
@@ -592,6 +594,14 @@ export function instrucaoDeAbordagemFria(
  * celular/fixo) e, quando há veredito medido, `Auditoria` e `Detalhe` +
  * `Rascunho de abordagem` quando a tela guardou uma prévia válida.
  *
+ * `opcoes.semFichaDigital` (#4829) é a campanha que NÃO vende presença digital:
+ * saem `Ficha do Google`, `Redes`, `Auditoria`, `Detalhe` e o próprio `Site`;
+ * ficam `Empresa`, `Segmento`, `Endereço` e `Telefone` — o que a empresa É e como
+ * se chega nela. O `Telefone` fica de propósito: é dado de contato, não vitrine
+ * (nota, avaliações e redes são o material que o prompt frio citava e soava fora
+ * de contexto para quem vende consórcio, crédito, seguro ou consultoria).
+ * Ausente = ligada, byte a byte o de antes.
+ *
  * Fonte única — worker e prévia bebem daqui. Era aqui que o #4459 doía: a
  * descoberta trazia cinco sinais e o prompt recebia a nota nua, as URLs cruas e
  * o veredito do site. Numa empresa sem site sobrava "não tem site", e a
@@ -623,24 +633,35 @@ export function montarDadosDeAbordagem(
     verificado_em: string;
   } | null,
   previa?: PreviaSalva | null,
-  opcoes: { soCumprimenta?: boolean } = {},
+  opcoes: { soCumprimenta?: boolean; semFichaDigital?: boolean } = {},
 ): Record<string, string> {
+  const semFicha = opcoes.semFichaDigital === true;
   const dados: Record<string, string> = {
     Empresa: data.name,
     Segmento: data.category ?? "",
     Endereço: data.address ?? "",
-    Site: data.website ?? "",
+  };
+  if (semFicha) {
+    // SEM FICHA DIGITAL (#4829): o que a empresa É e como se chega nela. O
+    // `Telefone` fica — é contato, não vitrine; o tipo (celular/fixo, WhatsApp
+    // conferido) diz COMO falar, não serve de motivo. Ficam de fora o `Site`,
+    // a `Ficha do Google`, as `Redes` e a `Auditoria`.
+    const telefone = linhaDoTelefone(data);
+    if (telefone) dados.Telefone = telefone;
+  } else {
+    dados.Site = data.website ?? "";
     // Cada linha traz a ORIGEM no próprio rótulo (`Ficha do Google`, `Redes`,
     // `Telefone`) e só existe quando o fato foi coletado — ausência não vira
     // "sem avaliações", que seria afirmação sobre o mundo, não sobre o nosso
     // dado (ver `sinais-da-empresa.ts`).
-    ...sinaisDaEmpresa(data),
-  };
+    Object.assign(dados, sinaisDaEmpresa(data));
+  }
   // Só o DEFINITIVO E MEDIDO é citável (`citavelNoArgumento`) — e com a data,
   // nunca "agora": o envio pode sair dias depois da medição, e "agora"
   // envelhece em mentira. `falta-*` fica de fora mesmo em veredito antigo: item
   // de checklist é melhoria e já tem morada própria na ficha da tela (#3723).
-  if (site && citavelNoArgumento(site)) {
+  // Sem ficha digital a auditoria NÃO entra: é o argumento de venda de site.
+  if (!semFicha && site && citavelNoArgumento(site)) {
     const problemas = problemasMedidos(site.problemas).map((p) => descreverProblema(p)).filter(Boolean);
     const dataMedicao = site.verificado_em.slice(0, 10).split("-").reverse().join("/");
     dados["Auditoria"] =
@@ -657,4 +678,72 @@ export function montarDadosDeAbordagem(
   // sobre ESTES dados — então o modo só-cumprimenta sem `Contexto da equipe` não liga nada.
   Object.assign(dados, dadosDoContextoDaEquipe(lerContextoDaEquipe(data.contexto_da_equipe), opcoes));
   return dados;
+}
+
+/**
+ * A linha que o modo `agente` acrescenta à instrução: o roteiro do PRÓPRIO agente (que já
+ * abre o `system`) passa a ser a referência principal. Só entra nesse modo, para que o modo
+ * `estrategia` continue byte a byte o de antes.
+ */
+export const LINHA_DA_FONTE_AGENTE =
+  "Use o roteiro de abordagem das suas próprias instruções (acima) como referência principal desta mensagem. Não use ângulo de auditoria de site.";
+
+/**
+ * INSTRUÇÃO e DADOS da primeira mensagem — a decisão única que o envio (`worker.ts`) e a
+ * prévia (`previa-gerar.ts`) chamam, para o par tela×envio não divergir.
+ *
+ * - `exit_offer` diferente de `first_message`: só cumprimenta; sem estratégia, sem auditoria
+ *   e sem rascunho (o de sempre).
+ * - Sem ficha digital (`usaFichaDigital`, #4829): sem estratégia, sem os fatos da ficha e
+ *   sem rascunho guardado.
+ * - `fonte_da_abordagem = "agente"`: sem estratégia e sem `Auditoria`/`Detalhe`, com a linha
+ *   que põe o roteiro do agente na frente. A moldura fria (transparência, uma pergunta por
+ *   vez, critérios), a voz e o rascunho guardado continuam.
+ * - `fonte_da_abordagem = "estrategia"` (ou ausente) com a ficha ligada: exatamente o que era.
+ *
+ * `comContextoDaEquipe` e `semFichaDigital` voltam junto porque `gerarAbordagemDeFormulario`
+ * precisa dos MESMOS valores que moldaram a instrução e os dados.
+ */
+export function entradasDaAbordagem(args: {
+  config: {
+    instruction: string;
+    qualification: string;
+    exit_offer?: "first_message" | "second_message";
+    fonte_da_abordagem?: "estrategia" | "agente";
+    usar_ficha_digital?: boolean | null;
+  };
+  data: Parameters<typeof montarDadosDeAbordagem>[0];
+  site: Parameters<typeof montarDadosDeAbordagem>[1];
+  estrategia: EstrategiaDoLead | null;
+  voz?: string;
+  previa?: PreviaSalva | null;
+}): {
+  instrucao: string;
+  dados: Record<string, string>;
+  comContextoDaEquipe: boolean;
+  semFichaDigital: boolean;
+} {
+  const soCumprimenta = (args.config.exit_offer ?? "first_message") !== "first_message";
+  const peloAgente = args.config.fonte_da_abordagem === "agente";
+  const semFichaDigital = !usaFichaDigital(args.config);
+  const dados = soCumprimenta
+    ? montarDadosDeAbordagem(args.data, null, null, { soCumprimenta, semFichaDigital })
+    : montarDadosDeAbordagem(
+        args.data,
+        peloAgente || semFichaDigital ? null : args.site,
+        semFichaDigital ? null : (args.previa ?? null),
+        { semFichaDigital },
+      );
+  // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
+  const comContextoDaEquipe = temContextoDaEquipe(dados);
+  const instrucaoBase = instrucaoDeAbordagemFria(
+    args.config.instruction,
+    args.config.qualification,
+    args.voz || undefined,
+    peloAgente || semFichaDigital ? null : args.estrategia,
+    soCumprimenta,
+    comContextoDaEquipe,
+  );
+  const instrucao = peloAgente ? `${instrucaoBase}\n${LINHA_DA_FONTE_AGENTE}` : instrucaoBase;
+  return { instrucao, dados, comContextoDaEquipe, semFichaDigital };
 }

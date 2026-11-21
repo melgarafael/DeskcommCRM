@@ -143,6 +143,55 @@ export function validarJanelaDeEsfriamento(horas: number): Resultado {
   return { ok: true };
 }
 
+/**
+ * O teto do CRITÉRIO da etapa, em caracteres.
+ *
+ * ~500 é o tamanho de um parágrafo curto — o que cabe no popover da coluna e no
+ * contexto do assistente sem virar um segundo prompt. O texto vai INTEIRO para
+ * o modelo (`crm_list_stages`), então um teto generoso demais gastaria tokens de
+ * toda etapa em todo turno que o agente pensa no funil.
+ *
+ * É a MESMA constante na tela, na API e no MCP: duas cópias divergiriam e a tela
+ * aceitaria o que o servidor recusa (ou o contrário), que é o defeito que esta
+ * configuração existe para não ter.
+ */
+export const TETO_DA_DESCRICAO_DA_ETAPA = 500;
+
+/**
+ * Recusa o critério que não cabe na coluna.
+ *
+ * ⚠️ O TETO É MEDIDO DEPOIS DO `trim`. Contar antes faria um texto de 500
+ * caracteres com espaço sobrando na ponta ser recusado na tela (que recorta) e
+ * aceito pela API (que também recorta) — duas réguas para a mesma frase. Quem
+ * normaliza é `normalizarDescricaoDeEtapa`, e as duas funções são a única
+ * definição da regra.
+ */
+export function validarDescricaoDeEtapa(descricao: string): Resultado {
+  if (descricao.trim().length > TETO_DA_DESCRICAO_DA_ETAPA) {
+    return {
+      ok: false,
+      erro: `O critério da etapa vai até ${TETO_DA_DESCRICAO_DA_ETAPA} caracteres. Encurte o texto — ele é lido pelo assistente a cada decisão de mover o negócio.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * O critério como ele vai para `crm_stages.description`: texto sem espaço
+ * sobrando, ou `null` quando não sobra nada.
+ *
+ * ⚠️ VAZIO É `NULL`, NÃO `""`. A coluna é `text` nullable, e a leitura
+ * (`corpo`/`crm_list_stages`) só sabe dizer "sem critério" quando o valor é
+ * `null` — uma string vazia chegaria ao modelo como "o critério da etapa é
+ * (vazio)", ou seja, um critério que existe e não diz nada. É a mesma escolha de
+ * `expected_duration_hours` e `win_probability`: vazio limpa.
+ */
+export function normalizarDescricaoDeEtapa(descricao: string | null): string | null {
+  if (descricao === null) return null;
+  const limpo = descricao.trim();
+  return limpo === "" ? null : limpo;
+}
+
 // `crm_stages_slug_format`: ^[a-z0-9_-]{2,40}$. Um caractere já viola.
 const SLUG_MIN = 2;
 const SLUG_MAX = 40;

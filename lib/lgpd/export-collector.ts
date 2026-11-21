@@ -75,6 +75,12 @@ export interface ContactSnapshot {
    */
   additional_phones?: ContactPhoneSnapshot[];
   /**
+   * As identidades de rede social do contato (#3764, fatia 1): o perfil do
+   * Instagram e o do Facebook — cada uma com a rede de onde veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
+   * titular pedia acesso e não recebia o que a ingestão guardou sobre ele.
+   */
+  identities?: ContactIdentitySnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -96,6 +102,13 @@ export interface ContactPhoneSnapshot {
   /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
   wa_lid: string | null;
   created_at: string;
+}
+
+/** Uma identidade do contato num canal, como o titular a recebe (#3764). */
+export interface ContactIdentitySnapshot {
+  canal: string;
+  identificador: string;
+  criado_em: string;
 }
 
 export interface ConsentRow {
@@ -380,6 +393,22 @@ export interface ScheduledMessageRow {
   body: string;
   scheduled_at: string;
   status: string;
+  created_at: string;
+}
+
+/**
+ * Venda registrada no negócio do titular (#5087). A anonimização limpa
+ * `observacao` e `tags`; valor, moeda e dia ficam (registro do dinheiro). O
+ * pedido de acesso entrega a linha inteira — mesma régua da comanda (`sales`).
+ */
+export interface VendaRegistradaRow {
+  id: string;
+  lead_id: string | null;
+  valor_cents: number;
+  currency: string;
+  data: string;
+  tags: string[];
+  observacao: string | null;
   created_at: string;
 }
 
@@ -814,6 +843,8 @@ export interface ExportPayload {
    * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
    */
   scheduled_messages?: ScheduledMessageRow[];
+  /** Presente só quando há linha, como `scheduled_messages`. */
+  vendas_registradas?: VendaRegistradaRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -1357,6 +1388,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }));
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
+
+  // (#3764) As identidades de rede social do contato. A anonimização as apaga
+  // pelo gatilho da ficha — e o titular que pede ACESSO tem de receber o que a
+  // ingestão guardou sobre ele. Sem esta leitura, o dado existia no banco e não
+  // saía no `data.json`: a mesma assimetria que a cerca de acesso×redação cobra.
+  // A consulta filtra organização e ficha: o cliente aqui é o administrador.
+  let identidades: ContactIdentitySnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("canal, identificador, criado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("criado_em", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact identities load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    identidades = (data ?? []) as ContactIdentitySnapshot[];
+  }
+  if (contact && identidades.length > 0) contact.identities = identidades;
 
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
@@ -2000,6 +2054,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("scheduled_messages", data, 500);
       scheduled_messages = data;
+    }
+  }
+
+  // Vendas registradas — contact_id direto em vendas_registradas (#5087). A
+  // venda de negócio herda o contato do negócio ao nascer (POST /api/v1/vendas),
+  // e é por esse contact_id que a anonimização a limpa.
+  let vendas_registradas: VendaRegistradaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("vendas_registradas")
+      .select("id, lead_id, valor_cents, currency, data, tags, observacao, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("data", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] vendas registradas load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("vendas_registradas", data, 500);
+      vendas_registradas = data;
     }
   }
 
@@ -2707,6 +2784,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     proposals,
     tasks,
     ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
+    ...(vendas_registradas.length > 0 ? { vendas_registradas } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

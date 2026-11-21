@@ -83,7 +83,9 @@ import { z } from "zod";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
+import { dataNoFuso, inicioDoDia, proximoDia } from "@/lib/relatorios/janela";
 import { fusoValido } from "@/lib/reports/atividades";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export const dynamic = "force-dynamic";
 
@@ -94,11 +96,6 @@ export const dynamic = "force-dynamic";
  */
 const DIAS_MAXIMOS = 90;
 
-/**
- * `max_rows = 1000` é o teto do SERVIDOR — um `.limit(5000)` devolve 1000 e não
- * diz nada. Só `range` com `count` exato sabe o tamanho de verdade.
- */
-const TAMANHO_DA_PAGINA = 1000;
 const PAGINAS_MAXIMAS = 10;
 const MAXIMO_DE_TAGS_PEDIDAS = 100;
 
@@ -252,32 +249,20 @@ export async function GET(req: NextRequest): Promise<Response> {
   const naJanela =
     `and(service_started_at.gte.${janela.de},service_started_at.lt.${janela.ate}),` +
     `and(service_started_at.is.null,created_at.gte.${janela.de},created_at.lt.${janela.ate})`;
-  const conversas: ConversaBruta[] = [];
-  let totalNoBanco: number | null = null;
-  let paginaCheia = false;
-
-  for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina++) {
-    const inicio = pagina * TAMANHO_DA_PAGINA;
+  const leitura = await lerPaginado<ConversaBruta>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("conversations")
-      .select(COLUNAS, { count: "exact" })
+      .select(COLUNAS, contar ? { count: "exact" } : undefined)
       .eq("organization_id", authz.organizationId)
       .or(naJanela)
       .order("service_started_at", { ascending: false })
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(inicio, inicio + TAMANHO_DA_PAGINA - 1);
-    if (error) return fail("internal_error", error.message, 500, { requestId });
-
-    if (totalNoBanco === null) totalNoBanco = count;
-    const lote = (data ?? []) as unknown as ConversaBruta[];
-    conversas.push(...lote);
-    paginaCheia = lote.length >= TAMANHO_DA_PAGINA;
-    if (!paginaCheia) break;
-    if (totalNoBanco !== null && conversas.length >= totalNoBanco) break;
-  }
-  const truncado =
-    totalNoBanco === null ? paginaCheia : conversas.length < totalNoBanco;
+      .range(inicio, fim);
+    return { data: (data ?? []) as unknown as ConversaBruta[], error, count };
+  }, PAGINAS_MAXIMAS);
+  if (leitura.erro !== null) return fail("internal_error", leitura.erro, 500, { requestId });
+  const { linhas: conversas, truncado } = leitura;
 
   // ─── A CONTA ───────────────────────────────────────────────────────────────
   const agora = Date.now();
@@ -316,15 +301,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
 
-  for (const linha of linhas) linha.fatia = fatiaDe(linha.conversas, totalEtiquetagens);
-  // O denominador é a SOMA das etiquetagens (uma conversa com duas etiquetas
-  // conta em duas linhas), então as fatias somam 100 exatos antes de arredondar
-  // — e o arredondamento não pode criar porcentagem que não existe: 101% num
-  // relatório é o mesmo defeito de barra que não fecha.
-  const excedente = linhas.reduce((soma, l) => soma + l.fatia, 0) - 100;
-  if (excedente > 0) {
-    const maior = linhas.reduce((a, b) => (a.fatia >= b.fatia ? a : b));
-    maior.fatia -= excedente;
+  // Round each share down, then give the remaining points to the largest
+  // fractional shares so the displayed percentages add up to 100.
+  const restos = linhas.map((linha) => {
+    const pontos = linha.conversas * 100;
+    linha.fatia = Math.floor(pontos / totalEtiquetagens);
+    return { linha, resto: pontos % totalEtiquetagens };
+  });
+  const faltam = 100 - linhas.reduce((soma, linha) => soma + linha.fatia, 0);
+  restos.sort((a, b) => b.resto - a.resto);
+  for (const { linha } of restos.slice(0, faltam)) {
+    linha.fatia += 1;
   }
 
   // Volume primeiro: a pergunta é "qual assunto ocupou mais", e a leitura que
@@ -395,11 +382,6 @@ function instante(texto: string | null): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function fatiaDe(quantidade: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((quantidade / total) * 100);
-}
-
 function montarResposta(
   janela: { de: string; ate: string },
   tz: string,
@@ -432,63 +414,4 @@ function etiquetasPedidas(brutas: string | undefined): string[] {
 function diasDeJanela(de: string, ate: string): number {
   const ms = Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`);
   return Math.round(ms / 86_400_000) + 1;
-}
-
-function proximoDia(data: string): string {
-  const [ano, mes, dia] = data.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);
-}
-
-function partesLocais(
-  instante: Date,
-  tz: string,
-): { ano: number; mes: number; dia: number; hora: number; minuto: number; segundo: number } {
-  const formato = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const partes: Record<string, string> = {};
-  for (const parte of formato.formatToParts(instante)) partes[parte.type] = parte.value;
-  return {
-    ano: Number(partes.year),
-    mes: Number(partes.month),
-    dia: Number(partes.day),
-    hora: Number(partes.hour),
-    minuto: Number(partes.minute),
-    segundo: Number(partes.second),
-  };
-}
-
-function dataNoFuso(instante: Date, tz: string): string {
-  const p = partesLocais(instante, tz);
-  const dois = (n: number) => String(n).padStart(2, "0");
-  return `${p.ano}-${dois(p.mes)}-${dois(p.dia)}`;
-}
-
-/**
- * `2026-09-01` em `tz` → o instante UTC do começo daquele dia LOCAL.
- *
- * Duas passadas porque uma só erra na fronteira de horário de verão: o
- * deslocamento medido em `T00:00Z` pode não ser o do instante que sobra depois
- * de subtraído. Recusar fuso inválido já aconteceu antes (`fusoValido`): a
- * entrada é do navegador e vai para `Intl`, que levanta exceção com nome torto.
- */
-function inicioDoDia(data: string, tz: string): Date {
-  const pretendido = Date.parse(`${data}T00:00:00Z`);
-  const primeira = deslocamentoDe(pretendido, tz);
-  const tentativa = pretendido - primeira;
-  const segunda = deslocamentoDe(tentativa, tz);
-  return new Date(segunda === primeira ? tentativa : pretendido - segunda);
-}
-
-function deslocamentoDe(instanteUtcMs: number, tz: string): number {
-  const p = partesLocais(new Date(instanteUtcMs), tz);
-  const localComoUtc = Date.UTC(p.ano, p.mes - 1, p.dia, p.hora, p.minuto, p.segundo);
-  return localComoUtc - instanteUtcMs;
 }

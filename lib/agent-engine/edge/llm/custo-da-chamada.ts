@@ -23,17 +23,22 @@
  *
  *  1. O provedor INFORMOU quanto cobrou (OpenRouter oficial, `usage.cost`):
  *     vale o número dele.
- *  2. Modelo com tarifa por PASSO própria (`gpt-6.1-terra`): vale a soma dos
- *     passos.
- *  3. Tabela do motor (`pricing.ts`): vale o preço de tabela. Quando o
+ *  2. Tabela do motor (`pricing.ts`): para modelos com faixa de contexto
+ *     longo, vale a soma dos custos calculados por passo. Quando o
  *     provedor é a ASSINATURA, esse número é EQUIVALENTE DE API — não é
  *     dinheiro que saiu da conta —, e por isso sai marcado
  *     (`equivalente_de_api_da_assinatura`). A marca é o que a issue pede:
  *     "sempre o preço equivalente (marcado como tal) OU sempre zero".
- *  4. Catálogo da instalação (`ai_models`/`ai_pricing`).
- *  5. Nada disso: `null` — "não sei", nunca 0 inventado —, e o motivo
+ *  3. Catálogo da instalação (`ai_models`/`ai_pricing`).
+ *  4. Nada disso: `null` — "não sei", nunca 0 inventado —, e o motivo
  *     (`sem_preco`) vai junto para quem registra. Custo nulo CALADO é o
  *     defeito; custo nulo declarado é a doutrina da coluna.
+ *
+ * Antes do preço de tabela há um corte de DADO: se o provedor não
+ * mediu uso nenhum (`temUso: false`), o desfecho é `null` com motivo `sem_uso`.
+ * Sem esse corte, `preço × 0 token` devolvia `0` — "esta chamada foi de graça" —
+ * para a resposta que só não trouxe `usage`. É a diferença entre "não custou
+ * nada" e "não sabemos quanto consumiu", e é a que a coluna tem de guardar.
  *
  * ═══ POR QUE "SEMPRE O EQUIVALENTE", E NÃO "SEMPRE ZERO" ═══
  *
@@ -47,7 +52,7 @@
  * `provider` (`openai-assinatura`), que é por onde o painel agrupa.
  *
  * Este módulo é PURO de propósito: a decisão é testável sem banco, sem rede e
- * sem SDK, e o seam só resolve as quatro entradas e pergunta.
+ * sem SDK, e o seam só resolve os valores e pergunta.
  */
 import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 
@@ -56,7 +61,36 @@ export type OrigemDoCusto =
   | 'informado_pelo_provedor'
   | 'equivalente_de_api_da_assinatura'
   | 'catalogo_da_instalacao'
+  | 'sem_uso'
   | 'sem_preco';
+
+/**
+ * O provedor MEDIU o uso desta chamada?
+ *
+ * Existe porque `costCents` responde `0` — não `null` — quando o modelo tem
+ * tarifa e o `usage` vem zerado (tarifa × 0 token). Num provedor que não devolve
+ * `usage` (gateway caseiro, assinatura que corta o bloco, resposta truncada por
+ * timeout), esse `0` entrava em `cost_cents` com cara de número medido: dizia
+ * "esta chamada foi de graça" quando o que faltava era o DADO. Zero é ausência
+ * de custo; ausência de uso é outra coisa, e a coluna tem de distinguir.
+ *
+ * Todo contador zerado = o provedor não mediu. Um `input` positivo com `output`
+ * zero NÃO é "sem uso" (resposta vazia é uso de entrada), por isso o teste é
+ * sobre a SOMA, não sobre cada campo.
+ */
+export function haUsoMedido(usage: {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
+}): boolean {
+  const soma =
+    (usage.inputTokens ?? 0) +
+    (usage.outputTokens ?? 0) +
+    (usage.cacheReadTokens ?? 0) +
+    (usage.cacheWriteTokens ?? 0);
+  return Number.isFinite(soma) && soma > 0;
+}
 
 export interface CustoDecidido {
   /** Centavos de dólar, fracionados. `null` = nenhum catálogo conhece o modelo. */
@@ -71,11 +105,16 @@ export interface CustoDecidido {
 
 export interface EntradaDoCusto {
   provider: string;
+  /**
+   * O provedor mediu o uso? `false` ⇒ a resposta não trouxe token nenhum, e o
+   * preço de tabela vezes zero daria `0` — "de graça", que é mentira. Nesse
+   * caso o desfecho é `null` com motivo `sem_uso`, distinto de `sem_preco`.
+   * Obrigatório de propósito: cada chamador tem de OLHAR o `usage` que recebeu.
+   */
+  temUso: boolean;
   /** `usage.cost` somado dos passos, quando o provedor informou (OpenRouter oficial). */
   informadoPeloProvedor: number | undefined;
-  /** Tarifa por passo do Terra, quando o modelo é ele. */
-  porPassosDoTerra: number | undefined;
-  /** `costCents(model, usage, ttl)` — `null` quando a tabela não conhece o modelo. */
+  /** Preço da tabela do motor, somado por passo se houver faixa longa. `null` quando não há preço. */
   daTabelaDoMotor: number | null;
   /** Preço da linha que a instalação cadastrou. Só é consultado quando a tabela não conhece. */
   doCatalogoDaInstalacao?: number | null;
@@ -85,8 +124,10 @@ export function decidirCustoDaChamada(e: EntradaDoCusto): CustoDecidido {
   if (e.informadoPeloProvedor !== undefined) {
     return { costCents: e.informadoPeloProvedor, origem: 'informado_pelo_provedor' };
   }
-  if (e.porPassosDoTerra !== undefined) {
-    return { costCents: e.porPassosDoTerra, origem: undefined };
+  // ANTES da tabela: sem uso medido, todo preço de tabela dá 0. `0` aqui seria
+  // "não custou nada" e o que aconteceu foi "não sabemos quanto consumiu".
+  if (!e.temUso) {
+    return { costCents: null, origem: 'sem_uso' };
   }
   if (e.daTabelaDoMotor !== null) {
     return {

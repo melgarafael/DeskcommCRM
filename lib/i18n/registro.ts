@@ -15,9 +15,10 @@
  * - `em_construcao`: está sendo traduzido. Não aparece em tela nenhuma, não é
  *   servido a ninguém e não reprova ninguém — quem acrescenta uma frase em
  *   português não precisa escrever a versão deste idioma.
- * - `telas_principais`: aparece. A régua de "telas principais" é medida, e ela
- *   ainda não existe (fatia 5 do PROG-022) — por isso nenhum idioma pode
- *   declarar este nível hoje, e um teste reprova quem declarar.
+ * - `telas_principais`: aparece, e a régua de "telas principais" é MEDIDA
+ *   (`lib/i18n/telas-principais.ts`): as telas do menu lateral, e 2/3 das
+ *   frases que elas alcançam. Quem declara este nível não é cobrado em toda
+ *   frase — frase sem tradução cai no português (doc de decisão 18, 2 b).
  * - `completo`: aparece, e toda frase de tela precisa dele. É o nível do
  *   espanhol, e nada nele afrouxa.
  *

@@ -57,9 +57,26 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
 
     const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
     expect(
-      baseline.includes("drop function if exists public.comando_da_conversa(public.conversations);"),
-      "baseline.sql sem o apêndice da 0404: a definição do meio nasce namedada+invoker e TODO update.sh desfaria a correção",
+      baseline.includes("-- `comando_da_conversa` segue a forma da 0404 (issue #1571, upstream):"),
+      "baseline.sql sem o apêndice da 0404: a definição do meio nasce invoker e TODO update.sh desfaria a correção",
     ).toBe(true);
+  });
+
+  // Atualização da v1.119.0 parada numa instalação real: a definição do meio do
+  // dump nomeava o parâmetro (`c`), e os `drop` que desfaziam o nome falham
+  // quando o operador tem uma view própria sobre a função. O par de garantias
+  // abaixo é o que impede a volta; o comportamento é medido em
+  // scripts/test-update-com-dados.sh, com a view plantada.
+  it("no baseline, nenhuma definição nomeia o parâmetro e nenhum drop depende de não haver dependente", () => {
+    const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
+    expect(
+      /comando_da_conversa\(\s*c\s+public\.conversations\s*\)/.test(baseline),
+      "o baseline voltou a nomear o parâmetro: cada update renomeia a função e só um drop desfaz",
+    ).toBe(false);
+    expect(
+      baseline.includes("drop function if exists public.comando_da_conversa(public.conversations);"),
+      "drop solto de comando_da_conversa: uma view do operador sobre a função faz ele falhar e trava o update",
+    ).toBe(false);
   });
 
   it("na migration, a função nasce SECURITY DEFINER com parâmetro SEM NOME", () => {
@@ -97,7 +114,7 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
   it("no baseline, o apêndice vem DEPOIS da definição da 0203 e é ele que aplica a virada", () => {
     const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
     const idxDef0203 = baseline.indexOf(
-      "create or replace function public.comando_da_conversa(c public.conversations)",
+      "create or replace function public.comando_da_conversa(public.conversations)",
     );
     // ⚠️ Âncora no COMENTÁRIO da 0404, e não no último `drop` do arquivo: a
     // partir da 0645 existe OUTRO drop de `comando_da_conversa` (o que move a
@@ -112,7 +129,7 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
 
     const apendice = baseline.slice(idxDrop);
     expect(apendice.includes("security definer"), "o apêndice não aplica o security definer").toBe(true);
-    expect(apendice.includes("create function public.comando_da_conversa(public.conversations)"), "o apêndice não recria com parâmetro sem nome").toBe(true);
+    expect(apendice.includes("create or replace function public.comando_da_conversa(public.conversations)"), "o apêndice não recria com parâmetro sem nome").toBe(true);
     expect(apendice).toContain("notify pgrst, 'reload schema';");
   });
 

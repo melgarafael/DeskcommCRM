@@ -79,6 +79,8 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "google_ads_reporting_accounts", razao: "tests/invariants/contas-de-relatorio-do-google-ads.test.ts — o servidor lê as contas das duas organizações. Em ambas as direções, o administrador autenticado identifica a própria organização por JWT e recebe 42501 ao ler as credenciais tanto dela quanto da vizinha." },
+  { tabela: "relatorios_operacao_diarios", razao: "tests/invariants/relatorios-operacao-diarios-isolamento.test.ts (migration 9400, #4722) — dois tenants reais por JWT: manager e admin leem só os relatórios da própria organização (controle positivo) e ZERO do vizinho; agent e viewer da MESMA organização leem zero (a policy exige manager); authenticated só tem SELECT e anon nada — o delete do gestor vizinho é recusado e a escrita é do servidor; unicidade (organization_id, dia) e CHECK de gerado_por com prova." },
   { tabela: "tabela_de_valores_importacoes", razao: "tests/invariants/tabela-de-valores-negociacao.test.ts (migration 9386, #4612) — livro exclusivo do servidor: RLS ligada e NENHUMA policy; membro da própria organização com JWT authenticated recebe permission denied (com controle positivo da mesma sessão lendo tabelas_de_valores); escrita direta de authenticated recusada nas três tabelas da tabela de valores." },
   { tabela: "agencia_clientes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: o cliente não lê o vínculo com a agência (count 0) e, com o módulo desligado, nenhuma policy devolve linha (1 → 0, com controle positivo); a agência só lê/edita o cliente vinculado e nunca a organização irmã." },
   { tabela: "agencia_configuracoes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: com o módulo desligado a configuração da agência some (1 → 0, controle positivo), e a agência não altera a própria autorização nem o limite via PostgREST (42501)." },
@@ -92,6 +94,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   },
   ...["calendar_resources", "calendar_service_schedule", "calendar_service_professionals", "calendar_service_resources", "calendar_service_calendar_sources", "calendar_service_occurrences", "calendar_service_occurrence_resources", "calendar_service_blocks"].map(tabela => ({ tabela, razao: "tests/invariants/agenda-servicos.test.ts — oito tabelas com linhas positivas no tenant próprio, JWT authenticated de duas organizações e contagem zero do vizinho; INSERT/UPDATE/DELETE diretos recusados mesmo para manager. As RPCs mantêm ator, revisão e FKs compostas." })),
   ...["attendant_sectors", "attendant_sector_members"].map(tabela => ({ tabela, razao: "tests/invariants/setores-de-atendimento.test.ts — JWT authenticated de duas organizações: cada uma lê só as próprias linhas (controle positivo nos dois lados); INSERT/DELETE diretos recusados até para manager; FK composta recusa setor de outra organização." })),
+  ...["extension_module_events", "extension_module_cursors"].map(tabela => ({ tabela, razao: "tests/invariants/extensoes-eventos.test.ts (migration 9445) — tabela exclusiva do servidor: RLS de pé e NENHUMA policy, anon/authenticated sem privilégio (nem da própria organização, recusado por JWT), service_role lê e grava; a leitura por módulo só passa pelas funções fn_extensions_events_*, que filtram a organização do cursor." })),
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
@@ -108,6 +111,11 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   { tabela: "config_aviso_de_agendamento", razao: "tests/invariants/aviso-de-agendamento-escrita.test.ts — dois tenants reais por JWT: admin lê só a própria organização, agent e viewer não leem nada, e a escrita direta por authenticated é negada nos três verbos (a única porta é fn_definir_aviso_de_agendamento, que revalida papel, suporte e MFA)" },
   { tabela: "entregas_de_aviso_de_agendamento", razao: "tests/invariants/aviso-de-agendamento-escrita.test.ts — manager lê o histórico da própria organização e zero do vizinho; viewer lê zero; escrita direta por authenticated negada nos três verbos" },
   { tabela: "organization_extensions", razao: "tests/invariants/extensoes-declarativas.test.ts — dois tenants com vínculos reais: leitura positiva local/negativa cruzada por JWT, revogação de membership e escrita direta negada" },
+  {
+    tabela: "organization_modules",
+    razao:
+      "tests/invariants/modulos-por-empresa.test.ts (migration 9416, #3868) — tabela exclusiva do servidor: RLS ligada e NENHUMA policy, anon e authenticated sem privilégio (o JWT de um membro da própria organização recebe permission denied), service_role com os quatro verbos; PK (organization_id, modulo), CHECKs de estado e formato; e a prova de que desligar um módulo não apaga o dado do módulo (setores da empresa intactos ao desligar e ao religar).",
+  },
   { tabela: "extension_operations", razao: "tests/invariants/extensoes-declarativas.test.ts — recibo de instância fechado a anon/authenticated, inclusive configure com organização; RPCs service-only revalidam ator e papel" },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
@@ -281,6 +289,21 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
       "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
       "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o state de uso único e o code_verifier cifrado do OAuth por contato (9095).",
+  },
+  {
+    tabela: "mcp_oauth_codigos",
+    razao:
+      "tests/invariants/mcp-oauth-servidor.test.ts — privilégio NENHUM para anon e " +
+      "authenticated, `permission denied` sob `set role` com JWT de admin da própria " +
+      "organização E de outra, RLS ligada, zero policies. Guarda o hash do código de autorização do OAuth do MCP do CRM (9390).",
+  },
+  {
+    tabela: "mcp_oauth_concessoes",
+    razao:
+      "tests/invariants/mcp-oauth-servidor.test.ts — privilégio NENHUM para anon e " +
+      "authenticated, `permission denied` sob `set role` com JWT de admin da própria " +
+      "organização E de outra, RLS ligada, zero policies; o token emitido (api_tokens) " +
+      "é contado sob o JWT do admin dono (1) e do vizinho (0). Guarda o hash do refresh token do OAuth do MCP do CRM (9390).",
   },
   {
     tabela: "contato_mcp_credenciais",

@@ -45,6 +45,8 @@ vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
   useSalvarAvisoDeCaso: () => ({ mutateAsync: salvarRegistrado, isPending: false }),
+  // #4989 — a gravação só da marca "Não enviar aviso de caso" (o `PATCH`).
+  useSalvarMarcasDoAviso: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRemoverAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTestarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false, data: undefined }),
 }));

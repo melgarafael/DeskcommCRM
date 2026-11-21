@@ -13,6 +13,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => true) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -53,7 +58,7 @@ function montarMundo(storedProposals: Record<string, unknown> = {}) {
     },
     async GET() {
       const { GET } = await import("./route");
-      const res = await GET();
+      const res = await GET(new Request("http://x") as never);
       return { status: res.status, body: await res.clone().json() };
     },
     async PATCH(corpo: unknown) {
@@ -121,7 +126,8 @@ describe("módulo Propostas desligado na INSTALAÇÃO (doc 79)", () => {
     const res = await mundo.PATCH({ enabled: true, default_valid_days: 15, default_conditions: null });
     expect(res.status).toBe(404);
     expect(mundo.gravado).toBeNull();
-    expect(moduloLigado).toHaveBeenCalledWith(expect.anything(), "propostas");
+    // #4871: o gate pergunta pela EMPRESA do request, não só pela instalação.
+    expect(moduloLigado).toHaveBeenCalledWith(expect.anything(), "propostas", ORG_ID);
     vi.mocked(moduloLigado).mockResolvedValue(true);
   });
 });

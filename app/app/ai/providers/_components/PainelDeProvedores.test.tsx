@@ -671,3 +671,98 @@ describe("PainelDeProvedores — onde o texto é processado", () => {
     expect(linha).toHaveTextContent("O provedor não declara o país; consulte a política dele");
   });
 });
+describe("PainelDeProvedores — Gemini aposentados (#5103)", () => {
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  const gemini = (model_id: string, display_name: string) => ({
+    provider: "google",
+    model_id,
+    display_name,
+    supports_tools: true,
+    supports_vision: true,
+    input_price_per_million_cents: 10,
+  });
+  const MODELOS_GOOGLE = [
+    gemini("gemini-2.5-flash", "Gemini 2.5 Flash"),
+    gemini("gemini-2.5-pro", "Gemini 2.5 Pro"),
+    gemini("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+  ];
+  const PONTO_GOOGLE = {
+    ...PROVEDORES.pontos[0]!,
+    efetivo: {
+      ...PROVEDORES.pontos[0]!.efetivo,
+      provider: "google",
+      modelId: "gemini-3.5-flash-lite",
+    },
+  };
+
+  function dublar(extra: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : { ...PROVEDORES, modelos: MODELOS_GOOGLE, podeEditar: true, ...extra };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+  }
+
+  it("o modelo padrão não oferece os aposentados", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-3.5-flash-lite" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId("padrao-modelo"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 3.5 Flash-Lite",
+    ]);
+    expect(
+      screen.queryByText("Este modelo foi aposentado pelo provedor. Escolha outro modelo."),
+    ).toBeNull();
+  });
+
+  it("o padrão já salvo num aposentado continua visível, com o aviso", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-2.5-pro" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    const padrao = await screen.findByTestId("cartao-do-padrao");
+    expect(within(padrao).getByTestId("padrao-modelo")).toHaveTextContent("Gemini 2.5 Pro");
+    expect(within(padrao).getByRole("alert")).toHaveTextContent(
+      "Este modelo foi aposentado pelo provedor.",
+    );
+    const user = userEvent.setup();
+    await user.click(within(padrao).getByTestId("padrao-modelo"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 2.5 Pro",
+      "Gemini 3.5 Flash-Lite",
+    ]);
+  });
+
+  it("o modelo por ponto não oferece os aposentados", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-3.5-flash-lite" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    await screen.findByTestId("cartao-do-padrao");
+    fireEvent.click(screen.getByTestId("avancado-entender"));
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("modelo-sentiment_classify"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 3.5 Flash-Lite",
+    ]);
+  });
+});

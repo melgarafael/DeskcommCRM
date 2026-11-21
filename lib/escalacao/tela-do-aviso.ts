@@ -54,6 +54,7 @@ import {
   type ModoDoDestinoNaTela,
 } from "./estado-do-aviso";
 import { medirLacoDoAviso, type CasoParaOLaco, type LacoDoAviso } from "./laco-do-aviso";
+import { algumMembroAtivoSemAviso, lerMembrosSemAviso } from "./membros-sem-aviso";
 import { urlPublicaUsavel } from "./url-publica";
 
 /** Uma entrega, como a tela a mostra. O destino sai MASCARADO — ver abaixo. */
@@ -99,6 +100,17 @@ export interface EstadoDaTelaDeAviso {
    * `responsavel` como se soubesse quem tem número (#3935).
    */
   equipe_indisponivel: boolean;
+  /**
+   * `true` = a equipe foi lida, mas a marca "Não enviar aviso de caso" (#4989)
+   * não. A tela trava os interruptores: mostrá-los desligados deixaria alguém
+   * "desmarcar" quem nunca viu marcado.
+   */
+  nao_avisar_indisponivel: boolean;
+  /**
+   * Algum membro ATIVO está com a marca (#4989) — medido no servidor, sem o
+   * teto da lista. É o que liga a frase da lista de entregas.
+   */
+  algum_membro_sem_aviso: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -147,7 +159,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
   ]);
 
   const canalEscolhido = config?.channel_session_id ?? null;
-  const [aquecimento, laco, equipe] = await Promise.all([
+  const [aquecimento, laco, equipe, semAviso] = await Promise.all([
     canalEscolhido ? lerAquecimento(admin, orgId, canalEscolhido, agora) : Promise.resolve(null),
     lerLaco(admin, orgId, agora),
     // A equipe vem do `admin`: `user_organizations` tem o WhatsApp PESSOAL de
@@ -155,7 +167,16 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
     // fica no client de serviço para não expor número de colega a `manager` por
     // uma policy que não foi escrita para isso.
     lerEquipe(admin, orgId),
+    lerMembrosSemAviso(admin, orgId),
   ]);
+  if (semAviso.ids === null) {
+    logger.warn("[aviso-de-caso] marca de não enviar aviso não lida", {
+      organizationId: orgId,
+      causa: "causa" in semAviso ? semAviso.causa : "desconhecida",
+    });
+  }
+  const marcados = semAviso.ids ?? new Set<string>();
+  const algumSemAviso = await algumMembroAtivoSemAviso(admin, orgId, marcados);
 
   const configNaTela: ConfiguracaoNaTela | null = config
     ? {
@@ -199,8 +220,11 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           destino_modo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
         }
       : null,
-    equipe: equipe ?? [],
+    equipe: (equipe ?? []).map((m) => ({ ...m, nao_avisar: marcados.has(m.user_id) })),
     equipe_indisponivel: equipe === null,
+    nao_avisar_indisponivel: semAviso.ids === null,
+    // Não deu para conferir quem é ativo: na dúvida a frase aparece se há marca.
+    algum_membro_sem_aviso: algumSemAviso ?? marcados.size > 0,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),

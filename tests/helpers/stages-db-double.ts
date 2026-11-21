@@ -47,6 +47,13 @@ export interface StageRow {
    */
   win_probability?: number | null;
   avisar_na_central?: boolean;
+  /**
+   * O CRITÉRIO da etapa (#4836), a coluna que o agente lê por
+   * `crm_list_stages`. Declarada aqui porque os testes do caminho
+   * (PATCH → banco → leitura do agente) conferem a LINHA, e um campo fora do
+   * tipo obrigaria um `as` que esconderia justamente o valor medido.
+   */
+  description?: string | null;
 }
 
 /**
