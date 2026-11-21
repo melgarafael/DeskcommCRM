@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/server";
-import { AjudaConteudo } from "./_client";
+import { AjudaComVersao } from "./_client";
 
 /**
  * A AJUDA DENTRO DO PRODUTO — o índice que faltava (issue #3567, fatia F1).
@@ -28,5 +28,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AjudaPage() {
   await requireAuth();
-  return <AjudaConteudo />;
+  // `AjudaComVersao` é o invólucro que lê a versão da instalação (#3567, F4)
+  // pela rota que o rodapé e a tela de atualização já usam.
+  return <AjudaComVersao />;
 }
