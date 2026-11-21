@@ -170,6 +170,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
       "pacing",
       "messaging_window",
       "teto_de_respostas",
+      "interlocutor_automatico",
       "spinning",
       "promise",
       "concessao_sem_lastro",

@@ -86,6 +86,14 @@ import {
   tetoDeRespostasGate,
 } from '../agent/teto-de-respostas';
 import type { RespostasDaConversa, TetoDeRespostasArmado } from '../agent/teto-de-respostas';
+// Interlocutor automático (#4590, item 2): o outro lado é um robô. Mora em
+// `agent/` pelo mesmo motivo do teto — a leitura é da CONVERSA, não do número.
+import {
+  CODIGO_DO_INTERLOCUTOR_AUTOMATICO,
+  carregarQuadroDoInterlocutor,
+  interlocutorAutomaticoGate,
+} from '../agent/interlocutor-automatico';
+import type { QuadroDoInterlocutor } from '../agent/interlocutor-automatico';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER, notaDeVozDoCanal } from '@/lib/channels/capabilities';
@@ -195,6 +203,22 @@ export interface GateContext {
    * da doutrina. Não confundir com o campo ausente.
    */
   tetoDeRespostas?: RespostasDaConversa;
+  /**
+   * Interlocutor automático (#4590, item 2): o que as últimas mensagens desta
+   * CONVERSA dizem sobre quem está do outro lado (menu numerado repetido,
+   * mensagem idêntica, mesmo molde, cadência de robô).
+   *
+   * **OPCIONAL, e ausente = DESARMADO** — pela mesma razão do `tetoDeRespostas`:
+   * só o `send_message` do turno de entrada arma, e lá o veto volta ao modelo
+   * como erro instrutivo. Follow-up, template e resposta aprovada não têm
+   * mensagem recebida agora; armar ali seria veto de conteúdo em caminho
+   * determinístico, onde veto é drop silencioso.
+   *
+   * `naoConferido: true` = armado e a leitura falhou: passa com
+   * `skipped: 'nao_conferido'` (fail-open COM registro). Não confundir com o
+   * campo ausente.
+   */
+  interlocutorAutomatico?: QuadroDoInterlocutor;
   /**
    * Tabela de preços/promessas versionada da org (F4-01), carregada por ponteiro
    * sob o lock. null = org não fiscaliza promessa (gate no-op).
@@ -446,7 +470,11 @@ export type MotivoDoStop = 'contato_bloqueado' | 'contato_interno' | 'atendiment
  * chamada de modelo para ouvir o mesmo veto — a contagem não muda com o texto.
  */
 export const VETOS_IRREVOGAVEIS: ReadonlySet<string> = new Set<
-  MotivoDoStop | 'lgpd_anonymized' | 'lgpd_missing_legal_basis' | typeof CODIGO_DO_TETO_DE_RESPOSTAS
+  | MotivoDoStop
+  | 'lgpd_anonymized'
+  | 'lgpd_missing_legal_basis'
+  | typeof CODIGO_DO_TETO_DE_RESPOSTAS
+  | typeof CODIGO_DO_INTERLOCUTOR_AUTOMATICO
 >([
   'contato_bloqueado',
   'contato_interno',
@@ -454,6 +482,7 @@ export const VETOS_IRREVOGAVEIS: ReadonlySet<string> = new Set<
   'lgpd_anonymized',
   'lgpd_missing_legal_basis',
   CODIGO_DO_TETO_DE_RESPOSTAS,
+  CODIGO_DO_INTERLOCUTOR_AUTOMATICO,
 ]);
 
 /** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
@@ -1341,7 +1370,11 @@ const spinningGate: Gate = {
 // automáticas por CONVERSA numa janela. Fecha o pingue-pongue entre dois robôs (216 respostas em
 // 1 h para o mesmo contato), que nenhum gate de conteúdo pega porque cada resposta isolada é
 // legítima. Armado só pelo turno de entrada; disparo e follow-up não entram na conta.
-export const BEFORE_SEND_CHAIN_VERSION = 14;
+// v15 (#4590 item 2): insere `interlocutorAutomaticoGate` logo depois do teto — reconhece o outro
+// lado como atendimento automático (menu numerado repetido, mensagem idêntica, mesmo molde,
+// cadência de robô) e cala a conversa com aviso na Central. Desarmado por default; só o turno de
+// entrada arma. O teto conta a CONTAGEM; este lê o CONTEÚDO recebido — réguas independentes.
+export const BEFORE_SEND_CHAIN_VERSION = 15;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1383,6 +1416,9 @@ export const factualClaimGate: Gate = {
  *   (3) pacing — janela/throttle/warm-up/caps anti-ban (F2-11);
  *   (3.5) teto_de_respostas — N respostas automáticas na MESMA conversa dentro de W
  *         minutos (#4590): responde a quem escreveu, mas não 216 vezes por hora;
+ *   (3.6) interlocutor_automatico — as mensagens RECEBIDAS nesta conversa têm cara de
+ *         atendimento automático: menu repetido, mesma mensagem, mesmo molde,
+ *         cadência de robô (#4590, item 2);
  *   (4) spinning — template idêntico em massa (F2-12);
  *   (5) promise — validação determinística de preço/desconto/parcelamento (F4-01);
  *   (5.5) concessao_sem_lastro — valor ou concessão afirmados como condição que só o cliente trouxe;
@@ -1408,6 +1444,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   pacingGate,
   messagingWindowGate,
   tetoDeRespostasGate,
+  interlocutorAutomaticoGate,
   spinningGate,
   promiseGate,
   concessaoSemLastroGate,
@@ -1501,6 +1538,19 @@ export interface RunBeforeSendArgs {
    * é o que faz a tentativa enxergar a resposta que o job anterior efetivou.
    */
   tetoDeRespostas?: TetoDeRespostasArmado;
+  /**
+   * Arma o `interlocutorAutomaticoGate` (#4590, item 2): a amostra das últimas
+   * mensagens desta CONVERSA é lida sob o MESMO lock do número, e o gate
+   * reconhece o outro lado como atendimento automático.
+   *
+   * AUSENTE (default) = no-op. Só o `send_message` do turno de entrada passa
+   * isto (`inbound-turn.ts`), junto do `tetoDeRespostas` — é o único caminho em
+   * que existe mensagem recebida agora e em que o veto volta ao modelo.
+   *
+   * Carrega a CONVERSA, não só um booleano: sem o id a leitura não teria de
+   * onde tirar a amostra.
+   */
+  interlocutorAutomatico?: { conversationId: string };
   now: Date;
   /** injeções de teste (jitter determinístico + espera sem relógio real). */
   rng?: () => number;
@@ -1879,6 +1929,17 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
             log: args.log,
           })
         : undefined;
+    // #4590 item 2 — a amostra desta CONVERSA, lida sob o mesmo lock do número.
+    // A leitura nunca lança (`carregarQuadroDoInterlocutor` devolve
+    // `naoConferido`), então uma trava auxiliar não derruba o turno.
+    const quadroDoInterlocutor =
+      args.interlocutorAutomatico !== undefined
+        ? await carregarQuadroDoInterlocutor(client, {
+            organizationId: args.tenantId,
+            conversationId: args.interlocutorAutomatico.conversationId,
+            log: args.log,
+          })
+        : undefined;
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
@@ -1916,6 +1977,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       },
       spinning: { knobs: spinningKnobs, window },
       ...(respostasDaConversa !== undefined ? { tetoDeRespostas: respostasDaConversa } : {}),
+      ...(quadroDoInterlocutor !== undefined ? { interlocutorAutomatico: quadroDoInterlocutor } : {}),
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
       promise: {
         table: promise?.table ?? null,
