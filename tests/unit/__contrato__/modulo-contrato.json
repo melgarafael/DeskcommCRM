@@ -105,6 +105,7 @@
       "GET /api/v1/ai/memory/versions/[id]",
       "GET /api/v1/ai/operator-metrics",
       "GET /api/v1/ai/pacing",
+      "GET /api/v1/ai/pacing/teto-de-respostas",
       "GET /api/v1/ai/routers",
       "GET /api/v1/ai/routers/[id]",
       "GET /api/v1/ai/routing-results",
@@ -158,8 +159,10 @@
       "POST /api/v1/ai/skills/[id]/restore",
       "POST /api/v1/ai/skills/import",
       "PUT /api/v1/ai/guardrail-layers",
+      "PUT /api/v1/ai/knowledge/sources/[id]/texto",
       "PUT /api/v1/ai/mapas",
       "PUT /api/v1/ai/pacing",
+      "PUT /api/v1/ai/pacing/teto-de-respostas",
       "PUT /api/v1/ai/routers/[id]/members",
       "PUT /api/v1/ai/skills/[id]",
       "PUT /api/v1/ai/style-adjustments"
@@ -174,11 +177,13 @@
       "GET /api/v1/metrics/funil",
       "GET /api/v1/metrics/lost",
       "GET /api/v1/metrics/metas",
+      "GET /api/v1/metrics/satisfacao",
       "GET /api/v1/metrics/serie",
       "GET /api/v1/reports/activities",
       "GET /api/v1/reports/comercial",
       "GET /api/v1/reports/financeiro",
       "GET /api/v1/reports/tags",
+      "GET /api/v1/reports/vendas/export",
       "PATCH /api/v1/metrics/atrito"
     ],
     "catalogo": [
@@ -201,16 +206,17 @@
       "POST /api/v1/products",
       "POST /api/v1/products/[id]/ai-presentation/audio",
       "POST /api/v1/products/[id]/fotos",
+      "POST /api/v1/products/feed",
       "POST /api/v1/products/import",
       "PUT /api/v1/message-templates/[id]/ordem",
       "PUT /api/v1/products/[id]/fotos"
     ],
     "configuracao": [
-      "DELETE /api/v1/attendants/sectors/[id]",
       "DELETE /api/v1/settings/proposal-templates/[id]",
       "DELETE /api/v1/settings/sons",
       "GET /api/v1/attendants/availability",
       "GET /api/v1/attendants/sectors",
+      "GET /api/v1/settings/atendimento",
       "GET /api/v1/settings/campanhas",
       "GET /api/v1/settings/proposal-templates",
       "GET /api/v1/settings/proposal-templates/[id]",
@@ -222,8 +228,8 @@
       "GET /api/v1/settings/task-plans",
       "GET /api/v1/team/assignable",
       "PATCH /api/v1/attendants/availability/[id]",
-      "PATCH /api/v1/attendants/sectors/[id]",
       "PATCH /api/v1/settings/agenda-apresentacao",
+      "PATCH /api/v1/settings/atendimento",
       "PATCH /api/v1/settings/campanhas",
       "PATCH /api/v1/settings/catalogo",
       "PATCH /api/v1/settings/proposal-templates/[id]",
@@ -232,17 +238,16 @@
       "PATCH /api/v1/settings/routing",
       "PATCH /api/v1/settings/routing/channels",
       "PATCH /api/v1/settings/task-plans",
-      "POST /api/v1/attendants/sectors",
       "POST /api/v1/settings/proposal-templates",
       "POST /api/v1/settings/proposal-templates/importar",
-      "POST /api/v1/settings/sons",
-      "PUT /api/v1/attendants/sector/[id]"
+      "POST /api/v1/settings/sons"
     ],
     "contatos": [
       "DELETE /api/v1/companies/[id]",
       "DELETE /api/v1/contacts/[id]/always-human",
       "DELETE /api/v1/contacts/[id]/personal",
       "DELETE /api/v1/contacts/[id]/phones/[id]",
+      "DELETE /api/v1/contacts/[id]/sem-interesse",
       "GET /api/v1/companies",
       "GET /api/v1/companies/[id]",
       "GET /api/v1/companies/lookup",
@@ -252,11 +257,14 @@
       "GET /api/v1/contacts/[id]/carteira",
       "GET /api/v1/contacts/[id]/compras",
       "GET /api/v1/contacts/[id]/crm-summary",
+      "GET /api/v1/contacts/[id]/empresa-da-prospeccao",
       "GET /api/v1/contacts/[id]/hierarquia-do-anuncio",
+      "GET /api/v1/contacts/[id]/person",
       "GET /api/v1/contacts/[id]/proposals",
       "GET /api/v1/contacts/[id]/roteiros",
       "GET /api/v1/contacts/[id]/timeline",
       "GET /api/v1/contacts/[id]/vinculos",
+      "GET /api/v1/contacts/campos-de-contato",
       "GET /api/v1/contacts/cep",
       "GET /api/v1/contacts/compare",
       "GET /api/v1/contacts/duplicates",
@@ -268,14 +276,17 @@
       "PATCH /api/v1/contacts/[id]/person",
       "PATCH /api/v1/contacts/[id]/phones/[id]",
       "POST /api/v1/companies",
+      "POST /api/v1/companies/[id]/contatos",
       "POST /api/v1/companies/[id]/enrich",
       "POST /api/v1/contacts",
       "POST /api/v1/contacts/[id]/always-human",
+      "POST /api/v1/contacts/[id]/empresa-da-prospeccao",
       "POST /api/v1/contacts/[id]/personal",
       "POST /api/v1/contacts/[id]/phones",
       "POST /api/v1/contacts/[id]/phones/[id]/primary",
       "POST /api/v1/contacts/[id]/proposals/[id]",
       "POST /api/v1/contacts/[id]/roteiros/[id]/negocio",
+      "POST /api/v1/contacts/[id]/sem-interesse",
       "POST /api/v1/contacts/bulk",
       "POST /api/v1/contacts/duplicates/dismiss",
       "POST /api/v1/contacts/import",
@@ -332,10 +343,12 @@
       "GET /api/v1/pipelines/[id]/stages",
       "GET /api/v1/pipelines/[id]/stages/win-rates",
       "GET /api/v1/pipelines/default",
+      "GET /api/v1/pipelines/exportar",
       "PATCH /api/v1/pipelines/[id]",
       "PATCH /api/v1/pipelines/[id]/stages/[id]",
       "POST /api/v1/pipelines",
       "POST /api/v1/pipelines/[id]/stages",
+      "POST /api/v1/pipelines/importar",
       "PUT /api/v1/pipelines/[id]/agent-mapping"
     ],
     "negocios": [
@@ -346,6 +359,7 @@
       "GET /api/v1/leads/[id]",
       "GET /api/v1/leads/[id]/attachments",
       "GET /api/v1/leads/[id]/attachments/[id]/media",
+      "GET /api/v1/leads/[id]/checklist",
       "GET /api/v1/leads/[id]/clone",
       "GET /api/v1/leads/[id]/contatos-relacionados",
       "GET /api/v1/leads/[id]/conversas-e-ligacoes",
@@ -369,6 +383,7 @@
       "PATCH /api/v1/proposals/[id]/modelo",
       "POST /api/v1/leads",
       "POST /api/v1/leads/[id]/attachments",
+      "POST /api/v1/leads/[id]/checklist/[id]",
       "POST /api/v1/leads/[id]/clone",
       "POST /api/v1/leads/[id]/contact",
       "POST /api/v1/leads/[id]/contatos-relacionados",
@@ -524,8 +539,8 @@
       "corpo": [
         {
           "nome": "alterarSchema",
-          "origem": "local",
-          "hash": "cdc6c4a4de188595"
+          "origem": "@/lib/agenda/tipos-de-agendamento",
+          "hash": "6245f5adcb258277"
         },
         {
           "nome": "criarComRascunhoSchema",
@@ -534,7 +549,7 @@
         },
         {
           "nome": "desativarSchema",
-          "origem": "local",
+          "origem": "@/lib/agenda/tipos-de-agendamento",
           "hash": "28b5b12598b47ac7"
         }
       ],
@@ -630,7 +645,7 @@
         {
           "nome": "testRunSchema",
           "origem": "@/lib/ai/agents/validation",
-          "hash": "8e1d409c3cd0aa0f"
+          "hash": "41e23329e62f2637"
         }
       ],
       "resposta": []
@@ -671,6 +686,11 @@
           "nome": "querySchema",
           "origem": "local",
           "hash": "9dc67378df615886"
+        },
+        {
+          "nome": "usoDeIaSchema",
+          "origem": "@/lib/ai/usage/aggregate",
+          "hash": "2e65f363eeff4213"
         }
       ],
       "resposta": []
@@ -705,7 +725,7 @@
         {
           "nome": "triggerConfigSchema",
           "origem": "@/lib/followup/api-schemas",
-          "hash": "9b5936d3412dfcb9"
+          "hash": "628c82021c4e9969"
         }
       ],
       "resposta": []
@@ -713,19 +733,9 @@
     "/api/v1/ai/followup-flows/from-model": {
       "corpo": [
         {
-          "nome": "flowGraphSchema",
-          "origem": "@/lib/followup/graph-schema",
-          "hash": "5f753c169544ad2d"
-        },
-        {
           "nome": "instalarModeloSchema",
           "origem": "@/lib/followup/api-schemas",
           "hash": "b4c8145f800b239b"
-        },
-        {
-          "nome": "triggerConfigSchema",
-          "origem": "@/lib/followup/api-schemas",
-          "hash": "9b5936d3412dfcb9"
         }
       ],
       "resposta": []
@@ -820,7 +830,7 @@
         {
           "nome": "patchSourceSchema",
           "origem": "local",
-          "hash": "ddcaddd704569237"
+          "hash": "21c2ffe42ba53c28"
         }
       ],
       "resposta": []
@@ -831,6 +841,16 @@
           "nome": "reindexBodySchema",
           "origem": "local",
           "hash": "2d0daa7b355d761b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/knowledge/sources/[id]/texto": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "9da3162a9f7ccb1d"
         }
       ],
       "resposta": []
@@ -920,6 +940,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/ai/pacing/teto-de-respostas": {
+      "corpo": [
+        {
+          "nome": "tetoDaOrganizacaoSchema",
+          "origem": "local",
+          "hash": "f9903eeabcfcae03"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/ai/routers": {
       "corpo": [
         {
@@ -935,7 +965,7 @@
         {
           "nome": "patchRouterSchema",
           "origem": "local",
-          "hash": "eb9729200bea2fd2"
+          "hash": "38e9444e5af76186"
         },
         {
           "nome": "senderRoutesSchema",
@@ -1050,32 +1080,12 @@
       ],
       "resposta": []
     },
-    "/api/v1/attendants/sector/[id]": {
-      "corpo": [
-        {
-          "nome": "idSchema",
-          "origem": "local",
-          "hash": "bdd56948bd84109a"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/attendants/sectors/[id]": {
-      "corpo": [
-        {
-          "nome": "idSchema",
-          "origem": "local",
-          "hash": "bdd56948bd84109a"
-        }
-      ],
-      "resposta": []
-    },
     "/api/v1/automation-rules": {
       "corpo": [
         {
           "nome": "createAutomationRuleSchema",
           "origem": "@/lib/schemas",
-          "hash": "e30b6fd607012e7f"
+          "hash": "7f5ae4be2ea70bf9"
         }
       ],
       "resposta": []
@@ -1135,7 +1145,7 @@
         {
           "nome": "listConversationsQuerySchema",
           "origem": "@/lib/schemas",
-          "hash": "0f4ab9f2813af786"
+          "hash": "19cf1a29d188dca0"
         }
       ],
       "resposta": []
@@ -1265,6 +1275,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/leads/[id]/checklist/[id]": {
+      "corpo": [
+        {
+          "nome": "marcacaoSchema",
+          "origem": "local",
+          "hash": "acedf9451937f0b8"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/leads/at-risk": {
       "corpo": [
         {
@@ -1390,12 +1410,22 @@
       ],
       "resposta": []
     },
+    "/api/v1/metrics/satisfacao": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "0a6c496637e68641"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/metrics/serie": {
       "corpo": [
         {
           "nome": "querySchema",
           "origem": "local",
-          "hash": "e3f25fb38810981e"
+          "hash": "3daa945cbd5191eb"
         }
       ],
       "resposta": []
@@ -1445,7 +1475,7 @@
         {
           "nome": "bodySchema",
           "origem": "local",
-          "hash": "9096be4b25b5df3e"
+          "hash": "d0bd3e4253372f73"
         }
       ],
       "resposta": []
@@ -1455,7 +1485,7 @@
         {
           "nome": "produtoCreateSchema",
           "origem": "@/lib/schemas/produtos",
-          "hash": "55c58e69c4f1f94e"
+          "hash": "dab7c7cea14866a9"
         }
       ],
       "resposta": []
@@ -1465,7 +1495,7 @@
         {
           "nome": "produtoPatchSchema",
           "origem": "@/lib/schemas/produtos",
-          "hash": "79a80dfa238c3220"
+          "hash": "2a43c49119d035d4"
         }
       ],
       "resposta": []
@@ -1506,6 +1536,16 @@
           "nome": "ordemSchema",
           "origem": "local",
           "hash": "0e19da6bbaadc952"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products/feed": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "261d3a9e62eb1c1f"
         }
       ],
       "resposta": []
@@ -1610,7 +1650,7 @@
         {
           "nome": "querySchema",
           "origem": "local",
-          "hash": "f4cc2c9fb73d1f3e"
+          "hash": "6794a296ab4a1e35"
         }
       ],
       "resposta": []
@@ -1635,12 +1675,32 @@
       ],
       "resposta": []
     },
+    "/api/v1/reports/vendas/export": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "c8f7e8a2fbd53f94"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/settings/agenda-apresentacao": {
       "corpo": [
         {
           "nome": "tituloDaAgendaEntradaSchema",
           "origem": "@/lib/agenda/apresentacao",
           "hash": "178e609e81d957df"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/atendimento": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "3a7ede4288bb864b"
         }
       ],
       "resposta": []
@@ -1660,7 +1720,7 @@
         {
           "nome": "patchSchema",
           "origem": "local",
-          "hash": "658a88a6e158ef9e"
+          "hash": "74c95be5b1a8424d"
         }
       ],
       "resposta": []
@@ -1720,7 +1780,7 @@
         {
           "nome": "channelRoutingPatchSchema",
           "origem": "@/lib/schemas/routing",
-          "hash": "d7c6b08a37372167"
+          "hash": "42fba74672aad920"
         }
       ],
       "resposta": []
