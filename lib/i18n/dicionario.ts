@@ -13222,7 +13222,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhum horário livre neste período.": { es: "No hay horarios libres en este período." },
   "Os blocos vazios continuam aqui, e o que estiver publicado fica clicável.": { es: "Los bloques vacíos siguen aquí y puedes hacer clic en lo que esté publicado." },
   "Remarcar": { es: "Reprogramar" },
-  "para": { es: "para" },
+  "para": { es: "a" },
   "? Quem foi atendido recebe o aviso da mudança.": { es: "? La persona atendida recibirá el aviso del cambio." },
 
   // ═══ As telas que só o passe do PR #352 alcançou ═══

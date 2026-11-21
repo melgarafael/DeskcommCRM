@@ -469,6 +469,16 @@ export function AgendaInterativa({
       });
   }, [desenhados, pendenteDuracao, remarcar, t, poeOtimismo, tiraOtimismo, recusaDe]);
 
+  // Esc fecha a pergunta da duração sem gravar, como o botão Cancelar.
+  React.useEffect(() => {
+    if (!pendenteDuracao) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendenteDuracao(null);
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [pendenteDuracao]);
+
   const pendenteDuracaoAlvo = pendenteDuracao
     ? agendamentos.find((a) => a.id === pendenteDuracao.id)
     : undefined;
