@@ -2922,6 +2922,14 @@ gerar_par_vapid() {
   printf '%s %s\n' "$pub" "$priv"
 }
 
+# marcar_consentimento_de_telemetria <arquivo> — a marca de "a conversão do
+# consentimento já passou por aqui". Só é criada quando a decisão ficou tomada:
+# nas saídas em que não dá para escrever, ela não nasce, e a próxima atualização
+# tenta de novo. Falhar ao criá-la não derruba nada (devolve 0).
+marcar_consentimento_de_telemetria() {
+  ( umask 077; printf '%s\n' "# Gerado pelo kit (#4948): a conversão do consentimento de telemetria já rodou nesta instalação. Não apague." > "$1" ) 2>/dev/null || true
+}
+
 # migrar_consentimento_de_telemetria [envfile] — usada pelo update.sh (#4936).
 #
 # Antes desta versão, `SENTRY_DSN` VAZIO significava "aceito o Sentry do
@@ -2940,16 +2948,26 @@ gerar_par_vapid() {
 # TELEMETRIA_CONVERTIDA=1 quando converter (o `up -d` de lá já recria o app com
 # o `.env` novo, então não há nada a reiniciar por conta disto).
 migrar_consentimento_de_telemetria() {
-  local envfile="${1:-.env}" declarado tmp
+  local envfile="${1:-.env}" declarado tmp marca
   TELEMETRIA_CONVERTIDA=""
   [ -f "$envfile" ] || return 0
+  # UMA VEZ por instalação (#4948). Depois desta versão, vazio é "desligado": quem
+  # esvazia a chave de propósito, ou o `install.sh --yes` com SENTRY_DSN vazio no
+  # ambiente, não pode ser religado pela atualização seguinte. A marca fica num
+  # arquivo ao lado (o nome casa com `.env*`, como o `.env.cron-drain`, e o
+  # `.gitignore` já o deixa de fora), para não mexer no `.env` de quem nunca
+  # decidiu. O install.sh novo a cria: instalação nova nunca é convertida.
+  marca="$(dirname -- "$envfile")/.env.consentimento-de-telemetria"
+  [ -e "$marca" ] && return 0
   # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
   # elas também contam como a chave declarada (mesma régua do `completar_par_vapid`).
   declarado="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
   if [ -n "$declarado" ]; then
+    marcar_consentimento_de_telemetria "$marca"
     return 0
   fi
   if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" 2>/dev/null; then
+    marcar_consentimento_de_telemetria "$marca"
     return 0
   fi
   if [ ! -w "$envfile" ]; then
@@ -2974,6 +2992,7 @@ migrar_consentimento_de_telemetria() {
   # lê o que interpola.
   SENTRY_DSN="comunidade"; export SENTRY_DSN
   TELEMETRIA_CONVERTIDA=1
+  marcar_consentimento_de_telemetria "$marca"
   c_grn "$(t "✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)")"
 }
 

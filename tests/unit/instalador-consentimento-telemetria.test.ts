@@ -144,6 +144,72 @@ describe("a atualização preserva o consentimento de quem já havia aceitado", 
   });
 });
 
+/**
+ * Roda a conversão VÁRIAS vezes na MESMA pasta, como atualizações seguidas da
+ * mesma instalação. Entre uma passada e outra, `editar` faz o que a pessoa
+ * faria à mão no `.env`.
+ */
+function migrarEmSequencia(
+  inicial: string,
+  passos: Array<(atual: string) => string>,
+  marcaAntes = false,
+): string[] {
+  const dir = mkdtempSync(join(tmpdir(), "telemetria-4948-"));
+  const env = join(dir, ".env");
+  writeFileSync(env, inicial);
+  if (marcaAntes) writeFileSync(join(dir, ".env.consentimento-de-telemetria"), "# marca\n");
+  const rodar = () =>
+    execFileSync(
+      "bash",
+      ["-c", 'source hostgator-setup-kit/_common.sh; migrar_consentimento_de_telemetria "$1"', "_", env],
+      { cwd: RAIZ, stdio: "pipe", timeout: 60_000 },
+    );
+  try {
+    const saidas: string[] = [];
+    rodar();
+    saidas.push(readFileSync(env, "utf8"));
+    for (const editar of passos) {
+      writeFileSync(env, editar(readFileSync(env, "utf8")));
+      rodar();
+      saidas.push(readFileSync(env, "utf8"));
+    }
+    return saidas;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const esvaziar = (t: string) => t.replace(/^SENTRY_DSN=.*$/m, "SENTRY_DSN=");
+
+describe("a conversão acontece uma vez só por instalação (#4948)", () => {
+  it("quem esvazia a chave DEPOIS da conversão continua desligado na atualização seguinte", () => {
+    const [primeira, segunda] = migrarEmSequencia('SENTRY_DSN=""\n', [esvaziar]);
+    expect(valorDeSentryDsn(primeira ?? "")).toBe("comunidade");
+    // Vazio agora é "desligado": religar aqui seria consentir pela pessoa.
+    expect(valorDeSentryDsn(segunda ?? "")).toBe("");
+  });
+
+  it("a primeira passada marca mesmo sem converter: quem estava em off e esvazia depois não é religado", () => {
+    const [primeira, segunda] = migrarEmSequencia("SENTRY_DSN=off\n", [esvaziar]);
+    expect(valorDeSentryDsn(primeira ?? "")).toBe("off");
+    expect(valorDeSentryDsn(segunda ?? "")).toBe("");
+  });
+
+  it("instalação feita pelo install.sh novo (com a marca) e chave vazia nunca é convertida", () => {
+    const [unica] = migrarEmSequencia("SENTRY_DSN=\n", [], true);
+    expect(valorDeSentryDsn(unica ?? "")).toBe("");
+  });
+
+  it("o install.sh cria a marca logo depois de escrever o .env", () => {
+    const linhas = install.split("\n");
+    const fecho = linhas.findIndex((l) => l.trim() === "} > .env");
+    const marca = linhas.findIndex((l) => l.trim() === "marcar_consentimento_de_telemetria .env.consentimento-de-telemetria");
+    expect(fecho).toBeGreaterThan(-1);
+    expect(marca).toBeGreaterThan(fecho);
+    expect(marca - fecho).toBeLessThan(8);
+  });
+});
+
 describe("as traduções mantêm o token do aceite", () => {
   it("toda mensagem que manda escrever SENTRY_DSN=comunidade diz o mesmo token em espanhol", () => {
     // O token é lido por lib/sentry/dsn.ts: traduzido, ele vira um DSN inválido

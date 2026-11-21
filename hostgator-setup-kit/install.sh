@@ -2004,6 +2004,10 @@ esac
   fi
 } > .env
 chmod 600 .env
+# Instalação nova já nasce com o consentimento decidido ("off", "comunidade" ou o
+# DSN próprio): a conversão do update.sh (#4936) é só para quem instalou ANTES, e
+# nunca pode religar quem instalou depois com a chave vazia (#4948).
+marcar_consentimento_de_telemetria .env.consentimento-de-telemetria
 # O par dos avisos com o app fechado (Web Push): gerado aqui uma única vez, pela
 # MESMA função que a atualização usa (`gravar_imagens`). Reexecutar o install
 # não troca nada: o `load_env` lá em cima trouxe o par, e o `envq` o regravou.
