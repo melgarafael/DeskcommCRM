@@ -560,6 +560,28 @@ describe("a leitura não soma página parcial como se fosse o total", () => {
   });
 });
 
+it("rounds equally frequent tags without a negative share", async () => {
+  tabela = Array.from({ length: 60 }, (_, index) => ({
+    id: `conversation-${index}`,
+    organization_id: ORG,
+    tags: [`topic-${index}`],
+    status: "open",
+    created_at: "2026-09-10T12:00:00Z",
+    service_started_at: "2026-09-10T12:00:00Z",
+    awaiting_since: null,
+    last_outbound_at: null,
+  }));
+
+  const { status, data } = await relatorio("?de=2026-09-01&ate=2026-09-30");
+
+  expect(status).toBe(200);
+  const fatias = data.linhas.map((l) => l.fatia);
+  expect(fatias).toHaveLength(60);
+  expect(Math.min(...fatias)).toBe(1);
+  expect(Math.max(...fatias)).toBe(2);
+  expect(fatias.reduce((total, fatia) => total + fatia, 0)).toBe(100);
+});
+
 describe("a régua de volume é o ATENDIMENTO, e a espera não cresce depois de encerrada", () => {
   it("⭐ o cliente que volta conta no período em que voltou, não no da primeira conversa", async () => {
     // Um fio por contato: ele falou em junho, voltou em setembro — o mesmo fio

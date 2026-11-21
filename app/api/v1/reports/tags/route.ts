@@ -301,15 +301,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
 
-  for (const linha of linhas) linha.fatia = fatiaDe(linha.conversas, totalEtiquetagens);
-  // O denominador é a SOMA das etiquetagens (uma conversa com duas etiquetas
-  // conta em duas linhas), então as fatias somam 100 exatos antes de arredondar
-  // — e o arredondamento não pode criar porcentagem que não existe: 101% num
-  // relatório é o mesmo defeito de barra que não fecha.
-  const excedente = linhas.reduce((soma, l) => soma + l.fatia, 0) - 100;
-  if (excedente > 0) {
-    const maior = linhas.reduce((a, b) => (a.fatia >= b.fatia ? a : b));
-    maior.fatia -= excedente;
+  // Round each share down, then give the remaining points to the largest
+  // fractional shares so the displayed percentages add up to 100.
+  const restos = linhas.map((linha) => {
+    const pontos = linha.conversas * 100;
+    linha.fatia = Math.floor(pontos / totalEtiquetagens);
+    return { linha, resto: pontos % totalEtiquetagens };
+  });
+  const faltam = 100 - linhas.reduce((soma, linha) => soma + linha.fatia, 0);
+  restos.sort((a, b) => b.resto - a.resto);
+  for (const { linha } of restos.slice(0, faltam)) {
+    linha.fatia += 1;
   }
 
   // Volume primeiro: a pergunta é "qual assunto ocupou mais", e a leitura que
@@ -378,11 +380,6 @@ function instante(texto: string | null): number | null {
   if (!texto) return null;
   const ms = Date.parse(texto);
   return Number.isNaN(ms) ? null : ms;
-}
-
-function fatiaDe(quantidade: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((quantidade / total) * 100);
 }
 
 function montarResposta(
