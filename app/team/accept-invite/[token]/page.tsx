@@ -137,7 +137,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         {t("Você foi convidado para entrar como")} <strong>{payload.role}</strong>.{" "}
         {t("Confirme abaixo para ativar seu acesso.")}
       </p>
-      <AcceptInviteForm token={token} label={t("Aceitar convite")} pendingLabel={t("Confirmando…")} failureLabel={t("Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.")} planLimitLabel={t("A empresa que te convidou atingiu o limite de pessoas do plano. Avise quem te convidou.")} />
+      <AcceptInviteForm token={token} label={t("Aceitar convite")} pendingLabel={t("Confirmando…")} failureLabel={t("Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.")} rateLimitedLabel={t("Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.")} planLimitLabel={t("A empresa que te convidou atingiu o limite de pessoas do plano. Avise quem te convidou.")} />
     </Shell>
   );
 }
