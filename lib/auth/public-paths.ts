@@ -260,6 +260,10 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/webchat\/sessao$/,
   /^\/api\/v1\/webchat\/mensagens$/,
   /^\/api\/v1\/webchat\/eventos$/,
+  // A JANELA DO CHAT (spec 36, F2): o visitante abre `/chat/<chave>` sem sessão, dentro de um iframe no
+  // site do cliente. A chave pública é o único dado da URL; a autoridade e a organização mora na rota
+  // (`app/chat/[chave]/route.ts`). Âncora `$`: `/chat/` e sub-paths não nascem públicos de carona.
+  /^\/chat\/wck_[A-Za-z0-9_-]{1,64}$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

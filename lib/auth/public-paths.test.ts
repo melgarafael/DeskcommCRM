@@ -152,6 +152,18 @@ describe("isPublicPath", () => {
   });
 
   /**
+   * A janela do chat (spec 36, F2): o visitante abre `/chat/<chave>` sem sessão. A chave pública é a
+   * única coisa que a URL leva; a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera a janela do chat pela chave pública, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/chat/wck_abc")).toBe(true);
+    expect(isPublicPath("/chat")).toBe(false);
+    expect(isPublicPath("/chat/")).toBe(false);
+    expect(isPublicPath("/chat/wck_abc/x")).toBe(false);
+    expect(isPublicPath("/chat/outra")).toBe(false);
+  });
+
+  /**
    * A GET de eventos do chat no site (spec 36, F1): o visitante também não tem sessão. O token
    * vai no cabeçalho, e a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
    */

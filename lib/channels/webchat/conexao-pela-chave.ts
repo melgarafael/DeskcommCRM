@@ -23,9 +23,11 @@ export interface ConexaoPublica {
   id: string;
   organizationId: string;
   config: ConfiguracaoDoChat;
+  /** Domínios que podem embutir a janela (`frame-ancestors`). Lista vazia = ninguém. */
+  allowedOrigins: string[];
 }
 
-const COLUNAS = "id, organization_id, metadata";
+const COLUNAS = "id, organization_id, metadata, webchat_allowed_origins";
 
 /** A conexão ativa de chat no site que a chave pública identifica, ou `null`. */
 export async function conexaoPelaChave(admin: SupabaseClient, chave: string): Promise<ConexaoPublica | null> {
@@ -78,9 +80,13 @@ async function conexaoPor(
   const metadata = (linha.metadata as Record<string, unknown> | null) ?? {};
   // Configuração que não passa no schema vira a padrão: não derruba a entrada do visitante.
   const lida = configuracaoDoChatSchema.safeParse(metadata.webchat ?? {});
+  const origens = Array.isArray(linha.webchat_allowed_origins)
+    ? linha.webchat_allowed_origins.filter((o): o is string => typeof o === "string")
+    : [];
   return {
     id: linha.id as string,
     organizationId,
     config: lida.success ? lida.data : {},
+    allowedOrigins: origens,
   };
 }
