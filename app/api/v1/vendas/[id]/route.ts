@@ -14,7 +14,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast } from "@/lib/auth/types";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { podeApagarVenda } from "@/lib/vendas/registradas";
@@ -42,7 +42,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   if (error) return fail("internal_error", "Não foi possível carregar a venda.", 500, { requestId });
   if (!venda) return fail("not_found", "Venda não encontrada.", 404, { requestId });
 
-  const ehGestor = (ROLE_RANK[authz.org.role] ?? 0) >= ROLE_RANK.manager;
+  const ehGestor = roleAtLeast(authz.org.role, "manager");
   if (!podeApagarVenda(venda as { created_by: string | null }, authz.user.id, ehGestor)) {
     return fail("forbidden", "Só quem registrou a venda ou um gestor pode apagá-la.", 403, { requestId });
   }
