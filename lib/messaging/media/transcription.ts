@@ -43,6 +43,10 @@ export interface TranscriptionProvider {
  * custo informado na resposta — mesmo caso dos serviços acima.
  */
 export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = [
+  // #4713: o serviço compatível com OpenAI ESCOLHIDO pela organização. É
+  // serviço de transcrição como os outros desta lista — não é modelo de
+  // conversa —, então fica fora da conta de token do aviso de orçamento.
+  "servico_compativel_da_organizacao",
   "servico_da_instalacao",
   "padrao_openai_compativel",
   "padrao_openrouter",

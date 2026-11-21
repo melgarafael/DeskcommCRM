@@ -6014,8 +6014,41 @@ export const DICIONARIO: Traducoes = {
   "Transforma o áudio que o cliente mandou em texto que o agente lê.": {
     es: "Transforma el audio que envió el cliente en texto que el agente lee.",
   },
-  "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes. A única escolha é usar o ElevenLabs (Scribe) antes de todos eles, com a chave do ElevenLabs da organização; sem essa chave, vale a ordem acima.": {
-    es: "Este punto no tiene un modelo elegido en el panel: quien escucha el audio es la escalera de transcripción, y decide en cada nota de voz. Primero el servicio de esta instalación (TRANSCRIPTION_API_KEY); si no, la clave de OpenAI con el modelo de transcripción de siempre (whisper-1, o lo que traiga TRANSCRIPTION_MODEL); si la conversación de la organización es OpenRouter, la propia OpenRouter transcribe con la misma clave; y cuando no hay ninguna clave de OpenAI, el modelo de conversación de la organización — siempre que declare la capacidad de audio, que es como una organización solo con Gemini transcribe. Sin ninguno de los cuatro, el audio no se convierte en texto, y el motivo aparece aquí. Por eso fijar un proveedor aquí borraría los escalones siguientes. La única elección es usar ElevenLabs (Scribe) antes que todos ellos, con la clave de ElevenLabs de la organización; sin esa clave, vale el orden anterior.",
+    "Quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz — não há um modelo único a fixar aqui. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes. O painel deixa escolher dois serviços antes de todos eles: o ElevenLabs (Scribe), com a chave do ElevenLabs da organização, e um serviço compatível com OpenAI com endereço, modelo, chave e idioma da própria organização, que passa a vencer o serviço desta instalação. Sem essas chaves, vale a ordem acima.": {
+    es: "Quien escucha el audio es la escalera de transcripción, y decide en cada nota de voz — no hay un modelo único que fijar aquí. Primero el servicio de esta instalación (TRANSCRIPTION_API_KEY); si no, la clave de OpenAI con el modelo de transcripción de siempre (whisper-1, o lo que traiga TRANSCRIPTION_MODEL); si la conversación de la organización es OpenRouter, la propia OpenRouter transcribe con la misma clave; y cuando no hay ninguna clave de OpenAI, el modelo de conversación de la organización — siempre que declare la capacidad de audio, que es como una organización solo con Gemini transcribe. Sin ninguno de los cuatro, el audio no se convierte en texto, y el motivo aparece aquí. Por eso fijar un proveedor aquí borraría los escalones siguientes. El panel deja elegir dos servicios antes que todos ellos: ElevenLabs (Scribe), con la clave de ElevenLabs de la organización, y un servicio compatible con OpenAI con dirección, modelo, clave e idioma de la propia organización, que pasa a vencer el servicio de esta instalación. Sin esas claves, vale el orden anterior.",
+  },
+  "a organização escolheu o serviço compatível com OpenAI deste ponto, e ele ouve os áudios com o endereço, o modelo e a chave dela": {
+    es: "la organización eligió el servicio compatible con OpenAI de este punto, y él escucha los audios con la dirección, el modelo y la clave de ella",
+  },
+  "a organização escolheu um serviço compatível com OpenAI para ouvir os áudios, mas o endereço (base URL) do serviço não está preenchido — a escolha não foi usada e a escada seguiu": {
+    es: "la organización eligió un servicio compatible con OpenAI para escuchar los audios, pero la dirección (base URL) del servicio no está rellenada — la elección no se usó y la escalera siguió",
+  },
+  "a organização escolheu um serviço compatível com OpenAI para ouvir os áudios, mas o modelo do serviço não está preenchido — a escolha não foi usada e a escada seguiu": {
+    es: "la organización eligió un servicio compatible con OpenAI para escuchar los audios, pero el modelo del servicio no está rellenado — la elección no se usó y la escalera siguió",
+  },
+  "Serviço compatível com OpenAI": {
+    es: "Servicio compatible con OpenAI",
+  },
+  "Endereço do serviço (base URL)": {
+    es: "Dirección del servicio (base URL)",
+  },
+  "O endereço que fala a API de transcrição da OpenAI — o gateway da sua empresa, um LiteLLM, um Whisper próprio. A chave sai da credencial escolhida acima.": {
+    es: "La dirección que habla la API de transcripción de OpenAI — la puerta de enlace de tu empresa, un LiteLLM, un Whisper propio. La clave sale de la credencial elegida arriba.",
+  },
+  "Modelo do serviço": {
+    es: "Modelo del servicio",
+  },
+  "Idioma do áudio (opcional)": {
+    es: "Idioma del audio (opcional)",
+  },
+  "Os idiomas que chegam nos áudios desta organização, como pt ou es, pt. Em branco, o serviço detecta sozinho — o idioma desta instalação não vale para cá.": {
+    es: "Los idiomas que llegan en los audios de esta organización, como pt o es, pt. En blanco, el servicio detecta solo — el idioma de esta instalación no vale aquí.",
+  },
+  "Informe o endereço do serviço para salvar esta escolha.": {
+    es: "Informa la dirección del servicio para guardar esta elección.",
+  },
+  "o serviço compatível com OpenAI precisa do endereço (base URL) para onde o áudio vai — sem ele a escolha não pode ser cumprida e o áudio continua no serviço desta instalação": {
+    es: "el servicio compatible con OpenAI necesita la dirección (base URL) a la que va el audio — sin ella la elección no se puede cumplir y el audio sigue en el servicio de esta instalación",
   },
   "o serviço de transcrição configurado nesta instalação (TRANSCRIPTION_API_KEY) é o que ouve os áudios": {
     es: "el servicio de transcripción configurado en esta instalación (TRANSCRIPTION_API_KEY) es el que escucha los audios",

@@ -171,7 +171,14 @@ export interface PontoDeIa {
     razao: string;
     usa?: { provider: string; modelId: string };
     escada?: "transcricao";
-    opcoes?: readonly { provider: string; modelId: string; rotulo: string }[];
+    /**
+     * `modeloLivre` (#4713): a opção aceita QUALQUER `model_id` daquele
+     * provedor, e o `modelId` declarado é só o valor inicial da tela. Existe
+     * para o serviço compatível com OpenAI do ponto de transcrição: o modelo
+     * de um gateway (Groq, 9Router, LiteLLM) não está no catálogo daqui, então
+     * um menu de par fechado não teria como oferecê-lo.
+     */
+    opcoes?: readonly { provider: string; modelId: string; rotulo: string; modeloLivre?: boolean }[];
   };
   registraEm: DestinoDeTelemetria;
   /**
@@ -612,7 +619,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/messaging/media/transcription.ts",
     fixo: {
       razao:
-        "Este ponto não tem modelo escolhido no painel: quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes. A única escolha é usar o ElevenLabs (Scribe) antes de todos eles, com a chave do ElevenLabs da organização; sem essa chave, vale a ordem acima.",
+        "Quem ouve o áudio é a escada de transcrição, e ela decide a cada nota de voz — não há um modelo único a fixar aqui. Primeiro o serviço desta instalação (TRANSCRIPTION_API_KEY); na falta dele, a chave OpenAI com o modelo de transcrição de sempre (whisper-1, ou o que TRANSCRIPTION_MODEL trouxer); se a conversa da organização for OpenRouter, a própria OpenRouter transcreve com a mesma chave; e quando não há chave OpenAI nenhuma, o modelo de conversa da organização — desde que ele declare a capacidade de áudio, que é como uma organização só com Gemini transcreve. Sem nenhum dos quatro, o áudio não vira texto, e o motivo aparece aqui. Por isso fixar um provedor aqui apagaria os degraus seguintes. O painel deixa escolher dois serviços antes de todos eles: o ElevenLabs (Scribe), com a chave do ElevenLabs da organização, e um serviço compatível com OpenAI com endereço, modelo, chave e idioma da própria organização, que passa a vencer o serviço desta instalação. Sem essas chaves, vale a ordem acima.",
       // ⚠️ POR QUE NÃO HÁ MAIS um par fixo (provider "openai" + "whisper-1")
       // neste ponto (#2190): o objeto `fixo` vive sem o campo que declarava
       // esse par.
@@ -642,6 +649,17 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       opcoes: [
         { provider: "openai", modelId: "whisper-1", rotulo: "Automático" },
         { provider: "elevenlabs", modelId: "scribe_v1", rotulo: "ElevenLabs (Scribe)" },
+        // #4713 · o degrau 0b da escada. `custom` é o provedor compatível com
+        // OpenAI de `provedores.ts`: o endereço (`base_url`) e a chave são da
+        // ORGANIZAÇÃO — a chave é a credencial `custom` que ela já cadastra — e
+        // o modelo é livre, porque o de um gateway (Groq, 9Router, LiteLLM) não
+        // está no catálogo daqui. `whisper-1` é só o valor inicial da tela.
+        {
+          provider: "custom",
+          modelId: "whisper-1",
+          rotulo: "Serviço compatível com OpenAI",
+          modeloLivre: true,
+        },
       ],
     },
     sintomaDeFalha:
