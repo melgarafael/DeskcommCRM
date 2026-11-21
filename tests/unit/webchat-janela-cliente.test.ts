@@ -2,14 +2,20 @@
  * O comportamento da janela do chat no site (`public/webchat-janela.js`, spec 36, F2, Task 5).
  *
  * O arquivo é JavaScript de navegador, sem módulo. Carregado com `createRequire`, expõe as
- * funções por `module.exports` e NÃO se inicia sozinho. O teste de tela monta a estrutura de
- * `lib/channels/webchat/janela-html.ts` no jsdom (ambiente padrão deste repositório) e dirige
- * `iniciar` com um `fetch` falso.
+ * funções por `module.exports` e NÃO se inicia sozinho. O DOM da janela sai de `montarJanela`
+ * (lib/channels/webchat/janela-html.ts), o mesmo HTML que o servidor entrega, e `iniciar` é
+ * dirigido com um `fetch` falso no jsdom (ambiente padrão deste repositório).
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { MarcaDeSaida } from "@/lib/branding/saida";
+import { montarJanela } from "@/lib/channels/webchat/janela-html";
+
+vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://crm.example.com" } }));
+vi.mock("@/lib/webhooks/url-publica", () => ({ enderecoDaPropriaMaquina: () => false }));
 
 interface Modulo {
   aceitarMensagemDoPai: (evento: unknown, pai?: unknown) => boolean;
@@ -21,8 +27,6 @@ interface Modulo {
     leitor: { read: () => Promise<{ done: boolean; value?: unknown }> },
     aoEvento: (ev: { evento: string; dados: string }) => void,
   ) => Promise<void>;
-  validarColeta: unknown;
-  normalizarContexto: unknown;
   iniciar: (opcoes: Record<string, unknown>) => unknown;
 }
 
@@ -83,7 +87,7 @@ describe("montarMensagem", () => {
 });
 
 describe("lerEventos", () => {
-  function leitorDe(pedacos: string[]) {
+  function leitorDe(pedacos: unknown[]) {
     let i = 0;
     return {
       read: () =>
@@ -112,24 +116,30 @@ describe("lerEventos", () => {
     );
     expect(recebidos.map((ev) => ev.dados)).toEqual(['{"id":"a"}', '{"id":"b"}']);
   });
+
+  it("lê Uint8Array e junta um caractere acentuado partido entre dois chunks", async () => {
+    const bytes = new TextEncoder().encode('event: mensagem\ndata: {"id":"1","texto":"ação"}\n\n');
+    const meio = bytes.indexOf(0xc3) + 1; // corta o "ç" no meio dos dois bytes
+    const recebidos: Array<{ evento: string; dados: string }> = [];
+    await modulo.lerEventos(leitorDe([bytes.slice(0, meio), bytes.slice(meio)]), (ev) =>
+      recebidos.push(ev),
+    );
+    expect(recebidos).toHaveLength(1);
+    expect((JSON.parse(recebidos[0]!.dados) as { texto: string }).texto).toBe("ação");
+  });
 });
 
 // ---------- A janela no DOM ----------
 
-const FIXTURE = `
-<div id="webchat-app">
-<header class="cabecalho"><div class="marca"><strong>Loja</strong><span>Atendimento</span></div></header>
-<main id="webchat-mensagens" class="mensagens" aria-live="polite"></main>
-<footer class="rodape">
-<p class="aviso"></p>
-<form id="webchat-form" class="entrada">
-<input id="webchat-texto" type="text" maxlength="2000" autocomplete="off" aria-label="Mensagem">
-<button id="webchat-enviar" type="submit">Enviar</button>
-</form>
-</footer>
-</div>
-<script type="application/json" id="webchat-config"></script>`;
+const MARCA: MarcaDeSaida = {
+  nome: "Loja Exemplo",
+  logoUrl: null,
+  accent: "#506d48",
+  accentFg: "#ffffff",
+  origens: { nome: "padrao", cor: "padrao" },
+};
 
+/** Configuração completa, como a rota a entrega em `#webchat-config`. */
 const CONFIG_PADRAO = {
   chave: "wck_teste",
   titulo: "Atendimento",
@@ -145,10 +155,32 @@ const SOMENTE_CONVERSA = {
   coleta: { nome: "oculto", telefone: "oculto", email: "oculto" },
 };
 
+/** HTML real da janela, gerado por `montarJanela`. */
+function htmlDaJanela(config: typeof CONFIG_PADRAO): string {
+  return montarJanela({
+    chave: "wck_teste",
+    marca: MARCA,
+    config: { titulo: config.titulo, saudacao: config.saudacao, coleta: config.coleta } as never,
+    controlador: config.controlador,
+    origens: [],
+  }).html;
+}
+
+/** Troca o conteúdo do body pelo documento gerado pelo servidor, sem a propriedade de HTML bruto. */
+function montarDom(html: string) {
+  const documento = new DOMParser().parseFromString(html, "text/html");
+  document.body.textContent = "";
+  Array.from(documento.body.childNodes).forEach((no) =>
+    document.body.appendChild(document.importNode(no, true)),
+  );
+}
+
 interface Chamada {
   url: string;
   init: { method?: string; headers?: Record<string, string>; body?: string };
 }
+
+type Fetch = (url: string, init?: Chamada["init"]) => Promise<unknown>;
 
 function json(status: number, corpo: unknown, cabecalhos: Record<string, string> = {}) {
   return {
@@ -160,7 +192,8 @@ function json(status: number, corpo: unknown, cabecalhos: Record<string, string>
   };
 }
 
-function stream(pedacos: string[]) {
+/** Resposta de fluxo: o corpo é um leitor de pedaços (texto ou bytes). */
+function stream(pedacos: unknown[]) {
   let i = 0;
   const leitor = {
     read: () =>
@@ -177,25 +210,32 @@ function stream(pedacos: string[]) {
   };
 }
 
-/** Roteia as rotas da janela. `mensagens` decide a resposta de cada envio (n = 1, 2, ...). */
-function roteador(
-  mensagens?: (corpo: { mensagem_id: string }, n: number) => unknown,
-  eventos: string[] = [],
-) {
+interface Rotas {
+  sessao?: () => Promise<unknown>;
+  mensagens?: (corpo: { mensagem_id: string }, n: number) => unknown;
+  eventos?: () => Promise<unknown>;
+}
+
+/** Roteia as rotas da janela. `n` conta os envios de mensagem (1, 2, ...). */
+function roteador(rotas: Rotas = {}, eventos: string[] = []) {
   const chamadas: Chamada[] = [];
   let n = 0;
-  const fn = (url: string, init: Chamada["init"] = {}) => {
+  const fn: Fetch = (url, init = {}) => {
     chamadas.push({ url, init });
     if (url.endsWith("/sessao")) {
-      return Promise.resolve(json(200, { data: { token: "T1", visitante_id: "v1", configuracao: {} } }));
+      return rotas.sessao
+        ? rotas.sessao()
+        : Promise.resolve(json(200, { data: { token: "T1", visitante_id: "v1", configuracao: {} } }));
     }
-    if (url.endsWith("/eventos")) return Promise.resolve(stream(eventos));
+    if (url.endsWith("/eventos")) {
+      return rotas.eventos ? rotas.eventos() : Promise.resolve(stream(eventos));
+    }
     if (url.endsWith("/mensagens")) {
       const corpo = JSON.parse(String(init.body)) as { mensagem_id: string };
       n += 1;
       return Promise.resolve(
-        mensagens
-          ? mensagens(corpo, n)
+        rotas.mensagens
+          ? rotas.mensagens(corpo, n)
           : json(201, { data: { mensagem_id: corpo.mensagem_id, status: "queued" } }),
       );
     }
@@ -220,21 +260,20 @@ function memoria() {
 
 const esperarTudo = () => new Promise<void>((r) => setTimeout(r, 0));
 
-/** Troca o conteúdo do body por um fixture estático, sem passar pela propriedade de HTML bruto. */
-function montarDom(html: string) {
-  const fixture = new DOMParser().parseFromString(html, "text/html");
-  document.body.textContent = "";
-  Array.from(fixture.body.childNodes).forEach((no) => document.body.appendChild(document.importNode(no, true)));
+interface Agendado {
+  fn: () => void;
+  ms: number;
 }
 
 async function abrirJanela(
-  fetchFn: (url: string, init?: Chamada["init"]) => Promise<unknown>,
-  config: Record<string, unknown> = CONFIG_PADRAO,
+  fetchFn: Fetch,
+  config: typeof CONFIG_PADRAO | typeof SOMENTE_CONVERSA = CONFIG_PADRAO,
   extras: Record<string, unknown> = {},
+  configBruta?: string,
 ) {
-  montarDom(FIXTURE);
-  document.getElementById("webchat-config")!.textContent = JSON.stringify(config);
-  const agendados: number[] = [];
+  montarDom(htmlDaJanela(CONFIG_PADRAO));
+  document.getElementById("webchat-config")!.textContent = configBruta ?? JSON.stringify(config);
+  const agendados: Agendado[] = [];
   const pai = { postMessage: vi.fn() };
   const armazenamento = memoria();
   modulo.iniciar({
@@ -242,8 +281,8 @@ async function abrirJanela(
     janela: window,
     pai,
     fetch: fetchFn,
-    agendar: (_fn: () => void, ms: number) => {
-      agendados.push(ms);
+    agendar: (fn: () => void, ms: number) => {
+      agendados.push({ fn, ms });
     },
     armazenamento,
     caminho: "/chat/wck_teste",
@@ -254,17 +293,25 @@ async function abrirJanela(
 }
 
 function botao(texto: string): HTMLButtonElement {
-  const achado = Array.from(document.querySelectorAll("button")).find(
-    (b) => b.textContent === texto,
-  );
+  const achado = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === texto);
   if (!achado) throw new Error("botão ausente: " + texto);
   return achado;
 }
 
+function temTexto(texto: string): boolean {
+  return document.body.textContent !== null && document.body.textContent.includes(texto);
+}
+
 function digitarEEnviar(texto: string) {
-  const campo = document.getElementById("webchat-texto") as HTMLInputElement;
+  const campo = document.getElementById("webchat-texto") as HTMLTextAreaElement;
   campo.value = texto;
   campo.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+}
+
+function enviarColeta() {
+  (document.querySelector("form.coleta") as HTMLFormElement).dispatchEvent(
+    new Event("submit", { bubbles: true, cancelable: true }),
+  );
 }
 
 function corposDeMensagens(chamadas: Chamada[]) {
@@ -283,12 +330,8 @@ describe("janela no DOM", () => {
   });
 
   it("texto de resposta com <img onerror> aparece como texto, sem elemento filho", async () => {
-    const malicioso = JSON.stringify({
-      id: "m1",
-      texto: "<img src=x onerror=alert(1)>",
-      em: "2026-11-21T10:00:00Z",
-    });
-    const r = roteador(undefined, [`event: mensagem\ndata: ${malicioso}\n\n`]);
+    const malicioso = JSON.stringify({ id: "m1", texto: "<img src=x onerror=alert(1)>", em: "2026-11-21T10:00:00Z" });
+    const r = roteador({}, [`event: mensagem\ndata: ${malicioso}\n\n`]);
     await abrirJanela(r.fn, SOMENTE_CONVERSA);
     botao("Aceitar e continuar").click();
     await esperarTudo();
@@ -313,8 +356,7 @@ describe("janela no DOM", () => {
         throw new Error("negado");
       },
     };
-    const r = roteador();
-    await abrirJanela(r.fn, CONFIG_PADRAO, { armazenamento: quebrado });
+    await abrirJanela(roteador().fn, CONFIG_PADRAO, { armazenamento: quebrado });
     expect(botao("Aceitar e continuar")).toBeDefined();
   });
 
@@ -324,8 +366,7 @@ describe("janela no DOM", () => {
       chamadas.push(url);
       return Promise.resolve(json(404, { error: { code: "not_found", message: "Not found." } }));
     });
-
-    expect(document.body.textContent).toContain("Chat indisponível");
+    expect(temTexto("Chat indisponível")).toBe(true);
     expect(agendados).toHaveLength(0);
     expect(chamadas.filter((u) => u.endsWith("/sessao"))).toHaveLength(1);
   });
@@ -335,18 +376,15 @@ describe("janela no DOM", () => {
     await abrirJanela(r.fn);
     botao("Aceitar e continuar").click();
     await esperarTudo();
-
-    const form = document.querySelector("form.coleta") as HTMLFormElement;
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    enviarColeta();
     await esperarTudo();
 
     expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
-    expect(document.body.textContent).toContain("Informe seu nome.");
+    expect(temTexto("Informe seu nome.")).toBe(true);
   });
 
   it("campo oculto não aparece no formulário de coleta", async () => {
-    const r = roteador();
-    await abrirJanela(r.fn);
+    await abrirJanela(roteador().fn);
     botao("Aceitar e continuar").click();
     await esperarTudo();
 
@@ -360,12 +398,9 @@ describe("janela no DOM", () => {
     await abrirJanela(r.fn);
     botao("Aceitar e continuar").click();
     await esperarTudo();
-
     (document.querySelector('input[name="nome"]') as HTMLInputElement).value = "Ana";
     (document.querySelector('input[name="telefone"]') as HTMLInputElement).value = "+55 11 99999-9999";
-    (document.querySelector("form.coleta") as HTMLFormElement).dispatchEvent(
-      new Event("submit", { bubbles: true, cancelable: true }),
-    );
+    enviarColeta();
     await esperarTudo();
 
     digitarEEnviar("Oi");
@@ -380,38 +415,90 @@ describe("janela no DOM", () => {
     expect(segunda.contato).toBeUndefined();
   });
 
-  it("422 na primeira mensagem mostra a orientação e o reenvio usa o MESMO mensagem_id", async () => {
-    const r = roteador((_corpo, n) =>
-      n === 1
-        ? json(422, { error: { code: "validation_failed", message: "Dados inválidos." } })
-        : json(201, { data: { mensagem_id: "x", status: "queued" } }),
-    );
-    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+  it("gravar a flag iniciada após o primeiro envio aceito", async () => {
+    const { armazenamento } = await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
     botao("Aceitar e continuar").click();
     await esperarTudo();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(armazenamento.mapa.get("webchat:wck_teste:iniciada")).toBe("1");
+  });
+
+  it("flag iniciada com token pula aviso e coleta, e não reenvia aceite nem contato", async () => {
+    // Segunda abertura: a flag e o token guardados de antes.
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    const r = roteador();
+    await abrirJanela(r.fn, CONFIG_PADRAO, { armazenamento });
+
+    expect(document.querySelector("form.coleta")).toBeNull();
+    expect(temTexto("Aceitar e continuar")).toBe(false);
+    const sessao = r.chamadas.find((c) => c.url.endsWith("/sessao"));
+    expect(sessao?.init.headers?.Authorization).toBe("Bearer T0");
 
     digitarEEnviar("Oi");
     await esperarTudo();
-    expect(document.body.textContent).toContain("Confira os dados e tente de novo.");
+    const [envio] = corposDeMensagens(r.chamadas);
+    expect(envio.aceite).toBeUndefined();
+    expect(envio.contato).toBeUndefined();
+  });
+
+  it("flag sem token ainda pede o aviso", async () => {
+    const r = roteador();
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    await abrirJanela(r.fn, CONFIG_PADRAO, { armazenamento });
+    expect(botao("Aceitar e continuar")).toBeDefined();
+  });
+
+  it("422 na primeira mensagem volta à coleta com o que foi digitado, e o reenvio usa o MESMO mensagem_id", async () => {
+    const r = roteador({
+      mensagens: (_corpo, n) =>
+        n === 1
+          ? json(422, { error: { code: "validation_failed", message: "Dados inválidos." } })
+          : json(201, { data: { mensagem_id: "x", status: "queued" } }),
+    });
+    await abrirJanela(r.fn);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    (document.querySelector('input[name="nome"]') as HTMLInputElement).value = "Ana";
+    enviarColeta();
+    await esperarTudo();
 
     digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(temTexto("Confira os dados e tente de novo.")).toBe(true);
+    const campoNome = document.querySelector('input[name="nome"]') as HTMLInputElement | null;
+    expect(campoNome).not.toBeNull();
+    expect(campoNome!.value).toBe("Ana");
+
+    // Confirma a coleta de novo: volta à conversa e a mensagem falha fica com "tentar de novo".
+    enviarColeta();
+    await esperarTudo();
+    const falha = Array.from(document.querySelectorAll(".msg-estado")).find((el) =>
+      el.textContent?.includes("tentar de novo"),
+    ) as HTMLElement;
+    expect(falha).toBeDefined();
+    falha.click();
     await esperarTudo();
 
     const [primeira, reenvio] = corposDeMensagens(r.chamadas);
     expect(reenvio.mensagem_id).toBe(primeira.mensagem_id);
     expect(reenvio.aceite).toEqual({ versao: "v1" });
+    expect(reenvio.contato).toEqual({ nome: "Ana" });
   });
 
   it("token_novo substitui o token usado na requisição seguinte", async () => {
-    const r = roteador((corpo, n) =>
-      n === 1
-        ? json(201, { data: { mensagem_id: corpo.mensagem_id, status: "queued", token_novo: "T2" } })
-        : json(201, { data: { mensagem_id: corpo.mensagem_id, status: "queued" } }),
-    );
+    const r = roteador({
+      mensagens: (corpo, n) =>
+        n === 1
+          ? json(201, { data: { mensagem_id: corpo.mensagem_id, status: "queued", token_novo: "T2" } })
+          : json(201, { data: { mensagem_id: corpo.mensagem_id, status: "queued" } }),
+    });
     const { armazenamento } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
     botao("Aceitar e continuar").click();
     await esperarTudo();
-
     digitarEEnviar("Oi");
     await esperarTudo();
     digitarEEnviar("Tudo bem?");
@@ -421,5 +508,170 @@ describe("janela no DOM", () => {
     expect(envios[0].init.headers?.Authorization).toBe("Bearer T1");
     expect(envios[1].init.headers?.Authorization).toBe("Bearer T2");
     expect(armazenamento.mapa.get("webchat:wck_teste")).toBe("T2");
+  });
+
+  it("Esc manda { tipo: fechar } ao pai", async () => {
+    const { pai } = await abrirJanela(roteador().fn);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(pai.postMessage).toHaveBeenCalledWith({ tipo: "fechar" }, "*");
+  });
+
+  it("o botão fechar do cabeçalho manda { tipo: fechar } ao pai", async () => {
+    const { pai } = await abrirJanela(roteador().fn);
+    (document.querySelector('button[aria-label="Fechar chat"]') as HTMLButtonElement).click();
+    expect(pai.postMessage).toHaveBeenCalledWith({ tipo: "fechar" }, "*");
+  });
+
+  it("envia { tipo: pronto } ao pai ao iniciar", async () => {
+    const { pai } = await abrirJanela(roteador().fn);
+    expect(pai.postMessage).toHaveBeenCalledWith({ tipo: "pronto" }, "*");
+  });
+
+  it("401 no fluxo apaga o token guardado, mostra Chat indisponível e não reconecta", async () => {
+    const r = roteador({ eventos: () => Promise.resolve(json(401, { error: { code: "unauthenticated", message: "x" } })) });
+    const { armazenamento, agendados } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+
+    expect(armazenamento.mapa.has("webchat:wck_teste")).toBe(false);
+    expect(temTexto("Chat indisponível")).toBe(true);
+    expect(agendados).toHaveLength(0);
+  });
+
+  it("429 no fluxo respeita Retry-After em segundos", async () => {
+    let chamadas = 0;
+    const r = roteador({
+      eventos: () => {
+        chamadas += 1;
+        return Promise.resolve(json(429, { error: { code: "rate_limited", message: "x" } }, { "Retry-After": "7" }));
+      },
+    });
+    const { agendados } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+
+    expect(agendados.map((a) => a.ms)).toEqual([7000]);
+    agendados[0]!.fn();
+    await esperarTudo();
+    expect(chamadas).toBe(2);
+  });
+
+  it("429 na sessão respeita Retry-After antes de tentar de novo", async () => {
+    let chamadas = 0;
+    const r = roteador({
+      sessao: () => {
+        chamadas += 1;
+        return Promise.resolve(json(429, { error: { code: "rate_limited", message: "x" } }, { "Retry-After": "3" }));
+      },
+    });
+    const { agendados } = await abrirJanela(r.fn);
+    expect(agendados.map((a) => a.ms)).toEqual([3000]);
+    agendados[0]!.fn();
+    await esperarTudo();
+    expect(chamadas).toBe(2);
+  });
+
+  it("falha de rede no fluxo espera 1 s, 2 s e 4 s, em sequência", async () => {
+    const r = roteador({ eventos: () => Promise.reject(new Error("rede")) });
+    const { agendados } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    expect(agendados.map((a) => a.ms)).toEqual([1000]);
+
+    agendados[agendados.length - 1]!.fn();
+    await esperarTudo();
+    expect(agendados.map((a) => a.ms)).toEqual([1000, 2000]);
+
+    agendados[agendados.length - 1]!.fn();
+    await esperarTudo();
+    expect(agendados.map((a) => a.ms)).toEqual([1000, 2000, 4000]);
+  });
+
+  it("fim normal do fluxo reconecta depois de 1 s, sem aviso", async () => {
+    const r = roteador({}, []);
+    const { agendados } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+
+    expect(agendados.map((a) => a.ms)).toEqual([1000]);
+    expect(temTexto("Reconectando")).toBe(false);
+    agendados[0]!.fn();
+    await esperarTudo();
+    expect(r.chamadas.filter((c) => c.url.endsWith("/eventos"))).toHaveLength(2);
+  });
+
+  it("Reconectando aparece durante o aviso, antes da conversa", async () => {
+    await abrirJanela(roteador({ sessao: () => Promise.reject(new Error("rede")) }).fn);
+    const status = Array.from(document.querySelectorAll('[role="status"]')).map((p) => p.textContent);
+    expect(status).toContain("Reconectando…");
+  });
+
+  it("link da política sai com target e rel seguros", async () => {
+    await abrirJanela(roteador().fn);
+    const link = document.querySelector(".aviso a") as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe("https://loja.exemplo.com.br/privacidade");
+    expect(link!.getAttribute("target")).toBe("_blank");
+    expect(link!.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("política que não é http(s) não gera link", async () => {
+    await abrirJanela(roteador().fn, CONFIG_PADRAO, {}, JSON.stringify({
+      ...CONFIG_PADRAO,
+      controlador: { razaoSocial: "Loja", politicaUrl: "javascript:alert(1)" },
+    }));
+    expect(document.querySelector(".aviso a")).toBeNull();
+  });
+
+  it("a lista de mensagens tem role log", async () => {
+    await abrirJanela(roteador().fn);
+    expect(document.getElementById("webchat-mensagens")!.getAttribute("role")).toBe("log");
+  });
+
+  it("mensagem vazia é recusada na tela, sem chamada ao servidor", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    digitarEEnviar("   ");
+    await esperarTudo();
+    expect(temTexto("Digite uma mensagem para enviar.")).toBe(true);
+    expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
+  });
+
+  it("mensagem acima de 2000 caracteres é recusada na tela, com o limite", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    digitarEEnviar("a".repeat(2001));
+    await esperarTudo();
+    expect(temTexto("passou de 2000 caracteres")).toBe(true);
+    expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
+  });
+
+  it("Shift+Enter não envia: quebra linha no campo de texto", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    const campo = document.getElementById("webchat-texto") as HTMLTextAreaElement;
+    campo.value = "linha um";
+    campo.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }));
+    await esperarTudo();
+    expect(corposDeMensagens(r.chamadas)).toHaveLength(0);
+  });
+
+  it("401 no envio marca a mensagem como não enviada antes de mostrar Chat indisponível", async () => {
+    const r = roteador({
+      mensagens: () => json(401, { error: { code: "unauthenticated", message: "x" } }),
+    });
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    expect(temTexto("não enviada — tentar de novo")).toBe(true);
+    expect(temTexto("Chat indisponível")).toBe(true);
   });
 });

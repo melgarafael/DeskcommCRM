@@ -189,4 +189,12 @@ describe("montarJanela: HTML", () => {
     expect(html).toContain('id="webchat-mensagens"');
     expect(html).toContain('id="webchat-texto"');
   });
+
+  it("o campo de texto é textarea, para Shift+Enter quebrar linha", () => {
+    const { html } = janela();
+    expect(html).toContain('<textarea id="webchat-texto"');
+    expect(html).not.toMatch(/<input[^>]*id="webchat-texto"/);
+    expect(html).toContain(".entrada textarea");
+    expect(html).toContain("resize: none");
+  });
 });

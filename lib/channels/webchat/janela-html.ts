@@ -106,8 +106,8 @@ html, body { margin: 0; height: 100%; background: #fff; color: #1f2937;
 .aviso { margin: 0 0 .5rem; font-size: .75rem; color: #4b5563; }
 .aviso a { color: inherit; }
 .entrada { display: flex; gap: .5rem; }
-.entrada input { flex: 1; min-width: 0; padding: .55rem .7rem; border: 1px solid #d1d5db;
-  border-radius: 8px; font: inherit; }
+.entrada textarea { flex: 1; min-width: 0; padding: .55rem .7rem; border: 1px solid #d1d5db;
+  border-radius: 8px; font: inherit; resize: none; }
 .entrada button { padding: .55rem .9rem; border: 0; border-radius: 8px; background: var(--cor);
   color: var(--cor-texto); font: inherit; cursor: pointer; }
 `;
@@ -178,7 +178,7 @@ ${logo}
 <footer class="rodape">
 <p class="aviso">${aviso}</p>
 <form id="webchat-form" class="entrada">
-<input id="webchat-texto" type="text" maxlength="2000" autocomplete="off" placeholder="Digite sua mensagem" aria-label="Mensagem">
+<textarea id="webchat-texto" rows="1" maxlength="2000" autocomplete="off" placeholder="Digite sua mensagem" aria-label="Mensagem"></textarea>
 <button id="webchat-enviar" type="submit">Enviar</button>
 </form>
 </footer>

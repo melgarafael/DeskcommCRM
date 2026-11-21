@@ -9,8 +9,8 @@
  *
  * JavaScript simples, sem módulo e sem build, servido como arquivo estático de public/.
  * Todo texto que vem do servidor, da configuração ou do visitante entra na tela como texto
- * puro. Textos acentuados vão como escape Unicode, para o arquivo não depender da codificação
- * com que o servidor o entrega.
+ * puro. Os textos com acento estão escritos como escapes Unicode no código-fonte, então o
+ * arquivo não depende da codificação com que o servidor o entrega.
  */
 (function () {
   "use strict";
@@ -263,6 +263,29 @@
     }
   }
 
+  /** Marca de que o visitante já teve a primeira mensagem aceita pelo servidor. */
+  function chaveDaFlag(chave) {
+    return PREFIXO_TOKEN + chave + ":iniciada";
+  }
+
+  function lerFlagIniciada(arm, chave) {
+    if (!arm) return false;
+    try {
+      return arm.getItem(chaveDaFlag(chave)) === "1";
+    } catch (erro) {
+      return false;
+    }
+  }
+
+  function gravarFlagIniciada(arm, chave) {
+    if (!arm) return;
+    try {
+      arm.setItem(chaveDaFlag(chave), "1");
+    } catch (erro) {
+      // Sem armazenamento: o aviso volta na próxima abertura, e só isso.
+    }
+  }
+
   /* ---------- DOM ---------- */
 
   function estilo(elemento, regras) {
@@ -320,10 +343,11 @@
 
     var passo = criar(doc, "div", "passo", null);
     app.insertBefore(passo, rodape);
+    // Fora do rodapé: o status (reconexão, erro de envio) precisa aparecer também no aviso e na coleta.
     var status = criar(doc, "p", null, "");
     status.setAttribute("role", "status");
     estilo(status, { margin: "0 .8rem", fontSize: ".75rem", color: "#4b5563", minHeight: "0" });
-    rodape.insertBefore(status, form);
+    app.insertBefore(status, passo);
 
     return {
       app: app,
@@ -401,6 +425,8 @@
       ultimaFalha: null,
       tentativas: 0,
       contexto: null,
+      fluxoIniciado: false,
+      valoresColeta: null,
     };
     var configLida = lerConfig(ui.configNo);
     var config = configLida || {};
@@ -541,6 +567,8 @@
     /* Passo 2: coleta, só com os campos que não estão ocultos. */
     function telaColeta() {
       mostrarPasso(true);
+      estilo(ui.rodape, { display: "none" });
+      var anteriores = estado.valoresColeta || {};
       var campos = CAMPOS.filter(function (campo) {
         return modoDaColeta(config.coleta, campo) !== "oculto";
       });
@@ -566,6 +594,7 @@
         entrada.type = TIPOS[campo];
         entrada.setAttribute("autocomplete", AUTOCOMPLETE[campo]);
         entrada.maxLength = LIMITES_COLETA[campo];
+        entrada.value = typeof anteriores[campo] === "string" ? anteriores[campo] : "";
         if (modo === "obrigatorio") entrada.setAttribute("aria-required", "true");
         var erro = criar(doc, "span", null, "");
         erro.id = id + "-erro";
@@ -591,6 +620,7 @@
         campos.forEach(function (campo) {
           valores[campo] = entradas[campo].value;
         });
+        estado.valoresColeta = valores;
         var resultado = validarColeta(valores, config.coleta);
         var primeiroComErro = null;
         campos.forEach(function (campo) {
@@ -614,11 +644,21 @@
       estado.conversa = true;
       ui.passo.textContent = "";
       estilo(ui.passo, { display: "none" });
-      ui.rodape.insertBefore(ui.aviso, ui.status);
+      ui.rodape.insertBefore(ui.aviso, ui.form);
       estilo(ui.rodape, { display: "block" });
       estilo(ui.form, { display: "flex" });
       ui.texto.focus();
-      assinarRespostas();
+      // Voltar à coleta (422 na primeira mensagem) passa de novo por aqui: o fluxo abre uma vez só.
+      if (!estado.fluxoIniciado) {
+        estado.fluxoIniciado = true;
+        assinarRespostas();
+      }
+    }
+
+    /** 422 na primeira mensagem: volta à coleta com o que foi digitado, ou ao aviso se não há campos. */
+    function voltarParaPreenchimento() {
+      if (temCamposDeColeta()) telaColeta();
+      else telaAceite();
     }
 
     function criarLinhaDoVisitante(m) {
@@ -680,11 +720,15 @@
             m.estado = "enviada";
             atualizarEstado(m);
             estado.primeiraEnviada = true;
+            gravarFlagIniciada(armazenamento, chave);
             var novo = r.corpo && r.corpo.data && r.corpo.data.token_novo;
             if (typeof novo === "string" && novo !== "") trocarToken(novo);
             if (estado.ultimaFalha === m) estado.ultimaFalha = null;
             return;
           }
+          m.estado = "falhou";
+          atualizarEstado(m);
+          estado.ultimaFalha = m;
           if (r.status === 401) {
             apagarToken();
             indisponivel();
@@ -694,9 +738,11 @@
             indisponivel();
             return;
           }
-          m.estado = "falhou";
-          atualizarEstado(m);
-          estado.ultimaFalha = m;
+          if (r.status === 422 && !estado.primeiraEnviada) {
+            mostrarStatus("Confira os dados e tente de novo.");
+            voltarParaPreenchimento();
+            return;
+          }
           if (r.status === 429) {
             mostrarStatus("Muitas mensagens em pouco tempo. Vou tentar de novo em instantes.");
             agendar(function () {
@@ -814,7 +860,9 @@
           trocarToken(dados.token);
           estado.tentativas = 0;
           setReconectando(false);
-          telaAceite();
+          // Visitante que já teve a primeira mensagem aceita (flag e token) vai direto à conversa.
+          if (estado.primeiraEnviada) telaConversa();
+          else telaAceite();
         })
         .catch(function () {
           if (estado.encerrado) return;
@@ -882,6 +930,8 @@
     ui.passo.appendChild(criar(doc, "p", null, "Conectando…"));
 
     estado.token = lerTokenGuardado(armazenamento, chave);
+    // Pula aviso e coleta só com a flag E com token: sem um dos dois, o aceite é pedido de novo.
+    estado.primeiraEnviada = lerFlagIniciada(armazenamento, chave) && estado.token !== null;
     if (pai && typeof pai.postMessage === "function") pai.postMessage({ tipo: "pronto" }, "*");
     abrirSessao();
 
