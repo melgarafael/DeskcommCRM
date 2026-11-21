@@ -10,6 +10,7 @@ const template = readFileSync(join(RAIZ, ".env.hostgator.example"), "utf8");
 const install = readFileSync(join(RAIZ, "hostgator-setup-kit/install.sh"), "utf8");
 const update = readFileSync(join(RAIZ, "hostgator-setup-kit/update.sh"), "utf8");
 const local = readFileSync(join(RAIZ, "ubuntu-local-installer.sh"), "utf8");
+const i18n = readFileSync(join(RAIZ, "hostgator-setup-kit/_i18n.sh"), "utf8");
 
 function linhasAtivasDaChave(texto: string, chave: string): string[] {
   return texto
@@ -25,7 +26,7 @@ function linhasAtivasDaChave(texto: string, chave: string): string[] {
  * desta função: chave ausente, `off`, DSN próprio e chave vazia não se
  * distinguem por grep.
  */
-function migrar(conteudo: string): string {
+function migrar(conteudo: string, chamada = 'migrar_consentimento_de_telemetria "$1"'): string {
   const dir = mkdtempSync(join(tmpdir(), "telemetria-4936-"));
   const env = join(dir, ".env");
   writeFileSync(env, conteudo);
@@ -34,7 +35,7 @@ function migrar(conteudo: string): string {
       "bash",
       [
         "-c",
-        'source hostgator-setup-kit/_common.sh; migrar_consentimento_de_telemetria "$1"',
+        `source hostgator-setup-kit/_common.sh; ${chamada}`,
         "_",
         env,
       ],
@@ -101,6 +102,16 @@ describe("a atualização preserva o consentimento de quem já havia aceitado", 
     expect(primeiroExit).toBeGreaterThan(chamada);
   });
 
+  it("gravar_imagens converte, porque é ela que o update.sh ANTIGO chama", () => {
+    // Quem atualiza roda o corpo do update.sh da versão que já tem: ele relê o
+    // kit e chama `gravar_imagens`, mas não conhece a chamada nova do corpo.
+    // A conversão precisa estar dentro dela para valer já nesta atualização.
+    const env = 'VAPID_PUBLIC_KEY="pub"\nVAPID_PRIVATE_KEY="priv"\nSENTRY_DSN=""\n';
+    const saida = migrar(env, 'gravar_imagens "$1" 9.9.9');
+    expect(valorDeSentryDsn(saida)).toBe("comunidade");
+    expect(saida).toMatch(/^APP_IMAGE=.*:9\.9\.9$/m);
+  });
+
   it("converte SENTRY_DSN vazio (o 'sim' da versão anterior) para o token", () => {
     expect(valorDeSentryDsn(migrar('APP_NAME="Loja"\nSENTRY_DSN=""\n'))).toBe("comunidade");
     // Sem aspas: foi assim que o template antigo documentava o aceite.
@@ -130,6 +141,25 @@ describe("a atualização preserva o consentimento de quem já havia aceitado", 
   it("a linha comentada do template não é a chave declarada", () => {
     const comentada = '# SENTRY_DSN=\nAPP_NAME="Loja"\n';
     expect(migrar(comentada)).toBe(comentada);
+  });
+});
+
+describe("as traduções mantêm o token do aceite", () => {
+  it("toda mensagem que manda escrever SENTRY_DSN=comunidade diz o mesmo token em espanhol", () => {
+    // O token é lido por lib/sentry/dsn.ts: traduzido, ele vira um DSN inválido
+    // e quem seguir a mensagem fica sem telemetria achando que aceitou.
+    const entradas = [...i18n.matchAll(/^\s*\["(.*)"\]="(.*)"\s*$/gm)].filter(([, pt]) =>
+      (pt ?? "").includes("SENTRY_DSN=comunidade"),
+    );
+    expect(entradas.length).toBeGreaterThan(0);
+    const traduzidas = entradas.map(([, pt, es]) => ({
+      pt,
+      tokens: (es ?? "").match(/SENTRY_DSN=[\w-]+/g) ?? [],
+    }));
+    for (const { pt, tokens } of traduzidas) {
+      expect(tokens, pt).toContain("SENTRY_DSN=comunidade");
+      expect(tokens.filter((t) => t !== "SENTRY_DSN=comunidade"), pt).toEqual([]);
+    }
   });
 });
 

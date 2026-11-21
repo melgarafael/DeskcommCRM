@@ -2844,6 +2844,11 @@ gravar_imagens() {
   # acima: é a função que o update.sh antigo chama depois de reler o kit, então
   # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
   completar_par_vapid "$envfile"
+  # A conversão do consentimento de telemetria (#4936) mora aqui pelo mesmo
+  # motivo: a chamada no corpo do update.sh só existe a partir da versão que a
+  # traz, e quem atualiza roda o corpo ANTIGO. Sem esta linha, quem aceitou
+  # perderia a telemetria na atualização que traz a mudança.
+  migrar_consentimento_de_telemetria "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
