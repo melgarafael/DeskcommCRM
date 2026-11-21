@@ -60,7 +60,9 @@ describe("areaDaPorta: casos concretos", () => {
     ["team/assignable", "POST", null, null],
     ["team/invite", "POST", null, null],
     ["team/[user_id]/role", "PATCH", null, null],
-    ["attendants/sectors", "POST", "configuracao", "escrita"],
+    ["attendants/sectors", "POST", null, null], // doc 387 = 1A
+    ["attendants/sectors", "GET", "configuracao", "leitura"],
+    ["attendants/sector/[user_id]", "PUT", null, null],
     ["attendants/presence", "PATCH", null, null],
     ["metrics/funil", "GET", "analise", "leitura"],
     ["reports/financeiro", "GET", "analise", "leitura"],

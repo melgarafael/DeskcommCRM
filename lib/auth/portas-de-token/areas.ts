@@ -134,6 +134,11 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   // --- 6. Leitura-apenas por decisão do mapa: regras de automação só têm área na leitura.
   e("automation-rules", "escrita"),
 
+  // --- 6b. Setores e filas da equipe: só leitura por enquanto (doc 387 = 1A). A escrita é uma
+  //         fatia própria depois do ok do dono.
+  e("attendants/sector", "escrita"),
+  e("attendants/sectors", "escrita"),
+
   // --- 7. FORA DO MAPA DESTA FASE: o plano não lista a rota em nenhuma área. Decisão do
   //        Paulo promovê-las a uma área; até lá recusam módulo.
   e("financeiro/comandas"), // leitura de comandas e fidelidade: o mapa só dá área ao catálogo e aos lançamentos
