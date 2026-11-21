@@ -160,7 +160,8 @@ describe("o marcador da contagem é o da lista — uma régua só", () => {
 /**
  * ⭐ A GUARDA QUE TORNA A SABOTAGEM POSSÍVEL.
  *
- * Os filtros são aplicados DENTRO de `countExact()`, então toda contagem os herda
+ * Os filtros são aplicados DENTRO da fábrica (`countCom()`, exposta como
+ * `countExact()`/`countPlanejado()` — #4325), então toda contagem os herda
  * por construção. Isso é melhor que um teste — mas some no dia em que alguém
  * montar uma contagem por fora da fábrica, que é a única forma de o defeito
  * voltar. É isso que este caso vigia.
@@ -168,7 +169,7 @@ describe("o marcador da contagem é o da lista — uma régua só", () => {
 describe("nenhuma contagem é montada por fora da fábrica", () => {
   const fonte = readFileSync("app/api/v1/conversations/counts/route.ts", "utf8");
 
-  it("toda contagem sai de `countExact()`", () => {
+  it("toda contagem sai da fábrica (`countExact`/`countPlanejado`)", () => {
     const dentroDoPromiseAll = fonte.slice(
       fonte.indexOf("await Promise.all(["),
       fonte.indexOf("]);", fonte.indexOf("await Promise.all([")),
@@ -186,7 +187,7 @@ describe("nenhuma contagem é montada por fora da fábrica", () => {
 
   it("a fábrica aplica os auxiliares E o não-lidas", () => {
     const fabrica = fonte.slice(
-      fonte.indexOf("const countExact = ("),
+      fonte.indexOf("const countCom = ("),
       fonte.indexOf("await Promise.all(["),
     );
     expect(fabrica).toContain("organization_id");
@@ -199,7 +200,7 @@ describe("nenhuma contagem é montada por fora da fábrica", () => {
     // a contagem ignora o marcador em silêncio — e o badge passa a contar o que a
     // aba não mostra, que é o defeito que este arquivo existe para pegar.
     const fabrica = fonte.slice(
-      fonte.indexOf("const countExact = ("),
+      fonte.indexOf("const countCom = ("),
       fonte.indexOf("await Promise.all(["),
     );
     expect(fabrica, "o marcador não entra na fábrica").toContain("aplicarMarcadores(");
