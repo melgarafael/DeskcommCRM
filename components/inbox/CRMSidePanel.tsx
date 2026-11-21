@@ -49,6 +49,7 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -532,7 +533,6 @@ function InboxLeadEditor({
         key={`etapa-${ativo.id}`}
         lead={ativo}
         onMovido={onSalvo}
-        podeMover={podeLevarParaOutroFunil}
       />
       {/*
         ABRIR O NEGÓCIO NO QUADRO DO FUNIL (issue #3004).
@@ -725,18 +725,12 @@ function EtapaDoNegocio({
 }: {
   lead: LeadRow;
   onMovido: () => void;
-  /**
-   * Quem clica na BARRA DE ETAPAS move o negócio: `pipeline.move_card` (`agent`+),
-   * a mesma régua do quadro e do "Levar para outro funil" deste painel. Abaixo
-   * disso a barra só mostra. O seletor segue como sempre — a rota de mover cobra
-   * o piso no servidor.
-   */
-  podeMover: boolean;
 }) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
   const [perdendo, setPerdendo] = useState(false);
   const etapas = lead.etapas_do_funil ?? [];
+  const dias = diasNaEtapa(lead);
   if (!lead.stage_id || etapas.length === 0) return null;
 
   async function escolher(stageId: string) {
@@ -758,10 +752,19 @@ function EtapaDoNegocio({
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
       {/* Só o seletor de etapa: a barra rolável de etapas que
           ficava aqui em cima repetia a mesma escolha e poluía a coluna estreita
-          do Inbox. No dossiê do quadro a barra continua. */}
-      <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
-        {t("Etapa do funil")}
-      </label>
+          do Inbox. No dossiê do quadro a barra continua. O que só a barra
+          mostrava — os dias na etapa atual — fica aqui, ao lado do rótulo (é
+          para isso que a rota `crm-summary` manda `stage_changed_at`). */}
+      <div className="flex items-baseline justify-between gap-2">
+        <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
+          {t("Etapa do funil")}
+        </label>
+        {dias !== null && (
+          <span className="text-[11px] text-text-muted" title={t("Dias na etapa atual")} data-testid="inbox-dias-na-etapa">
+            {dias === 1 ? t("1 dia") : t("{n} dias").replace("{n}", String(dias))}
+          </span>
+        )}
+      </div>
       <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending}>
         <SelectTrigger id={`etapa-${lead.id}`} className="h-8 w-full text-xs" data-testid="inbox-etapa-select">
           <SelectValue />
@@ -1553,9 +1556,9 @@ export function CRMSidePanel({
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
           /* `min-w-0`: o `fieldset` nasce com `min-width: min-content` (padrão
-             do navegador) e repassaria a largura da faixa em nowrap da barra de
-             etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
-             rola é só a faixa (`BarraDeEtapas`). */
+             do navegador) e repassaria para a `aside` a largura de qualquer
+             conteúdo que não quebra linha (um título longo, um valor), e a
+             coluna inteira rolaria de lado. */
           <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}

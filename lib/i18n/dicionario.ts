@@ -23039,6 +23039,7 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Dias na etapa atual": { es: "Días en la etapa actual" },
 };
 
 /**

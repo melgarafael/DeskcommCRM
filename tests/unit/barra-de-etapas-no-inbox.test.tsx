@@ -193,6 +193,23 @@ describe("painel da conversa — só o seletor de etapa", () => {
     expect(screen.queryByRole("navigation", { name: "Etapas do funil" })).not.toBeInTheDocument();
   });
 
+  it("os dias na etapa atual, que só a barra mostrava, ficam ao lado do rótulo", async () => {
+    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
+    renderPainel();
+
+    expect((await screen.findByTestId("inbox-dias-na-etapa")).textContent).toBe("3 dias");
+    // O rótulo do seletor continua sendo só "Etapa do funil" (o nome acessível não muda).
+    expect(screen.getByRole("combobox", { name: "Etapa do funil" })).toBeInTheDocument();
+  });
+
+  it("resposta antiga, sem a data de entrada na etapa, não inventa dias", async () => {
+    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: null, created_at: null });
+    renderPainel();
+
+    await screen.findByRole("combobox", { name: "Etapa do funil" });
+    expect(screen.queryByTestId("inbox-dias-na-etapa")).not.toBeInTheDocument();
+  });
+
   it("o valor do negócio vem DEPOIS de tudo que é do funil", async () => {
     servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
     renderPainel();
