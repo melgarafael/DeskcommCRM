@@ -1528,6 +1528,7 @@ export const DICIONARIO: Traducoes = {
     es: "Todavía no se importó nada: la revisión no crea una campaña.",
   },
   "Suas campanhas": { es: "Tus campañas" },
+  "Sem nicho": { es: "Sin nicho" },
   "empresas": { es: "empresas" },
   "Sua próxima conversa começa aqui": { es: "Tu próxima conversación comienza aquí" },
   "Escolha um segmento e uma região. Depois da pesquisa, defina como a IA deve abordar e o que precisa confirmar para qualificar.": { es: "Elige un segmento y una región. Después de la búsqueda, define cómo debe contactar la IA y qué necesita confirmar para calificar." },
