@@ -125,8 +125,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       webchat_public_key: chave,
       webchat_allowed_origins: origens,
       // Este canal não recebe webhook de terceiro, então não há segredo a guardar. A coluna é
-      // NOT NULL e o WAHA grava um byte de enfeite (`\x00`, lib/waha/webhook-auth.ts): é o
-      // precedente. A chave não entra aqui.
+      // NOT NULL e as conexões de número gravam um byte de enfeite (`\x00`): é o precedente.
+      // A chave não entra aqui.
       webhook_secret_encrypted: "\\x00",
       display_name: NOME_DA_CONEXAO_DO_CHAT,
       status: "WORKING",
