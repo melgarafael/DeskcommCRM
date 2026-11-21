@@ -59,7 +59,7 @@ export function modeloAposentadoNoProvedor(model: string): boolean {
   );
 }
 
-/** A lista crua, para o teste comparar com a medição e para o aviso da tela. */
+/** A lista crua, para o teste comparar com a medição. */
 export function modelosAposentadosPeloProvedor(): string[] {
   return [...APOSENTADOS_PELO_PROVEDOR];
 }

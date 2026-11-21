@@ -417,7 +417,7 @@ export interface ModeloDoCatalogoEconomico {
  *   todo turno, escondido pelo fail-open. Com o filtro, o econômico do Google é
  *   o `gemini-3.1-flash-lite` (25/150), o mais barato que o provedor ainda serve.
  *   Também NÃO depende de `temPrecoNoMotor`: se o modelo ATUAL é um aposentado,
- *   a troca continua acontecendo (e é desejável), com os candidatos vivos.
+ *   a troca continua acontecendo quando há um vivo mais barato.
  * - `temPrecoNoMotor`: o catálogo ter preço não basta — quem COBRA é a tabela do
  *   motor (`precoDoModelo`). Se o atual é cobrado e o candidato não, a troca faz
  *   o custo sair null e a chamada some do teto. Vem de quem chama para este
