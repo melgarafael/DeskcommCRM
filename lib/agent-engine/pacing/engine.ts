@@ -20,6 +20,16 @@ export interface PacingState {
    * follow-up, campanha). Resposta a quem escreveu não entra (`pacing_ledger.resposta`).
    */
   sentToday: number;
+  /**
+   * ABORDAGENS deste número desde a meia-noite local — só as 1ª mensagens a
+   * pessoa nova (`pacing_ledger.abordagem` sem `resposta`). É a contagem que o
+   * teto usa quando o canal liga `tetoSoAbordagem`.
+   *
+   * Opcional porque `PacingState` montado à mão (testes, chamadores futuros)
+   * não tem de conhecer o ledger: ausente cai em `sentToday`, que é >= ela e
+   * portanto falha FECHADO (barra mais cedo, nunca mais tarde).
+   */
+  abordagensToday?: number;
   /** Ativação do número (channel_knobs.number_activated_at); null = idade 0 (conservador). */
   numberActivatedAt: Date | null;
 }
@@ -70,6 +80,19 @@ export interface PacingInput {
    * de prospecção continua como está.
    */
   prospeccao?: boolean;
+  /**
+   * Este envio é a 1ª mensagem a uma PESSOA NOVA (abordagem)?
+   *
+   * Só importa quando o canal liga `knobs.tetoSoAbordagem`: aí o teto conta e
+   * barra a abordagem e deixa passar o follow-up de quem já foi abordado. Com o
+   * knob desligado (default) o campo é ignorado — a régua é a de sempre.
+   *
+   * Omitir = `true`, que é a direção CONSERVADORA: quem chama sem saber (worker
+   * de prospecção, campanha, teste) continua contando no teto. Quem SABE que a
+   * pessoa já foi abordada — o gate de envio, que lê `send_ledger` — declara
+   * `false` explicitamente.
+   */
+  abordagem?: boolean;
   /** [0,1) — injetável nos testes; default Math.random. */
   rng?: () => number;
 }
@@ -133,6 +156,21 @@ export function decidePacing(input: PacingInput): PacingDecision {
   // campo), então um chamador que declare as duas coisas não abre o teto.
   if (!prospeccao && resposta) return { allow: true, waitMs: throttleWaitMs(now, state, knobs, rng) };
 
+  // OPÇÃO POR CANAL — `tetoSoAbordagem` (issue #3851): o teto conta só a
+  // ABORDAGEM. Quem já foi abordado e recebe um follow-up não gasta nem espera
+  // o teto: o que leva a banimento é o número falar com gente NOVA em volume, e
+  // segurar quem já está na conversa não protege o número — só perde o lead.
+  //
+  // A abordagem continua contando e sendo barrada (o teto não virou fumaça), e
+  // o espaçamento abaixo continua valendo para TODO envio: a opção tira o teto,
+  // não o anti-ban. Desligada (default), nada muda: o `abordagem` nem é lido.
+  const soAbordagem = knobs.tetoSoAbordagem === true;
+  // `prospeccao` prevalece aqui também: abordagem fria É a 1ª mensagem a pessoa
+  // nova, então um chamador que declare as duas coisas não abre o teto por ela.
+  if (soAbordagem && !prospeccao && input.abordagem === false) {
+    return { allow: true, waitMs: throttleWaitMs(now, state, knobs, rng) };
+  }
+
   // Clamp em >= 0: number_activated_at no futuro (typo do admin / clock skew
   // daemon↔DB) cai no degrau MAIS conservador — warm-up falha FECHADO, nunca
   // vira "número formado" por idade negativa.
@@ -141,17 +179,22 @@ export function decidePacing(input: PacingInput): PacingDecision {
     : 0;
   const wCap = warmupCapFor(ageDays, knobs.warmupDailyCaps);
   const effectiveCap = Math.min(wCap ?? Infinity, crmDailyLimit ?? Infinity);
-  if (state.sentToday >= effectiveCap) {
+  // Com a opção ligada, a régua é a contagem de ABORDAGENS: os follow-ups que a
+  // opção deixou sair continuam no ledger (para o espaçamento e para quem
+  // desligar a opção depois), mas não empurram a próxima pessoa nova para amanhã.
+  const contagemDoTeto = soAbordagem ? (state.abordagensToday ?? state.sentToday) : state.sentToday;
+  if (contagemDoTeto >= effectiveCap) {
     const nextAllowedAt = addMs(nextDayOpen(now, knobs, diasProspeccao), jitterOf(rng, knobs));
     const isWarmup = wCap !== null && wCap < (crmDailyLimit ?? Infinity);
+    const nota = soAbordagem ? ', contando só abordagem' : '';
     return {
       allow: false,
       code: isWarmup ? 'warmup_cap' : 'daily_cap',
       nextAllowedAt,
       reason: isWarmup
-        ? `cap de warm-up atingido (${wCap}/dia para número com ${ageDays} dia(s) de idade); ` +
+        ? `cap de warm-up atingido (${wCap}/dia para número com ${ageDays} dia(s) de idade${nota}); ` +
           `agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (próxima abertura + jitter)`
-        : `cap diário do número atingido (${effectiveCap}/dia, limite do CRM); ` +
+        : `cap diário do número atingido (${effectiveCap}/dia, limite do CRM${nota}); ` +
           `agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (próxima abertura + jitter)`,
     };
   }

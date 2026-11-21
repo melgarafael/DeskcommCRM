@@ -128,6 +128,12 @@ export const pacingKnobsUpdateSchema = z
     resposta_end_hour: z.number().int().min(1).max(KNOB_BOUNDS.hourEnd).nullable().optional(),
     allow_sunday: z.boolean().nullable().optional(),
     /**
+     * O teto diário conta só a abordagem (#3851)? `null` = volta à régua de
+     * sempre (conta todo disparo). Como todo booleano desta ficha, o `null` é o
+     * que a tela grava quando o Switch está no default — ver `valorDeOverride`.
+     */
+    teto_so_abordagem: z.boolean().nullable().optional(),
+    /**
      * Dias da prospecção (0642, 0=dom … 6=sáb). Omitido = mantém o que está
      * gravado (linha nova nasce no default do banco: todos os dias). Sem
      * `null`: dia não tem "voltar ao padrão" parcial — o padrão É a lista
@@ -192,6 +198,8 @@ export interface ChannelKnobsRow {
   atraso_minimo_ms?: number | null;
   atraso_maximo_ms?: number | null;
   allow_sunday: boolean | null;
+  /** Teto só na abordagem (#3851). Ausente/null = régua de sempre. */
+  teto_so_abordagem?: boolean | null;
   /** Dias da prospecção (0642). Ausente/null = default (todos os dias). */
   prospeccao_dias?: number[] | null;
   timezone: string | null;
@@ -231,6 +239,7 @@ export function effectiveKnobs(row: ChannelKnobsRow | null, fusoDaOrg?: string |
     respostaStartHour: row?.resposta_start_hour ?? row?.window_start_hour ?? PACING_DEFAULTS.respostaStartHour,
     respostaEndHour: row?.resposta_end_hour ?? row?.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
     allowSunday: row?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
+    tetoSoAbordagem: row?.teto_so_abordagem ?? PACING_DEFAULTS.tetoSoAbordagem,
     // Dias próprios da prospecção (0642). Inválido/vazio = todos os dias, que
     // é o default do banco e o comportamento de antes — display não veta.
     prospeccaoDias: parseDiasDaProspeccao(row?.prospeccao_dias) ?? PACING_DEFAULTS.prospeccaoDias,

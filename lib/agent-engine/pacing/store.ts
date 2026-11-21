@@ -26,6 +26,8 @@ interface ChannelKnobsRow {
   atraso_minimo_ms: number | null;
   atraso_maximo_ms: number | null;
   allow_sunday: boolean | null;
+  /** O teto conta só a abordagem (#3851, 9215). NULL = régua de sempre (conta todo disparo). */
+  teto_so_abordagem: boolean | null;
   /** Dias da prospecção (0642, `smallint[]`, 0=dom … 6=sáb). Coluna NOT NULL. */
   prospeccao_dias: number[] | null;
   timezone: string | null;
@@ -122,7 +124,8 @@ export async function loadChannelKnobs(
     `select k.throttle_ms, k.jitter_max_ms, k.window_start_hour, k.window_end_hour,
             k.resposta_start_hour, k.resposta_end_hour,
             k.atraso_notar_ms, k.ms_por_caractere, k.atraso_minimo_ms, k.atraso_maximo_ms,
-            k.allow_sunday, k.prospeccao_dias, k.timezone, k.warmup_daily_caps, k.number_activated_at,
+            k.allow_sunday, k.teto_so_abordagem, k.prospeccao_dias, k.timezone,
+            k.warmup_daily_caps, k.number_activated_at,
             o.timezone as org_timezone
      from organizations o
      left join channel_knobs k
@@ -166,6 +169,9 @@ export async function loadChannelKnobs(
       respostaStartHour: row.resposta_start_hour ?? row.window_start_hour ?? PACING_DEFAULTS.respostaStartHour,
       respostaEndHour: row.resposta_end_hour ?? row.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
       allowSunday: row.allow_sunday ?? PACING_DEFAULTS.allowSunday,
+      // Opção por canal (#3851): NULL = desligada, a régua de sempre. Nenhuma
+      // linha existente muda de comportamento por causa da coluna nova.
+      tetoSoAbordagem: row.teto_so_abordagem ?? PACING_DEFAULTS.tetoSoAbordagem,
       // Dias próprios da prospecção (0642). Inválido/vazio cai na regra antiga
       // (`allowSunday`), com warn — nunca fila parada em silêncio.
       prospeccaoDias: (() => {
@@ -187,7 +193,15 @@ export async function loadChannelKnobs(
   };
 }
 
-/** lastSentAt (qualquer dia) + sentToday (desde a meia-noite local do tenant). */
+/**
+ * lastSentAt (qualquer dia) + sentToday (desde a meia-noite local do tenant) +
+ * abordagensToday (o recorte que o teto usa quando o canal liga
+ * `tetoSoAbordagem`).
+ *
+ * As três contagens descem juntas, na MESMA ida: `loadPacingState` roda sob o
+ * lock a cada envio, e uma segunda consulta só porque o canal talvez use a opção
+ * seria custo em todo canal — a opção é lida depois, no motor, sobre o estado.
+ */
 export async function loadPacingState(
   db: Queryable,
   tenantId: string,
@@ -195,23 +209,31 @@ export async function loadPacingState(
   input: { now: Date; timezone: string; numberActivatedAt: Date | null },
 ): Promise<PacingState> {
   const dayStart = dayStartInTz(input.now, input.timezone);
-  // Dois subselects e não `max` + `count(*) filter`: com o filtro de data fora do
+  // Subselects e não `max` + `count(*) filter`: com o filtro de data fora do
   // WHERE, a agregação lia o histórico inteiro do número a cada envio, sob o lock.
-  // Assim os dois descem por `idx_pacing_ledger_session (org, sessão, sent_at desc)`:
+  // Assim todos descem por `idx_pacing_ledger_session (org, sessão, sent_at desc)`:
   // a última linha e só as linhas do dia. Mesmo molde de `ledger-supabase.ts`.
-  const { rows } = await db.query<{ last_sent_at: Date | null; sent_today: string }>(
+  const { rows } = await db.query<{
+    last_sent_at: Date | null;
+    sent_today: string;
+    abordagens_today: string;
+  }>(
     `select (select sent_at from pacing_ledger
               where organization_id = $1 and channel_session_id = $2
               order by sent_at desc limit 1) as last_sent_at,
             (select count(*) from pacing_ledger
               where organization_id = $1 and channel_session_id = $2
-                and sent_at >= $3 and not resposta) as sent_today`,
+                and sent_at >= $3 and not resposta) as sent_today,
+            (select count(*) from pacing_ledger
+              where organization_id = $1 and channel_session_id = $2
+                and sent_at >= $3 and not resposta and abordagem) as abordagens_today`,
     [tenantId, channelSessionId, dayStart],
   );
   const row = rows[0];
   return {
     lastSentAt: row?.last_sent_at ?? null,
     sentToday: Number(row?.sent_today ?? 0),
+    abordagensToday: Number(row?.abordagens_today ?? 0),
     numberActivatedAt: input.numberActivatedAt,
   };
 }
@@ -249,17 +271,24 @@ export async function recordSends(
  * `resposta: true` marca a linha como resposta a quem escreveu: ela segue valendo
  * para o espaçamento (`lastSentAt`), mas não gasta o teto do dia (`sentToday`),
  * que mede só quantas pessoas o número aborda. Omitir = disparo (conta).
+ *
+ * `abordagem: false` marca o disparo a quem JÁ foi abordado (follow-up/retomada).
+ * Omitir = `true`, e a direção é de propósito: toda linha antiga e todo escritor
+ * que não sabe classificar conta como abordagem, que é a régua conservadora —
+ * só o canal que liga `tetoSoAbordagem` sente a diferença, e lá o gate declara
+ * os dois casos explicitamente (lê `send_ledger`).
  */
 export async function recordSend(
   db: Queryable,
   tenantId: string,
   channelSessionId: string,
   sentAt: Date = new Date(),
-  opts: { resposta?: boolean } = {},
+  opts: { resposta?: boolean; abordagem?: boolean } = {},
 ): Promise<void> {
+  const resposta = opts.resposta === true;
   await db.query(
-    `insert into pacing_ledger (organization_id, channel_session_id, sent_at, resposta)
-     values ($1, $2, $3, $4)`,
-    [tenantId, channelSessionId, sentAt, opts.resposta === true],
+    `insert into pacing_ledger (organization_id, channel_session_id, sent_at, resposta, abordagem)
+     values ($1, $2, $3, $4, $5)`,
+    [tenantId, channelSessionId, sentAt, resposta, resposta ? false : opts.abordagem !== false],
   );
 }
