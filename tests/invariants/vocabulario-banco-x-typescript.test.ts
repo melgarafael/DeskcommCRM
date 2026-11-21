@@ -526,6 +526,16 @@ const PARES: Array<{
     simbolo: "ERROS_DE_LEITURA",
   },
   {
+    // #4058 / migration 9345 — o estado da cobrança avulsa do NEGÓCIO (o que a
+    // empresa cobra do cliente dela), que não é o da assinatura da instalação
+    // acima. "vencida" fica de fora dos dois lados de propósito: é derivada de
+    // pendente + vencimento, e gravá-la criaria duas verdades sobre a linha.
+    tabela: "cobrancas_avulsas",
+    coluna: "estado",
+    arquivo: "lib/cobranca/avulsa.ts",
+    simbolo: "ESTADOS_DA_COBRANCA",
+  },
+  {
     tabela: "before_send_traces",
     coluna: "tipo_envio",
     // lib/agent-engine/guardrails/before-send.ts → TipoDeEnvio. Migration 0535
