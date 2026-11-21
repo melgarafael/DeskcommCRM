@@ -29,8 +29,9 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
-import { appDaMeta, appDaMetaDoAmbiente } from "@/lib/channels/meta/app";
+import { appDaMeta, appDaMetaDoAmbiente, embeddedSignupDaInstalacao } from "@/lib/channels/meta/app";
 import { metaGraphBase } from "@/lib/channels/meta/credentials";
+import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
 import {
   ORIGEM_DO_TOKEN_MANUAL,
   ROTULOS_DA_ORIGEM,
@@ -155,7 +156,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const origem = data?.id
     ? await lerOrigemDaConexao(admin, { organizationId: orgId, channelSessionId: data.id })
     : null;
+  const embedded = await embeddedSignupDaInstalacao();
   return ok({
+    /**
+     * A janela da Meta (Embedded Signup, #4074) — `null` quando a instalação não
+     * cadastrou App ID, Configuration ID e App Secret em `/admin/meta`. Os dois
+     * IDs não são segredo: vão ao `FB.init`/`FB.login` no navegador.
+     */
+    embeddedSignup: embedded
+      ? {
+          appId: embedded.appId,
+          configId: embedded.configId,
+          graphVersion: graphBaseUrl().split("/").pop() ?? "",
+        }
+      : null,
     connected: Boolean(data),
     channel_session_id: data?.id ?? null,
     // `hasToken` em vez do token: uma vez gravado, a tela mostra que EXISTE, nunca

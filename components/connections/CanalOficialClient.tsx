@@ -16,6 +16,7 @@ import {
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ConectarPeloFacebook } from "./ConectarPeloFacebook";
 import { ParaIntegrar } from "./ParaIntegrar";
 
 /** Campo somente-leitura com botão de copiar — o que o operador cola na Meta. */
@@ -242,6 +243,17 @@ export function CanalOficialClient() {
               {t("Para operar em dois CRMs ao mesmo tempo, configure o reencaminhamento de mensagens.")}
             </>
           }
+        />
+      ) : null}
+
+      {/* A janela da Meta (#4074) — só quando a instalação cadastrou o app de
+          Tech Provider em /admin/meta. O formulário manual continua abaixo. */}
+      {estado?.embeddedSignup ? (
+        <ConectarPeloFacebook
+          appId={estado.embeddedSignup.appId}
+          configId={estado.embeddedSignup.configId}
+          graphVersion={estado.embeddedSignup.graphVersion}
+          conectado={Boolean(estado.connected)}
         />
       ) : null}
 
