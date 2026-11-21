@@ -23039,6 +23039,9 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Ordem da fila": { es: "Orden de la cola" },
+  "Ordem:": { es: "Orden:" },
+  "Esperando há mais tempo": { es: "Esperando hace más tiempo" },
 };
 
 /**

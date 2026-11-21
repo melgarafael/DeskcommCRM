@@ -181,6 +181,9 @@ export function soltarFocoEscondido(lista: HTMLElement | null): void {
   if (getComputedStyle(lista).visibility === "hidden") ativo.blur();
 }
 
+/** Onde o aparelho lembra a ordem escolhida para a Fila (`recentes` | `espera`). */
+export const CHAVE_DA_ORDEM_DA_FILA = "inbox:ordem-da-fila";
+
 /**
  * O QUE CADA ABA SIGNIFICA. Exportada porque é a definição em si — o defeito
  * que este mapa já teve (Minhas mostrando tudo que o atendente fechou) não
@@ -499,6 +502,26 @@ export function InboxLayout({
    * discorda do filtro, porque os dois usam a mesma convenção.
    */
   const { data: automaticoDaOrg, isLoading: automaticoCarregando } = useAutomaticoAtivo();
+  // A ORDEM DA FILA, por aparelho. "Mais recentes" é o padrão: com esperas
+  // antigas acumuladas, a fila de banco jogava o contato novo para depois da
+  // primeira página e o atendente não o via. Lida num efeito (nunca no
+  // `useState`), para o primeiro paint do servidor e do navegador baterem.
+  const [ordemDaFila, setOrdemDaFila] = useState<"recentes" | "espera">("recentes");
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(CHAVE_DA_ORDEM_DA_FILA) === "espera") setOrdemDaFila("espera");
+    } catch {
+      // armazenamento bloqueado: fica o padrão
+    }
+  }, []);
+  const escolherOrdemDaFila = useCallback((ordem: "recentes" | "espera") => {
+    setOrdemDaFila(ordem);
+    try {
+      window.localStorage.setItem(CHAVE_DA_ORDEM_DA_FILA, ordem);
+    } catch {
+      // armazenamento bloqueado: vale só nesta visita
+    }
+  }, []);
   const composerRef = useRef<ComposerHandle | null>(null);
 
   const filters: ConversationsFilters = useMemo(
@@ -523,8 +546,10 @@ export function InboxLayout({
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
       is_group: filterValue.onlyGroups || undefined,
+      ...(filterValue.tab === "unassigned" ? { ordem_fila: ordemDaFila } : {}),
     }),
     [
+      ordemDaFila,
       filterValue.tab,
       automaticoDaOrg,
       filterValue.assigned_to,
@@ -1025,6 +1050,38 @@ export function InboxLayout({
             onTransferir={(toUserId, reason) => rodarLote("transfer", toUserId, reason)}
             onLimpar={selecao.limpar}
           />
+        )}
+        {filterValue.tab === "unassigned" && (
+          <div
+            className="flex items-center gap-1 border-b border-border px-3 py-1.5 text-xs"
+            role="group"
+            aria-label={t("Ordem da fila")}
+            data-testid="ordem-da-fila"
+          >
+            <span className="mr-1 text-text-muted">{t("Ordem:")}</span>
+            {(
+              [
+                ["recentes", t("Mais recentes")],
+                ["espera", t("Esperando há mais tempo")],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                aria-pressed={ordemDaFila === valor}
+                data-testid={`ordem-da-fila-${valor}`}
+                onClick={() => escolherOrdemDaFila(valor)}
+                className={cn(
+                  "rounded-full px-2 py-0.5 transition-colors",
+                  ordemDaFila === valor
+                    ? "bg-accent-soft font-medium text-accent"
+                    : "text-text-muted hover:bg-surface-elevated hover:text-text",
+                )}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
         )}
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
