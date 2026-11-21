@@ -4642,6 +4642,97 @@ sem um deles, a chamada recusa. Quem consente é só o admin da organização. A
 de contexto e que a tela dele o repasse; que as mutações de todas as rotas gravem `person_id` (só o
 mecanismo comum, `metadataDoModulo`, foi coberto, e as rotas que não o usam não levam a pessoa); e o
 comportamento de quem já tem consentimento em edição ao mesmo tempo em duas abas.
+
+## J72 — Módulo conectado: o lugar na tela, a ponte e o painel lateral `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J69.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que a tela deve fazer.
+
+Cobertura hoje, só por escrita (não executada): `lib/extensions/modulos-na-tela.test.ts`,
+`lib/modulo/ponte.test.ts`, `components/modulo/QuadroDoModulo.test.tsx`,
+`components/modulo/PainelDoModulo.test.tsx`, `app/app/m/[modulo]/page.test.tsx`,
+`app/actions/modulo/moduloParaOPainel.test.ts`, `tests/unit/navegacao-modulos.test.ts`,
+`components/shell/CommandPalette.modulo.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/modulo-quadro-so-pela-ponte.test.ts`. Nenhuma delas abre a tela do CRM num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J70, mais um módulo de laboratório com `service_origin` de outra origem que
+sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J72.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
+| J72.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **NÃO EXECUTADO** |
+| J72.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
+| J72.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **NÃO EXECUTADO** |
+| J72.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
+| J72.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
+| J72.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM é dono da moldura; o módulo é dono do conteúdo, numa origem diferente
+da do CRM. Só passam seis mensagens combinadas, e só da origem e da janela certas. O painel lateral não
+abre o CRM dentro do CRM: pede o módulo pelo slug a uma Server Action (`moduloParaOPainel`), que confere
+sessão, organização e papel e devolve só aquele módulo, e desenha o mesmo quadro da página. Nenhum header
+de segurança do CRM foi alterado.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real fale a ponte (`/embed`,
+`JSON.parse` do que recebe); que o iframe de outra origem carregue de fato com o sandbox escolhido (não
+existe CSP no CRM, então nada foi medido contra uma); o painel em celular; e que `Esc` com o foco dentro
+do iframe não chega ao CRM, porque o navegador entrega a tecla ao iframe: o painel fecha pelo botão ou
+com o foco fora do quadro. A coluna de CI foi montada a partir dos nomes e da intenção dos testes das
+tarefas anteriores; cada teste não foi relido caso a caso nesta tarefa.
+
+## J73 — Módulo conectado: os eventos que o módulo busca e o atraso em `/admin/extensoes` `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J67.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que o módulo e a tela devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-eventos.test.ts` (banco real,
+`pnpm test:db`, CI `invariants`), `app/api/v1/extensions/events/route.test.ts`,
+`lib/extensions/eventos-do-modulo.test.ts`, `lib/extensions/token-do-modulo.test.ts`,
+`app/admin/(protected)/extensoes/page.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/eventos-do-modulo-so-por-prova.test.ts`. Nenhuma delas fala com um módulo de verdade.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J69, mais um módulo de laboratório que assine as buscas com o segredo da
+instalação e guarde o cursor, duas organizações com o mesmo módulo ligado, um contato em cada uma, uma
+pessoa `admin` da organização e o dono do servidor.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J73.1 | Leitura por cursor, só da organização | P0 | Com o mesmo módulo ligado nas organizações A e B, o módulo que assina como A lê só os eventos de A; nenhum identificador de B aparece, nem em páginas seguintes | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J73.2 | Anonimização chega em uma leitura | P0 | A organização A anonimiza um contato; na próxima busca do módulo vem um `contact_anonymized` com o id do contato, e anonimizar o mesmo contato de novo não cria um segundo evento | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J73.3 | Módulo atrasado 40 dias que volta | P0 | O módulo lê tudo desde o último cursor, em ordem, sem perder nem repetir evento | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J73.4 | Instalação desligada não prende a LGPD por 30 dias (D2) | P0 | Depois de desligar o módulo ou a organização, ele ainda lê por 30 dias, e o evento de desativação chega; com 31 dias a leitura é recusada com a mesma resposta genérica; ligar de novo volta a permitir | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J73.5 | Organização suspensa | P0 | Suspender (ou anonimizar a organização) gera `organization_suspended` e o módulo continua lendo para recebê-lo | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J73.6 | Cursor que não é do módulo | P0 | Cursor adulterado, de outra organização ou de outra instalação: `400 invalid_cursor`, e o módulo nunca lê de uma posição escolhida por ele | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J73.7 | Assinatura ruim, carimbo velho, nonce repetido, sem vínculo | P0 | Todas as recusas devolvem a mesma resposta genérica 401; erro nosso é 503 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J73.8 | Selo "atrasado" em `/admin/extensoes` | P0 | Com atraso e última leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h), a linha da instalação mostra "Atrasado" e "Este módulo ainda não apagou os dados de N contato(s) anonimizado(s)."; em dia, sem selo | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J73.9 | O atraso não mistura organizações | P0 | Duas organizações com atrasos diferentes mostram cada uma o seu número; a tela não diz qual empresa é qual | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J73.10 | Sem módulo conectado, a tela é a de antes | P0 | Sem nenhum módulo `connected`: nenhuma leitura de atraso, nenhum bloco novo em `/admin/extensoes` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J73.11 | Quem pode ler as tabelas | P0 | `anon` e `authenticated` não executam as funções nem leem as tabelas de eventos e de cursor | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM não empurra nada ao módulo: gatilhos de banco escrevem uma linha e o
+módulo busca por cursor, com a mesma assinatura da busca de token. O cursor recebido reconhece o
+anterior, então o selo "atrasado" mede de verdade quanto o módulo ainda não leu. A tela do dono do
+servidor mostra números e datas, nunca o nome da empresa.
+
+**Não provado.** Nenhum caso acima foi executado com um módulo real nem num navegador; que um módulo
+real apague os dados ao receber `contact_anonymized` (isso é do módulo, fora do CRM); o tempo real entre
+a anonimização e a leitura (o plano promete "na próxima busca", não um prazo); o volume da tabela de
+eventos (não há expurgo nesta fase, D5); e a coluna de CI foi montada a partir dos nomes e da intenção
+dos testes das tarefas anteriores, sem reler cada teste caso a caso nesta tarefa.
 ## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
 
 Fonte preservada: `8088f3a65e3e3cece8d7427487ec4725f9aa23e8`, de @Denispds.

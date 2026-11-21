@@ -1,8 +1,10 @@
 "use client";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { Phone, Plus } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,15 +71,49 @@ const ROUTING_LABELS: Record<RoutingMode, string> = {
  * plataforma, configurada uma vez só; a organização escolhe apenas o número,
  * o modo de atendimento e qual agente de voz atende.
  */
-export function TelefoniaClient() {
+export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean }) {
   const t = useT();
+  const router = useRouter();
   const telefoneExemplo = useTelefoneExemplo();
   const { data: numbers, isLoading } = usePhoneNumbers();
-  const { data: voiceAgents } = useVoiceAgents();
+  const { data: voiceAgents, isSuccess: agentesCarregados } = useVoiceAgents();
   const createMut = useCreatePhoneNumber();
   const updateMut = useUpdatePhoneNumber();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogoDeAgenteAberto, setDialogoDeAgenteAberto] = useState(false);
+  const [nomeDoAgente, setNomeDoAgente] = useState("");
+  const criarAgente = useMutation({
+    mutationFn: (name: string) =>
+      apiClient.post<{ data: { id: string } }>("/api/v1/ai/agents", { name, channel: "voice" }),
+    onSuccess: ({ data }) => {
+      router.push(`/app/ai/agents/${data.id}`);
+    },
+  });
+
+  const criandoOuAbrindoEditor = criarAgente.isPending || criarAgente.isSuccess;
+
+  function abrirCriacaoDeAgente() {
+    setDialogOpen(false);
+    setDialogoDeAgenteAberto(true);
+  }
+
+  function aoMudarDialogoDeAgente(aberto: boolean) {
+    if (criandoOuAbrindoEditor) return;
+    setDialogoDeAgenteAberto(aberto);
+    if (!aberto) {
+      setNomeDoAgente("");
+      criarAgente.reset();
+    }
+  }
+
+  function salvarAgente(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const nome = nomeDoAgente.trim();
+    if (nome.length < 2 || criandoOuAbrindoEditor) return;
+    criarAgente.mutate(nome);
+  }
+
   const [form, setForm] = useState({
     number: "",
     label: "",
@@ -101,16 +137,23 @@ export function TelefoniaClient() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
           {t(
             "Números que recebem ligações. Cada número aponta pra um agente de voz e um modo de atendimento.",
           )}
         </p>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus size={16} className="mr-1" />
-          {t("Novo número")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {podeCriarAgente && (
+            <Button variant="outline" onClick={abrirCriacaoDeAgente}>
+              {t("Novo agente de voz")}
+            </Button>
+          )}
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus size={16} className="mr-1" />
+            {t("Novo número")}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -196,10 +239,15 @@ export function TelefoniaClient() {
                   ))}
                 </SelectContent>
               </Select>
-              {(voiceAgents ?? []).length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {t("Nenhum agente de voz publicado ainda — crie um em IA › Agentes.")}
-                </p>
+              {agentesCarregados && voiceAgents?.length === 0 && (
+                <div className="text-xs text-muted-foreground">
+                  <p>{t("Ative um agente de voz para selecioná-lo aqui.")}</p>
+                  {podeCriarAgente && (
+                    <Button variant="link" className="h-auto p-0" onClick={abrirCriacaoDeAgente}>
+                      {t("Novo agente de voz")}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -212,6 +260,54 @@ export function TelefoniaClient() {
               {createMut.isPending ? t("Salvando…") : t("Cadastrar")}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogoDeAgenteAberto} onOpenChange={aoMudarDialogoDeAgente}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Novo agente de voz")}</DialogTitle>
+            <DialogDescription>
+              {t("Depois de criar, configure e ative o agente no editor de voz.")}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-4" onSubmit={salvarAgente}>
+            <div className="space-y-2">
+              <Label htmlFor="nome-agente-voz">{t("Nome")}</Label>
+              <Input
+                id="nome-agente-voz"
+                required
+                minLength={2}
+                maxLength={120}
+                value={nomeDoAgente}
+                disabled={criandoOuAbrindoEditor}
+                onChange={(e) => {
+                  setNomeDoAgente(e.target.value);
+                  if (criarAgente.isError) criarAgente.reset();
+                }}
+              />
+              {criarAgente.isError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {criarAgente.error instanceof ApiError && criarAgente.error.status < 500
+                    ? criarAgente.error.message
+                    : t("Não foi possível criar o agente.")}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={criandoOuAbrindoEditor}
+                onClick={() => aoMudarDialogoDeAgente(false)}
+              >
+                {t("Cancelar")}
+              </Button>
+              <Button type="submit" disabled={nomeDoAgente.trim().length < 2 || criandoOuAbrindoEditor}>
+                {criandoOuAbrindoEditor ? t("Salvando…") : t("Criar agente de voz")}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

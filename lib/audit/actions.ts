@@ -1558,6 +1558,11 @@ export const AUDIT_ACTIONS = [
   // mesma razão do `ai.case_alert_settings_changed`: `api_audit_log` é
   // append-only e a cascata de LGPD não o alcança.
   "ai.case_alert_settings_removed",
+  // "Não enviar aviso de caso" por membro (#4989): quem ligou/desligou a marca
+  // que faz o aviso de caso PARAR numa pessoa. Código próprio pela mesma razão
+  // do `_removed`: a pergunta depois é outra ("quem calou os avisos desta
+  // fila?"), e o painel filtra por `action`. Só CONTAGENS, nunca ids.
+  "ai.case_alert_nao_avisar_changed",
   "lgpd.atestado_emitido",
   // A cadência do lembrete de caso parado (migration 0766): ligado, intervalo e
   // teto, escolhidos na Central por quem administra. Audita porque desligar

@@ -301,6 +301,55 @@ export async function modulosLigados(
   return [...flags, ...porTabela];
 }
 
+/**
+ * As EMPRESAS que desligaram um módulo, em UMA leitura — para os TRABALHOS DE
+ * FUNDO (#4871).
+ *
+ * Um cron não tem "a empresa do request": a mesma execução percorre muitas
+ * empresas (`proposal-acceptance-rate` lê `organizations` inteira; o tick da
+ * prospecção pega até 20 organizações por rodada). Perguntar
+ * `modulosLigados(db, org)` dentro do laço custaria três idas ao banco por
+ * empresa, a cada minuto; esta leitura resolve a rodada inteira de uma vez, e
+ * a decisão de cada empresa passa a ser uma consulta em memória.
+ *
+ * Devolve só as empresas que TÊM linha e NÃO estão `ligado` — a mesma régua de
+ * `modulosDesligadosNaEmpresa`: só `ligado` liga. Empresa sem linha não aparece,
+ * porque ela HERDA a instalação; e a instalação continua sendo o TETO de quem
+ * chama, que segue consultando `modulosLigados(db)` sem organização.
+ *
+ * `null` = a leitura falhou, e é DIFERENTE de um `Set` vazio de propósito: vazio
+ * é "ninguém desligou", `null` é "não sei" — e quem grava aviso ou fala com o
+ * cliente não pode tratar "não sei" como "pode". Falha fechada, como o
+ * `ok:false` de `modulosLigados`: o chamador não processa ninguém.
+ */
+export async function empresasComModuloDesligado(
+  db: SupabaseClient,
+  modulo: ModuloPorEmpresa,
+): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await db
+      .from("organization_modules")
+      .select("organization_id, estado")
+      .eq("modulo", modulo);
+    if (error) {
+      logger.warn("módulos da empresa: leitura em lote recusada — ninguém será processado nesta rodada", {
+        modulo,
+        codigo: error.code,
+        detalhe: error.message,
+      });
+      return null;
+    }
+    const linhas = (data ?? []) as Array<{ organization_id: string; estado: string }>;
+    return new Set(linhas.filter((l) => l.estado !== LIGADO).map((l) => l.organization_id));
+  } catch (erro) {
+    logger.warn("módulos da empresa: leitura em lote falhou — ninguém será processado nesta rodada", {
+      modulo,
+      detalhe: erro instanceof Error ? erro.message : String(erro),
+    });
+    return null;
+  }
+}
+
 /** As linhas da EMPRESA que tiram módulo (só `desligado` sai da lista; `ligado`
  * confirma o que a instalação já ligou). Nunca lança. */
 async function modulosDesligadosNaEmpresa(

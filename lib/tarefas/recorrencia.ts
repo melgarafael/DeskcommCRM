@@ -452,6 +452,8 @@ async function lerSeriesSemProxima(
         -- Série desligada fora do lote: senão 200 delas ocupariam toda rodada.
         -- Só o booleano false desliga, a mesma régua de normalizarRegra.
         and t.recurrence->'ativa' is distinct from 'false'::jsonb
+        -- Exclude inactive organizations before they can fill the batch.
+        and public.fn_org_operante(t.organization_id)
         and not exists (
           select 1
             from public.crm_tasks ocorrencia
@@ -465,7 +467,7 @@ async function lerSeriesSemProxima(
 }
 
 export interface ResultadoDaGeracao {
-  /** Quantas séries a rodada examinou (as que não tinham ocorrência futura). */
+  /** Eligible series from active organizations without a future occurrence. */
   series: number;
   /** Quantas ocorrências nasceram nesta rodada. */
   criadas: number;
@@ -487,7 +489,6 @@ export interface ResultadoDaGeracao {
 export async function gerarOcorrencias(
   porta: Db,
   agora: Date = new Date(),
-  orgsParadas: ReadonlySet<string> = new Set(),
 ): Promise<ResultadoDaGeracao> {
   const series = await lerSeriesSemProxima(porta, agora);
 
@@ -495,10 +496,6 @@ export async function gerarOcorrencias(
   let jaExistiam = 0;
   let falhas = 0;
   for (const serie of series) {
-    // Organização parada não gasta nem fala (`lib/organizacao/operante.ts`): a
-    // série dela continua guardada, e volta a gerar quando a org voltar.
-    if (orgsParadas.has(serie.organization_id)) continue;
-
     const resultado = await criarProximaDaSerie(
       porta,
       { id: serie.id, organization_id: serie.organization_id, recurrence_source_id: null, due_date: null },

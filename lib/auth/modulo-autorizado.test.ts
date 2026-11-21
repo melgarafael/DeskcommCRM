@@ -9,7 +9,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { autorizarModulo, modeloDoCaminho } from "./modulo-autorizado";
+import { HOST_API_VERSION } from "@/lib/extensions/manifest";
+
+import { autorizarModulo, MENSAGEM_DA_RECUSA_DO_MODULO, modeloDoCaminho } from "./modulo-autorizado";
 
 const ORG = "bbbbbbbb-2222-4222-8222-222222222222";
 const TOKEN = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -38,6 +40,7 @@ function banco(): Banco {
       extension_artifacts: {
         manifest: {
           profile: "connected",
+          host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
           permissions: ["area.contatos.leitura", "area.contatos.escrita", "area.negocios.leitura"],
         },
       },
@@ -94,6 +97,95 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
     expect(await decide(banco(), "PATCH", `/api/v1/contacts/${ID}`)).toMatchObject({ ok: true });
   });
 
+  it("contatoVisivel: só com `contatos` em LEITURA declarada E consentida (não basta a rota de outra área passar)", async () => {
+    // negocios consentida, contatos não consentida: a rota passa, mas o contato embutido não.
+    const semContato = banco();
+    semContato.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura"] };
+    expect(await decide(semContato, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: false,
+    });
+    // contatos consentida e declarada: o contato embutido vale.
+    const comContato = banco();
+    comContato.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura", "area.contatos.leitura"] };
+    expect(await decide(comContato, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: true,
+    });
+    // declarada pelo pacote mas NÃO consentida: não vê.
+    const naoConsentida = banco();
+    naoConsentida.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura"] };
+    expect((await decide(naoConsentida, "GET", "/api/v1/pipelines/" + ID + "/board")) as { contatoVisivel?: boolean }).toMatchObject({
+      contatoVisivel: false,
+    });
+    // consentida mas NÃO declarada pelo pacote: não vê (o consentimento sozinho não basta).
+    const naoDeclarada = banco();
+    naoDeclarada.instalacao = {
+      ...naoDeclarada.instalacao!,
+      extension_artifacts: {
+        manifest: {
+          profile: "connected",
+          host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
+          permissions: ["area.negocios.leitura"],
+        },
+      },
+    };
+    naoDeclarada.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura", "area.contatos.leitura"] };
+    expect(await decide(naoDeclarada, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: false,
+    });
+  });
+
+  it("leitura que embute contato e não é redigida: sem `contatos` consentida a porta fecha; com ela abre", async () => {
+    const LEITURAS = [
+      "/api/v1/agenda/agendamentos",
+      `/api/v1/agenda/agendamentos/${ID}`,
+      "/api/v1/agenda/vinculos",
+      "/api/v1/ai/followups/queue",
+      `/api/v1/ai/followups/enrollments/${ID}`,
+      `/api/v1/ai/cases/${ID}/chat`,
+      `/api/v1/leads/${ID}/contatos-relacionados`,
+      "/api/v1/leads/proposals",
+      `/api/v1/proposals/${ID}/documento`,
+      "/api/v1/ai/cases",
+      `/api/v1/ai/cases/${ID}`,
+      "/api/v1/leads/at-risk",
+      "/api/v1/reports/activities",
+      `/api/v1/proposals/${ID}/previa`,
+    ];
+    const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura", "area.analise.leitura"];
+    const montar = (consentidas: string[]): Banco => {
+      const b = banco();
+      b.instalacao = {
+        ...b.instalacao!,
+        extension_artifacts: {
+          manifest: {
+            profile: "connected",
+            host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
+            permissions: declara,
+          },
+        },
+      };
+      b.vinculo = { enabled: true, consented_areas: consentidas };
+      return b;
+    };
+    const semContatos = montar(["area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura", "area.analise.leitura"]);
+    const comContatos = montar(declara);
+    for (const caminho of LEITURAS) {
+      expect(await decide(semContatos, "GET", caminho), `sem contatos: ${caminho}`).toEqual({
+        ok: false,
+        codigo: "module_area_not_granted",
+      });
+      expect(await decide(comContatos, "GET", caminho), `com contatos: ${caminho}`).toMatchObject({
+        ok: true,
+        contatoVisivel: true,
+      });
+    }
+    // A trava é só das leituras que embutem contato: uma leitura da mesma área sem contato segue aberta.
+    expect(await decide(semContatos, "GET", "/api/v1/agenda/tipos")).toMatchObject({ ok: true });
+  });
+
   it("consentiu só leitura: GET passa, POST e PATCH recusam (escrita sem permissão de escrita)", async () => {
     const b = banco();
     b.vinculo = { enabled: true, consented_areas: ["area.contatos.leitura"] };
@@ -136,6 +228,59 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
     expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({
       ok: false,
       codigo: "module_area_not_granted",
+    });
+  });
+
+  describe("faixa host_api (F6)", () => {
+    const manifesto = (b: Banco) =>
+      (b.instalacao!.extension_artifacts as { manifest: Record<string, unknown> }).manifest;
+
+    it("dentro da faixa passa, inclusive com a faixa mais larga que a versão do CRM", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION + 3 };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
+    });
+
+    it("CRM acima da faixa do pacote: module_incompatible, com o token ainda vivo", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION - 1 };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({
+        ok: false,
+        codigo: "module_incompatible",
+      });
+    });
+
+    it("pacote que exige CRM mais novo: module_incompatible", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: HOST_API_VERSION + 1, max: HOST_API_VERSION + 1 };
+      expect(await decide(b, "POST", "/api/v1/contacts")).toEqual({
+        ok: false,
+        codigo: "module_incompatible",
+      });
+    });
+
+    it("voltar à faixa volta a valer na chamada seguinte (sem cache)", async () => {
+      const b = banco();
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION - 1 };
+      expect((await decide(b, "GET", "/api/v1/contacts")).ok).toBe(false);
+      manifesto(b).host_api = { min: 1, max: HOST_API_VERSION };
+      expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
+    });
+
+    it.each([
+      ["sem host_api", (m: Record<string, unknown>) => delete m.host_api],
+      ["faixa não numérica", (m: Record<string, unknown>) => (m.host_api = { min: "2", max: "2" })],
+      ["faixa nula", (m: Record<string, unknown>) => (m.host_api = null)],
+      ["permissões que não são lista", (m: Record<string, unknown>) => (m.permissions = "area.contatos.leitura")],
+    ])("manifesto ilegível (%s): recusa, lado seguro", async (_nome, quebra) => {
+      const b = banco();
+      quebra(manifesto(b));
+      const r = await decide(b, "GET", "/api/v1/contacts");
+      expect(r.ok).toBe(false);
+    });
+
+    it("a mensagem do código novo existe e fala em português", () => {
+      expect(MENSAGEM_DA_RECUSA_DO_MODULO.module_incompatible).toMatch(/não é compatível/);
     });
   });
 

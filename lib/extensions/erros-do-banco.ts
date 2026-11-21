@@ -8,6 +8,10 @@
  * tabela. Módulo puro, sem cliente de banco.
  */
 export const SQL_ERRORS: Readonly<Record<string, { message: string; status: number }>> = {
+  extension_events_forbidden: {
+    message: "Este módulo não pode ler esses avisos.",
+    status: 403,
+  },
   extension_forbidden: {
     message: "Seu acesso mudou. Entre novamente para continuar.",
     status: 403,
