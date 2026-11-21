@@ -102,7 +102,7 @@ interface Cenario {
   /** corpo em `message_templates` (texto pronto) */
   texto?: string;
   /** a linha do modelo do canal, ou ausente */
-  modelo?: { status: string; texto?: string };
+  modelo?: { status: string; texto?: string; botoes?: string[] };
   /** último inbound da conversa, em horas atrás (`null` = nunca escreveu) */
   ultimoInboundHa?: number | null;
   /** o contato, para as variáveis de nome */
@@ -118,9 +118,13 @@ function fakePool(c: Cenario) {
     if (sql.includes("d.fechada_em::text")) return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
     // A ordem importa: a definição da conexão e a janela citam outras tabelas no corpo.
     if (/from meta_templates t/.test(sql)) {
-      return c.modelo
-        ? { rows: [{ components: [{ type: "BODY", text: c.modelo.texto ?? CORPO }], parameter_format: "POSITIONAL", status: c.modelo.status }] }
-        : { rows: [] };
+      if (!c.modelo) return { rows: [] };
+      const componentes: Array<Record<string, unknown>> = [{ type: "BODY", text: c.modelo.texto ?? CORPO }];
+      // #4835 — modelo com botão: o corpo sozinho perderia o que o cliente toca.
+      if ((c.modelo.botoes ?? []).length > 0) {
+        componentes.push({ type: "BUTTONS", buttons: (c.modelo.botoes ?? []).map((text) => ({ type: "QUICK_REPLY", text })) });
+      }
+      return { rows: [{ components: componentes, parameter_format: "POSITIONAL", status: c.modelo.status }] };
     }
     if (/select name, language from meta_templates/.test(sql)) {
       return c.modelo ? { rows: [{ name: "lembrete_cafeteira", language: "es" }] } : { rows: [] };
@@ -499,5 +503,63 @@ describe("carência antes do modelo pago (#4835), pelo handler", () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(reagendou(pool)).toHaveLength(0);
     expect(resultado(completeFollowupTurn).kind).toBe("sent");
+  });
+});
+
+/**
+ * #4835, item 4 da issue — a janela JÁ ABERTA no turno.
+ *
+ * Aqui não há espera: o cliente escreveu antes, a janela está aberta, e modelo
+ * aprovado é dinheiro jogado fora para dizer o que o texto livre diz. O passo
+ * não pode ser pulado (o cliente ficaria sem a mensagem), então ele sai como
+ * TEXTO — UM envio só, sem `template` na chamada do canal.
+ *
+ * Sabotagem prevista: devolver `enviar` sempre no ramo da janela aberta de
+ * `decidirAntesDoModeloPago` deixa o primeiro caso vermelho (o canal recebe
+ * `template`).
+ */
+describe("janela de 24 h já aberta: o modelo pago não é cobrado (#4835)", () => {
+  const eventos = (pool: { query: ReturnType<typeof vi.fn> }) =>
+    pool.query.mock.calls.filter((c) => /modelo_pago_dispensado/.test(String(c[0])));
+
+  it("⭐ janela aberta, modelo sem botão: sai como TEXTO LIVRE, uma vez, e nenhum template", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: 2, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await criarHandler(d)(job({ template_id: MODELO_ID }), pool as never, { workerId: "w1" });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].template).toBeUndefined();
+    expect(send.mock.calls[0]![0].body).toBe(CORPO);
+    expect(runBeforeSend.mock.calls[0]![0].isTemplate).toBeFalsy();
+    expect(resultado(completeFollowupTurn).kind).toBe("sent");
+    expect(eventos(pool)).toHaveLength(1);
+    expect(eventos(pool)[0]![1]![3]).toMatchObject({ motivo: "janela_aberta" });
+  });
+
+  it("janela aberta, modelo COM botão: continua modelo aprovado — o texto perderia o que se toca", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID }),
+      fakePool({ modelo: { status: "APPROVED", botoes: ["Quero", "Depois"] }, ultimoInboundHa: 2, primeiroContato: true }),
+      { workerId: "w1" },
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].template).toEqual({ name: "lembrete_cafeteira", language: "es", values: {} });
+    expect(resultado(completeFollowupTurn).kind).toBe("sent");
+  });
+
+  it("volta da carência com o cliente tendo escrito: NÃO vira texto do modelo — seria a segunda mensagem", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    const pool = fakePool({ modelo: { status: "APPROVED" }, ultimoInboundHa: 0.001, primeiroContato: true }) as never as { query: ReturnType<typeof vi.fn> };
+    await criarHandler(d)(
+      job({ template_id: MODELO_ID, carencia_do_modelo: { esperou_em: "2026-10-20T14:59:50.000Z", espera_ms: 10_000 } }),
+      pool as never,
+      { workerId: "w1" },
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(resultado(completeFollowupTurn).kind).toBe("skipped");
+    expect(eventos(pool)[0]![1]![3]).toMatchObject({ motivo: "dispensar" });
   });
 });
