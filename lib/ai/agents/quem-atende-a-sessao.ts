@@ -50,7 +50,20 @@ function sqlDoPortao(doNumero: (coluna: string) => string, ignorarPausados: bool
          select 1 from ai_agents a
          join ai_agent_versions v on v.id = a.published_version_id
          where a.organization_id = $1 and a.archived_at is null${semPausa("a")}
-           and v.status = 'published' and ${doNumero("v.channel_session_id")}
+           and v.status = 'published'
+           and (
+             ${doNumero("v.channel_session_id")}
+             -- O vínculo versão↔número (0665) entra aqui pelo mesmo motivo que
+             -- no seletor: a herança da conexão nova (#4013) grava a versão
+             -- publicada do telefone na conexão por onde ele voltou — e é o
+             -- portão que decide se o turno é enfileirado ou pulado.
+             or exists (
+               select 1 from ai_agent_version_channels vc
+                where vc.organization_id = $1
+                  and vc.agent_version_id = v.id
+                  and ${doNumero("vc.channel_session_id")}
+             )
+           )
        ) as tem_agente,
        exists(
          select 1 from ai_routers r
@@ -146,6 +159,13 @@ export async function palavrasDeQuemPodeAtender(
       where a.organization_id = $1 and a.archived_at is null and v.status = 'published'
         and (
           v.channel_session_id = $2
+          -- o vínculo versão↔número (0665), pelo mesmo motivo do portão
+          or exists (
+            select 1 from ai_agent_version_channels vc
+             where vc.organization_id = $1
+               and vc.agent_version_id = v.id
+               and vc.channel_session_id = $2
+          )
           or a.id in (
             select r.fallback_agent_id from ai_routers r
              where r.organization_id = $1 and r.is_active and r.channel_session_id = $2
