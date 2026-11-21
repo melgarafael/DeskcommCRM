@@ -3403,6 +3403,12 @@ export const DICIONARIO: Traducoes = {
   "As conversas novas viram negócio em": {
     es: "Las conversaciones nuevas se convierten en negocio en",
   },
+  "As conversas novas do número": {
+    es: "Las conversaciones nuevas del número",
+  },
+  "viram negócio em": {
+    es: "se convierten en negocio en",
+  },
   ", que não está marcado. O assistente vai atender e os negócios vão se acumular ali sem que ele possa organizá-los.": {
     es: ", que no está marcado. El asistente atenderá y los negocios se acumularán ahí sin que pueda organizarlos.",
   },
