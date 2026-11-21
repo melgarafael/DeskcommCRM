@@ -74,6 +74,13 @@ describe("a assinatura de eventos do canal por QR", () => {
         expect(linha, `sumiu ${e}`).toContain(e);
       }
     });
+
+    it(`${arquivo}: assina \`call.received\``, () => {
+      // Sem o evento o WAHA nunca avisa da ligação, e "Bloquear chamadas
+      // recebidas" (lib/organizacao/bloqueio-de-chamadas.ts) liga e não recusa nada.
+      const eventos = (linha.split('"')[1] ?? "").split(",").map((e) => e.trim());
+      expect(eventos).toContain("call.received");
+    });
   }
 });
 

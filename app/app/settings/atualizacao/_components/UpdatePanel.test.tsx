@@ -715,3 +715,88 @@ describe("tela de atualização — o botão de força (#2756)", () => {
     expect(texto).toContain("site não respondeu");
   });
 });
+
+/**
+ * #4955 — A RELEASE SAIU E AINDA NÃO PODE SER INSTALADA.
+ *
+ * A tela mediu o absurdo na instalação 1.116.0: "É a mais recente. Não há nada
+ * a fazer." com "Última release oficial: 1.118.0" impresso logo acima. As duas
+ * frases vêm de fontes diferentes do MESMO batimento: `latest_version` (o que o
+ * host anuncia) e `published_release` (o que ele viu publicado). Enquanto a
+ * imagem da release não existe — ou a release está incompleta — o host cala o
+ * anúncio de propósito, e a tela lia o silêncio como boa notícia.
+ *
+ * O estado novo é `pending_release_version`: a versão saiu, está sendo
+ * preparada, e o botão aparece sozinho quando ficar pronta. Os controles são
+ * tão importantes quanto ele — em dia, atrasada com botão e desligada (agente
+ * fora) continuam dizendo o que já diziam.
+ */
+describe("tela de atualização — release publicada que ainda não pode ser oferecida (#4955)", () => {
+  /** O estado exato da issue: 1.116.0 no ar, 1.118.0 publicada e sem imagem. */
+  const PREPARANDO: SystemVersion = {
+    current_version: "1.116.0",
+    is_owner: true,
+    latest_version: "",
+    official_latest_version: "v1.118.0",
+    pending_release_version: "v1.118.0",
+    update_available: false,
+    off_release: false,
+    compare_failed: false,
+    has_known_release: true,
+    agent_online: true,
+    agent_stale: false,
+    notes: null,
+    run: null,
+  };
+
+  it("⭐ NÃO diz 'é a mais recente' com uma release oficial mais nova na mesma tela", () => {
+    renderTela(PREPARANDO);
+
+    expect(screen.queryByText("É a mais recente. Não há nada a fazer.")).toBeNull();
+    // A frase que denunciava a contradição continua na tela — ela é verdadeira.
+    expect(screen.getByText(/Última release oficial/).textContent).toContain("1.118.0");
+  });
+
+  it("diz que a versão saiu, está sendo preparada, e que o botão aparece sozinho", () => {
+    renderTela(PREPARANDO);
+
+    expect(screen.getByRole("heading", { name: "A versão 1.118.0 já saiu" })).toBeInTheDocument();
+    expect(screen.getByText(/publicada oficialmente/)).toBeInTheDocument();
+    expect(screen.getByText(/aparece aqui sozinho/)).toBeInTheDocument();
+    // O estado do preparo não oferece botão: sem imagem, clicar pararia o
+    // sistema para instalar o que não existe.
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
+  });
+
+  it("CONTROLE — em dia (nada pendente) continua dizendo 'é a mais recente'", () => {
+    renderTela({
+      ...PREPARANDO,
+      official_latest_version: "v1.116.0",
+      pending_release_version: null,
+    });
+
+    expect(screen.getByText("É a mais recente. Não há nada a fazer.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /já saiu/ })).toBeNull();
+  });
+
+  it("CONTROLE — atrasada com o botão: oferece instalar e não fala de preparo", () => {
+    renderTela({
+      ...PREPARANDO,
+      latest_version: "v1.118.0",
+      pending_release_version: null,
+      update_available: true,
+    });
+
+    expect(screen.getByRole("button", { name: "Atualizar agora" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /já saiu/ })).toBeNull();
+    expect(screen.queryByText("É a mais recente. Não há nada a fazer.")).toBeNull();
+  });
+
+  it("CONTROLE — desligada (agente fora): caminho manual, e nenhuma afirmação de 'em dia'", () => {
+    renderTela({ ...PREPARANDO, agent_online: false });
+
+    expect(screen.getByText("Atualização automática indisponível")).toBeInTheDocument();
+    expect(screen.queryByText("É a mais recente. Não há nada a fazer.")).toBeNull();
+    expect(screen.getByText(/hostgator-setup-kit\/update\.sh/)).toBeInTheDocument();
+  });
+});

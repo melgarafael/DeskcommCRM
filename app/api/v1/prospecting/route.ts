@@ -16,6 +16,7 @@ import {
   type CampaignConfig,
   type Prospect,
 } from "@/lib/prospecting/schema";
+import { listarCampanhasDaLista } from "@/lib/prospecting/campanhas-da-lista";
 import { arquivadaEm } from "@/lib/prospecting/arquivamento";
 import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
 import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
@@ -130,14 +131,10 @@ export async function GET(req: NextRequest) {
       ordenar === "score" ? ORDENACAO_POR_SCORE : "p.created_at desc";
     const [settings, campaigns, candidates, agents, channels, stages, organizacao] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
-      db.query(
-        // #4359: as NÃO arquivadas vêm primeiro porque a lista é limitada a 50 e a
-        // tela separa as duas. Sem esta ordem, uma campanha arquivada ontem roubaria
-        // a vaga de uma que ainda está trabalhando — e a arquivada só apareceria no
-        // fim do rolo, longe do filtro que a mostra.
-        "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at,channel_session_id from prospecting_campaigns where organization_id=$1 order by (config->>'arquivada_em' is null) desc, created_at desc limit 50",
-        [org],
-      ),
+      // #4947: a contagem do cartão vem das LINHAS da lista, e não da coluna
+      // `result_count` — ver `campanhas-da-lista.ts`. A ordem (#4359) e o teto de 50
+      // continuam lá, junto da explicação.
+      listarCampanhasDaLista(db, org),
       db.query(
         `select p.id,p.campaign_id,p.data,p.status,p.selected,p.error,p.lead_id,p.conversation_id,p.attempted_at,p.automatic_sends,p.exit_offered_at,m.status as message_status,ct.is_blocked,case when l.stage_id::text=c.config->>'qualified_stage_id' then 'qualified' when v.last_inbound_at is not null then 'replied' else p.status end as progress from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id left join crm_leads l on l.organization_id=p.organization_id and l.id=p.lead_id left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id left join messages m on m.organization_id=p.organization_id and m.id=p.message_id left join contacts ct on ct.organization_id=p.organization_id and ct.id=p.contact_id where p.organization_id=$1 order by ${ordemCandidatos} limit 5000`,
         [org],
@@ -180,7 +177,7 @@ export async function GET(req: NextRequest) {
     return ok(
       {
         configured,
-        campaigns: campaigns.rows,
+        campaigns,
         candidates: candidates.rows,
         previa_padrao: previaPadrao,
         personalizacao,
@@ -494,7 +491,7 @@ export async function POST(req: NextRequest) {
       await audit({
         action: "prospecting.preview_approved",
         organizationId: org,
-        actorUserId: auth.actor.id,
+        actorUserId: auth.actor.type === "user" ? auth.actor.id : null,
         resourceType: "prospecting",
         resourceId: body.candidate_id,
         metadata: { campaignId: body.id },
