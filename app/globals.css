@@ -948,7 +948,7 @@
      #141414 e os pontos #555, fora dos tokens (prova pela tela do #5121). Na v12
      o fundo ficava transparente sobre o `bg-background` do canvas. */
   --xy-background-color: transparent;
-  --xy-background-pattern-dots-color: var(--color-border-strong);
+  --xy-background-pattern-color: var(--color-border-strong);
   --xy-controls-button-background-color: var(--color-surface);
   --xy-controls-button-background-color-hover: var(--color-surface-elevated);
   --xy-controls-button-color: var(--color-text);
