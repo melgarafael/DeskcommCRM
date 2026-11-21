@@ -3,16 +3,17 @@
  * (spec 36, F1, Task 9).
  *
  * Pública, com o token de visitante no cabeçalho `Authorization: Bearer` (nunca na URL). A
- * conexão e a organização saem do TOKEN e da linha da conexão no banco; a conversa sai do
- * token também. O único parâmetro do pedido é `depois`, o cursor assinado da última entrega.
+ * conexão, a organização e a conversa saem do TOKEN e da linha da conexão no banco. O pedido
+ * não traz parâmetro nenhum que escolha dado: a entrega é pelo estado da mensagem.
  *
- * O stream lê o banco a cada 2 s e fecha em 60 s: a janela reabre com o último cursor.
+ * O stream lê o banco a cada 2 s e fecha em 60 s: a janela reabre e recebe o que ainda está
+ * `sent`.
  */
 import { fail } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { conexaoPeloId, tokenDoBearer } from "@/lib/channels/webchat/conexao-pela-chave";
 import { descreverErro } from "@/lib/channels/webchat/entrada-publica";
-import { abrirFluxoDeEventos, lerCursor } from "@/lib/channels/webchat/eventos";
+import { abrirFluxoDeEventos } from "@/lib/channels/webchat/eventos";
 import { lerTokenDeVisitante } from "@/lib/channels/webchat/token";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -53,12 +54,6 @@ export async function GET(req: Request) {
     );
     if (!teto.allowed) return recusaPorLimite();
 
-    const depoisBruto = new URL(req.url).searchParams.get("depois");
-    const cursor = depoisBruto ? depoisBruto : null;
-    if (cursor !== null && lerCursor(cursor) === null) {
-      return fail("validation_failed", "Cursor inválido.", 400);
-    }
-
     const admin = createAdminClient();
     const conexao = await conexaoPeloId(admin, visitante.channelSessionId);
     // Conexão arquivada, organização suspensa ou módulo desligado: o mesmo 404 da chave.
@@ -69,7 +64,6 @@ export async function GET(req: Request) {
       organizationId: conexao.organizationId,
       channelSessionId: conexao.id,
       visitanteId: visitante.visitanteId,
-      cursor,
       sinal: req.signal,
     });
 
@@ -77,6 +71,8 @@ export async function GET(req: Request) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
+        // Proxy reverso (nginx e afins) não pode segurar o stream em buffer.
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (erro) {

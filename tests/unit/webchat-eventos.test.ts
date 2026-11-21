@@ -2,16 +2,15 @@
  * GET /api/v1/webchat/eventos — o visitante recebe as respostas da conversa por stream
  * (spec 36, F1, Task 9).
  *
- * O banco é um dublê que aplica os filtros que a rota e a consulta pedem (eq, in, not, or,
- * order, limit e update), como o cliente real. O relógio é falso: os 60 s do stream passam
- * em milissegundos. A nota interna não aparece aqui de propósito: ela mora em
- * `conversation_notes`, fora de `messages`, e a consulta de eventos nem a enxerga.
+ * A entrega é pelo estado da mensagem, sem cursor: sai o que está `sent`, e vira `delivered`
+ * logo depois de escrito. O banco é um dublê que aplica os filtros que a rota pede (eq, in,
+ * order, limit e update), como o cliente real. O relógio é falso: os 60 s do stream passam em
+ * milissegundos. A nota interna não aparece aqui de propósito: ela mora em `conversation_notes`,
+ * fora de `messages`, e a consulta de eventos nem a enxerga.
  */
-import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/v1/webchat/eventos/route";
-import { assinarCursor, lerCursor } from "@/lib/channels/webchat/eventos";
 import { assinarTokenDeVisitante } from "@/lib/channels/webchat/token";
 
 type Linha = Record<string, unknown>;
@@ -56,18 +55,10 @@ const VIS = "44444444-4444-4444-8444-444444444444";
 const OUTRA_VIS = "88888888-8888-4888-8888-888888888888";
 const CONV = "55555555-5555-4555-8555-555555555555";
 const CONV_2 = "77777777-7777-4777-8777-777777777777";
+const CONV_3 = "99999999-9999-4999-8999-999999999999";
 const CHAVE = `wck_${"A".repeat(43)}`;
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-
-/** Filtro `or` do cursor: `created_at.gt.T,and(created_at.eq.T,id.gt.ID)`. Só essa forma existe. */
-function filtroOr(texto: string): (l: Linha) => boolean {
-  const casou = /^created_at\.gt\.(.+),and\(created_at\.eq\.(.+),id\.gt\.(.+)\)$/.exec(texto);
-  if (!casou) throw new Error(`filtro or inesperado: ${texto}`);
-  const [, t, tIgual, idDepois] = casou;
-  return (l) =>
-    String(l.created_at) > t || (String(l.created_at) === tIgual && String(l.id) > idDepois);
-}
 
 class Consulta {
   private filtrosDaConsulta: Array<(l: Linha) => boolean> = [];
@@ -93,15 +84,6 @@ class Consulta {
     this.filtrosDaConsulta.push((l) => valores.includes(l[coluna]));
     return this;
   }
-  not(coluna: string, _operador: string, valor: string): Consulta {
-    const proibidos = valor.replace(/[()]/g, "").split(",");
-    this.filtrosDaConsulta.push((l) => !proibidos.includes(String(l[coluna])));
-    return this;
-  }
-  or(texto: string): Consulta {
-    this.filtrosDaConsulta.push(filtroOr(texto));
-    return this;
-  }
   order(coluna: string, opcoes?: { ascending?: boolean }): Consulta {
     this.ordem.push({ coluna, asc: opcoes?.ascending !== false });
     return this;
@@ -109,9 +91,6 @@ class Consulta {
   limit(n: number): Consulta {
     this.teto = n;
     return this;
-  }
-  async maybeSingle(): Promise<{ data: Linha | null; error: null }> {
-    return { data: this.casadas()[0] ?? null, error: null };
   }
   then<A = { data: unknown; error: null }, B = never>(
     ok?: ((valor: { data: unknown; error: null }) => A | PromiseLike<A>) | null,
@@ -171,25 +150,30 @@ function mensagensIniciais(): Linha[] {
     base(6, { status: "queued", body: "na fila" }),
     base(7, { organization_id: ORG_B, body: "de outra organização" }),
     base(8, { conversation_id: CONV_2, body: "de outra conversa" }),
+    base(9, { conversation_id: CONV_3, body: "da conversa mais antiga" }),
   ];
 }
+
+const CONVERSA_DO_VISITANTE = {
+  id: CONV,
+  organization_id: ORG,
+  channel: "webchat",
+  channel_session_id: CS,
+  provider_conversation_id: VIS,
+  created_at: "2026-11-20T12:00:00.000+00:00",
+};
 
 function preparar(
   opcao: "ok" | "inexistente" | "modulo_desligado" = "ok",
   conversas: Linha[] = [
-    {
-      id: CONV,
-      organization_id: ORG,
-      channel: "webchat",
-      channel_session_id: CS,
-      provider_conversation_id: VIS,
-    },
+    CONVERSA_DO_VISITANTE,
     {
       id: CONV_2,
       organization_id: ORG,
       channel: "webchat",
       channel_session_id: CS,
       provider_conversation_id: OUTRA_VIS,
+      created_at: "2026-11-20T12:00:00.000+00:00",
     },
   ],
 ): void {
@@ -218,10 +202,8 @@ function tokenDeVisitante(cs = CS, vis = VIS): string {
   return assinarTokenDeVisitante({ channelSessionId: cs, visitanteId: vis, agora: AGORA });
 }
 
-function abrir(token: string | undefined, depois?: string, extra = ""): Request {
-  const url = new URL(`https://crm.example.com/api/v1/webchat/eventos${extra}`);
-  if (depois !== undefined) url.searchParams.set("depois", depois);
-  return new Request(url, {
+function abrir(token: string | undefined, extra = ""): Request {
+  return new Request(`https://crm.example.com/api/v1/webchat/eventos${extra}`, {
     headers: token ? { authorization: `Bearer ${token}` } : {},
   });
 }
@@ -251,8 +233,20 @@ function eventos(texto: string): EventoLido[] {
     });
 }
 
+/** Ids das mensagens que saíram num stream, na ordem em que saíram. */
+async function entregasDe(token: string): Promise<unknown[]> {
+  const texto = await lerAteFechar(await GET(abrir(token)));
+  return eventos(texto)
+    .filter((e) => e.evento === "mensagem")
+    .map((e) => e.dados.id);
+}
+
+function linha(n: number): Linha {
+  return (h.tabelas.messages ?? []).find((l) => l.id === id(n)) as Linha;
+}
+
 function estado(n: number): unknown {
-  return (h.tabelas.messages ?? []).find((l) => l.id === id(n))?.status;
+  return linha(n).status;
 }
 
 beforeEach(() => {
@@ -272,30 +266,68 @@ afterEach(() => {
 });
 
 describe("GET /api/v1/webchat/eventos", () => {
-  it("entrega só a saída de texto da conversa deste visitante, sem entrada, sistema, falha nem fila", async () => {
+  it("entrega só a saída de texto `sent` desta conversa, sem entrada, sistema, falha, fila nem envio em curso", async () => {
     const res = await GET(abrir(tokenDeVisitante()));
     expect(res.status).toBe(200);
 
     const lidos = eventos(await lerAteFechar(res)).filter((e) => e.evento === "mensagem");
-    expect(lidos.map((e) => e.dados.id)).toEqual([id(1), id(2)]);
-    expect(lidos[0].dados.texto).toBe("Olá, em que posso ajudar?");
-    expect(lidos[0].dados.em).toBe("2026-11-20T12:00:01.000+00:00");
+    expect(lidos.map((e) => e.dados.id)).toEqual([id(2)]);
+    expect(lidos[0].dados.texto).toBe("Temos três planos.");
+    expect(lidos[0].dados.em).toBe("2026-11-20T12:00:02.000+00:00");
   });
 
   it("marca como entregue só o que saiu, e não toca no que ficou de fora", async () => {
     await lerAteFechar(await GET(abrir(tokenDeVisitante())));
 
-    expect(estado(1)).toBe("delivered");
     expect(estado(2)).toBe("delivered");
+    expect(estado(1)).toBe("sending");
     expect(estado(4)).toBe("sent");
     expect(estado(5)).toBe("failed");
     expect(estado(6)).toBe("queued");
     expect(estado(7)).toBe("sent");
+    expect(estado(3)).toBe("delivered");
+  });
+
+  it("(a) mensagem que vira `sent` depois de outra mais nova ainda é entregue na leitura seguinte", async () => {
+    const token = tokenDeVisitante();
+    expect(await entregasDe(token)).toEqual([id(2)]);
+
+    // A mensagem 1 é mais antiga que a 2, e só vira `sent` agora, depois do envio da 2.
+    linha(1).status = "sent";
+
+    expect(await entregasDe(token)).toEqual([id(1)]);
+    expect(estado(1)).toBe("delivered");
+  });
+
+  it("(b) `sending` e `queued` não saem e não são marcados: ficam com o worker de envio", async () => {
+    const ids = await entregasDe(tokenDeVisitante());
+
+    expect(ids).not.toContain(id(1));
+    expect(ids).not.toContain(id(6));
+    expect(estado(1)).toBe("sending");
+    expect(estado(6)).toBe("queued");
+  });
+
+  it("(c) `delivered` não é entregue de novo", async () => {
+    const token = tokenDeVisitante();
+    expect(await entregasDe(token)).toEqual([id(2)]);
+    expect(await entregasDe(token)).toEqual([]);
+  });
+
+  it("com duas conversas do mesmo visitante, usa a mais antiga e não quebra", async () => {
+    preparar("ok", [
+      { ...CONVERSA_DO_VISITANTE, id: CONV_3, created_at: "2026-11-20T11:00:00.000+00:00" },
+      CONVERSA_DO_VISITANTE,
+    ]);
+
+    const res = await GET(abrir(tokenDeVisitante()));
+    expect(res.status).toBe(200);
+    expect(eventos(await lerAteFechar(res)).map((e) => e.dados.id)).toEqual([id(9)]);
   });
 
   it("a conversa sai do token, e nem a organização nem a conversa vindas da URL entram", async () => {
     const res = await GET(
-      abrir(tokenDeVisitante(), undefined, `?organization_id=${ORG_B}&conversation_id=${CONV_2}`),
+      abrir(tokenDeVisitante(), `?organization_id=${ORG_B}&conversation_id=${CONV_2}`),
     );
     await lerAteFechar(res);
 
@@ -307,6 +339,7 @@ describe("GET /api/v1/webchat/eventos", () => {
         { tabela: "conversations", coluna: "provider_conversation_id", valor: VIS },
         { tabela: "messages", coluna: "organization_id", valor: ORG },
         { tabela: "messages", coluna: "conversation_id", valor: CONV },
+        { tabela: "messages", coluna: "status", valor: "sent" },
       ]),
     );
     expect(h.filtros.some((f) => f.valor === ORG_B || f.valor === CONV_2)).toBe(false);
@@ -322,32 +355,22 @@ describe("GET /api/v1/webchat/eventos", () => {
     expect(h.leiturasDeMensagens).toBe(0);
   });
 
-  it("responde text/event-stream e fecha em 60 s, com cerca de 30 leituras", async () => {
+  it("responde text/event-stream sem buffer de proxy, e fecha em 60 s, com cerca de 30 leituras", async () => {
     const res = await GET(abrir(tokenDeVisitante()));
     expect(res.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    expect(res.headers.get("x-accel-buffering")).toBe("no");
 
     await lerAteFechar(res);
     expect(h.leiturasDeMensagens).toBeGreaterThanOrEqual(25);
     expect(h.leiturasDeMensagens).toBeLessThanOrEqual(31);
   });
 
-  it("com o cursor da última entrega, a próxima abertura não repete nada", async () => {
-    const primeira = eventos(await lerAteFechar(await GET(abrir(tokenDeVisitante()))));
-    const cursor = primeira.find((e) => e.evento === "cursor")?.dados.cursor;
-    expect(typeof cursor).toBe("string");
+  it("desconexão normal do cliente não registra erro", async () => {
+    const res = await GET(abrir(tokenDeVisitante()));
+    await res.body?.cancel();
+    await vi.advanceTimersByTimeAsync(5_000);
 
-    const segunda = eventos(
-      await lerAteFechar(await GET(abrir(tokenDeVisitante(), cursor as string))),
-    );
-    expect(segunda.filter((e) => e.evento === "mensagem")).toEqual([]);
-  });
-
-  it("um cursor adulterado dá 400", async () => {
-    const valido = assinarCursor({ criadoEm: "2026-11-20T12:00:01.000+00:00", id: id(1) });
-    const adulterado = valido.replace(/^(.)/, (c) => (c === "x" ? "y" : "x"));
-
-    expect((await GET(abrir(tokenDeVisitante(), adulterado))).status).toBe(400);
-    expect((await GET(abrir(tokenDeVisitante(), "abc"))).status).toBe(400);
+    expect(h.logErro).not.toHaveBeenCalled();
   });
 
   it("a 7ª abertura em um minuto, do mesmo visitante, dá 429 com Retry-After", async () => {
@@ -385,18 +408,5 @@ describe("GET /api/v1/webchat/eventos", () => {
 
     preparar("ok");
     expect((await GET(abrir(tokenDeVisitante(OUTRA_CS)))).status).toBe(404);
-  });
-});
-
-describe("cursor do stream", () => {
-  it("ida e volta devolve o mesmo par; um cursor assinado por outro domínio não vale", () => {
-    const criadoEm = "2026-11-20T12:00:02.000+00:00";
-    expect(lerCursor(assinarCursor({ criadoEm, id: id(2) }))).toEqual({ criadoEm, id: id(2) });
-
-    const corpo = Buffer.from(JSON.stringify({ v: 1, criadoEm, id: id(2) })).toString("base64url");
-    const assinatura = createHmac("sha256", SEGREDO)
-      .update(`deskcomm:webchat-visitante:v1:${corpo}`)
-      .digest("base64url");
-    expect(lerCursor(`${corpo}.${assinatura}`)).toBeNull();
   });
 });
