@@ -657,3 +657,31 @@ describe('sendMessageHandler — o material da empresa pelo mesmo caminho de mí
     expect(linha.metadata).toMatchObject({ material_id: MATERIAL, media_filename: 'Catálogo 2026.pdf' });
   });
 });
+
+// #5034 — o caminho que o cliente MCP manda em `media_storage_path` passa pela posse
+// do handler REAL: de outra conversa ou com ponto codificado, 422 antes de assinar
+// URL, gravar linha ou tocar o canal.
+describe('sendMessageHandler — media_storage_path de fora da conversa (#5034)', () => {
+  it.each([
+    `${ORG}/outra-conversa/out-1.pdf`,
+    `${ORG}/${CONV}/%2e%2e/%2e%2e/outra-org/out-1.pdf`,
+  ])('%s: 422 invalid_media_path, sem assinar nem enviar', async (caminho) => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    signedUrl.mockClear();
+    const duble = criarDubleDoHandler({ conversation: conversationRow() });
+
+    await expect(
+      sendMessageHandler(duble.supabase, ctx, {
+        conversation_id: CONV,
+        type: 'document',
+        media_storage_path: caminho,
+        media_filename: 'laudo.pdf',
+      } as never),
+    ).rejects.toMatchObject({ status: 422, code: 'invalid_media_path' });
+    expect(signedUrl).not.toHaveBeenCalled();
+    expect(duble.capturas.inserts.messages ?? []).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -149,6 +149,13 @@ describe("extractPdfText — estratégia `processo-a-parte`", () => {
     await expect(extractPdfText(fixture("sample-sem-texto.pdf"), A_PARTE)).rejects.toThrow(
       /image-only/,
     );
+    // #4889: o filho responde `{ ok: true, texto: "" }` e é o PAI que lança o
+    // erro. Sem o motivo explícito aqui, este caso caía no padrão `"falha"` e
+    // quem decide pelo motivo (a ingestão do RAG e o worker de mídia) tratava
+    // PDF escaneado como defeito de infraestrutura.
+    await expect(extractPdfText(fixture("sample-sem-texto.pdf"), A_PARTE)).rejects.toMatchObject({
+      motivo: "sem_texto",
+    });
     await expect(extractPdfText(fixture("sample-corrompido.pdf"), A_PARTE)).rejects.toBeInstanceOf(
       PdfExtractError,
     );

@@ -39,6 +39,7 @@ export interface ConstrutorDoPostgrest {
   lte(coluna: string, valor: unknown): ConstrutorDoPostgrest;
   order(coluna: string, opcoes?: { ascending?: boolean }): ConstrutorDoPostgrest;
   limit(n: number): ConstrutorDoPostgrest;
+  range(de: number, ate: number): ConstrutorDoPostgrest;
   insert(linhas: Linha | Linha[]): ConstrutorDoPostgrest;
   update(alteracao: Linha): ConstrutorDoPostgrest;
   delete(): ConstrutorDoPostgrest;
@@ -97,6 +98,7 @@ export function bancoDeDuasEmpresas(inicial: Record<string, Linha[]> = {}) {
     let colunas = "";
     let ordem: { coluna: string; ascendente: boolean } | null = null;
     let limite: number | null = null;
+    let intervalo: [number, number] | null = null;
     let alteracao: Linha | null = null;
     let novasLinhas: Linha[] = [];
 
@@ -146,6 +148,7 @@ export function bancoDeDuasEmpresas(inicial: Record<string, Linha[]> = {}) {
         });
       }
       if (limite !== null) resultado = resultado.slice(0, limite);
+      if (intervalo !== null) resultado = resultado.slice(intervalo[0], intervalo[1] + 1);
       return { data: resultado, error: null };
     };
 
@@ -184,6 +187,10 @@ export function bancoDeDuasEmpresas(inicial: Record<string, Linha[]> = {}) {
       },
       limit(n: number) {
         limite = n;
+        return construtor;
+      },
+      range(de: number, ate: number) {
+        intervalo = [de, ate];
         return construtor;
       },
       insert(linhas: Linha | Linha[]) {

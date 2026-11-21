@@ -1,7 +1,13 @@
 import type { EventRow, HandlerResult } from '@/lib/event-log/dispatcher';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AvisoDb, PacingDoAviso, TransporteDoAviso } from './aviso-ao-suporte';
-import { avisoDeTransferenciaLigado } from '@/lib/schemas/settings';
+import { primeiroNome } from './texto-do-aviso';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
+import {
+  avisoDeTransferenciaComNomeLigado,
+  avisoDeTransferenciaLigado,
+} from '@/lib/schemas/settings';
 
 /** Opt-in: usa somente o destinatário que o administrador já configurou. */
 export const EVENTO_AVISO_HANDOFF = 'ai.handoff_aviso_solicitado';
@@ -26,7 +32,7 @@ export interface ContextoAvisoHandoff {
 }
 export interface AvisoHandoffDeps {
   db: Pick<AvisoDb, 'carregaConfig' | 'carregaCanal' | 'contatoAnonimizado' |
-    'destinoEhDaPropriaOrganizacao' | 'registraJidDoAviso'>;
+    'destinoEhDaPropriaOrganizacao' | 'registraJidDoAviso' | 'nomeDoContato'>;
   transporte: TransporteDoAviso;
   pacing: PacingDoAviso;
   clock(): Date;
@@ -36,30 +42,69 @@ export interface AvisoHandoffDeps {
   estado(row: EventRow): Promise<EstadoEnvioHandoff | null>;
   /** `settings.crm.avisar_transferencia_no_whatsapp`; ausente = ligado. */
   transferenciasLigadas(org: string): Promise<boolean>;
+  /** `settings.crm.aviso_transferencia_com_nome`; ausente = DESLIGADO. */
+  nomeNoAviso(org: string): Promise<boolean>;
+  /** Idioma da organização (`organizations.locale`); ausente = `'pt-BR'`. */
+  idiomaDaOrganizacao?(org: string): Promise<Idioma>;
   /** Compare-and-set durável: só o vencedor pode chamar o transporte. */
   reservar(row: EventRow, em: string): Promise<boolean>;
   concluir(row: EventRow, estado: EstadoEnvioHandoff): Promise<void>;
 }
 
-/** Sem nome, motivo livre, transcrição ou dado clínico na notificação externa. */
-export function textoDoAvisoHandoff(urlPublica: string, conversa: string): string | null {
+/**
+ * A mensagem do aviso de transferência.
+ *
+ * Por PADRÃO ela é mínima — só o link —, por decisão de privacidade: sem nome,
+ * motivo livre, transcrição ou dado clínico na notificação externa.
+ *
+ * Com o opt-in `aviso_transferencia_com_nome` ligado, `extra.nome` entra cortado
+ * no PRIMEIRO token (`primeiroNome`), entre a abertura e o link. Resumo ou motivo
+ * NUNCA entram (doc 372 = A): texto da IA sai com a cara da empresa, e o motivo
+ * gravado costuma ser código interno ("Resumo: requestedhuman").
+ *
+ * `extra` AUSENTE devolve byte-a-byte a mensagem de antes desta opção.
+ */
+export function textoDoAvisoHandoff(
+  urlPublica: string,
+  conversa: string,
+  extra?: { nome?: string | null; idioma?: Idioma },
+): string | null {
   if (!UUID.test(conversa)) return null;
   let origem: URL;
   try { origem = new URL(urlPublica); } catch { return null; }
   if (origem.protocol !== 'https:' || origem.username || origem.password) return null;
   const link = new URL('/app/inbox', origem.origin);
   link.searchParams.set('id', conversa);
-  return `Um atendimento precisa de uma pessoa da equipe.\n\nAbrir conversa: ${link.href}\n\nResponda pelo CRM; responder a este aviso não chega ao cliente.`;
+
+  // `traduzir` devolve o texto como está em pt-BR: sem idioma, a mensagem é a de sempre.
+  const idioma: Idioma = extra?.idioma ?? 'pt-BR';
+  const nome = primeiroNome(extra?.nome);
+
+  const corpo = [
+    traduzir('Um atendimento precisa de uma pessoa da equipe.', idioma),
+    ...(nome ? ['', `${traduzir('Cliente', idioma)}: ${nome}`] : []),
+    '',
+    `${traduzir('Abrir conversa', idioma)}: ${link.href}`,
+    '',
+    traduzir('Responda pelo CRM; responder a este aviso não chega ao cliente.', idioma),
+  ];
+  return corpo.join('\n');
 }
 
 /** Um recibo por episódio na Central; CAS no adapter preserva adendos concorrentes. */
-export function corpoComResultadoHandoff(corpo: string, eventoId: string, estado: EstadoEnvioHandoff): string {
-  const prefixo = `Aviso à equipe (${eventoId}): `;
+export function corpoComResultadoHandoff(
+  corpo: string,
+  eventoId: string,
+  estado: EstadoEnvioHandoff,
+  idioma?: Idioma,
+): string {
+  const lingua: Idioma = idioma ?? 'pt-BR';
+  const prefixo = `${traduzir('Aviso à equipe', lingua)} (${eventoId}): `;
   const mensagem = estado.estado === 'enviado'
-    ? 'aceito pelo canal de WhatsApp.'
+    ? traduzir('aceito pelo canal de WhatsApp.', lingua)
     : estado.estado === 'incerto' || estado.estado === 'reservado'
-      ? 'entrega não confirmada; confira o WhatsApp. Não haverá reenvio automático.'
-      : 'não enviado; acompanhe este atendimento pelo CRM.';
+      ? traduzir('entrega não confirmada; confira o WhatsApp. Não haverá reenvio automático.', lingua)
+      : traduzir('não enviado; acompanhe este atendimento pelo CRM.', lingua);
   return [...corpo.split('\n').filter((linha) => !linha.startsWith(prefixo)), `${prefixo}${mensagem}`].join('\n');
 }
 
@@ -115,19 +160,25 @@ export async function aplicaAvisoHandoff(deps: AvisoHandoffDeps, row: EventRow):
   const pacing = await deps.pacing.decide(row.organization_id, canal.id, agora);
   if (!pacing.liberado) return resposta('retry', pacing.motivo, pacing.liberaEm);
   // Releitura antes da reserva: retirada do opt-in ou atendimento retomado vence.
-  const [configAtual, contextoAtual, transferencias] = await Promise.all([
+  const [configAtual, contextoAtual, transferencias, comNome, idioma] = await Promise.all([
     deps.db.carregaConfig(row.organization_id), deps.contexto(row.organization_id, conversa),
-    deps.transferenciasLigadas(row.organization_id),
+    deps.transferenciasLigadas(row.organization_id), deps.nomeNoAviso(row.organization_id),
+    deps.idiomaDaOrganizacao ? deps.idiomaDaOrganizacao(row.organization_id) : Promise.resolve<Idioma>('pt-BR'),
   ]);
   if (!transferencias) return cancelar('desligado_em_transferencias');
   if (!configAtual?.ligado || configAtual.channel_session_id !== config.channel_session_id ||
       configAtual.telefone_destino !== config.telefone_destino) return cancelar('configuracao_alterada');
   if (!contextoAtual?.emHandoff || contextoAtual.episodio !== row.id) return cancelar('episodio_encerrado');
+  const nome = comNome ? await deps.db.nomeDoContato(row.organization_id, contextoAtual.contactId) : undefined;
+  const textoFinal = textoDoAvisoHandoff(deps.urlPublica, conversa, {
+    ...(nome ? { nome } : {}),
+    idioma,
+  }) ?? texto;
   if (!(await deps.reservar(row, agora.toISOString()))) return resposta('retry', 'reserva_concorrente', new Date(agora.getTime() + 15_000));
   // Depois daqui NENHUMA falha autoriza outra chamada ao transporte.
   let resultado: EstadoEnvioHandoff;
   try {
-    const envio = await deps.transporte.envia(row.organization_id, canal, destino, texto);
+    const envio = await deps.transporte.envia(row.organization_id, canal, destino, textoFinal);
     resultado = { estado: envio.externalId ? 'enviado' : 'incerto', em: agora.toISOString(),
       motivo: envio.externalId ? 'aceito_pelo_canal' : 'sem_recibo_do_canal' };
   } catch {
@@ -158,7 +209,7 @@ function lerEstado(metadata: Metadata): EstadoEnvioHandoff | null {
 
 /** Só este consumidor altera a metadata deste tipo de evento; o dreno altera status/attempts. */
 export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDeps,
-  'contexto' | 'estado' | 'reservar' | 'concluir' | 'transferenciasLigadas'> {
+  'contexto' | 'estado' | 'reservar' | 'concluir' | 'transferenciasLigadas' | 'nomeNoAviso' | 'idiomaDaOrganizacao'> {
   async function metadataDoEvento(row: EventRow): Promise<Metadata> {
     const { data, error } = await admin.from('event_log').select('metadata')
       .eq('organization_id', row.organization_id).eq('id', row.id)
@@ -174,7 +225,12 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
     if (error) throw new Error('aviso_handoff_reserva_nao_gravada');
     return (data?.length ?? 0) === 1;
   }
+  async function idiomaDaOrganizacao(org: string): Promise<Idioma> {
+    const { data } = await admin.from('organizations').select('locale').eq('id', org).maybeSingle();
+    return normalizarIdioma((data as { locale?: string | null } | null)?.locale ?? null);
+  }
   async function reciboNaCentral(row: EventRow): Promise<void> {
+    const idioma = await idiomaDaOrganizacao(row.organization_id);
     for (let tentativa = 0; tentativa < 3; tentativa++) {
       const { data, error } = await admin.from('agent_inbox_items').select('id, body')
         .eq('organization_id', row.organization_id).eq('id', row.payload.central_id)
@@ -185,7 +241,7 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
       // Assim um resultado incerto atrasado não rebaixa o texto já esclarecido.
       const vigente = lerEstado(await metadataDoEvento(row));
       if (!vigente || vigente.estado === 'reservado') return;
-      const corpo = corpoComResultadoHandoff(data.body ?? '', row.id, vigente);
+      const corpo = corpoComResultadoHandoff(data.body ?? '', row.id, vigente, idioma);
       if (data.body === corpo) return;
       let update = admin.from('agent_inbox_items').update({ body: corpo })
         .eq('organization_id', row.organization_id).eq('id', data.id)
@@ -221,6 +277,15 @@ export function criarPersistenciaAvisoHandoff(admin: Admin): Pick<AvisoHandoffDe
       if (error || !data) throw new Error('aviso_handoff_opcao_indisponivel');
       return avisoDeTransferenciaLigado((data as { settings?: unknown }).settings);
     },
+    async nomeNoAviso(org) {
+      // Mesmo contrato de `transferenciasLigadas`: erro de leitura LANÇA, nunca
+      // vira "ligado". Ausente/torto = DESLIGADO (a mensagem mínima de sempre).
+      const { data, error } = await admin.from('organizations').select('settings')
+        .eq('id', org).maybeSingle();
+      if (error || !data) throw new Error('aviso_handoff_opcao_indisponivel');
+      return avisoDeTransferenciaComNomeLigado((data as { settings?: unknown }).settings);
+    },
+    idiomaDaOrganizacao,
     async reservar(row, em) {
       const anterior = await metadataDoEvento(row);
       if (lerEstado(anterior)) return false;

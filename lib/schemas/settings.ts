@@ -366,7 +366,7 @@ export const customFieldSchema = z.object({
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
 /**
- * A COTA DE CAMPOS DO NEGÓCIO por funil (issue #3111).
+ * A COTA DE CAMPOS DO NEGÓCIO por funil (issues #3111 e #4780).
  *
  * O teto de 50 nasceu quando TODO campo do funil era do NEGÓCIO. Desde a #2791
  * os campos do CONTATO também são declarados no funil padrão (`escopo:
@@ -374,17 +374,24 @@ export type CustomFieldDef = z.infer<typeof customFieldSchema>;
  * campos do negócio + 20 do contato, chegava a 40 de 50 e travava antes de
  * cobrir o negócio.
  *
- * A cota continua 50, e passa a valer SÓ para o NEGÓCIO. O campo do contato não
- * aparece no card e o valor dele mora em `contacts.custom_fields`, não em
- * `crm_leads.custom_fields` — não é um campo do funil na conta que importa.
- * Não há cota própria do contato: nada no produto limita quantos campos uma
- * ficha de contato pode declarar.
+ * A cota vale SÓ para o NEGÓCIO. O campo do contato não aparece no card e o
+ * valor dele mora em `contacts.custom_fields`, não em `crm_leads.custom_fields`
+ * — não é um campo do funil na conta que importa. Não há cota própria do
+ * contato: nada no produto limita quantos campos uma ficha de contato pode
+ * declarar.
  *
- * A régua do NEGÓCIO NÃO afrouxou: a ausência de `escopo` lê como `negocio`
- * (mesma leitura de `lib/leads/campos-do-funil.ts`), então toda definição que já
- * existe continua contando e 51 campos do negócio seguem recusados.
+ * O NÚMERO subiu de 50 para 100 na #4780: uma agência de viagens precisava de
+ * +5 campos condicionais no funil e batia no teto. É a saída 1 da issue
+ * ("aumentar o limite, ex.: 100"), a única que esta entrega faz — contar
+ * condicionais à parte e agrupar por produto (saídas 2 e 3) são decisão de
+ * produto do mantenedor. A régua de CONTAGEM não mudou com isso.
+ *
+ * A régua do NEGÓCIO NÃO afrouxou além do número: a ausência de `escopo` lê
+ * como `negocio` (mesma leitura de `lib/leads/campos-do-funil.ts`), então toda
+ * definição que já existe continua contando e 101 campos do negócio seguem
+ * recusados.
  */
-export const MAX_CAMPOS_DO_NEGOCIO = 50;
+export const MAX_CAMPOS_DO_NEGOCIO = 100;
 
 /** A recusa do teto, legível: diz o número e o que não entra na conta. */
 export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
@@ -863,6 +870,18 @@ export const crmSettingsSchema = z
      */
     avisar_transferencia_no_whatsapp: z.boolean().catch(true),
     /**
+     * `aviso_transferencia_com_nome`: o aviso de transferência também leva o
+     * PRIMEIRO nome do cliente, além do link.
+     *
+     * ⚠️ NASCE DESLIGADA, ao contrário da vizinha `avisar_transferencia_no_whatsapp`:
+     * a mensagem padrão é mínima por decisão de privacidade. Só o booleano `true` liga.
+     *
+     * Só o nome, nunca o "resumo" (doc 372 = A, que segue o doc 176): texto escrito
+     * pela IA chega à equipe com a cara da empresa, e na maioria das passagens o
+     * `last_handoff_reason` nem é resumo — é código interno (`requested_human`).
+     */
+    aviso_transferencia_com_nome: z.boolean().catch(false),
+    /**
      * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
      * aberto) volta pelo funil de clientes, e não pelo de captação.
      *
@@ -912,6 +931,7 @@ export const crmSettingsSchema = z
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
+    aviso_transferencia_com_nome: false,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
     duplicados_por_nome: false,
@@ -1167,6 +1187,15 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/** Ausente DESLIGA; só o booleano `true` põe o primeiro nome no aviso de transferência. */
+export function avisoDeTransferenciaComNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).aviso_transferencia_com_nome === true;
 }
 
 /**

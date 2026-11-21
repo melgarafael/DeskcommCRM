@@ -208,6 +208,83 @@ describe("canal-mudo-watcher", () => {
     });
   });
 
+  // #4909: com dois canais, "este canal" fazia o operador pensar no principal —
+  // que respondia normalmente — e concluir que o aviso era falso.
+  it("o título diz QUAL canal, pelo nome dado em Conexões", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([canalMudo({ display_name: "instagram · loja", phone_number: null })], [], cap) as never,
+    );
+
+    await GET(req());
+
+    expect(cap.avisos[0]!.title).toBe(
+      "O canal «instagram · loja» está em modo de teste — a IA não responde ninguém nele",
+    );
+  });
+
+  it("sem nome, o título usa o número; sem nenhum dos dois, a frase de antes", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [
+          canalMudo({ display_name: "  ", phone_number: "+5511999990000" }),
+          canalMudo({ id: "44444444-4444-4444-8444-444444444444", display_name: null, phone_number: null }),
+        ],
+        [],
+        cap,
+      ) as never,
+    );
+
+    await GET(req());
+
+    expect(cap.avisos.map((a) => a.title)).toEqual([
+      "O canal «+5511999990000» está em modo de teste — a IA não responde ninguém nele",
+      "Este canal está em modo de teste — a IA não responde ninguém",
+    ]);
+  });
+
+  it("canal de Instagram fala em contas de teste, não em números", async () => {
+    const social = {
+      metadata: { ai_gate: "allowlist", social_platform: "instagram", ai_test_phone_numbers: [] },
+    };
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([canalMudo({ display_name: "instagram · loja", ...social })], [], cap) as never,
+    );
+
+    await GET(req());
+
+    const corpo = String(cap.avisos[0]!.body);
+    expect(corpo).toMatch(/nenhuma conta de teste autorizada/);
+    expect(corpo).toMatch(/autorize as contas de teste/);
+    expect(corpo).not.toMatch(/número/);
+  });
+
+  it("canal de Instagram que ganhou conta de teste resolve dizendo conta", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [
+          canalMudo({
+            metadata: {
+              ai_gate: "allowlist",
+              social_platform: "instagram",
+              ai_test_social_identities: ["instagram:0123456789abcdef01234567:fulano"],
+            },
+          }),
+        ],
+        [{ id: "aviso-1", ref_id: CANAL }],
+        cap,
+      ) as never,
+    );
+
+    await GET(req());
+
+    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/ganhou conta de teste autorizada/);
+    expect(String(cap.resolucoes[0]!.patch.body)).not.toMatch(/número/);
+  });
+
   it("sem o segredo, 403 e não lê nada", async () => {
     const cap = vazio();
     const cliente = vi.fn();

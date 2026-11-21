@@ -451,12 +451,20 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // wrapper (`lib/ai/runtime/tools.ts`) já completou ANTES do escopo de funil;
     // aqui vale para quem chega por outra porta (MCP externo, rota). Sem nada
     // disso, a ausência é recusada com a mensagem de ensino.
+    //
+    // #4763, item 2: com funil à mão e sem referência, a guarda também consulta
+    // o destino das receitas ativas — o funil que é destino de item, num turno
+    // de conversa, recusa a criação sem a referência. `ctx.contatoDoTurno` é o
+    // contexto de confiança do turno (nunca vem dos argumentos da tool), e a
+    // ausência dele mantém rota e integração exatamente como estavam.
     const destinoArgs: Record<string, unknown> = {
       pipeline_id: input.pipeline_id,
       stage_id: input.stage_id,
       referencia_externa: input.referencia_externa,
     };
-    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs);
+    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs, {
+      turnoComContato: !!ctx.contatoDoTurno,
+    });
     if (!completo.ok) return completo.resposta;
     const pipelineId = destinoArgs.pipeline_id as string;
     const stageId = destinoArgs.stage_id as string;
@@ -630,7 +638,8 @@ const updateInputShape = {
    * monta `{...rest}` a partir DESTE shape, e `z.object` descarta chave que não
    * declarou, o valor morria antes de chegar ao schema que o aceitaria.
    *
-   * Efeito da ausência: o produto deixa criar até 50 campos por funil, desenha
+   * Efeito da ausência: o produto deixa criar até `MAX_CAMPOS_DO_NEGOCIO`
+   * campos por funil, desenha
    * todos na ficha do lead — e nenhum agente conseguia preencher um. Quem
    * modelou o funil no vocabulário do próprio nicho recebia a IA como leitora,
    * nunca como escrivã.

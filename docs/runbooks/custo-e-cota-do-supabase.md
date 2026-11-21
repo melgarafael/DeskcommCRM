@@ -99,11 +99,11 @@ como conferência no painel (**Settings → Usage → Auth**), não como primeir
 | 3 | **Autohospedar** o Supabase | a cota deixa de existir; o custo vira a VPS | só está documentado para instalação **nova** — migração com dados não tem passo a passo |
 
 **1. Limpar — custo zero, e o que exatamente sai.** O cron `data-retention` roda às 04h40
-(`docker/scheduler/entrypoint.sh:175`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
+(`docker/scheduler/entrypoint.sh:181`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
 alavancas (`JOB_QUEUE_RETENTION_DAYS`, `AUDIT_LOG_RETENTION_DAYS`, as de telemetria de IA) estão em
 §4.1 e §4.2. Para o storage há dois crons, e eles trabalham em par:
 
-- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:179`), enfileira o arquivo de mensagem
+- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:185`), enfileira o arquivo de mensagem
   mais velho que `organizations.media_retention_days` — padrão **365** dias, piso **30**
   (`supabase/migrations/20260926200200_0432_poda_de_midia.sql:35`) — e o órfão de conversa apagada;
   a rodada enfileira até 10 mil arquivos (`app/api/v1/cron/media-retention/route.ts:39-41`);
@@ -241,6 +241,16 @@ O worker **não é a única origem** de consumo. O contêiner `scheduler` dispar
 crons HTTP do app, e cada um deles fala com o PostgREST; numa instalação parada
 isso costuma ser a maior parte do que sobra. Se o seu número não fechar depois de
 ajustar os intervalos, meça o `app` separadamente antes de mexer em mais nada.
+
+**O backup (`backup.sh`) também conta no egress.** O `pg_dump` lê o banco
+inteiro a cada rodada, pela conexão de banco do `.env`. O kit recomenda rodar
+**todo dia** e esse continua sendo o padrão: backup é a rede de segurança do seu
+dado. Para saber quanto ele custa no seu caso, olhe no dia seguinte em
+**Settings → Usage → Egress**, na linha **Shared Pooler**. Na única medição que
+temos (#2235, banco de ~160 MB), essa linha foi **1%** do egress do dia de pico;
+o grosso era PostgREST, Auth e Realtime, isto é, telas abertas. Se no seu painel
+o backup pesar, passe o cron para semanal (`0 3 * * 0`): o `update.sh` já faz um
+backup antes de cada atualização.
 
 ## 4. Espaço em disco é outra cota (e ela não se resolve com intervalo)
 
