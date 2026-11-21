@@ -12,8 +12,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * POST /api/v1/channels/webchat/girar — troca a chave pública do chat no site.
  *
- * A chave antiga para de valer no mesmo UPDATE: o widget que ainda a usa passa a receber 404
- * até o site do cliente receber o código novo. Por isso a tela da F2 pede confirmação antes.
+ * A chave antiga para de valer no mesmo UPDATE: o widget que ainda a usa recebe 404 ao abrir
+ * uma conversa nova (`/sessao`) até o site do cliente receber o código novo. Quem já tem token
+ * emitido segue conversando até ele expirar (30 dias): o token vale pelo id da conexão, não pela
+ * chave. Por isso a tela da F2 pede confirmação antes.
  * A resposta traz a chave nova (única vez em que ela sai da rota além da leitura de quem
  * administra); a auditoria guarda só o id da conexão.
  */
