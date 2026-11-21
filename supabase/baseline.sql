@@ -83052,6 +83052,258 @@ grant execute on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid
 
 notify pgrst, 'reload schema';
 
+-- ---- vendas registradas (migration 9449) ----
+--
+-- Espelho idempotente da migration 9449. Cria função, então fica ANTES da
+-- VARREDURA anon.
+-- manifest: Vendas registradas — a venda como registro próprio, com valor, data e tags, ligada ao negócio e ao contato; o mesmo negócio aceita várias vendas (recompra), e a venda conta no painel em qualquer etapa do card. Anonimizar o contato redige a observação e as tags das vendas dele (gatilho na virada de is_anonymized).
+--
+-- ─── O que esta tabela responde ────────────────────────────────────────────
+-- "O cliente comprou, quanto e quando" — independente de onde o card está no
+-- funil. Até aqui a venda só existia como NEGÓCIO GANHO (`crm_leads.status =
+-- 'won'`, um valor e uma data por card): a recompra exigia card novo, e o card
+-- que vendeu mas seguiu em outra etapa (pós-venda, entrega) não contava.
+--
+-- ─── Por que não a comanda (`sales`) ───────────────────────────────────────
+-- A comanda pertence ao módulo opcional Financeiro (tabelas nascem na
+-- instalação do módulo), com caixa, itens e comissão. Quem só quer registrar
+-- "vendeu R$ 180 em 20/11, tag atacado" não instala um módulo de caixa. Se a
+-- proposta #4860 (comanda → Vendas) entrar na versão oficial, esta tabela é o
+-- que migra para lá: uma linha por venda, com valor, moeda e data.
+--
+-- ─── As cercas no próprio banco ────────────────────────────────────────────
+--  - valor em centavos inteiros, não negativo; `currency` ISO-4217 (3 letras),
+--    a do NEGÓCIO quando há negócio (a soma do Valor só conta essa moeda);
+--  - a venda aponta para negócio e contato por FK; que o negócio e o contato
+--    são da MESMA organização da venda é conferido pela rota antes de gravar
+--    (a organização vem do cookie, nunca do corpo);
+--  - `data` é o DIA da venda na parede da empresa (date, não instante): o
+--    relatório filtra por dia de calendário, sem conversão de fuso;
+--  - tags normalizadas por quem grava (rota), guardadas em text[] com GIN.
+--
+-- ─── Leitura pela RLS, escrita só pela rota ────────────────────────────────
+-- `authenticated` só LÊ, pela organização (mesma régua das tabelas de módulo
+-- recentes). Gravar e apagar passam por `/api/v1/vendas`, que confere papel,
+-- organização do cookie e o negócio, e audita.
+
+create table if not exists public.vendas_registradas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid,
+  contact_id uuid,
+  valor_cents bigint not null,
+  currency text not null default 'BRL',
+  data date not null,
+  tags text[] not null default '{}',
+  observacao text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vendas_registradas_valor_nao_negativo check (valor_cents >= 0),
+  constraint vendas_registradas_currency_iso check (currency ~ '^[A-Z]{3}$'),
+  constraint vendas_registradas_observacao_curta check (observacao is null or char_length(observacao) <= 500),
+  constraint vendas_registradas_dono check (lead_id is not null or contact_id is not null)
+);
+
+-- A coluna nasceu `moeda` na primeira versão do #5087 e virou `currency` (a
+-- doutrina: dinheiro é `_cents` + `currency` ISO-4217). Quem já aplicou a
+-- versão antiga recebe o rename; quem instala do zero não tem o que trocar.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'moeda')
+     and not exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'currency') then
+    alter table public.vendas_registradas rename column moeda to currency;
+  end if;
+  if exists (select 1 from pg_constraint where conname = 'vendas_registradas_moeda_iso')
+     and not exists (select 1 from pg_constraint where conname = 'vendas_registradas_currency_iso') then
+    alter table public.vendas_registradas
+      rename constraint vendas_registradas_moeda_iso to vendas_registradas_currency_iso;
+  end if;
+end $$;
+
+-- FKs em bloco idempotente (a migration roda de novo sem erro). Negócio ou
+-- contato apagado não apaga a venda: o registro do dinheiro fica, sem o elo.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_lead_fk') then
+    alter table public.vendas_registradas
+      add constraint vendas_registradas_lead_fk
+      foreign key (lead_id) references public.crm_leads(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_contact_fk') then
+    alter table public.vendas_registradas
+      add constraint vendas_registradas_contact_fk
+      foreign key (contact_id) references public.contacts(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists idx_vendas_registradas_org_data
+  on public.vendas_registradas (organization_id, data desc);
+create index if not exists idx_vendas_registradas_lead
+  on public.vendas_registradas (organization_id, lead_id, data desc);
+create index if not exists idx_vendas_registradas_contato
+  on public.vendas_registradas (organization_id, contact_id, data desc);
+create index if not exists idx_vendas_registradas_tags
+  on public.vendas_registradas using gin (tags);
+
+comment on table public.vendas_registradas is
+  'Venda registrada no negócio ou no contato: valor em centavos, currency, dia da venda e tags. Várias por negócio (recompra). Conta no painel de vendas em qualquer etapa do card; negócio ganho sem venda registrada continua contando pelo próprio valor.';
+
+alter table public.vendas_registradas enable row level security;
+
+drop policy if exists tenant_isolation_vendas_registradas_select on public.vendas_registradas;
+create policy tenant_isolation_vendas_registradas_select
+  on public.vendas_registradas
+  for select to authenticated using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+revoke all on public.vendas_registradas from public, anon, authenticated;
+grant select on public.vendas_registradas to authenticated;
+grant all on public.vendas_registradas to service_role;
+
+-- ─── LGPD: anonimizar o contato redige as vendas dele ──────────────────────
+-- `observacao` é texto livre sobre o cliente e as tags também podem nomeá-lo;
+-- valor, moeda e dia FICAM, porque são o registro do dinheiro. A porta é a
+-- virada de `is_anonymized` em `contacts` (o desenho da 0391), por onde passam
+-- os dois caminhos de anonimização. `after` + `return null`: não altera a linha.
+create or replace function public.fn_vendas_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.is_anonymized and not coalesce(old.is_anonymized, false) then
+    update public.vendas_registradas
+       set observacao = null,
+           tags = '{}',
+           updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id;
+  end if;
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_vendas_do_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_vendas_do_contato_anonimizado on public.contacts;
+create trigger trg_vendas_do_contato_anonimizado
+  after update of is_anonymized on public.contacts
+  for each row execute function public.fn_vendas_do_contato_anonimizado();
+
+notify pgrst, 'reload schema';
+
+-- ---- valor do negócio pelas vendas (migration 9450) ----
+--
+-- Espelho idempotente da migration 9450. Cria função, então fica ANTES da
+-- VARREDURA anon.
+-- manifest: O valor do negócio segue as vendas registradas — com ao menos uma venda, `crm_leads.value_cents` passa a ser a SOMA das vendas na moeda do negócio, gravada por gatilho a cada venda registrada, alterada ou apagada. O valor que estava DIGITADO fica guardado (`valor_digitado_cents`) e volta quando a última venda é apagada (decisão 2B do doc 396); `valor_pelas_vendas` diz se o Valor está sendo derivado. O gatilho trava a linha do negócio antes de somar, para duas vendas simultâneas não perderem uma da soma. Antes o card mostrava um valor e o painel outro, e havia dois lugares para dizer "quanto vendeu". Idempotente.
+
+alter table public.crm_leads
+  add column if not exists valor_pelas_vendas boolean not null default false,
+  add column if not exists valor_digitado_cents bigint;
+
+comment on column public.crm_leads.valor_pelas_vendas is
+  'true = o Valor (value_cents) é a soma das vendas registradas, gravada pelo gatilho fn_valor_do_negocio_pelas_vendas; o campo fica em leitura.';
+comment on column public.crm_leads.valor_digitado_cents is
+  'O Valor digitado antes da primeira venda registrada. Volta para value_cents quando a última venda é apagada.';
+
+create or replace function public.fn_valor_do_negocio_pelas_vendas()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_lead  uuid;
+  v_moeda text;
+  v_qtd   integer;
+  v_total bigint;
+begin
+  -- Os negócios afetados: o de antes (UPDATE/DELETE) e o de agora (INSERT/UPDATE),
+  -- em ordem de id: venda que troca de negócio trava os dois sempre na mesma ordem.
+  for v_lead in
+    select distinct x
+      from unnest(array[
+        case when tg_op <> 'INSERT' then old.lead_id end,
+        case when tg_op <> 'DELETE' then new.lead_id end
+      ]) as x
+     where x is not null
+     order by x
+  loop
+    -- A trava vem ANTES da soma: em READ COMMITTED, duas vendas simultâneas no
+    -- mesmo negócio somariam cada uma no seu retrato, e a segunda gravaria um
+    -- total sem a primeira. Com a linha travada, a soma de quem espera já
+    -- enxerga a venda que acabou de entrar.
+    select upper(coalesce(l.currency, o.currency, 'BRL'))
+      into v_moeda
+      from public.crm_leads l
+      join public.organizations o on o.id = l.organization_id
+     where l.id = v_lead
+       for update of l;
+    if not found then
+      continue;
+    end if;
+
+    -- Só a moeda do negócio entra na soma: somar real com dólar seria inventar número.
+    select count(*), coalesce(sum(v.valor_cents) filter (where v.currency = v_moeda), 0)
+      into v_qtd, v_total
+      from public.vendas_registradas v
+     where v.lead_id = v_lead;
+
+    if v_qtd > 0 then
+      -- Primeira venda: guarda o valor digitado antes de trocá-lo pela soma.
+      update public.crm_leads
+         set valor_digitado_cents = case when valor_pelas_vendas then valor_digitado_cents else value_cents end,
+             valor_pelas_vendas = true,
+             value_cents = v_total
+       where id = v_lead
+         and (not valor_pelas_vendas or value_cents is distinct from v_total);
+    else
+      -- A última venda saiu: o valor digitado volta (decisão 2B do doc 396).
+      update public.crm_leads
+         set value_cents = valor_digitado_cents,
+             valor_pelas_vendas = false,
+             valor_digitado_cents = null
+       where id = v_lead
+         and valor_pelas_vendas;
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_valor_do_negocio_pelas_vendas() from public, anon, authenticated;
+
+drop trigger if exists trg_valor_do_negocio_pelas_vendas on public.vendas_registradas;
+create trigger trg_valor_do_negocio_pelas_vendas
+  after insert or update of lead_id, valor_cents, currency or delete
+  on public.vendas_registradas
+  for each row execute function public.fn_valor_do_negocio_pelas_vendas();
+
+-- Auto-cura: negócios que já têm venda registrada passam a mostrar a soma, e o
+-- valor digitado fica guardado (só na primeira vez: re-aplicar não o sobrescreve).
+update public.crm_leads l
+   set valor_digitado_cents = case when l.valor_pelas_vendas then l.valor_digitado_cents else l.value_cents end,
+       valor_pelas_vendas = true,
+       value_cents = s.total
+  from (
+    select v.lead_id,
+           coalesce(sum(v.valor_cents) filter (
+             where v.currency = upper(coalesce(l2.currency, o.currency, 'BRL'))
+           ), 0) as total
+      from public.vendas_registradas v
+      join public.crm_leads l2 on l2.id = v.lead_id
+      join public.organizations o on o.id = l2.organization_id
+     group by v.lead_id
+  ) s
+ where l.id = s.lead_id
+   and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -83888,258 +84140,6 @@ revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
 
-
--- ---- vendas registradas (migration 9449) ----
---
--- Espelho idempotente da migration 9449. Cria função, então fica ANTES da
--- VARREDURA anon.
--- manifest: Vendas registradas — a venda como registro próprio, com valor, data e tags, ligada ao negócio e ao contato; o mesmo negócio aceita várias vendas (recompra), e a venda conta no painel em qualquer etapa do card. Anonimizar o contato redige a observação e as tags das vendas dele (gatilho na virada de is_anonymized).
---
--- ─── O que esta tabela responde ────────────────────────────────────────────
--- "O cliente comprou, quanto e quando" — independente de onde o card está no
--- funil. Até aqui a venda só existia como NEGÓCIO GANHO (`crm_leads.status =
--- 'won'`, um valor e uma data por card): a recompra exigia card novo, e o card
--- que vendeu mas seguiu em outra etapa (pós-venda, entrega) não contava.
---
--- ─── Por que não a comanda (`sales`) ───────────────────────────────────────
--- A comanda pertence ao módulo opcional Financeiro (tabelas nascem na
--- instalação do módulo), com caixa, itens e comissão. Quem só quer registrar
--- "vendeu R$ 180 em 20/11, tag atacado" não instala um módulo de caixa. Se a
--- proposta #4860 (comanda → Vendas) entrar na versão oficial, esta tabela é o
--- que migra para lá: uma linha por venda, com valor, moeda e data.
---
--- ─── As cercas no próprio banco ────────────────────────────────────────────
---  - valor em centavos inteiros, não negativo; `currency` ISO-4217 (3 letras),
---    a do NEGÓCIO quando há negócio (a soma do Valor só conta essa moeda);
---  - a venda aponta para negócio e contato por FK; que o negócio e o contato
---    são da MESMA organização da venda é conferido pela rota antes de gravar
---    (a organização vem do cookie, nunca do corpo);
---  - `data` é o DIA da venda na parede da empresa (date, não instante): o
---    relatório filtra por dia de calendário, sem conversão de fuso;
---  - tags normalizadas por quem grava (rota), guardadas em text[] com GIN.
---
--- ─── Leitura pela RLS, escrita só pela rota ────────────────────────────────
--- `authenticated` só LÊ, pela organização (mesma régua das tabelas de módulo
--- recentes). Gravar e apagar passam por `/api/v1/vendas`, que confere papel,
--- organização do cookie e o negócio, e audita.
-
-create table if not exists public.vendas_registradas (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  lead_id uuid,
-  contact_id uuid,
-  valor_cents bigint not null,
-  currency text not null default 'BRL',
-  data date not null,
-  tags text[] not null default '{}',
-  observacao text,
-  created_by uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint vendas_registradas_valor_nao_negativo check (valor_cents >= 0),
-  constraint vendas_registradas_currency_iso check (currency ~ '^[A-Z]{3}$'),
-  constraint vendas_registradas_observacao_curta check (observacao is null or char_length(observacao) <= 500),
-  constraint vendas_registradas_dono check (lead_id is not null or contact_id is not null)
-);
-
--- A coluna nasceu `moeda` na primeira versão do #5087 e virou `currency` (a
--- doutrina: dinheiro é `_cents` + `currency` ISO-4217). Quem já aplicou a
--- versão antiga recebe o rename; quem instala do zero não tem o que trocar.
-do $$
-begin
-  if exists (select 1 from information_schema.columns
-              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'moeda')
-     and not exists (select 1 from information_schema.columns
-              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'currency') then
-    alter table public.vendas_registradas rename column moeda to currency;
-  end if;
-  if exists (select 1 from pg_constraint where conname = 'vendas_registradas_moeda_iso')
-     and not exists (select 1 from pg_constraint where conname = 'vendas_registradas_currency_iso') then
-    alter table public.vendas_registradas
-      rename constraint vendas_registradas_moeda_iso to vendas_registradas_currency_iso;
-  end if;
-end $$;
-
--- FKs em bloco idempotente (a migration roda de novo sem erro). Negócio ou
--- contato apagado não apaga a venda: o registro do dinheiro fica, sem o elo.
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_lead_fk') then
-    alter table public.vendas_registradas
-      add constraint vendas_registradas_lead_fk
-      foreign key (lead_id) references public.crm_leads(id) on delete set null;
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_contact_fk') then
-    alter table public.vendas_registradas
-      add constraint vendas_registradas_contact_fk
-      foreign key (contact_id) references public.contacts(id) on delete set null;
-  end if;
-end $$;
-
-create index if not exists idx_vendas_registradas_org_data
-  on public.vendas_registradas (organization_id, data desc);
-create index if not exists idx_vendas_registradas_lead
-  on public.vendas_registradas (organization_id, lead_id, data desc);
-create index if not exists idx_vendas_registradas_contato
-  on public.vendas_registradas (organization_id, contact_id, data desc);
-create index if not exists idx_vendas_registradas_tags
-  on public.vendas_registradas using gin (tags);
-
-comment on table public.vendas_registradas is
-  'Venda registrada no negócio ou no contato: valor em centavos, currency, dia da venda e tags. Várias por negócio (recompra). Conta no painel de vendas em qualquer etapa do card; negócio ganho sem venda registrada continua contando pelo próprio valor.';
-
-alter table public.vendas_registradas enable row level security;
-
-drop policy if exists tenant_isolation_vendas_registradas_select on public.vendas_registradas;
-create policy tenant_isolation_vendas_registradas_select
-  on public.vendas_registradas
-  for select to authenticated using (
-    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
-  );
-
-revoke all on public.vendas_registradas from public, anon, authenticated;
-grant select on public.vendas_registradas to authenticated;
-grant all on public.vendas_registradas to service_role;
-
--- ─── LGPD: anonimizar o contato redige as vendas dele ──────────────────────
--- `observacao` é texto livre sobre o cliente e as tags também podem nomeá-lo;
--- valor, moeda e dia FICAM, porque são o registro do dinheiro. A porta é a
--- virada de `is_anonymized` em `contacts` (o desenho da 0391), por onde passam
--- os dois caminhos de anonimização. `after` + `return null`: não altera a linha.
-create or replace function public.fn_vendas_do_contato_anonimizado()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if new.is_anonymized and not coalesce(old.is_anonymized, false) then
-    update public.vendas_registradas
-       set observacao = null,
-           tags = '{}',
-           updated_at = now()
-     where organization_id = new.organization_id
-       and contact_id = new.id;
-  end if;
-  return null;
-end;
-$$;
-
-revoke execute on function public.fn_vendas_do_contato_anonimizado() from public, anon, authenticated;
-
-drop trigger if exists trg_vendas_do_contato_anonimizado on public.contacts;
-create trigger trg_vendas_do_contato_anonimizado
-  after update of is_anonymized on public.contacts
-  for each row execute function public.fn_vendas_do_contato_anonimizado();
-
-notify pgrst, 'reload schema';
-
--- ---- valor do negócio pelas vendas (migration 9450) ----
---
--- Espelho idempotente da migration 9450. Cria função, então fica ANTES da
--- VARREDURA anon.
--- manifest: O valor do negócio segue as vendas registradas — com ao menos uma venda, `crm_leads.value_cents` passa a ser a SOMA das vendas na moeda do negócio, gravada por gatilho a cada venda registrada, alterada ou apagada. O valor que estava DIGITADO fica guardado (`valor_digitado_cents`) e volta quando a última venda é apagada (decisão 2B do doc 396); `valor_pelas_vendas` diz se o Valor está sendo derivado. O gatilho trava a linha do negócio antes de somar, para duas vendas simultâneas não perderem uma da soma. Antes o card mostrava um valor e o painel outro, e havia dois lugares para dizer "quanto vendeu". Idempotente.
-
-alter table public.crm_leads
-  add column if not exists valor_pelas_vendas boolean not null default false,
-  add column if not exists valor_digitado_cents bigint;
-
-comment on column public.crm_leads.valor_pelas_vendas is
-  'true = o Valor (value_cents) é a soma das vendas registradas, gravada pelo gatilho fn_valor_do_negocio_pelas_vendas; o campo fica em leitura.';
-comment on column public.crm_leads.valor_digitado_cents is
-  'O Valor digitado antes da primeira venda registrada. Volta para value_cents quando a última venda é apagada.';
-
-create or replace function public.fn_valor_do_negocio_pelas_vendas()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_lead  uuid;
-  v_moeda text;
-  v_qtd   integer;
-  v_total bigint;
-begin
-  -- Os negócios afetados: o de antes (UPDATE/DELETE) e o de agora (INSERT/UPDATE),
-  -- em ordem de id: venda que troca de negócio trava os dois sempre na mesma ordem.
-  for v_lead in
-    select distinct x
-      from unnest(array[
-        case when tg_op <> 'INSERT' then old.lead_id end,
-        case when tg_op <> 'DELETE' then new.lead_id end
-      ]) as x
-     where x is not null
-     order by x
-  loop
-    -- A trava vem ANTES da soma: em READ COMMITTED, duas vendas simultâneas no
-    -- mesmo negócio somariam cada uma no seu retrato, e a segunda gravaria um
-    -- total sem a primeira. Com a linha travada, a soma de quem espera já
-    -- enxerga a venda que acabou de entrar.
-    select upper(coalesce(l.currency, o.currency, 'BRL'))
-      into v_moeda
-      from public.crm_leads l
-      join public.organizations o on o.id = l.organization_id
-     where l.id = v_lead
-       for update of l;
-    if not found then
-      continue;
-    end if;
-
-    -- Só a moeda do negócio entra na soma: somar real com dólar seria inventar número.
-    select count(*), coalesce(sum(v.valor_cents) filter (where v.currency = v_moeda), 0)
-      into v_qtd, v_total
-      from public.vendas_registradas v
-     where v.lead_id = v_lead;
-
-    if v_qtd > 0 then
-      -- Primeira venda: guarda o valor digitado antes de trocá-lo pela soma.
-      update public.crm_leads
-         set valor_digitado_cents = case when valor_pelas_vendas then valor_digitado_cents else value_cents end,
-             valor_pelas_vendas = true,
-             value_cents = v_total
-       where id = v_lead
-         and (not valor_pelas_vendas or value_cents is distinct from v_total);
-    else
-      -- A última venda saiu: o valor digitado volta (decisão 2B do doc 396).
-      update public.crm_leads
-         set value_cents = valor_digitado_cents,
-             valor_pelas_vendas = false,
-             valor_digitado_cents = null
-       where id = v_lead
-         and valor_pelas_vendas;
-    end if;
-  end loop;
-  return null;
-end;
-$$;
-
-revoke execute on function public.fn_valor_do_negocio_pelas_vendas() from public, anon, authenticated;
-
-drop trigger if exists trg_valor_do_negocio_pelas_vendas on public.vendas_registradas;
-create trigger trg_valor_do_negocio_pelas_vendas
-  after insert or update of lead_id, valor_cents, currency or delete
-  on public.vendas_registradas
-  for each row execute function public.fn_valor_do_negocio_pelas_vendas();
-
--- Auto-cura: negócios que já têm venda registrada passam a mostrar a soma, e o
--- valor digitado fica guardado (só na primeira vez: re-aplicar não o sobrescreve).
-update public.crm_leads l
-   set valor_digitado_cents = case when l.valor_pelas_vendas then l.valor_digitado_cents else l.value_cents end,
-       valor_pelas_vendas = true,
-       value_cents = s.total
-  from (
-    select v.lead_id,
-           coalesce(sum(v.valor_cents) filter (
-             where v.currency = upper(coalesce(l2.currency, o.currency, 'BRL'))
-           ), 0) as total
-      from public.vendas_registradas v
-      join public.crm_leads l2 on l2.id = v.lead_id
-      join public.organizations o on o.id = l2.organization_id
-     group by v.lead_id
-  ) s
- where l.id = s.lead_id
-   and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
