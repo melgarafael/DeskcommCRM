@@ -1,6 +1,7 @@
 "use client";
 
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { roleAtLeast } from "@/lib/auth/types";
 import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useImperativeHandle, useState, type Ref } from "react";
 import { useForm } from "react-hook-form";
@@ -272,13 +273,16 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
               )}
               {/* A ÚNICA porta de "registrar venda" no negócio: o "+" mora no
                   próprio Valor, e cada venda soma nele. */}
-              <BotaoRegistrarVenda
-                leadId={lead.id}
-                titulo={lead.title}
-                moeda={moedaDoValor.toUpperCase()}
-                className="size-9 border border-border"
-                testId="valor-registrar-venda"
-              />
+              {/* Piso do `POST /api/v1/vendas`: abaixo de `agent` o "+" só terminaria em 403. */}
+              {roleAtLeast(org?.role, "agent") && (
+                <BotaoRegistrarVenda
+                  leadId={lead.id}
+                  titulo={lead.title}
+                  moeda={moedaDoValor.toUpperCase()}
+                  className="size-9 border border-border"
+                  testId="valor-registrar-venda"
+                />
+              )}
             </div>
             {valorPelasVendas ? (
               <p className="text-xs text-text-muted" data-testid="valor-pelas-vendas-legenda">

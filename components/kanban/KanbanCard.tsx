@@ -9,7 +9,6 @@ import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
 import { KanbanCardActions } from "./KanbanCardActions";
-import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
 import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
@@ -305,12 +304,7 @@ export const KanbanCard = memo(function KanbanCard({
             </div>
             {!somenteLeitura && (
               <div className="flex shrink-0 items-center">
-                {/* Registrar venda sem abrir o negócio. */}
-                <BotaoRegistrarVenda
-                  leadId={lead.id}
-                  titulo={card.title}
-                  moeda={(card.currency ?? MOEDA_PADRAO).toUpperCase()}
-                />
+                {/* O "+" de registrar venda mora em KanbanCardActions, atrás do mesmo piso de papel. */}
                 <KanbanCardActions
                   lead={lead}
                   pipelineId={pipelineId}

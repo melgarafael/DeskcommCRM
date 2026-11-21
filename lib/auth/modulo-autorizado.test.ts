@@ -152,6 +152,7 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       `/api/v1/ai/cases/${ID}`,
       "/api/v1/leads/at-risk",
       "/api/v1/reports/activities",
+      "/api/v1/reports/painel-de-vendas",
       `/api/v1/proposals/${ID}/previa`,
     ];
     const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura", "area.analise.leitura"];

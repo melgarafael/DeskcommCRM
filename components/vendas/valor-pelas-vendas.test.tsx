@@ -9,7 +9,9 @@
  *     soma é do banco (migration 9450), e um Salvar de ficha aberta antes da
  *     venda a apagaria;
  *  4. apagar a última venda devolve o valor digitado (decisão 2B do doc 396):
- *     o campo volta editável com o valor RELIDO, não com a soma em memória.
+ *     o campo volta editável com o valor RELIDO, não com a soma em memória;
+ *  5. abaixo de `agent` (o piso do `POST /api/v1/vendas`) o "+" não aparece —
+ *     ele só abriria um diálogo que termina em 403.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +22,7 @@ import type { Lead } from "@/lib/types/leads";
 const estado = vi.hoisted(() => ({
   vendas: [] as Array<{ id: string; valor_cents: number; currency: string }>,
   editarLead: vi.fn(),
+  papel: "agent" as "viewer" | "agent",
 }));
 
 vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
@@ -28,7 +31,7 @@ vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
   useApagarVenda: () => ({ mutate: () => {}, isPending: false }),
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useActiveOrg: () => ({ currency: "BRL", country: "BR", orgId: "org-1" }),
+  useActiveOrg: () => ({ currency: "BRL", country: "BR", orgId: "org-1", role: estado.papel }),
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
@@ -70,6 +73,7 @@ const negocio: Lead = {
 };
 
 beforeEach(() => {
+  estado.papel = "agent";
   estado.vendas = [];
   estado.editarLead.mockReset().mockResolvedValue({});
 });
@@ -124,5 +128,14 @@ describe("o Valor do negócio e as vendas registradas", () => {
     const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
     expect(campo.readOnly).toBe(false);
     expect(campo.value).toMatch(/^500/);
+  });
+
+  it("viewer: vê o Valor, mas não recebe o '+' de registrar venda", () => {
+    estado.papel = "viewer";
+    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
+    render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
+
+    expect(screen.getByTestId("valor-pelas-vendas")).toBeTruthy();
+    expect(screen.queryByTestId("valor-registrar-venda")).toBeNull();
   });
 });
