@@ -37,6 +37,8 @@ import { useT } from "@/hooks/i18n/useT";
 
 const ROTA = "/api/v1/channels/webchat";
 const CORES_HEX = /^#[0-9a-fA-F]{6}$/;
+/** Mesmo teto do servidor (`MAXIMO_DE_ORIGENS` em `lib/channels/webchat/config.ts`). */
+const MAXIMO_DE_DOMINIOS = 20;
 
 type ModoDeColeta = "oculto" | "opcional" | "obrigatorio";
 type Campo = "nome" | "telefone" | "email";
@@ -58,6 +60,8 @@ interface Estado {
   allowed_origins: string[];
   config: Config;
 }
+
+const buscarEstado = async (): Promise<Estado> => (await apiClient.get<{ data: Estado }>(ROTA)).data;
 
 /** Uma origem por linha, aparadas e sem linha vazia. A validação de verdade é do servidor. */
 function linhasDeDominio(texto: string): string[] {
@@ -88,9 +92,10 @@ export function CanalChatClient() {
   const qc = useQueryClient();
   const { data: estado, isLoading, isError } = useQuery({
     queryKey: ["canal-chat"],
-    queryFn: async () => (await apiClient.get<{ data: Estado }>(ROTA)).data,
+    queryFn: buscarEstado,
   });
-  const carregar = () => qc.invalidateQueries({ queryKey: ["canal-chat"] });
+  // fetchQuery devolve o estado novo: quem salvou usa esse dado para ressincronizar os campos.
+  const carregar = () => qc.fetchQuery({ queryKey: ["canal-chat"], queryFn: buscarEstado });
 
   if (isLoading) {
     return (
@@ -117,6 +122,8 @@ function SemConexao({ aoAtivar }: { aoAtivar: () => Promise<unknown> }) {
   const t = useT();
   const [dominios, setDominios] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  // Acima do teto o servidor recusaria; o aviso sai antes, e o botão não envia.
+  const acimaDoLimite = linhasDeDominio(dominios).length > MAXIMO_DE_DOMINIOS;
 
   const ativar = async () => {
     setOcupado(true);
@@ -159,8 +166,13 @@ function SemConexao({ aoAtivar }: { aoAtivar: () => Promise<unknown> }) {
         </p>
       </div>
 
+      {acimaDoLimite && (
+        <p role="alert" className="text-xs text-destructive">
+          {t("Use até 20 domínios.")}
+        </p>
+      )}
       <div>
-        <Button onClick={ativar} disabled={ocupado}>
+        <Button onClick={ativar} disabled={ocupado || acimaDoLimite}>
           {ocupado ? t("Ativando…") : t("Ativar chat no site")}
         </Button>
       </div>
@@ -168,7 +180,7 @@ function SemConexao({ aoAtivar }: { aoAtivar: () => Promise<unknown> }) {
   );
 }
 
-function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promise<unknown> }) {
+function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promise<Estado> }) {
   const t = useT();
   const [titulo, setTitulo] = useState("");
   const [saudacao, setSaudacao] = useState("");
@@ -192,14 +204,17 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
+  const acimaDoLimite = listaDominios.length > MAXIMO_DE_DOMINIOS;
 
-  const salvar = async (corpo: object, aoConcluir?: () => void) => {
+  // Depois de gravar, a conta é a do servidor (ele deduplica e põe em minúscula): o aoConcluir
+  // recebe o estado refeito. Só o salvar mexe nos campos; enquanto o usuário digita, nada muda.
+  const salvar = async (corpo: object, aoConcluir?: (atualizado: Estado) => void) => {
     setOcupado(true);
     try {
       await apiClient.patch(ROTA, corpo);
       toast.success(t("Alterações salvas."));
-      aoConcluir?.();
-      await aoMudar();
+      const atualizado = await aoMudar();
+      aoConcluir?.(atualizado);
     } catch (e) {
       toast.error(avisoDeErro(e, t));
     } finally {
@@ -374,9 +389,21 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
               {t("Sem domínios, o chat não abre no seu site. Ele só abre pelo link direto.")}
             </p>
           )}
+          {acimaDoLimite && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use até 20 domínios.")}
+            </p>
+          )}
         </div>
         <div>
-          <Button onClick={() => salvar({ allowed_origins: listaDominios })} disabled={ocupado || !dominiosMudaram}>
+          <Button
+            onClick={() =>
+              salvar({ allowed_origins: listaDominios }, (atualizado) =>
+                setDominios(atualizado.allowed_origins.join("\n")),
+              )
+            }
+            disabled={ocupado || !dominiosMudaram || acimaDoLimite}
+          >
             {t("Salvar domínios")}
           </Button>
         </div>

@@ -51,7 +51,7 @@ it("sem conexão: mostra 'Ativar chat no site' e manda os domínios aparados, se
   h.get.mockResolvedValue({ data: semConexao });
   h.post.mockResolvedValue({ data: { id: "conexao-1", public_key: CHAVE, allowed_origins: [] } });
   mount();
-  await screen.findByText("Não conectado");
+  await screen.findByRole("button", { name: "Ativar chat no site" });
 
   const dominios = screen.getByLabelText("Domínios, um por linha") as HTMLTextAreaElement;
   fireEvent.change(dominios, { target: { value: "  https://a.exemplo.com.br \n\n https://b.exemplo.com.br  \n" } });
@@ -67,7 +67,7 @@ it("sem conexão: mostra 'Ativar chat no site' e manda os domínios aparados, se
 it("sem domínios, o aviso diz que o chat só abre pelo link direto", async () => {
   h.get.mockResolvedValue({ data: semConexao });
   mount();
-  await screen.findByText("Não conectado");
+  await screen.findByRole("button", { name: "Ativar chat no site" });
   expect(screen.getByText(/só abre pelo link direto/)).toBeTruthy();
 });
 
@@ -169,4 +169,71 @@ it("erro 422 do servidor aparece no aviso com a mensagem dele", async () => {
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith("Confira os domínios e a configuração do chat."),
   );
+});
+
+it("copiar com sucesso põe o código exato na área de transferência e avisa", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  mount();
+  await screen.findByLabelText("Código para colar no site");
+
+  fireEvent.click(screen.getByRole("button", { name: "Copiar código" }));
+
+  await waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith(`<script src="${window.location.origin}/webchat.js?k=${CHAVE}" async></script>`),
+  );
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Copiado."));
+});
+
+it("falha ao carregar mostra o alerta de erro no lugar da tela", async () => {
+  h.get.mockRejectedValue(new Error("rede caiu"));
+  mount();
+  const alerta = await screen.findByRole("alert");
+  expect(alerta.textContent).toBe("Não foi possível carregar o chat no site. Recarregue a página.");
+});
+
+it("falha ao gerar a chave mantém o diálogo aberto e avisa", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.post.mockRejectedValue(new Error("falhou"));
+  mount();
+  await screen.findByLabelText("Código para colar no site");
+
+  fireEvent.click(screen.getByRole("button", { name: "Gerar nova chave" }));
+  const dialogo = await screen.findByRole("alertdialog");
+  fireEvent.click(within(dialogo).getByRole("button", { name: "Sim, gerar nova chave" }));
+
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Não foi possível gerar a chave. Tente de novo."));
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+});
+
+it("mais de 20 domínios mostra o limite e não envia", async () => {
+  h.get.mockResolvedValue({ data: semConexao });
+  mount();
+  await screen.findByRole("button", { name: "Ativar chat no site" });
+
+  const linhas = Array.from({ length: 21 }, (_, i) => `https://site${i}.exemplo.com.br`).join("\n");
+  fireEvent.change(screen.getByLabelText("Domínios, um por linha"), { target: { value: linhas } });
+
+  expect(screen.getByText("Use até 20 domínios.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Ativar chat no site" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it("depois de salvar, os domínios voltam como o servidor guardou (sem duplicata) e o botão desabilita", async () => {
+  const guardado = ["https://loja.exemplo.com.br", "https://outra.exemplo.com.br"];
+  h.get
+    .mockResolvedValueOnce({ data: comConexao })
+    .mockResolvedValue({ data: { ...comConexao, allowed_origins: guardado } });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  const dominios = (await screen.findByLabelText("Domínios, um por linha")) as HTMLTextAreaElement;
+
+  fireEvent.change(dominios, {
+    target: { value: "https://loja.exemplo.com.br\nhttps://outra.exemplo.com.br\nHTTPS://OUTRA.exemplo.com.br" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar domínios" }));
+
+  await waitFor(() => expect(dominios.value).toBe("https://loja.exemplo.com.br\nhttps://outra.exemplo.com.br"));
+  expect((screen.getByRole("button", { name: "Salvar domínios" }) as HTMLButtonElement).disabled).toBe(true);
 });
