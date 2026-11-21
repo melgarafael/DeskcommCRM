@@ -4663,20 +4663,20 @@ sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
 
 | Caso | Nome | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|---|
-| J72. | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
-| J72. | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **NÃO EXECUTADO** |
-| J72. | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
-| J72. | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **NÃO EXECUTADO** |
-| J72. | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
-| J72. | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J72. | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
-| J72. | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
+| J72.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **NÃO EXECUTADO** |
+| J72.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
+| J72.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **NÃO EXECUTADO** |
+| J72.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
+| J72.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
+| J72.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
 
 **Comportamento declarado.** O CRM é dono da moldura; o módulo é dono do conteúdo, numa origem diferente
 da do CRM. Só passam seis mensagens combinadas, e só da origem e da janela certas. O painel lateral não
