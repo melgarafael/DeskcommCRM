@@ -80,6 +80,7 @@ export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean 
   const createMut = useCreatePhoneNumber();
   const updateMut = useUpdatePhoneNumber();
 
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogoDeAgenteAberto, setDialogoDeAgenteAberto] = useState(false);
   const [nomeDoAgente, setNomeDoAgente] = useState("");
   const criarAgente = useMutation({
@@ -90,13 +91,15 @@ export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean 
     },
   });
 
+  const criandoOuAbrindoEditor = criarAgente.isPending || criarAgente.isSuccess;
+
   function abrirCriacaoDeAgente() {
     setDialogOpen(false);
     setDialogoDeAgenteAberto(true);
   }
 
   function aoMudarDialogoDeAgente(aberto: boolean) {
-    if (criarAgente.isPending) return;
+    if (criandoOuAbrindoEditor) return;
     setDialogoDeAgenteAberto(aberto);
     if (!aberto) {
       setNomeDoAgente("");
@@ -107,11 +110,10 @@ export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean 
   function salvarAgente(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const nome = nomeDoAgente.trim();
-    if (nome.length < 2 || criarAgente.isPending) return;
+    if (nome.length < 2 || criandoOuAbrindoEditor) return;
     criarAgente.mutate(nome);
   }
 
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     number: "",
     label: "",
@@ -278,7 +280,7 @@ export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean 
                 minLength={2}
                 maxLength={120}
                 value={nomeDoAgente}
-                disabled={criarAgente.isPending}
+                disabled={criandoOuAbrindoEditor}
                 onChange={(e) => {
                   setNomeDoAgente(e.target.value);
                   if (criarAgente.isError) criarAgente.reset();
@@ -296,13 +298,13 @@ export function TelefoniaClient({ podeCriarAgente }: { podeCriarAgente: boolean 
               <Button
                 type="button"
                 variant="outline"
-                disabled={criarAgente.isPending}
+                disabled={criandoOuAbrindoEditor}
                 onClick={() => aoMudarDialogoDeAgente(false)}
               >
                 {t("Cancelar")}
               </Button>
-              <Button type="submit" disabled={nomeDoAgente.trim().length < 2 || criarAgente.isPending}>
-                {criarAgente.isPending ? t("Salvando…") : t("Criar agente de voz")}
+              <Button type="submit" disabled={nomeDoAgente.trim().length < 2 || criandoOuAbrindoEditor}>
+                {criandoOuAbrindoEditor ? t("Salvando…") : t("Criar agente de voz")}
               </Button>
             </DialogFooter>
           </form>
