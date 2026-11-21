@@ -345,71 +345,75 @@ export function InstalledExtensionCard({
               onCheckedChange={setEnabled}
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor={`density-${extension.id}`}>{t("Densidade dos cards")}</Label>
-              <Select
-                value={density}
-                disabled={actionsDisabled}
-                onValueChange={(value) => setDensity(value as ExtensionConfiguration["density"])}
-              >
-                <SelectTrigger
-                  id={`density-${extension.id}`}
-                  data-testid={`extension-density-${extension.id}`}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="comfortable">{t("Confortável")}</SelectItem>
-                  <SelectItem value="compact">{t("Compacta")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
-              <Label htmlFor={`description-${extension.id}`} className="leading-snug">
-                {t("Mostrar descrição nos cards")}
-              </Label>
-              <Switch
-                id={`description-${extension.id}`}
-                data-testid={`extension-description-${extension.id}`}
-                checked={showDescription}
-                disabled={actionsDisabled}
-                onCheckedChange={setShowDescription}
-              />
-            </div>
-            {paletaOferecida !== null ? (
-              // A paleta vem do MANIFESTO desta versão (`theme_palette`), não de uma
-              // lista fixa: o gancho só aplica a paleta que o pacote declarou
-              // (`temaAplicavel`), então oferecer outra seria prometer o que o host
-              // recusa. Extensão sem `contributions.theme` não recebe o campo.
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor={`theme-${extension.id}`}>{t("Paleta da extensão")}</Label>
+          {/* Densidade, descrição e paleta desenham os cartões de uma extensão declarativa. O módulo
+              conectado não desenha nada pela tela do CRM e fica só com a ativação (#5079). */}
+          {extension.profile !== "connected" ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor={`density-${extension.id}`}>{t("Densidade dos cards")}</Label>
                 <Select
-                  value={theme ?? "none"}
+                  value={density}
                   disabled={actionsDisabled}
-                  onValueChange={(value) =>
-                    setTheme(value === "none" ? null : (value as PaletaDeTema))
-                  }
+                  onValueChange={(value) => setDensity(value as ExtensionConfiguration["density"])}
                 >
                   <SelectTrigger
-                    id={`theme-${extension.id}`}
-                    data-testid={`extension-theme-${extension.id}`}
+                    id={`density-${extension.id}`}
+                    data-testid={`extension-density-${extension.id}`}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">{t("Nenhuma (padrão do produto)")}</SelectItem>
-                    <SelectItem value={paletaOferecida} data-testid={`extension-theme-${extension.id}-${paletaOferecida}`}>
-                      {rotuloDaPaleta(paletaOferecida, t)}
-                    </SelectItem>
+                    <SelectItem value="comfortable">{t("Confortável")}</SelectItem>
+                    <SelectItem value="compact">{t("Compacta")}</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  {t("Pinta o produto com as cores desta extensão, só nesta organização.")}
-                </p>
               </div>
-            ) : null}
-          </div>
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                <Label htmlFor={`description-${extension.id}`} className="leading-snug">
+                  {t("Mostrar descrição nos cards")}
+                </Label>
+                <Switch
+                  id={`description-${extension.id}`}
+                  data-testid={`extension-description-${extension.id}`}
+                  checked={showDescription}
+                  disabled={actionsDisabled}
+                  onCheckedChange={setShowDescription}
+                />
+              </div>
+              {paletaOferecida !== null ? (
+                // A paleta vem do MANIFESTO desta versão (`theme_palette`), não de uma
+                // lista fixa: o gancho só aplica a paleta que o pacote declarou
+                // (`temaAplicavel`), então oferecer outra seria prometer o que o host
+                // recusa. Extensão sem `contributions.theme` não recebe o campo.
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor={`theme-${extension.id}`}>{t("Paleta da extensão")}</Label>
+                  <Select
+                    value={theme ?? "none"}
+                    disabled={actionsDisabled}
+                    onValueChange={(value) =>
+                      setTheme(value === "none" ? null : (value as PaletaDeTema))
+                    }
+                  >
+                    <SelectTrigger
+                      id={`theme-${extension.id}`}
+                      data-testid={`extension-theme-${extension.id}`}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("Nenhuma (padrão do produto)")}</SelectItem>
+                      <SelectItem value={paletaOferecida} data-testid={`extension-theme-${extension.id}-${paletaOferecida}`}>
+                        {rotuloDaPaleta(paletaOferecida, t)}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Pinta o produto com as cores desta extensão, só nesta organização.")}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {feedback ? (
             <p role="status" className="text-xs text-muted-foreground">
               {feedback}

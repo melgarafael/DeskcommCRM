@@ -150,7 +150,7 @@ export default async function AgendaPage() {
     supabase
       .from("calendar_appointments")
       .select(
-        "id, revision, title, starts_at, ends_at, status, owner_user_id, team_guest_user_ids, contact_id, event_type_id, location_kind, contacts(name, display_name)",
+        "id, revision, title, starts_at, ends_at, status, owner_user_id, team_guest_user_ids, contact_id, event_type_id, service_occurrence_id, location_kind, contacts(name, display_name)",
       )
       .eq("organization_id", activeOrg.orgId)
       .gte("starts_at", inicio.toISOString())
@@ -385,6 +385,9 @@ export default async function AgendaPage() {
           responsavelId: a.owner_user_id ?? "",
           convidadosDaEquipe: a.team_guest_user_ids,
           tipoId: a.event_type_id,
+          // Vaga de serviço: a duração é a da agenda do serviço, e a grade não
+          // oferece a borda (#4450) — já na primeira pintura, antes da busca viva.
+          ...(a.service_occurrence_id ? { duracaoFixa: true } : {}),
           comeca: a.starts_at,
           termina: a.ends_at,
           origem: "ui" as const,

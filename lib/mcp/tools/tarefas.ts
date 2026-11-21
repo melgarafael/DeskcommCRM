@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit";
 import { portaDaAplicacao } from "@/lib/db";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { criarProximaSemDerrubar } from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import {
   PRIORIDADES_DA_TAREFA,
@@ -311,7 +312,7 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
     // vezes gravaria duas linhas `task_completed` na timeline do negócio.
     const { data: antes, error: erroDaLeitura } = await ctx.supabase
       .from("crm_tasks")
-      .select("status")
+      .select("status, due_date")
       .eq("id", task_id)
       .eq("organization_id", ctx.organizationId)
       .maybeSingle();
@@ -321,7 +322,7 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
     if (!antes) {
       throw new Error("Tarefa não encontrada nesta organização.");
     }
-    const statusAntes = (antes as { status: string }).status;
+    const statusAntes = antes.status;
 
     // 3. Executar o UPDATE com filtro de isolamento por organization_id.
     // `updated_at` fica com o trigger `trg_crm_tasks_updated_at`.
@@ -333,7 +334,7 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
       .eq("id", task_id)
       .eq("organization_id", ctx.organizationId)
       .select(
-        "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at",
+        "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, recurrence_source_id",
       )
       .maybeSingle();
 
@@ -347,6 +348,7 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
     if (!data) {
       throw new Error("Tarefa não encontrada nesta organização.");
     }
+    const { recurrence_source_id, ...tarefa } = data;
 
     // 4. Auditoria
     await audit({
@@ -354,26 +356,33 @@ export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
       actorUserId: ctx.actor.type === "user" ? (ctx.actor.id as string) : null,
       organizationId: ctx.organizationId,
       resourceType: "crm_tasks",
-      resourceId: data.id,
+      resourceId: tarefa.id,
       requestId: ctx.requestId,
       // A transição só entra quando `status` veio: editar o título não grava
       // um `de: "pending", para: "pending"` que não existiu.
       metadata: {
         campos: camposParaAtualizar.map(([k]) => k),
-        ...(updates.status !== undefined ? { de: statusAntes, para: data.status } : {}),
+        ...(updates.status !== undefined ? { de: statusAntes, para: tarefa.status } : {}),
       },
     });
 
-    // 5. Linha do tempo do negócio só na transição para concluída
-    if (data.status === "done" && statusAntes !== "done") {
-      await registraAtividadeDaTarefa(portaDaAplicacao(), {
+    // Record completion and continue the series on the transition to done.
+    if (tarefa.status === "done" && statusAntes !== "done") {
+      const db = portaDaAplicacao();
+      await registraAtividadeDaTarefa(db, {
         organizationId: ctx.organizationId,
-        tarefa: data as Tarefa,
+        tarefa: tarefa as Tarefa,
         tipo: "task_completed",
         actor: ctx.actor,
       });
+      await criarProximaSemDerrubar(db, {
+        id: tarefa.id,
+        organization_id: ctx.organizationId,
+        recurrence_source_id: recurrence_source_id ?? null,
+        due_date: tarefa.due_date ?? antes.due_date ?? null,
+      });
     }
 
-    return { task: data };
+    return { task: tarefa };
   },
 };
