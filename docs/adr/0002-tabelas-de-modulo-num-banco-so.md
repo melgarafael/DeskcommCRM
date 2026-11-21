@@ -92,11 +92,12 @@ instalação do módulo cria as tabelas para todas, isoladas por RLS.
 
 ### D3.1 — O que "empresa desligada" significa num módulo de tabela (emenda de 2026-11-18)
 
-*Medido em `79fb9abbbe` (`main`), na F3 do #3868 (#4871). A D3 fixa QUEM cria a tabela; esta
+*Medido em `79fb9abbbe` (`main`), na F3 do #3868 (#4871); conferido de novo em `f42b4dde30`
+(`main`), depois que o #3480 acrescentou `catalogo_servicos`. A D3 fixa QUEM cria a tabela; esta
 emenda fixa o que o produto lê para decidir se uma EMPRESA usa o módulo. São duas perguntas
 diferentes, e a primeira não responde a segunda.*
 
-Hoje `MODULOS_DE_TABELA` (`lib/instalacao/modulos.ts`) tem **seis** módulos, e eles não são
+Hoje `MODULOS_DE_TABELA` (`lib/instalacao/modulos.ts`) tem **sete** módulos, e eles não são
 uniformes: a permissão da empresa mora em três lugares diferentes.
 
 | Módulo | Instalação (o teto) | O que decide para a EMPRESA | Onde é lido |
@@ -107,6 +108,7 @@ uniformes: a permissão da empresa mora em três lugares diferentes.
 | `amigo` | idem | linha ativa em `amigo_connections` | cron `amigo-sync`, `lib/amigo/{agenda,store,sync}.ts` |
 | `honorarios` | idem | **nada** — não há chave por empresa | — (a rota decide pela existência da tabela: `42P01`) |
 | `financeiro` | idem | **nada** no nível do módulo (`settings.financeiro.recorrencia_no_ganho` decide só a recorrência do negócio ganho) | `recorrenciaNoGanhoLigada` (`lib/schemas/settings.ts`) |
+| `catalogo_servicos` | idem | **nada** — não há chave por empresa | `moduloLigado(admin, MODULO_SERVICOS)` nas rotas `app/api/v1/servicos/**` (404 desligado na instalação) |
 
 A consequência, que é a regra desta emenda:
 
@@ -118,9 +120,9 @@ A consequência, que é a regra desta emenda:
 2. **Onde a empresa já decide, ela decide pela PRÓPRIA linha** (`settings.<módulo>` ou a
    tabela de conexão), lida pelo consumidor do módulo. Copiar isso para
    `organization_modules` criaria duas fontes para a mesma resposta.
-3. **Onde não existe linha da empresa (`honorarios`, `financeiro`), "empresa desligada" não
-   tem significado hoje**: instalado, o módulo vale para todas as organizações da instalação,
-   e o corte entre elas é só RLS. Um interruptor para esses dois é decisão de produto —
+3. **Onde não existe linha da empresa (`honorarios`, `financeiro`, `catalogo_servicos`),
+   "empresa desligada" não tem significado hoje**: instalado, o módulo vale para todas as organizações da instalação,
+   e o corte entre elas é só RLS. Um interruptor para esses três é decisão de produto —
    issue própria, com o desenho de leitura —, não uma linha a mais nesta camada.
 4. **Falha de leitura não abre o módulo para quem o desligou.** Se a leitura de
    `organization_modules` falhar, os módulos por FLAG caem fechados e os de tabela seguem a
