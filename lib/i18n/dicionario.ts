@@ -22659,6 +22659,10 @@ export const DICIONARIO: Traducoes = {
   "Robô de mensagens (@BotFather)": { es: "Bot de mensajes (@BotFather)" },
   "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.": { es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un bot creado en @BotFather, pegando su token. Las conversaciones privadas con el bot llegan al Inbox y la respuesta sale por el mismo bot; los grupos y las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un bot nuevo; un bot ya conectado sigue atendiendo, y para desconectarlo basta con activar el módulo de nuevo." },
   "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.": { es: "Cada empresa conecta en Conexiones un bot creado en @BotFather, y las conversaciones privadas con él llegan al Inbox." },
+  // Chat no site (módulo `canal_webchat`): o rótulo "Chat no site" já existe acima.
+  "Cada empresa cola um chat na página do próprio site, e as conversas que começam nele chegam ao Inbox.": { es: "Cada empresa pega un chat en la página de su propio sitio, y las conversaciones que empiezan en él llegan al Inbox." },
+  "Ligado, cada empresa ganha o chat para colocar na página do próprio site, e as conversas que começam nele chegam ao Inbox. Desligado, o chat não recebe conversas novas; as que já chegaram ficam guardadas.": { es: "Activado, cada empresa obtiene el chat para poner en la página de su propio sitio, y las conversaciones que empiezan en él llegan al Inbox. Desactivado, el chat no recibe conversaciones nuevas; las que ya llegaron quedan guardadas." },
+  "Não cria porta no menu do CRM: a configuração do chat ainda não tem tela.": { es: "No crea entrada en el menú del CRM: la configuración del chat todavía no tiene pantalla." },
   // Doc 301 = B — o que a automação segura quando a IA mexe no modo assistido.
   "Quem disparou foi a IA no modo assistido, e no assistido nada fala com o cliente sem aprovação: esta ação ficou parada. O aviso na Central de avisos tem o botão para disparar.": { es: "Quien disparó fue la IA en modo asistido, y en el modo asistido nada le habla al cliente sin aprobación: esta acción quedó detenida. El aviso en la Central de avisos tiene el botón para dispararla." },
   "Não há nada parado para disparar neste aviso: ele já foi disparado ou descartado.": { es: "No hay nada detenido para disparar en este aviso: ya fue disparado o descartado." },
@@ -22766,6 +22770,7 @@ export const DICIONARIO: Traducoes = {
   Telegram: { es: "Telegram" },
   Instagram: { es: "Instagram" },
   Messenger: { es: "Messenger" },
+  "Chat no site": { es: "Chat en el sitio" },
   "Cor por canal no aviso de mensagem": { es: "Color por canal en el aviso de mensaje" },
   "Com a cor ligada, o aviso de mensagem nova mostra uma faixa e o logo da rede na cor dela — WhatsApp verde, Telegram azul —, e o nome do canal abre o texto. Desligada, o aviso volta ao neutro de sempre.": {
     es: "Con el color activado, el aviso de mensaje nuevo muestra una franja y el logo de la red en su color — WhatsApp verde, Telegram azul —, y el nombre del canal abre el texto. Desactivado, el aviso vuelve al neutro de siempre.",

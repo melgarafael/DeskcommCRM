@@ -139,6 +139,28 @@ describe("isPublicPath", () => {
   });
 
   /**
+   * O chat no site (spec 36, F1): o visitante não tem sessão. As duas POST que ele
+   * chama passam pelo proxy sem cookie; a autoridade mora dentro de cada rota (a
+   * chave pública e o token de visitante). Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera as duas POST públicas do chat no site, e nenhum sub-path delas", () => {
+    expect(isPublicPath("/api/v1/webchat/sessao")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/mensagens")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/sessao/qualquer")).toBe(false);
+    expect(isPublicPath("/api/v1/webchat/mensagens/qualquer")).toBe(false);
+    expect(isPublicPath("/api/v1/webchat")).toBe(false);
+  });
+
+  /**
+   * A GET de eventos do chat no site (spec 36, F1): o visitante também não tem sessão. O token
+   * vai no cabeçalho, e a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera a GET de eventos do chat no site, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/api/v1/webchat/eventos")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/eventos/qualquer")).toBe(false);
+  });
+
+  /**
    * A busca do token do módulo `connected` (spec 33, F2) é chamada pelo servidor do módulo, sem cookie.
    * Entra SÓ o caminho exato: `/api/v1/extensions/` tem irmãos de sessão (girar segredo, instalar,
    * operações) que não podem nascer públicos de carona.
