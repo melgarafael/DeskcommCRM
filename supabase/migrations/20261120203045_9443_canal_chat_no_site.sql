@@ -38,6 +38,7 @@ create or replace function public.fn_webchat_origens_validas(origens text[])
 returns boolean
 language sql
 immutable
+set search_path = ''
 as $$
   select coalesce(cardinality(origens), 0) <= 20
      and not exists (

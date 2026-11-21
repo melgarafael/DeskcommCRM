@@ -135,6 +135,7 @@ describe("ingestão de uma mensagem do visitante", () => {
     const r = await ingerir(falso);
 
     const msg = linhasDaTabela(falso, "messages")[0];
+    expect(msg).toBeDefined();
     expect(msg).toMatchObject({
       organization_id: ORG,
       channel_session_id: CS,
@@ -146,7 +147,7 @@ describe("ingestão de uma mensagem do visitante", () => {
       body: "oi",
       sent_at: AGORA.toISOString(),
     });
-    expect(r).toMatchObject({ messageId: msg.id });
+    expect(r).toMatchObject({ messageId: msg!.id });
   });
 
   it("a marcação da conversa usa a hora do envio e o canal webchat", async () => {

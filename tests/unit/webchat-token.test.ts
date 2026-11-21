@@ -34,7 +34,8 @@ describe("token de visitante do chat no site", () => {
   it("um byte trocado no corpo dá assinatura", () => {
     const token = tokenValido();
     const [corpo, assinatura] = token.split(".");
-    const trocado = (corpo.startsWith("A") ? "B" : "A") + corpo.slice(1);
+    expect(corpo).toBeDefined();
+    const trocado = (corpo!.startsWith("A") ? "B" : "A") + corpo!.slice(1);
 
     expect(lerTokenDeVisitante(`${trocado}.${assinatura}`, agora)).toEqual({
       ok: false,

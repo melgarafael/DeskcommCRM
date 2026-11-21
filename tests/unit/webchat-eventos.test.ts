@@ -272,8 +272,9 @@ describe("GET /api/v1/webchat/eventos", () => {
 
     const lidos = eventos(await lerAteFechar(res)).filter((e) => e.evento === "mensagem");
     expect(lidos.map((e) => e.dados.id)).toEqual([id(2)]);
-    expect(lidos[0].dados.texto).toBe("Temos três planos.");
-    expect(lidos[0].dados.em).toBe("2026-11-20T12:00:02.000+00:00");
+    expect(lidos[0]).toBeDefined();
+    expect(lidos[0]!.dados.texto).toBe("Temos três planos.");
+    expect(lidos[0]!.dados.em).toBe("2026-11-20T12:00:02.000+00:00");
   });
 
   it("marca como entregue só o que saiu, e não toca no que ficou de fora", async () => {

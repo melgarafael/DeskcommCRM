@@ -23,7 +23,7 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import { InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
+import { ChatCircle, InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
 
 /** As redes que o produto sabe desenhar. Rede nova entra aqui E em `channelBrand`. */
 export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "webchat";
@@ -75,13 +75,13 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
     cor: "var(--color-canal-telegram)",
     Icone: TelegramLogo,
   },
-  // Chat no site (Spec 36): sem logo de rede. `Icone: null` cai no balão genérico
-  // de `ChannelLogo`, que é o que a conversa do site é.
+  // Chat no site (Spec 36): não é rede social, então não tem logo de marca. O
+  // balão de conversa do mesmo pacote de ícones é o que a conversa do site é.
   webchat: {
     id: "webchat",
     rotulo: "Chat no site",
     cor: "var(--color-canal-webchat)",
-    Icone: null,
+    Icone: ChatCircle,
   },
 };
 

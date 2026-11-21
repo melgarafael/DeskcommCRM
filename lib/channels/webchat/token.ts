@@ -1,7 +1,7 @@
 /**
  * Token de visitante do chat no site: base64url(JSON {v:1, cs, vis, iat, exp}) + "." +
  * HMAC-SHA256 em base64url. A chave sai de `INTERNAL_SECRET` com o prefixo de domínio
- * `deskcomm:webchat-visitante:v1:`, no mesmo molde de `lib/cadencias/token.ts`.
+ * `webchat-visitante:v1:`, no mesmo molde de `lib/cadencias/token.ts`.
  * Trocar o segredo invalida todos os tokens. Ler nunca lança: devolve `{ ok: false, motivo }`.
  * `agora` é sempre injetado; nada aqui lê o relógio.
  */
@@ -11,7 +11,7 @@ import { z } from "zod";
 const DIA_EM_MS = 24 * 60 * 60 * 1000;
 const VALIDADE_EM_MS = 30 * DIA_EM_MS;
 const RENOVAR_QUANDO_FALTAR_MS = 7 * DIA_EM_MS;
-const PREFIXO_DE_DOMINIO = "deskcomm:webchat-visitante:v1:";
+const PREFIXO_DE_DOMINIO = "webchat-visitante:v1:";
 const TAMANHO_MAXIMO = 4096;
 
 export interface AssinarTokenDeVisitanteParams {

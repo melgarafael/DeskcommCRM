@@ -18,7 +18,9 @@
  * guarda o `visitante_id`. `resolveRecipient` devolve só um marcador, para o
  * envelope ter um `to` não nulo.
  */
-import type { ChannelAdapter, OutboundEnvelope } from "../types";
+import { randomId } from "@/lib/random-id";
+
+import type { ChannelAdapter, ChannelHealth, OutboundEnvelope } from "../types";
 
 /**
  * O marcador de destinatário deste canal. Não é o `visitante_id` de propósito:
@@ -53,7 +55,16 @@ export const webchatAdapter: ChannelAdapter = {
     if (!envelope.body || envelope.body.trim().length === 0) {
       throw new Error("webchat_empty_body: mensagem de texto sem corpo.");
     }
-    return { externalId: `wc:out:${crypto.randomUUID()}` };
+    return { externalId: `wc:out:${randomId()}` };
+  },
+
+  /**
+   * Sempre de pé, sem rede: o chat não tem terceiro para sondar. A conexão
+   * ativa e o módulo ligado são conferidos nas rotas e na ingestão, então não há
+   * estado de queda que esta sonda pudesse medir.
+   */
+  async checkHealth(): Promise<ChannelHealth> {
+    return { reachable: true, status: "WORKING", detail: null };
   },
 
   codes: {

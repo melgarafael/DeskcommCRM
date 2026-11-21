@@ -182,7 +182,8 @@ describe("POST /api/v1/webchat/sessao", () => {
       respostas.push(await resposta(await sessao(pedido("sessao", { chave: CHAVE }))));
     }
     const primeira = respostas[0];
-    expect(primeira.status).toBe(404);
+    expect(primeira).toBeDefined();
+    expect(primeira!.status).toBe(404);
     for (const r of respostas) expect(r).toEqual(primeira);
   });
 
@@ -361,7 +362,8 @@ describe("POST /api/v1/webchat/mensagens", () => {
       );
     }
     const primeira = respostas[0];
-    expect(primeira.status).toBe(404);
+    expect(primeira).toBeDefined();
+    expect(primeira!.status).toBe(404);
     for (const r of respostas) expect(r).toEqual(primeira);
     expect(h.ingerir).not.toHaveBeenCalled();
   });
