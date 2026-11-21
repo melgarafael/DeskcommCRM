@@ -87,6 +87,7 @@ import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import { withProspectingLock } from "@/lib/prospecting/store";
+import { provedoresQueConferemNumero } from "@/lib/channels";
 import type { Campaign } from "@/lib/prospecting/store";
 import {
   ORIGEM_DOS_DADOS_COM_CONTEXTO_DA_EQUIPE,
@@ -1388,7 +1389,7 @@ describe("tick × preparo automático (B2)", () => {
       pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1] as unknown[] | undefined;
     const desligado = montar({ segundaConsulta: [ORG_B] });
     await tickProspecting(desligado.pool as never, {} as never);
-    expect(paramsDaSegunda(desligado.pool)).toEqual([[]]);
+    expect(paramsDaSegunda(desligado.pool)).toEqual([[], []]);
 
     const ligado = montar({ segundaConsulta: [ORG_B] });
     const admin = {
@@ -1482,7 +1483,8 @@ describe("tick × `conferir_whatsapp` por empresa (#4871)", () => {
       instalacaoLigada: true,
       linhas: [{ organization_id: B, estado: "desligado" }],
     });
-    await tickProspecting(poolComDuasRodando() as never, admin as never);
+    const pool = poolComDuasRodando();
+    await tickProspecting(pool as never, admin as never);
 
     const deps = depsPorOrganizacao();
     // As DUAS empresas foram preparadas na mesma rodada — a desligada não some do
@@ -1490,6 +1492,15 @@ describe("tick × `conferir_whatsapp` por empresa (#4871)", () => {
     expect([...deps.keys()].sort()).toEqual([A, B].sort());
     await expect(deps.get(A)!.conferirWhatsapp({}, A)).resolves.toBe(true);
     await expect(deps.get(B)!.conferirWhatsapp({}, B)).resolves.toBe(false);
+    // O ramo (c) da consulta de preparo exclui B: sem isso, B voltaria toda rodada
+    // por telefone sem veredito que o preparo dela nunca confere.
+    const consulta = pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"));
+    expect(consulta?.[1]).toEqual([provedoresQueConferemNumero(), [B]]);
+    // Sem Postgres no unit: o dublê não executa o SQL, então o uso do $2 no ramo
+    // (c) é conferido no texto — passar o parâmetro e não usá-lo reprova aqui.
+    expect(String(consulta?.[0])).toMatch(
+      /c\.data->'whatsapp' is null and not \(pc\.organization_id = any\(\$2::uuid\[\]\)\)/,
+    );
   });
 
   it("instalação desligada vence a linha `ligado` da empresa — e a leitura por empresa nem acontece", async () => {
@@ -1503,7 +1514,7 @@ describe("tick × `conferir_whatsapp` por empresa (#4871)", () => {
     await expect(depsPorOrganizacao().get(A)!.conferirWhatsapp({}, A)).resolves.toBe(false);
     // O ramo (c) recebe lista vazia de canais, como antes do #4871.
     const params = pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1];
-    expect(params).toEqual([[]]);
+    expect(params).toEqual([[], []]);
     expect(lidas).not.toContain("organization_modules");
   });
 
@@ -1516,7 +1527,7 @@ describe("tick × `conferir_whatsapp` por empresa (#4871)", () => {
     await expect(deps.get(A)!.conferirWhatsapp({}, A)).resolves.toBe(false);
     await expect(deps.get(B)!.conferirWhatsapp({}, B)).resolves.toBe(false);
     const params = pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1];
-    expect(params).toEqual([[]]);
+    expect(params).toEqual([[], []]);
   });
 });
 

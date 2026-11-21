@@ -856,8 +856,10 @@ const ORGS_COM_PREPARO_PENDENTE =
   // (c) WhatsApp por conferir (`whatsapp.ts`): telefone sem veredito, e uma conexão
   // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`, ou vazio
   // com o módulo `conferir_whatsapp` desligado). Sem ela a organização NÃO entra —
-  // senão voltaria toda rodada para nada.
+  // senão voltaria toda rodada para nada. Pela mesma razão, $2 = as empresas que
+  // desligaram o módulo (#4871): o preparo delas não confere, e a pendência nunca sumiria.
   "or (nullif(trim(c.data->>'phone'), '') is not null and c.data->'whatsapp' is null " +
+  "and not (pc.organization_id = any($2::uuid[])) " +
   "and exists (select 1 from channel_sessions s where s.organization_id=pc.organization_id " +
   "and s.provider = any($1::text[]) and s.status='WORKING' and s.archived_at is null)))) " +
   "group by pc.organization_id order by min(pc.updated_at) limit 20";
@@ -928,6 +930,7 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
     apenasPreparo = (
       await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
         conferirNaInstalacao && semConferencia !== null ? provedoresQueConferemNumero() : [],
+        [...(semConferencia ?? [])],
       ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {
