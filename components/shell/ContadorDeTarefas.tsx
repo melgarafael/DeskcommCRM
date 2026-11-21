@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
  * O número sozinho não diz se o que sobrou já estourou o prazo, e tarefa
  * atrasada é a única que pede ação AGORA. Quando alguma venceu, o selo ganha o
  * mesmo tratamento do selo do card (`components/kanban/TarefasNoCard.tsx`): o
- * ícone de aviso, o tom de erro e o "· N atrasada(s)" no rótulo acessível — pela
+ * ícone de aviso e o "· N atrasada(s)" no rótulo acessível — pela
  * MESMA régua de `resumoDasTarefas`, que conta com `estaEncerrada` +
  * `estaAtrasada`, as regras da lista. Nada de segunda contagem: se as duas
  * divergissem, o menu diria "1 atrasada" sobre uma tela sem nenhuma.
@@ -66,10 +66,10 @@ export function ContadorDeTarefas({ compacto }: { compacto: boolean }) {
       aria-label={rotulo}
       title={rotulo}
       className={cn(
-        "flex items-center gap-0.5 rounded-full text-[10px] leading-none font-semibold text-white tabular-nums",
-        // O selo do menu já nasce vermelho (é número de pendência); o atraso se
-        // distingue pelo tom de erro e pelo ícone de aviso, como no card.
-        atrasadas > 0 ? "bg-destructive" : "bg-red-600",
+        // O vermelho é o mesmo com ou sem atraso: `bg-destructive` no tema escuro
+        // dá 3,48:1 com texto branco de 10 px, abaixo do AA. O atraso se distingue
+        // pelo ícone de aviso e pelo "· N atrasada(s)", que não dependem de cor.
+        "flex items-center gap-0.5 rounded-full bg-red-600 text-[10px] leading-none font-semibold text-white tabular-nums",
         compacto ? "absolute top-1 right-1 h-2 w-2" : "ml-auto px-1.5 py-0.5",
       )}
     >

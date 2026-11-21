@@ -126,7 +126,7 @@ describe("contador de tarefas no menu", () => {
 // ─── Vencida: o destaque que o número sozinho não dava (#3938) ───────────────
 
 describe("contador de tarefas: a vencida no menu", () => {
-  it("com atraso, o selo ganha ícone de aviso, tom de erro e '· N atrasada' no rótulo", () => {
+  it("com atraso, o selo ganha ícone de aviso e '· N atrasada' no rótulo, sem trocar o vermelho", () => {
     tarefas = [
       { id: "t0", status: "pending", due_date: VENCIDA },
       { id: "t1", status: "in_progress", due_date: FUTURA },
@@ -140,8 +140,7 @@ describe("contador de tarefas: a vencida no menu", () => {
     expect(contador.getAttribute("data-atrasadas")).toBe("1");
     // A mesma frase do selo do card (`TarefasNoCard`), com a mesma régua.
     expect(contador.getAttribute("aria-label")).toBe("3 tarefas em aberto · 1 atrasada");
-    expect(contador.className).toContain("bg-destructive");
-    expect(contador.className).not.toContain("bg-red-600");
+    expect(contador.className).toContain("bg-red-600");
     // O aviso é desenhado, não só falado: quem olha a barra vê o ícone.
     expect(contador.querySelector("svg")).not.toBeNull();
   });
