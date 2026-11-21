@@ -1,5 +1,5 @@
 /**
- * Análise › Vendas — o painel de vendas (Orken CRM).
+ * Análise › Vendas — o painel de vendas.
  *
  * O período inicial ("Este mês") é calculado AQUI, no servidor e no fuso da
  * empresa, e entra como prop: o componente não lê o relógio do navegador no

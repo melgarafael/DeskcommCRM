@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/reports/painel-de-vendas — os cartões e a série do painel de
- * vendas (Orken CRM).
+ * vendas.
  *
  * A conta e as réguas (o que é venda, valor vendido, ticket médio, conversão e
  * série) estão em `lib/relatorios/painel-de-vendas.ts`, que é o contrato desta

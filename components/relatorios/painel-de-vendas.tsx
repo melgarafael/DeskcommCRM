@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * O PAINEL DE VENDAS (Orken CRM) — Análise › Vendas.
+ * O PAINEL DE VENDAS — Análise › Vendas.
  *
  * Uma tela só para "quanto vendi": quatro cartões grandes (Vendas, Valor
  * vendido, Ticket médio, Conversão), o gráfico do período e, logo abaixo, os

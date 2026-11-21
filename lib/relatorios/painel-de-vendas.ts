@@ -1,5 +1,5 @@
 /**
- * O PAINEL DE VENDAS — a conta, sem banco e sem tela (Orken CRM).
+ * O PAINEL DE VENDAS — a conta, sem banco e sem tela.
  *
  * ─── A pergunta ──────────────────────────────────────────────────────────────
  *

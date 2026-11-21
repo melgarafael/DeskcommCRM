@@ -943,7 +943,7 @@ export const NAV_CATALOG = [
     modulo: "honorarios",
   },
   {
-    // ── O PAINEL DE VENDAS (Orken CRM) ─────────────────────────────────────
+    // ── O PAINEL DE VENDAS ─────────────────────────────────────
     //
     // "Quanto vendi" numa tela só: cartões de Vendas, Valor vendido, Ticket
     // médio e Conversão, o gráfico do período e a lista das vendas por funil e
