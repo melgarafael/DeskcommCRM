@@ -1725,6 +1725,11 @@ export const AUDIT_ACTIONS = [
   // A pessoa gravou as próprias abas da Inbox (#3313): a ordem da faixa e quais
   // ficam no menu "Mais". Metadata com a ordem, as visíveis e as ocultas.
   "user.inbox_tabs_updated",
+  // Venda registrada à mão num negócio (Vendas registradas): conta no painel de
+  // vendas pela DATA dela, em qualquer etapa. Metadata com lead, valor e data —
+  // nunca a observação, que é texto livre.
+  "venda.registrada",
+  "venda.apagada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -955,6 +955,23 @@ export const NAV_CATALOG = [
     modulo: "honorarios",
   },
   {
+    // ── O PAINEL DE VENDAS ─────────────────────────────────────
+    //
+    // "Quanto vendi" numa tela só: cartões de Vendas, Valor vendido, Ticket
+    // médio e Conversão, o gráfico do período e a lista das vendas por funil e
+    // tag. NO SIDEBAR de propósito: o número estava espalhado entre Faturamento
+    // (comandas) e Desempenho (atendentes), e quem vende pelo WhatsApp não o
+    // achava. Fonte: os negócios GANHOS (`lib/relatorios/painel-de-vendas.ts`).
+    href: "/app/vendas",
+    label: "Vendas",
+    description: "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
+    sidebar: true,
+  },
+  {
     href: "/app/metrics",
     label: "Desempenho",
     description: "Funil e performance por atendente nos últimos 30 dias.",
