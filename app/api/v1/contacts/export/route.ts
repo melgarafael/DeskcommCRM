@@ -182,6 +182,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     cpf: cpfs.get(c.id) ?? null,
     birthdate: c.birthdate,
     tags: c.tags,
+    zip_code: c.zip_code,
+    street: c.street,
+    number: c.number,
+    complement: c.complement,
+    district: c.district,
+    city: c.city,
+    state: c.state,
   }));
 
   const corpo = formato === "csv" ? csvDosContatos(contatos) : vcardsDosContatos(contatos);

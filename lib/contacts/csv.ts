@@ -270,6 +270,18 @@ const HEADER_ALIASES: Record<string, readonly string[]> = {
     "cumpleanos",
   ],
   tags: ["tags", "etiquetas", "grupos"],
+  /**
+   * Endereço (#3494). Quem importa traz a planilha do cliente, não o nosso
+   * vocabulário: os apelidos são os que aparecem no Excel em português e em
+   * espanhol, e o NOME do campo continua o da coluna do banco.
+   */
+  zip_code: ["zip_code", "cep", "codigo_postal", "codigo_postal_cep", "postal_code", "zip"],
+  street: ["street", "rua", "logradouro", "endereco", "calle", "direccion"],
+  number: ["number", "numero", "num"],
+  complement: ["complement", "complemento", "apto", "apartamento"],
+  district: ["district", "bairro", "barrio", "neighborhood", "colonia"],
+  city: ["city", "cidade", "ciudad", "municipio"],
+  state: ["state", "uf", "estado", "provincia"],
 };
 
 function normalizaHeader(h: string): string {
@@ -333,6 +345,14 @@ export interface LinhaNormalizada {
   cpf?: string;
   birthdate?: string;
   tags?: string[];
+  /** Endereço (#3494) — os MESMOS nomes das colunas de `contacts`/`companies`. */
+  zip_code?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  district?: string;
+  city?: string;
+  state?: string;
 }
 
 /**
@@ -466,6 +486,27 @@ export function mapLinha(
     // filtro casar; o teto de 20 marcadores segue aqui (issue #1224).
     const tags = normalizarTags(tagsRaw.split(/[;|]/)).slice(0, 20);
     if (tags.length > 0) contato.tags = tags;
+  }
+
+  // ─── ENDEREÇO (#3494) ────────────────────────────────────────────────────
+  //
+  // Sem validação de formato, de propósito: as colunas são texto livre desde a
+  // 9041 (o produto atende fora do Brasil, e o CEP não é o único código
+  // postal). O corte de 200 é o mesmo das colunas de nome da ficha; o `state`
+  // cabe em 2 letras no Brasil, mas o import não impõe tamanho — quem importa
+  // um endereço de Portugal não deve ter a linha recusada.
+  const endereco = [
+    "zip_code",
+    "street",
+    "number",
+    "complement",
+    "district",
+    "city",
+    "state",
+  ] as const;
+  for (const campo of endereco) {
+    const valor = get(campo);
+    if (valor !== "") contato[campo] = valor.slice(0, 200);
   }
 
   return { contato, motivo: null };

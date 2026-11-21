@@ -33,6 +33,13 @@ import { marcadoresEscolhidos } from "@/lib/inbox/marcador-da-conversa";
  * As colunas que o importer reconhece (`HEADER_ALIASES` em
  * `lib/contacts/csv.ts`) — nesta ordem, sem nenhuma a mais: uma coluna que o
  * import não lê seria promessa de round-trip que não fecha.
+ *
+ * O ENDEREÇO ENTROU AQUI JUNTO COM O IMPORTER (#3494): guardar rua, bairro,
+ * cidade e CEP no contato e não levá-los no arquivo de saída faria o backup e o
+ * pedido de portabilidade (LGPD art. 18) devolverem a metade de contato que não
+ * serve para entrega nem para cobrança. As sete saem com o MESMO nome das
+ * colunas de `contacts` e das colunas de `companies`, e o importador passou a
+ * ler exatamente estes cabeçalhos — o round-trip continua fechando.
  */
 export const COLUNAS_DO_CSV = [
   "name",
@@ -42,7 +49,30 @@ export const COLUNAS_DO_CSV = [
   "cpf",
   "birthdate",
   "tags",
+  "zip_code",
+  "street",
+  "number",
+  "complement",
+  "district",
+  "city",
+  "state",
 ] as const;
+
+/**
+ * Os sete campos de endereço, com o MESMO nome das colunas de `contacts` e de
+ * `companies` — é o desenho que a #3494 espelhou. Opcionais: contato sem
+ * endereço é linha válida (pessoa física sem CEP).
+ */
+export interface EnderecoParaExportar {
+  zip_code?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
 
 export type FormatoDeExport = "csv" | "vcf";
 
@@ -53,7 +83,7 @@ export type FormatoDeExport = "csv" | "vcf";
  * audit dentro da própria função); sem cifra disponível a coluna sai vazia em
  * vez de derrubar o arquivo.
  */
-export interface ContatoParaExportar {
+export interface ContatoParaExportar extends EnderecoParaExportar {
   name?: string | null;
   display_name?: string | null;
   email?: string | null;
@@ -63,6 +93,7 @@ export interface ContatoParaExportar {
   birthdate?: string | null;
   tags?: readonly string[] | null;
 }
+
 
 function neutralizarFormula(trecho: string): string {
   return /^[=+\-@\t\r]/.test(trecho) && !/^\+\d+$/.test(trecho) ? `'${trecho}` : trecho;
@@ -106,6 +137,13 @@ export function linhaDoCsv(contato: ContatoParaExportar): string {
     contato.cpf,
     contato.birthdate,
     tags,
+    contato.zip_code,
+    contato.street,
+    contato.number,
+    contato.complement,
+    contato.district,
+    contato.city,
+    contato.state,
   ]
     .map(csvEscape)
     .join(",");
@@ -126,12 +164,21 @@ function valorDeCartao(valor: string | null | undefined): string {
 }
 
 /**
- * UM cartão (vCard 3.0) com `FN`, `TEL` e `EMAIL`.
+ * UM cartão (vCard 3.0) com `FN`, `ADR`, `TEL` e `EMAIL`.
  *
  * `TEL;TYPE=CELL,VOICE:` casa com o regex do reader próprio
  * (`/^(?:[\w-]+\.)?TEL[^:]*:(.+)$/mi`) e é a forma que Android e iOS escrevem.
  * Sem telefone o cartão sai com `FN` + `EMAIL` — cartão só de e-mail ainda é
  * um contato que o celular aceita; cartão sem nada de apresentável não sai.
+ *
+ * O `ADR` (#3494) é o endereço de ENTREGA/COBRANÇA que a ficha guarda. Os sete
+ * componentes do vCard 3.0 são `caixa postal;complemento;rua;cidade;UF;CEP;país`:
+ * o bairro não tem casa própria no formato, então divide o componente
+ * "complemento" com o complemento do imóvel — melhor um campo junto do que um
+ * endereço que chega ao celular sem o bairro. Sem nenhum dos cinco campos o
+ * `ADR` não sai: linha vazia é pior que ausência (o celular mostra um endereço
+ * em branco no lugar de "sem endereço"). `;` vira espaço porque é o separador
+ * interno do campo.
  */
 export function vcardDoContato(contato: ContatoParaExportar): string | null {
   const nome = valorDeCartao(contato.name) || valorDeCartao(contato.display_name);
@@ -140,7 +187,20 @@ export function vcardDoContato(contato: ContatoParaExportar): string | null {
   const identidade = nome || telefone || email;
   if (!identidade) return null;
 
+  const componente = (valor: string | null | undefined): string =>
+    valorDeCartao(valor).replace(/;/g, " ");
+  const rua = [componente(contato.street), componente(contato.number)].filter(Boolean).join(", ");
+  const complemento = [componente(contato.complement), componente(contato.district)]
+    .filter(Boolean)
+    .join(" - ");
+  const cidade = componente(contato.city);
+  const uf = componente(contato.state);
+  const cep = componente(contato.zip_code);
+
   const linhas = ["BEGIN:VCARD", "VERSION:3.0", `FN:${identidade}`];
+  if (rua || complemento || cidade || uf || cep) {
+    linhas.push(`ADR;TYPE=HOME:;${complemento};${rua};${cidade};${uf};${cep};`);
+  }
   if (telefone) linhas.push(`TEL;TYPE=CELL,VOICE:${telefone}`);
   if (email) linhas.push(`EMAIL;TYPE=INTERNET:${email}`);
   linhas.push("END:VCARD");

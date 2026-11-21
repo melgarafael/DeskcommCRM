@@ -282,6 +282,18 @@ export async function listContactsHandler(
       // cliente mandou ou o número do identificador de chamadas.
       `email.ilike.*${s}*`,
       `phone_number.ilike.*${s}*`,
+      // ─── O ENDEREÇO TAMBÉM ACHA A PESSOA (#3494) ─────────────────────────
+      //
+      // A ficha guarda rua, bairro, cidade e CEP desde a #3494, e quem atende
+      // recebe o endereço antes do telefone ("o cliente da Rua XV"). Sem esta
+      // linha, o dado estava gravado e invisível para a única porta que a tela
+      // usa para procurar.
+      //
+      // A coluna é GERADA e sem acento pela mesma régua do nome (migration
+      // 9403): `ilike` na `street` crua repetiria o defeito da #3924 — "sao
+      // paulo" não acharia "São Paulo". Número, complemento e UF ficam fora da
+      // coluna (ruído textual); o CEP entra abaixo, pelos dígitos.
+      `endereco_sem_acento.like.*${s}*`,
     ];
     if (digits.length >= 8) {
       // 10/11 dígitos sem DDI: no Brasil é DDD+local. Sem o 55, `3284793302`
@@ -323,6 +335,18 @@ export async function listContactsHandler(
     if (digits.length === 11) {
       const idsPorCpf = await idsDeContatosPorCpf(ctx, digits);
       if (idsPorCpf.length > 0) orParts.push(`id.in.(${idsPorCpf.join(",")})`);
+    }
+    if (digits.length === 8) {
+      // ─── CEP DIGITADO: 8 dígitos também são endereço (#3494) ─────────────
+      //
+      // `contacts.zip_code` é TEXTO LIVRE — o produto atende fora do Brasil e a
+      // 9041 não impôs formato. Na prática o operador grava as duas formas:
+      // `80000-000` (o que o ViaCEP/BrasilAPI devolve) e `80000000` (o que sai
+      // do teclado numérico). Uma variante só acharia metade da base, então as
+      // duas vão no OR.
+      orParts.push(`zip_code.ilike.*${digits}*`);
+      const comMascara = `${digits.slice(0, 5)}-${digits.slice(5)}`;
+      if (comMascara !== digits) orParts.push(`zip_code.ilike.*${comMascara}*`);
     }
     query = query.or(orParts.join(","));
   }
