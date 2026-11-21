@@ -239,7 +239,13 @@ async function devolverAntesDeFechar(deps: {
       actor: deps.actor,
       requestId: deps.requestId,
     },
-    { conversationId: deps.conversationId, expectedAssignee: deps.expectedAssignee },
+    // Encerrar marcando a devolução é decisão de uma pessoa: o atendimento acabou,
+    // e o setor que a IA escolheu para ele deixa de valer (`limparClassificacaoDaIa`).
+    {
+      conversationId: deps.conversationId,
+      expectedAssignee: deps.expectedAssignee,
+      limparClassificacaoDaIa: true,
+    },
   );
 
   if (resultado.ok) return { ok: true };

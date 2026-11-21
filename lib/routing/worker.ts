@@ -27,6 +27,7 @@ import {
 } from "@/lib/routing/decide";
 import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
 import { lerEsperaPelaIA, lerQualificacaoDaIA, prazoDaEspera } from "@/lib/routing/qualificacao-da-ia";
+import { esperaPelaRetomada, lerMarcaDeRetomada } from "@/lib/routing/retomada-da-ia";
 import { loadEligibleAttendants, InvalidRoutingChannel, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
@@ -348,6 +349,43 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     }
   }
 
+  // A CONVERSA QUE ALGUÉM JÁ DEVOLVEU AO AUTOMÁTICO (`lib/routing/retomada-da-ia.ts`).
+  // Sem prazo e sem opção do número: a marca `ia_retomada` que a devolução grava
+  // guarda o pedido enquanto a IA atende e a conversa não passou para humano de
+  // novo. Vem DEPOIS da espera da #3966 e só age quando ela não segurou o pedido
+  // (desligada ou vencida) — a devolução explícita vale mais que o prazo do número.
+  // Mesmas portas: só rodízio/carga, nunca o destino padrão do número nem caso
+  // que barra a fila; conversa com dono já saiu acima.
+  let motivoDaEspera: "ia_qualificando" | "ia_retomada" = "ia_qualificando";
+  if (
+    esperaPelaIAAte === null &&
+    !alreadyAssigned &&
+    !motivoDoCaso &&
+    !viaDestinoPadrao &&
+    (efetivo.mode === "round_robin" || efetivo.mode === "load") &&
+    lerMarcaDeRetomada((conv as { metadata?: unknown }).metadata) !== null
+  ) {
+    const iaAtendendo = await lerQualificacaoDaIA(admin, orgId, {
+      channel_session_id: conv.channel_session_id,
+      active_ai_agent_id:
+        (conv as { active_ai_agent_id?: string | null }).active_ai_agent_id ?? null,
+      bot_silenced_until:
+        (conv as { bot_silenced_until?: string | null }).bot_silenced_until ?? null,
+      last_handoff_at: (conv as { last_handoff_at?: string | null }).last_handoff_at ?? null,
+      assigned_to_user_id: conv.assigned_to_user_id ?? null,
+    }, now);
+    const ate = esperaPelaRetomada({
+      metadata: (conv as { metadata?: unknown }).metadata,
+      lastHandoffAt: (conv as { last_handoff_at?: string | null }).last_handoff_at ?? null,
+      iaAtendendo,
+      agora: now,
+    });
+    if (ate !== null) {
+      esperaPelaIAAte = ate;
+      motivoDaEspera = "ia_retomada";
+    }
+  }
+
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
@@ -498,7 +536,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
         event,
         now,
         event.attempts,
-        { reason: "ia_qualificando" },
+        { reason: motivoDaEspera },
         action.nextAttemptAt,
       );
       return "waiting_ia_qualificando";

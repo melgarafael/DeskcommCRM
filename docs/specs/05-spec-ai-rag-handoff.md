@@ -1119,6 +1119,17 @@ chamada por gente, `#on` pelo celular). A escrita reconfere a ausência de dono
 (`expectedAssignee: null`), então quem assume entre a leitura e a devolução ganha. Até 2026-11
 o prazo também devolvia conversas com dono, contando do último sinal humano — e o técnico que
 passava do prazo resolvendo o problema via a IA voltar no meio do atendimento.
+**Sorteio não é atendimento.** O dono que veio SÓ da distribuição automática (rodízio/carga:
+último evento `routing` sem pessoa em `changed_by`, sem `last_handoff_at`, sem silêncio
+permanente e sem mensagem de gente depois de `assigned_at`) não está atendendo: o mesmo prazo
+o devolve à IA, exigindo que o dono continue o mesmo na escrita (`expectedAssignee` = o dono
+lido) e relendo o último evento logo antes dela. Assumir, Transferir, a passagem real da IA ou
+uma resposta de gente seguram a conversa com a pessoa (`atendimentoHumanoEfetivo`).
+**Devolver não redistribui.** Toda devolução grava `metadata.ia_retomada`; enquanto a marca
+existir, a conversa não tiver passado para humano de novo e houver IA no ar no número, o
+`routing-worker` guarda o pedido de distribuição (reavaliado a cada 5 min, sem prazo) em vez de
+entregar — `lib/routing/retomada-da-ia.ts`. E a devolução feita por PESSOA limpa o setor que a
+IA ou uma automação escolheu (`limparSetorDaIaNaDevolucao`); setor escolhido por pessoa fica.
 A devolução passa pela MESMA função do botão (`devolverAtendimentoAoAgente`) e só acontece em
 sessão com agente publicado ou roteador ativo; a pausa por resposta pelo celular
 (`lib/escalacao/atendimento-manual.ts`, silêncio finito) não entra — vence sozinha. Regra pura e

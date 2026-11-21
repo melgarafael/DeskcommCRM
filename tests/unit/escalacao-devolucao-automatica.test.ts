@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   PRAZO_MAX_MINUTOS_DEVOLUCAO,
+  atendimentoHumanoEfetivo,
   avaliarDevolucao,
+  type FatosDaAtribuicao,
   lerPrazoDeDevolucaoMinutos,
   pessoaNoComando,
   selecionarVencidas,
@@ -248,5 +250,70 @@ describe("selecionarVencidas — o lote", () => {
     ]);
     expect(pessoaNoComando(assumida)).toBe(true);
     expect(pessoaNoComando(esquecida)).toBe(false);
+  });
+});
+
+/**
+ * SORTEIO NÃO É ATENDIMENTO (D6 numa instalação de teste, 2026-11-20). A regra pura de
+ * `atendimentoHumanoEfetivo` e o lote que a ouve.
+ */
+describe("atendimentoHumanoEfetivo — a pessoa está atendendo ou só recebeu do sorteio?", () => {
+  const DONO = "66666666-6666-4666-8666-666666666666";
+  const doSorteio = (over: Partial<ConversaEmHandoff> = {}) =>
+    conversa({
+      status: "claimed",
+      assigned_to_user_id: DONO,
+      assigned_at: min(90),
+      bot_silenced_until: null,
+      last_handoff_at: null,
+      ...over,
+    });
+  const fatos = (over: Partial<FatosDaAtribuicao> = {}): FatosDaAtribuicao => ({
+    ultimaAtribuicao: { reason: "routing", changed_by: null },
+    humanoRespondeuDesdeAAtribuicao: false,
+    ...over,
+  });
+
+  it("⭐ distribuição automática sozinha: NÃO é atendimento", () => {
+    expect(atendimentoHumanoEfetivo(doSorteio(), fatos())).toBe(false);
+  });
+
+  it.each([
+    ["Assumir", { ultimaAtribuicao: { reason: "claim", changed_by: DONO } }],
+    ["Transferir", { ultimaAtribuicao: { reason: "transfer", changed_by: DONO } }],
+    ["distribuição pedida por uma pessoa", { ultimaAtribuicao: { reason: "routing", changed_by: DONO } }],
+    ["resposta de gente depois da atribuição", { humanoRespondeuDesdeAAtribuicao: true }],
+    ["evento desconhecido (falha fechada)", { ultimaAtribuicao: null }],
+  ])("%s ⇒ é atendimento", (_caso, over) => {
+    expect(atendimentoHumanoEfetivo(doSorteio(), fatos(over as Partial<FatosDaAtribuicao>))).toBe(true);
+  });
+
+  it("passagem real da IA para humano antes do sorteio ⇒ é transferência real", () => {
+    expect(atendimentoHumanoEfetivo(doSorteio({ last_handoff_at: min(91) }), fatos())).toBe(true);
+  });
+
+  it("silêncio permanente (o responsável respondeu pela tela) ⇒ é atendimento", () => {
+    expect(atendimentoHumanoEfetivo(doSorteio({ bot_silenced_until: "infinity" }), fatos())).toBe(true);
+  });
+
+  it("sem os fatos lidos ⇒ é atendimento (o lote nunca devolve dono sem prova)", () => {
+    expect(atendimentoHumanoEfetivo(doSorteio(), undefined)).toBe(true);
+  });
+
+  it("selecionarVencidas: o dono do sorteio vencido entra SÓ com os fatos; o assumido não entra nunca", () => {
+    const sorteio = doSorteio({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+    const assumida = doSorteio({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
+    const lote = [sorteio, assumida];
+    expect(selecionarVencidas(lote, selecao())).toEqual([]);
+    const comFatos = new Map<string, FatosDaAtribuicao>([
+      [sorteio.id, fatos()],
+      [assumida.id, fatos({ ultimaAtribuicao: { reason: "claim", changed_by: DONO } })],
+    ]);
+    expect(selecionarVencidas(lote, selecao(), comFatos).map((v) => v.conversa.id)).toEqual([sorteio.id]);
+  });
+
+  it("o sorteio ainda dentro do prazo não sai, mesmo com os fatos", () => {
+    const recente = doSorteio({ assigned_at: min(10) });
+    expect(selecionarVencidas([recente], selecao(), new Map([[recente.id, fatos()]]))).toEqual([]);
   });
 });

@@ -11,8 +11,11 @@
  * passagem. Conversa com dono humano, ou em que uma pessoa já respondeu ao
  * cliente, não é devolvida por relógio: atendimento humano em curso só volta à
  * IA por ação explícita de alguém (`pessoaNoComando`, em
- * `lib/escalacao/devolucao-automatica.ts`). A regra pura (quem vence, o que fica de
- * fora, e por quê) mora em `lib/escalacao/devolucao-automatica.ts`.
+ * `lib/escalacao/devolucao-automatica.ts`). A exceção é o dono que veio SÓ da
+ * distribuição automática — sorteio, sem passagem da IA, sem Assumir/Transferir
+ * e sem resposta de gente (`atendimentoHumanoEfetivo`): esse não está atendendo,
+ * e o mesmo prazo o devolve à IA. A regra pura (quem vence, o que fica de fora, e
+ * por quê) mora em `lib/escalacao/devolucao-automatica.ts`.
  *
  * NÃO tem regra própria de devolução: cada conversa vencida passa por
  * `devolverAtendimentoAoAgente`, a MESMA função do botão da tela e da tool do
@@ -40,9 +43,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import {
+  avaliarDevolucao,
   lerPrazoDeDevolucaoMinutos,
   selecionarVencidas,
   type ConversaEmHandoff,
+  type FatosDaAtribuicao,
 } from "@/lib/escalacao/devolucao-automatica";
 import { humanoRespondeuDepoisDe } from "@/lib/escalacao/handoff-tecnico";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
@@ -133,6 +138,67 @@ async function sessoesComAgente(
   return out;
 }
 
+/**
+ * O evento que deu o dono atual de cada conversa (o mais recente), por org.
+ * Filtra `organization_id` explicitamente: é o cliente de serviço.
+ */
+async function ultimasAtribuicoes(
+  admin: SupabaseClient,
+  organizationId: string,
+  conversationIds: string[],
+): Promise<Map<string, { reason: string; changed_by: string | null }>> {
+  const out = new Map<string, { reason: string; changed_by: string | null }>();
+  if (conversationIds.length === 0) return out;
+  const { data, error } = await admin
+    .from("conversation_assignment_events")
+    .select("conversation_id, reason, changed_by, created_at")
+    .eq("organization_id", organizationId)
+    .in("conversation_id", conversationIds)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`conversation_assignment_events: ${error.message}`);
+  for (const row of (data ?? []) as Array<{
+    conversation_id: string;
+    reason: string;
+    changed_by: string | null;
+  }>) {
+    if (!out.has(row.conversation_id)) {
+      out.set(row.conversation_id, { reason: row.reason, changed_by: row.changed_by });
+    }
+  }
+  return out;
+}
+
+/**
+ * Os fatos de `atendimentoHumanoEfetivo` — SÓ para o dono que o relógio já
+ * devolveria (recorte 2, prazo vencido). Ler eventos e mensagens de toda conversa
+ * com dono seria uma ida ao banco por atendimento ativo a cada 5 minutos.
+ */
+async function fatosDasAtribuicoes(
+  admin: SupabaseClient,
+  conversas: readonly ConversaEmHandoff[],
+  sel: Parameters<typeof avaliarDevolucao>[1],
+): Promise<Map<string, FatosDaAtribuicao>> {
+  const candidatas = conversas.filter(
+    (c) => c.assigned_to_user_id !== null && c.last_handoff_at === null && avaliarDevolucao(c, sel).devolver,
+  );
+  const porOrg = new Map<string, ConversaEmHandoff[]>();
+  for (const c of candidatas) porOrg.set(c.organization_id, [...(porOrg.get(c.organization_id) ?? []), c]);
+
+  const fatos = new Map<string, FatosDaAtribuicao>();
+  for (const [org, lista] of porOrg) {
+    const eventos = await ultimasAtribuicoes(admin, org, lista.map((c) => c.id));
+    for (const c of lista) {
+      fatos.set(c.id, {
+        ultimaAtribuicao: eventos.get(c.id) ?? null,
+        // Sem carimbo da atribuição não há como provar que ninguém respondeu.
+        humanoRespondeuDesdeAAtribuicao:
+          c.assigned_at === null || (await humanoRespondeuDepoisDe(admin, org, c.id, c.assigned_at)),
+      });
+    }
+  }
+  return fatos;
+}
+
 export async function devolverHandoffsVencidos(
   admin: SupabaseClient,
   requestId: string,
@@ -152,32 +218,45 @@ export async function devolverHandoffsVencidos(
     // Grupo de WhatsApp é sempre de humano: o automático nunca o atende, então
     // "devolver ao agente" tiraria o grupo da fila humana sem ninguém responder.
     .eq("is_group", false)
-    // Só a passagem formal que NINGUÉM assumiu. Conversa com dono humano não é
-    // devolvida por relógio (`pessoaNoComando`), e trazê-la para a rodada só
-    // gastaria o teto de 500 linhas com conversas que seriam descartadas —
-    // empurrando para fora da varredura justamente as passagens esquecidas.
-    .is("assigned_to_user_id", null)
-    .eq("bot_silenced_until", "infinity")
+    // Dois recortes, e nenhum outro:
+    //  1. a passagem formal que NINGUÉM assumiu (sem dono, silêncio permanente);
+    //  2. o dono que pode ter vindo SÓ da distribuição automática — com dono e
+    //     sem passagem para humano (`last_handoff_at` nulo). Quem decide se é
+    //     sorteio ou atendimento é `atendimentoHumanoEfetivo`, com os fatos lidos
+    //     abaixo. Conversa com dono E passagem é transferência real: nem entra.
+    // Trazer o resto só gastaria o teto de 500 linhas com descartes, empurrando
+    // para fora da varredura justamente as passagens esquecidas.
+    .or(
+      "and(assigned_to_user_id.is.null,bot_silenced_until.eq.infinity)," +
+        "and(assigned_to_user_id.not.is.null,last_handoff_at.is.null)",
+    )
     .limit(SCAN_LIMIT);
   if (error) throw new Error(`conversations: ${error.message}`);
   const conversas = (data ?? []) as ConversaEmHandoff[];
 
-  const vencidas = selecionarVencidas(conversas, {
+  const sel = {
     prazoPorOrg,
     sessoesComAgente: await sessoesComAgente(admin, orgIds),
     agoraMs: agora.getTime(),
-  });
+  };
+  const fatos = await fatosDasAtribuicoes(admin, conversas, sel);
+  const vencidas = selecionarVencidas(conversas, sel, fatos);
 
   let devolvidas = 0;
   let falhas = 0;
   for (const { conversa, minutos } of vencidas) {
+    const donoDoSorteio = conversa.assigned_to_user_id;
     // Uma pessoa respondeu ao cliente DEPOIS da passagem — pelo Inbox ou pelo
     // celular — sem clicar em Assumir: ela está atendendo, e o relógio não a
     // tira da conversa. Contar a resposta só como "último sinal humano"
     // reiniciava o prazo, e o técnico que passava do prazo sem escrever (porque
     // estava resolvendo o problema) via a IA voltar no meio do atendimento.
     // Sem carimbo da passagem não há como provar que ninguém respondeu: fica.
-    const desde = conversa.last_handoff_at ?? conversa.status_changed_at;
+    // Para o dono do sorteio, o carimbo é o da atribuição (reconferido aqui, na
+    // hora da escrita: a resposta pode ter chegado depois da leitura dos fatos).
+    const desde = donoDoSorteio !== null
+      ? conversa.assigned_at
+      : (conversa.last_handoff_at ?? conversa.status_changed_at);
     if (desde === null || (await humanoRespondeuDepoisDe(admin, conversa.organization_id, conversa.id, desde))) {
       logger.info("[handoff-devolucao] não devolvida: há atendimento humano depois da passagem", {
         conversation_id: conversa.id,
@@ -186,14 +265,29 @@ export async function devolverHandoffsVencidos(
       });
       continue;
     }
+    // O dono do sorteio que clicou em Assumir (ou foi transferido) DEPOIS da
+    // leitura dos fatos: o dono é o mesmo, então `expectedAssignee` não o pega —
+    // o evento novo, sim. Reler o último evento logo antes da escrita.
+    if (donoDoSorteio !== null) {
+      const agoraEvento = (await ultimasAtribuicoes(admin, conversa.organization_id, [conversa.id])).get(conversa.id);
+      if (!agoraEvento || agoraEvento.reason !== "routing" || agoraEvento.changed_by !== null) {
+        logger.info("[handoff-devolucao] não devolvida: a pessoa assumiu a conversa do sorteio", {
+          conversation_id: conversa.id,
+          organization_id: conversa.organization_id,
+          requestId,
+        });
+        continue;
+      }
+    }
     const r = await devolverAtendimentoAoAgente(
       { supabase: admin, organizationId: conversa.organization_id, actor: ATOR_DO_CRON, requestId },
-      // `expectedAssignee: null` — a conversa foi lida SEM dono, e só é devolvida
-      // se continuar sem dono na hora da escrita. Quem assumiu entre a leitura e
-      // aqui ganha: `retomada.ts` recusa com `assignment_conflict` sem detalhe
-      // (a corrida benigna abaixo) e nada é solto. Sem isto, a retomada liberava
-      // o dono recém-chegado — o release do cron não exige precondição.
-      { conversationId: conversa.id, origem: { automatica: { minutos } }, expectedAssignee: null },
+      // `expectedAssignee` — o dono LIDO (null na passagem sem dono; o do sorteio
+      // no recorte 2). Só é devolvida se o dono continuar o mesmo na hora da
+      // escrita: quem assumiu ou recebeu transferência entre a leitura e aqui
+      // ganha — `retomada.ts` recusa com `assignment_conflict` sem detalhe (a
+      // corrida benigna abaixo) e nada é solto. Sem isto, a retomada liberava o
+      // dono recém-chegado — o release do cron não exige precondição.
+      { conversationId: conversa.id, origem: { automatica: { minutos } }, expectedAssignee: donoDoSorteio },
     );
     if (r.ok) {
       devolvidas++;

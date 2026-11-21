@@ -90,7 +90,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       actor: { type: "user", id: authUser.id, role: activeOrg.role },
       requestId,
     },
-    { conversationId: id, expectedAssignee: dono },
+    // "Devolver ao automático" é decisão de uma pessoa (`limparClassificacaoDaIa`).
+    { conversationId: id, expectedAssignee: dono, limparClassificacaoDaIa: true },
   );
 
   if (!resultado.ok) {
