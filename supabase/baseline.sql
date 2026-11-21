@@ -89251,8 +89251,8 @@ create index if not exists idx_conversations_fila_espera
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
--- ---- Embedded Signup do app da Meta da instalação (migration 9410, #4074) ----
--- Espelho de supabase/migrations/20261118120000_9410_embedded_signup_do_app_da_meta.sql.
+-- ---- Embedded Signup do app da Meta da instalação (migration 9447, #4074) ----
+-- Espelho de supabase/migrations/20261121142536_9447_embedded_signup_do_app_da_meta.sql.
 -- App ID e Configuration ID não são segredo (vão ao navegador no FB.init/FB.login).
 alter table public.platform_meta_app
   add column if not exists app_id text,

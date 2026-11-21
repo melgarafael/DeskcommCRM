@@ -1,4 +1,4 @@
--- 9410 — Embedded Signup com o app da Meta da instalação (#4074).
+-- 9447 — Embedded Signup com o app da Meta da instalação (#4074).
 --
 -- O app da Meta da instalação (0257) passa a guardar o App ID e o Configuration
 -- ID do Embedded Signup, ao lado do App Secret. Os dois NÃO são segredo: o App ID
