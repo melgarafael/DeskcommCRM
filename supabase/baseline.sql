@@ -9590,7 +9590,7 @@ alter table public.channel_sessions
   add column if not exists telegram_bot_id text,
   add column if not exists telegram_token_encrypted bytea;
 
--- webchat (migration 9443, chat no site — Spec 36 F1): a chave pública e as origens
+-- webchat (migration 9444, chat no site — Spec 36 F1): a chave pública e as origens
 -- nascem ANTES das constraints abaixo. A função das origens também, porque o CHECK
 -- de `webchat_allowed_origins` a referencia.
 alter table public.channel_sessions
@@ -9623,7 +9623,7 @@ alter table public.channel_sessions
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
   -- (9342) somados AQUI — UM bloco só por constraint (não duplicar drop+add
   -- por migration).
-  -- 'webchat' (9443, chat no site) somado aqui também.
+  -- 'webchat' (9444, chat no site) somado aqui também.
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text, 'webchat'::text]));
 
 alter table public.channel_sessions
@@ -9640,7 +9640,7 @@ alter table public.channel_sessions
     (provider = 'datafy'     and datafy_phone_number_id is not null) or
     -- Bot do Telegram (migration 9342): endereça pelo id do robô.
     (provider = 'telegram'   and telegram_bot_id      is not null) or
-    -- Chat no site (9443): endereça pela chave pública do widget.
+    -- Chat no site (9444): endereça pela chave pública do widget.
     (provider = 'webchat'    and webchat_public_key   is not null)
   );
 
@@ -82727,7 +82727,7 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
--- ---- canal de chat no site (migration 9443, Spec 36 F1) ----
+-- ---- canal de chat no site (migration 9444, Spec 36 F1) ----
 -- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
 -- `channel_sessions_webchat_allowed_origins_check` e `conversations_channel_check`)
 -- e as colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
