@@ -249,9 +249,11 @@ export const PUBLIC_PATHS: RegExp[] = [
   // CHAT NO SITE (spec 36, F1): o visitante não tem sessão nem cookie. A autoridade mora
   // DENTRO de cada rota: a chave pública (`sessao`) e o token de visitante assinado
   // (`mensagens`), com a organização saindo da linha da conexão. Âncoradas com `$`:
-  // nenhum sub-path nasce público de carona.
+  // nenhum sub-path nasce público de carona. A GET de `eventos` (stream das respostas)
+  // segue a mesma regra: o token vai no cabeçalho, e a conversa sai do token.
   /^\/api\/v1\/webchat\/sessao$/,
   /^\/api\/v1\/webchat\/mensagens$/,
+  /^\/api\/v1\/webchat\/eventos$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —
