@@ -318,12 +318,15 @@ describe("Esc cancela a nova duração (#5106)", () => {
       clientY: y("15:00"),
     });
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
     fireEvent.pointerMove(window, {
       pointerId: 1,
       pointerType: "mouse",
       clientX: 10,
       clientY: y("15:30"),
     });
+    // Mover depois do Esc não traz a prévia de volta.
+    expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
     fireEvent.pointerUp(window, { pointerId: 1, clientX: 10, clientY: y("15:30") });
 
     expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
