@@ -1,17 +1,13 @@
 /**
- * O VALOR DO NEGÓCIO SEGUE AS VENDAS — uma porta só para "quanto vendeu".
+ * O NEGÓCIO ABERTO NÃO TEM MAIS O "VALOR" DIGITADO.
  *
- *  1. sem venda registrada, o Valor é o campo de sempre (digita e salva), e o
- *     "+" de registrar venda mora AO LADO dele;
- *  2. com venda registrada, o Valor mostra a SOMA das vendas na moeda do
- *     negócio, em leitura, com o "+" para registrar mais;
- *  3. salvar o formulário com venda registrada NÃO manda `value_cents` — a
- *     soma é do banco (migration 9450), e um Salvar de ficha aberta antes da
- *     venda a apagaria;
- *  4. apagar a última venda devolve o valor digitado (decisão 2B do doc 396):
- *     o campo volta editável com o valor RELIDO, não com a soma em memória;
- *  5. abaixo de `agent` (o piso do `POST /api/v1/vendas`) o "+" não aparece —
- *     ele só abriria um diálogo que termina em 403.
+ * Uma porta só para "quanto vendeu": o bloco Vendas do negócio (botão
+ * "Registrar venda" + a lista). O Valor do negócio, que o card mostra, é a soma
+ * das vendas, gravada pelo gatilho do banco.
+ *
+ *  1. o formulário "Dados do negócio" não desenha campo de Valor;
+ *  2. salvar o formulário NUNCA manda `value_cents` — um Salvar com a ficha
+ *     aberta antes da venda apagaria a soma que o banco acabou de gravar.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,22 +15,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import type { Lead } from "@/lib/types/leads";
 
-const estado = vi.hoisted(() => ({
-  vendas: [] as Array<{ id: string; valor_cents: number; currency: string }>,
-  editarLead: vi.fn(),
-  papel: "agent" as "viewer" | "agent",
-}));
+const estado = vi.hoisted(() => ({ editarLead: vi.fn() }));
 
-vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
-  useVendasDoNegocio: () => ({ data: estado.vendas }),
-  useRegistrarVenda: () => ({ mutateAsync: async () => ({}), isPending: false }),
-  useApagarVenda: () => ({ mutate: () => {}, isPending: false }),
-}));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useActiveOrg: () => ({ currency: "BRL", country: "BR", orgId: "org-1", role: estado.papel }),
+  useActiveOrg: () => ({ currency: "BRL", country: "BR", orgId: "org-1", role: "agent" }),
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
-vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/kanban/useUpdateLead", () => ({
   useEditLead: () => ({ mutateAsync: estado.editarLead, isPending: false }),
@@ -73,69 +59,26 @@ const negocio: Lead = {
 };
 
 beforeEach(() => {
-  estado.papel = "agent";
-  estado.vendas = [];
   estado.editarLead.mockReset().mockResolvedValue({});
 });
 
-describe("o Valor do negócio e as vendas registradas", () => {
-  it("sem venda: o Valor é editável, e o '+' de venda fica ao lado dele", async () => {
+describe("o negócio aberto e o Valor", () => {
+  it("o formulário não tem campo de Valor digitado", () => {
     render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
 
-    const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
-    expect(campo.readOnly).toBe(false);
-    expect(screen.getByTestId("valor-registrar-venda")).toBeTruthy();
-
-    fireEvent.change(campo, { target: { value: "250,00" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
-    expect(estado.editarLead.mock.calls[0]![0].patch.value_cents).toBe(25_000);
+    expect(screen.queryByLabelText(/^Valor \(/)).toBeNull();
+    expect(document.getElementById("valueReais")).toBeNull();
   });
 
-  it("com vendas: o Valor é a soma na moeda do negócio, em leitura", () => {
-    estado.vendas = [
-      { id: "v1", valor_cents: 18_000, currency: "BRL" },
-      { id: "v2", valor_cents: 12_000, currency: "BRL" },
-      { id: "v3", valor_cents: 5_000, currency: "USD" }, // outra moeda não entra
-    ];
+  it("salvar o formulário nunca manda value_cents", async () => {
     render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
 
-    const campo = screen.getByTestId("valor-pelas-vendas") as HTMLInputElement;
-    expect(campo.readOnly).toBe(true);
-    expect(campo.value).toMatch(/R\$.300,00/);
-    expect(screen.getByTestId("valor-pelas-vendas-legenda").textContent).toContain("3");
-    expect(screen.getByTestId("valor-registrar-venda")).toBeTruthy();
-  });
-
-  it("com vendas: salvar o formulário não reescreve o valor", async () => {
-    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
-    render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
-
+    fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Dãm Dãm Baby" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
-    expect(estado.editarLead.mock.calls[0]![0].patch).not.toHaveProperty("value_cents");
-  });
-
-  it("apagar a última venda: o campo volta editável com o valor devolvido pelo banco", () => {
-    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
-    const { rerender } = render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
-
-    // A venda saiu e o banco devolveu o valor digitado antes dela (R$ 500).
-    estado.vendas = [];
-    rerender(<LeadFieldsForm lead={{ ...negocio, value_cents: 50_000 }} pipelineId={negocio.pipeline_id} />);
-
-    const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
-    expect(campo.readOnly).toBe(false);
-    expect(campo.value).toMatch(/^500/);
-  });
-
-  it("viewer: vê o Valor, mas não recebe o '+' de registrar venda", () => {
-    estado.papel = "viewer";
-    estado.vendas = [{ id: "v1", valor_cents: 18_000, currency: "BRL" }];
-    render(<LeadFieldsForm lead={negocio} pipelineId={negocio.pipeline_id} />);
-
-    expect(screen.getByTestId("valor-pelas-vendas")).toBeTruthy();
-    expect(screen.queryByTestId("valor-registrar-venda")).toBeNull();
+    const patch = estado.editarLead.mock.calls[0]![0].patch as Record<string, unknown>;
+    expect(patch.title).toBe("Dãm Dãm Baby");
+    expect(patch).not.toHaveProperty("value_cents");
   });
 });

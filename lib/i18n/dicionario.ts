@@ -23137,7 +23137,7 @@ export const DICIONARIO: Traducoes = {
   "Registrar": { es: "Registrar" },
   "Não foi possível carregar as vendas.": { es: "No fue posible cargar las ventas." },
   "Nenhuma venda registrada neste negócio.": { es: "Ninguna venta registrada en este negocio." },
-  "Nenhuma venda ainda. Use o + ao lado do Valor para registrar.": { es: "Ninguna venta todavía. Usa el + junto al Valor para registrar." },
+  "Nenhuma venda ainda. Use Registrar venda para adicionar.": { es: "Ninguna venta todavía. Usa Registrar venta para agregar." },
   "Soma de": { es: "Suma de" },
   "venda(s) registrada(s)": { es: "venta(s) registrada(s)" },
   "Apagar venda": { es: "Borrar venta" },

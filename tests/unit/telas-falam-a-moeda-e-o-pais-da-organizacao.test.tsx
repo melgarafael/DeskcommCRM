@@ -37,7 +37,6 @@ vi.mock("@/lib/api/client", () => ({ apiClient: api }));
 import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
-import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 
 const XISTAO: PerfilDoPais = {
@@ -66,18 +65,6 @@ const XISTAO: PerfilDoPais = {
   padroesDePii: [],
 };
 
-const NEGOCIO = {
-  id: "11111111-1111-4111-8111-111111111111",
-  title: "Negócio",
-  description: null,
-  value_cents: 24990,
-  currency: "EUR",
-  stage_id: "22222222-2222-4222-8222-222222222222",
-  expected_close_date: null,
-  tags: [],
-  custom_fields: {},
-} as never;
-
 /** O provedor de consultas que os dois diálogos exigem para montar. */
 function render(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -97,43 +84,9 @@ afterEach(() => {
 const FUNIL = "33333333-3333-4333-8333-333333333333";
 
 describe("o valor do negócio usa a moeda certa — e o eco embaixo do campo também", () => {
-  it("negócio JÁ GRAVADO manda na moeda, mesmo se a empresa trocou depois", () => {
-    // Trocar a moeda da organização não reescreve o que nasceu antes: o cartão
-    // e o dossiê mostram a persistida, e a edição precisa concordar com eles.
-    orgAtiva.atual = { currency: "BRL", country: null };
-    render(<LeadFieldsForm lead={NEGOCIO} pipelineId={FUNIL} />);
-    expect(screen.getByText(/Valor \(€\)/)).toBeTruthy();
-    expect(screen.getByText(/= 249,90/)).toBeTruthy();
-    expect(screen.queryByText(/R\$/)).toBeNull();
-  });
-
-  it("moeda SEM centavos: o eco usa a régua do negócio, não a das unidades menores", () => {
-    // `value_cents` guarda ×100 em qualquer moeda; `formatCents` lê unidades
-    // menores. Em guarani as duas divergem por cem, e o eco mostraria
-    // `Gs. 12.500.000` embaixo de um card que diz `Gs. 125.000`.
-    orgAtiva.atual = { currency: "PYG", country: null };
-    render(
-      <LeadFieldsForm
-        lead={{ ...(NEGOCIO as object), currency: "PYG", value_cents: 12_500_000 } as never}
-        pipelineId={FUNIL}
-      />,
-    );
-    expect(screen.getByText(/= Gs\.\s?125\.000$/)).toBeTruthy();
-  });
-
-  it("negócio sem moeda gravada cai na da organização", () => {
-    orgAtiva.atual = { currency: "EUR", country: null };
-    render(<LeadFieldsForm lead={{ ...(NEGOCIO as object), currency: null } as never} pipelineId={FUNIL} />);
-    expect(screen.getByText(/Valor \(€\)/)).toBeTruthy();
-  });
-
-  it("e quem está em real continua lendo 'Valor (R$)'", () => {
-    orgAtiva.atual = { currency: "BRL", country: null };
-    render(<LeadFieldsForm lead={{ ...(NEGOCIO as object), currency: "BRL" } as never} pipelineId={FUNIL} />);
-    expect(screen.getByText(/Valor \(R\$\)/)).toBeTruthy();
-    expect(screen.getByText(/= R\$\s?249,90/)).toBeTruthy();
-  });
-
+  // O dossiê não tem mais o campo "Valor" digitado — o valor nasce
+  // das vendas registradas (bloco Vendas). Os casos de moeda do campo saíram
+  // com ele; a moeda da VENDA é a do negócio (ver components/vendas).
   it("negócio NOVO nasce na moeda da organização", () => {
     orgAtiva.atual = { currency: "EUR", country: null };
     render(

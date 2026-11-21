@@ -25,7 +25,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
 import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight, CalendarCheck } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
@@ -33,8 +32,7 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
-import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
-import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { ChecklistDoCard } from "./ChecklistDoCard";
@@ -64,8 +62,6 @@ import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
 import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
-import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
-import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -621,139 +617,23 @@ function ValorDoNegocio({
   podeEditar: boolean;
   onSalvo: () => void;
 }) {
+  // Uma porta só para "quanto vendeu": o botão "Registrar venda"
+  // abre valor, data, tags e observação, e logo abaixo ficam as vendas já
+  // registradas, com data e lixeira. O Valor do negócio vira a soma delas.
+  // Digitar o Valor e salvar gravava o negócio e NÃO entrava em Vendas — foi
+  // isso que a equipe estranhou, e esse caminho saiu.
   const t = useT();
-  const edit = useEditLead(lead.pipeline_id);
-  // Com venda registrada, o valor é a SOMA das vendas (o banco grava em
-  // `value_cents`, migration 9450): o campo vira leitura e o "+" registra mais.
-  const { data: vendas } = useVendasDoNegocio(lead.id);
-  const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
-  const valorPelasVendas = vendasDoNegocio.length > 0;
-  const somaDasVendas = vendasDoNegocio.reduce(
-    (soma, v) => soma + (v.currency.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
-    0,
-  );
-  const textoDoBanco = lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda);
-  const [texto, setTexto] = useState(textoDoBanco);
-  // O valor relido entra no campo quando a pessoa não o mexeu: apagar a última
-  // venda devolve o valor digitado (decisão 2B do doc 396), e o campo volta com
-  // ELE, não com a soma que estava em memória.
-  const [textoCarregado, setTextoCarregado] = useState(textoDoBanco);
-  if (textoCarregado !== textoDoBanco) {
-    setTextoCarregado(textoDoBanco);
-    if (texto === textoCarregado) setTexto(textoDoBanco);
-  }
-  const [erro, setErro] = useState<string | null>(null);
-  // O eco do quadro: dinheiro nunca é interpretado em silêncio.
-  const entendido = texto.trim() === "" ? null : lerCampoDeMoeda(texto, moeda);
-
-  async function salvar() {
-    if (texto.trim() === "") {
-      setErro(t("Informe o valor."));
-      return;
-    }
-    const cents = lerCampoDeMoeda(texto, moeda);
-    if (cents === null) {
-      setErro(t("Valor inválido"));
-      return;
-    }
-    setErro(null);
-    try {
-      await edit.mutateAsync({ leadId: lead.id, patch: { value_cents: cents } });
-      // O que acabou de gravar fica escrito na régua da moeda — «R$ 1.234,56».
-      setTexto(valorDoCampoDeMoeda(cents / 100, moeda));
-      toast.success(t("Valor atualizado."));
-      onSalvo();
-    } catch {
-      // o hook já mostrou o erro
-    }
-  }
-
-  if (!podeEditar) {
-    return (
-      <div className="space-y-0.5" data-testid="inbox-valor-do-negocio">
-        <span className="block text-xs font-medium text-text">{t("Valor do negócio")}</span>
-        <p className="text-xs text-muted-foreground" data-testid="inbox-valor-somente-leitura">
-          {formatMoney(lead.value_cents, lead.currency)}
-        </p>
-      </div>
-    );
-  }
-
-  const maisVenda = (
-    <BotaoRegistrarVenda
-      leadId={lead.id}
-      titulo={lead.title}
-      moeda={moeda.toUpperCase()}
-      className="size-8 border border-border"
-      testId="inbox-valor-registrar-venda"
-      aoRegistrar={onSalvo}
-    />
-  );
-
-  if (valorPelasVendas) {
-    return (
-      <div className="space-y-1" data-testid="inbox-valor-do-negocio">
-        <span className="block text-xs font-medium text-text">
-          {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
-        </span>
-        <div className="flex items-center gap-1">
-          <p
-            className="flex h-8 flex-1 items-center rounded-md border border-border bg-surface-elevated px-3 text-xs"
-            data-testid="inbox-valor-pelas-vendas"
-          >
-            {formatValorDoNegocio(somaDasVendas, moeda)}
-          </p>
-          {maisVenda}
-        </div>
-        <p className="text-[10px] text-muted-foreground">
-          {t("Soma de")} {vendasDoNegocio.length} {t("venda(s) registrada(s)")}
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-1" data-testid="inbox-valor-do-negocio">
-      <label className="block text-xs font-medium text-text" htmlFor={`valor-${lead.id}`}>
-        {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
-      </label>
-      <div className="flex items-center gap-1">
-        <Input
-          id={`valor-${lead.id}`}
-          data-testid="inbox-valor-input"
-          className="h-8 text-xs"
-          inputMode="decimal"
-          placeholder="0,00"
-          value={texto}
-          aria-invalid={erro ? true : undefined}
-          onChange={(e) => {
-            setTexto(e.target.value);
-            setErro(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void salvar();
-            }
-          }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-8 shrink-0 text-xs"
-          data-testid="inbox-valor-salvar"
-          disabled={edit.isPending}
-          onClick={() => void salvar()}
-        >
-          {t("Salvar")}
-        </Button>
-        {maisVenda}
-      </div>
-      {entendido !== null && (
-        <p className="text-[10px] text-muted-foreground">= {formatValorDoNegocio(entendido, moeda)}</p>
-      )}
-      {erro && <p className="text-[10px] text-error-fg">{erro}</p>}
+      <span className="block text-xs font-medium text-text">{t("Vendas")}</span>
+      <VendasDoNegocio
+        leadId={lead.id}
+        titulo={lead.title}
+        moeda={moeda.toUpperCase()}
+        somenteLeitura={!podeEditar}
+        aoMudar={onSalvo}
+        compacto
+      />
     </div>
   );
 }
@@ -1626,28 +1506,6 @@ export function CRMSidePanel({
             moedaDaOrg={activeOrg?.currency ?? MOEDA_PADRAO}
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
-          {/* As VENDAS do negócio ativo (Orken CRM): registrar a compra daqui,
-              sem sair da conversa. Mesma seção do negócio aberto no funil. */}
-          {negocioAtivoId && (
-            <div className="mt-3" data-testid="inbox-vendas">
-              <h4 className="mb-1 text-xs font-semibold text-text">{t("Vendas")}</h4>
-              <VendasDoNegocio
-                leadId={negocioAtivoId}
-                titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
-                moeda={(
-                  leads.find((l) => l.id === negocioAtivoId)?.currency ??
-                  activeOrg?.currency ??
-                  MOEDA_PADRAO
-                ).toUpperCase()}
-                // Apagar venda é `agent`+, o mesmo piso do campo Valor ao lado
-                // (`podeEditarValor`): com `readonly` sozinho, o viewer via a lixeira
-                // e levava 403 ao clicar (prova pela tela do #5087).
-                somenteLeitura={readonly || !podeEditarValor}
-                semRegistrar
-                aoMudar={recarregar}
-              />
-            </div>
-          )}
           </>
         ) : (
           <SemLista
