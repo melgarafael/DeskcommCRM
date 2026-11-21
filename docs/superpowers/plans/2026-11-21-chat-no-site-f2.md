@@ -22,7 +22,7 @@
 ## Foco da revisão (o que a spec implica e nenhuma tarefa testaria sozinha)
 
 1. **Site fora da lista embute a janela.** Lista vazia deve render `frame-ancestors 'none'`; lista com dois domínios, os dois e só eles. Teste na Tarefa 3.
-2. **XSS pela configuração.** Título, saudação, nome da empresa e URL da política vêm do banco e entram no HTML: escapar, e só aceitar URL de política `https`. Teste na Tarefa 3.
+2. **XSS pela configuração.** Título, saudação, nome da empresa e URL da política vêm do banco e entram no HTML: escapar, e só devolver URL de política pela régua `urlDePoliticaSegura` (`http`/`https`; `javascript:` e afins viram nulo). Teste na Tarefa 3.
 3. **Coleta obrigatória burlada.** O servidor, e não a janela, recusa a primeira mensagem sem o campo marcado como obrigatório. Teste na Tarefa 2.
 4. **Aceite de LGPD ausente ou forjado.** A primeira mensagem sem aceite é recusada; o aceite grava a versão do texto e a hora. Teste na Tarefa 2.
 5. **`postMessage` de página estranha.** A janela só aceita mensagens de `window.parent`; o script da bolha só aceita mensagens da origem do CRM. Teste nas Tarefas 4 e 5.
@@ -53,7 +53,7 @@ O horário (janela por dia, feriados, mensagem fora do expediente, captura offli
 - Consumes: `urlDePoliticaSegura(valor: unknown): string | null` de `lib/legal/operador.ts`; cliente admin (`createAdminClient`).
 - Produces: `lerControladorDoChat(admin: SupabaseClient, organizationId: string): Promise<{ razaoSocial: string | null; politicaUrl: string | null }>` — nunca lança: em erro de leitura devolve os dois `null` e registra um aviso pelo logger do projeto.
 
-- [ ] **Step 1: Teste que falha** — casos: organização com `legal_name` e `privacy_policy_url` https devolve os dois; URL `javascript:` ou `http:` vira `politicaUrl: null`; organização inexistente devolve os dois `null`; erro do banco não lança; a consulta filtra por `id = organizationId` (assert no dublê).
+- [ ] **Step 1: Teste que falha** — casos: organização com `legal_name` e `privacy_policy_url` https devolve os dois; URL `javascript:` ou `data:` vira `politicaUrl: null`, e `http:` é devolvido como está (a régua única `urlDePoliticaSegura` aceita `http` e `https`; não se cria segunda régua); o aviso de erro leva `organizationId`; organização inexistente devolve os dois `null`; erro do banco não lança; a consulta filtra por `id = organizationId` (assert no dublê).
 - [ ] **Step 2:** o CI do fork mostra o vermelho.
 - [ ] **Step 3: Implementar** `lerControladorDoChat` lendo `organizations` (`legal_name`, `privacy_policy_url`) com o `organizationId` recebido. Não chama `resolverOperador()` (ele lê a sessão do usuário, e o visitante não tem sessão).
 - [ ] **Step 4:** CI verde. **Step 5: Commit** `feat(chat): leitor do controlador dos dados para a janela pública`.
