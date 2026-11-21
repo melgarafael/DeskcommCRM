@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
+import { partesDoTrecho } from "@/lib/inbox/busca-em-mensagens";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 /**
@@ -103,6 +104,12 @@ interface Props {
    * sozinha: o selo só aparece com `true` porque afirmar o contrário seria pior.
    */
   mencionado?: boolean;
+  /**
+   * O TERMO DA BUSCA DO INBOX (#1355). Chega quando a lista está filtrada por
+   * `?search=`: é ele que decide o destaque do trecho casado da mensagem. Vazio
+   * = o trecho (se houver) aparece sem destaque — adivinhar palavra seria pior.
+   */
+  termoDaBusca?: string;
 }
 
 /**
@@ -171,6 +178,7 @@ export function ConversationListItem({
   onAlternarSelecao,
   onAlternarExemplo,
   mencionado = false,
+  termoDaBusca = "",
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -458,6 +466,37 @@ export function ConversationListItem({
             </span>
           )}
         </div>
+
+        {/* ─── POR QUE ESTA LINHA APARECEU (#1355) ──────────────────────────
+            A busca do Inbox passou a casar o TEXTO das mensagens, e um resultado
+            que só mostra o nome do cliente obriga a abrir o tique para descobrir
+            o motivo — o mesmo rolar de antes, só que depois do clique. Aqui vai o
+            trecho da mensagem que casou, com a palavra em destaque.
+
+            Vem DEPOIS da prévia de propósito: a prévia continua sendo "o que
+            chegou por último", e o trecho é "onde o termo está" — são respostas
+            diferentes, e esconder a primeira para mostrar a segunda faria a linha
+            mentir sobre o estado da conversa. */}
+        {conversation.busca_em_mensagem?.trecho ? (
+          <p
+            data-testid={`trecho-da-busca-${conversation.id}`}
+            className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-text-muted"
+          >
+            <span className="mr-1 text-[11px] font-medium text-accent">
+              {t("Encontrado numa mensagem anterior")}:
+            </span>
+            {partesDoTrecho(conversation.busca_em_mensagem.trecho, termoDaBusca).map(
+              (parte, indice) =>
+                parte.casa ? (
+                  <strong key={indice} className="font-semibold text-text">
+                    {parte.texto}
+                  </strong>
+                ) : (
+                  <span key={indice}>{parte.texto}</span>
+                ),
+            )}
+          </p>
+        ) : null}
 
         {temSelos && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
