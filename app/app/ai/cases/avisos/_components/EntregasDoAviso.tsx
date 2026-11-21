@@ -68,9 +68,16 @@ function fraseDoErro(codigo: string | null): string | null {
 export function EntregasDoAviso({
   entregas,
   laco,
+  algumMembroSemAviso = false,
 }: {
   entregas: EntregaNaTela[];
   laco: LacoDoAviso;
+  /**
+   * Alguém da equipe está com "Não enviar aviso de caso" ligado no modo
+   * `responsavel` (#4989). Os casos dessa pessoa não geram entrega — e sem esta
+   * frase a lista diria, pelo silêncio, que eles nunca existiram.
+   */
+  algumMembroSemAviso?: boolean;
 }) {
   const t = useT();
   const locale = useLocaleDeData();
@@ -84,6 +91,13 @@ export function EntregasDoAviso({
             "Esta lista registra avisos de casos. O resultado dos avisos de transferência para atendimento humano aparece no respectivo item da Central de alertas.",
           )}
         </p>
+        {algumMembroSemAviso ? (
+          <p className="text-xs text-muted-foreground" data-testid="entregas-sem-quem-nao-recebe">
+            {t(
+              "Quando a vez do aviso chega a alguém com \"Não enviar aviso de caso\" ligado, nenhuma linha entra aqui: o caso fica só no painel Casos. O que já estava na lista continua.",
+            )}
+          </p>
+        ) : null}
       </div>
 
       {entregas.length === 0 ? (

@@ -637,9 +637,32 @@ export function AgendaClient({
   // histórico, que lê `agendamentos` (cheio) e o separa sozinha em `separar()`.
   // Mesma fonte, dois recortes: a grade responde "o que está de pé", o
   // histórico responde "o que aconteceu", cancelado incluso.
+  //
+  // A grade também precisa saber de quem a duração é a do SERVIÇO (#4450): a
+  // borda de baixo do card não aparece ali, porque a rota recusa
+  // `duration_minutes` com `agenda_duracao_do_servico`. A lista de tipos desta
+  // tela já diz quais são serviço; a vaga de ocorrência vem marcada da rota.
+  const tiposDeServico = React.useMemo(
+    () => new Set(tiposIniciais.filter((t) => t.servico).map((t) => t.id)),
+    [tiposIniciais],
+  );
+  // O que ocupa, SEM o filtro de profissional: com o Bruno isolado, a borda de
+  // um card em que ele é convidado confere a agenda da RESPONSÁVEL (#4450).
+  const ocupacaoDaGrade = React.useMemo(
+    () =>
+      (agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : [])).filter(
+        (a) => a.situacao !== "cancelled",
+      ),
+    [agendamentosVivos, naJanelaDoServidor, agendamentosIniciais],
+  );
   const agendamentosDaGrade = React.useMemo(
-    () => agendamentos.filter((a) => a.situacao !== "cancelled"),
-    [agendamentos],
+    () =>
+      agendamentos
+        .filter((a) => a.situacao !== "cancelled")
+        .map((a) =>
+          a.tipoId && tiposDeServico.has(a.tipoId) && !a.duracaoFixa ? { ...a, duracaoFixa: true } : a,
+        ),
+    [agendamentos, tiposDeServico],
   );
 
   // As faixas FECHADAS em "Dias fora da rotina" — e pela MESMA pessoa isolada que
@@ -1627,6 +1650,7 @@ export function AgendaClient({
         agora={new Date()}
         pessoas={pessoas}
         agendamentos={agendamentosDaGrade}
+        ocupacao={ocupacaoDaGrade}
         fechamentos={fechamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}

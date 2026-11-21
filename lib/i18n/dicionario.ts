@@ -16256,8 +16256,13 @@ export const DICIONARIO: Traducoes = {
   "IA, depois time humano": { es: "La IA y después el equipo humano" },
   "Agente de voz": { es: "Agente de voz" },
   "Nenhum agente": { es: "Ningún agente" },
-  "Nenhum agente de voz publicado ainda — crie um em IA › Agentes.": {
-    es: "Aún no hay agentes de voz publicados. Crea uno en IA › Agentes.",
+  "Novo agente de voz": { es: "Nuevo agente de voz" },
+  "Criar agente de voz": { es: "Crear agente de voz" },
+  "Ative um agente de voz para selecioná-lo aqui.": {
+    es: "Activa un agente de voz para seleccionarlo aquí.",
+  },
+  "Depois de criar, configure e ative o agente no editor de voz.": {
+    es: "Después de crearlo, configura y activa el agente en el editor de voz.",
   },
   "Sem rótulo": { es: "Sin etiqueta" },
 
@@ -17046,6 +17051,22 @@ export const DICIONARIO: Traducoes = {
   "{data} às {hora} — {motivo}": { es: "{data} a las {hora} — {motivo}" },
   "A remarcação não foi aceita — o compromisso voltou para {data}.": { es: "No se aceptó la reprogramación: la cita volvió a {data}." },
   "Não dá para remarcar para esse horário — {motivo}.": { es: "No se puede reprogramar para ese horario: {motivo}." },
+  // A borda de baixo do card (#4450): mudar só o tempo do compromisso.
+  "Arraste para mudar a duração": { es: "Arrastra para cambiar la duración" },
+  "Mudar a duração de": { es: "Cambiar la duración de" },
+  "Se a agenda estiver ligada ao Google Agenda, quem foi convidado pode receber um e-mail de atualização do Google.": {
+    es: "Si la agenda está conectada a Google Calendar, los invitados pueden recibir un correo de actualización de Google.",
+  },
+  "Alterar duração": { es: "Cambiar duración" },
+  "Duração alterada.": { es: "Duración cambiada." },
+  "A duração de {nome} não foi alterada — {motivo}.": { es: "No se cambió la duración de {nome}: {motivo}." },
+  "não consegui salvar agora": { es: "no pude guardar ahora" },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava — agora vai de {inicio} a {fim}. Ajuste de novo se ainda precisar.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas: ahora va de {inicio} a {fim}. Ajústala de nuevo si todavía lo necesitas.",
+  },
+  "Este compromisso foi alterado por outra pessoa enquanto você ajustava. Confira o horário atual dele antes de ajustar de novo.": {
+    es: "Otra persona cambió esta cita mientras la ajustabas. Revisa su horario actual antes de ajustarla de nuevo.",
+  },
   "o compromisso": { es: "la cita" },
   "Entendi": { es: "Entendido" },
   "e-mail do convidado inválido": { es: "correo del invitado no válido" },
@@ -17347,18 +17368,32 @@ export const DICIONARIO: Traducoes = {
     { es: "Siempre el número de la empresa" },
   "Quem está com o atendimento":
     { es: "Quien está a cargo de la conversación" },
-  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.":
-    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba." },
+  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima. Se nessa ordem a vez chegar a alguém com \"Não enviar aviso de caso\" ligado — mesmo depois de pular quem não tem número —, o aviso do caso não sai para ninguém, nem para o número acima.":
+    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba. Si en ese orden el turno llega a alguien con \"No enviar aviso de caso\" activado —incluso después de saltear a quien no tiene número—, el aviso del caso no sale para nadie, ni para el número de arriba." },
   "Todo aviso vai para o número acima, como sempre foi.":
     { es: "Todos los avisos van al número de arriba, como siempre." },
   "WhatsApp de cada pessoa da equipe":
     { es: "WhatsApp de cada persona del equipo" },
-  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.":
-    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea: el aviso nunca queda sin destinatario." },
+  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada e o aviso segue para o próximo da ordem. Com \"Não enviar aviso de caso\" ligado, o aviso do caso para nela e não sai.":
+    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea y el aviso sigue al siguiente en el orden. Con \"No enviar aviso de caso\" activado, el aviso del caso se detiene en ella y no sale." },
   "Ainda não há outras pessoas nesta organização.":
     { es: "Todavía no hay otras personas en esta organización." },
   "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
     { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
+  "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima, menos os casos de quem está com \"Não enviar aviso de caso\" ligado.":
+    { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba, salvo los casos de quien tiene \"No enviar aviso de caso\" activado." },
+  "Não enviar aviso de caso":
+    { es: "No enviar aviso de caso" },
+  "Os casos desta pessoa não geram aviso no WhatsApp. Continuam no painel Casos.":
+    { es: "Los casos de esta persona no generan aviso en WhatsApp. Siguen en el panel Casos." },
+  "Não foi possível ler quem está com \"Não enviar aviso de caso\" ligado. Atualize a página para mudar essa opção; salvar agora não mexe nela.":
+    { es: "No fue posible leer quién tiene \"No enviar aviso de caso\" activado. Actualiza la página para cambiar esa opción; guardar ahora no la modifica." },
+  "Quando a vez do aviso chega a alguém com \"Não enviar aviso de caso\" ligado, nenhuma linha entra aqui: o caso fica só no painel Casos. O que já estava na lista continua.":
+    { es: "Cuando el turno del aviso llega a alguien con \"No enviar aviso de caso\" activado, no entra ninguna línea aquí: el caso queda solo en el panel Casos. Lo que ya estaba en la lista sigue." },
+  "Não foi possível salvar \"Não enviar aviso de caso\". Tente de novo.":
+    { es: "No fue posible guardar \"No enviar aviso de caso\". Inténtalo de nuevo." },
+  "O resto foi salvo, mas a marca \"Não enviar aviso de caso\" não. Salve de novo.":
+    { es: "El resto se guardó, pero la opción \"No enviar aviso de caso\" no. Guarda de nuevo." },
   "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.":
     { es: "No fue posible leer los números del equipo ahora. Actualiza la página antes de guardar: sin ellos la pantalla no sabe a quién van los avisos." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
