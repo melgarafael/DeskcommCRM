@@ -41,6 +41,19 @@ vi.mock("@/hooks/inbox/useTransferConversation", () => ({
   useTransferConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "eu" } }) }));
+// A aba Fila do Transferir (#4950) traz três hooks de react-query. Este arquivo
+// não monta `QueryClientProvider` — como os vizinhos que abrem o diálogo, os
+// hooks entram mockados: aqui a regra medida é a saída por outro número, não a
+// fila, e um `useQuery` de verdade morreria em "No QueryClient set".
+vi.mock("@/hooks/team/useSectors", () => ({
+  useSectors: () => ({ data: { data: [] }, isLoading: false }),
+}));
+vi.mock("@/hooks/inbox/useDefinirFilaDaConversa", () => ({
+  useDefinirFilaDaConversa: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
+  useReleaseConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 
 // O Select do Radix não abre em jsdom (pointer capture). O teste mira a regra —
 // que opção existe, qual está desabilitada, o que sai ao escolher —, não o
