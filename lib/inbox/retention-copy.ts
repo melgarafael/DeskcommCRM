@@ -70,6 +70,14 @@ export function retentionCopy(
         "protection",
         `${t("O limite diário de envios do número foi atingido — proteção contra bloqueio do WhatsApp. Libera de novo amanhã, a partir das")} ${ctx.window_start_hour}h.`,
       );
+    case "followup_cap":
+      // #4063: teto próprio do follow-up, só com "Teto do dia só na abordagem"
+      // ligado. O turno é ADIADO (inbound-turn, `eTetoDoDia`), então a frase diz
+      // quando volta — nunca "não foi enviada", que era o que o default dizia.
+      return make(
+        "protection",
+        `${t("O limite diário de follow-ups do número foi atingido — proteção contra bloqueio do WhatsApp. A mensagem volta amanhã, a partir das")} ${ctx.window_start_hour}h.`,
+      );
     case "mass_identical":
       // #4943: o aviso dizia o que aconteceu e parava aí — quem operava entendia
       // que precisava DESLIGAR a proteção e não achava onde. A segunda frase é o
