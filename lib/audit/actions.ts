@@ -1746,6 +1746,8 @@ export const AUDIT_ACTIONS = [
   // nunca a observação, que é texto livre.
   "venda.registrada",
   "venda.apagada",
+  // #5128 — a escolha de tipos de link do contato por organização.
+  "settings.links_de_contato_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
