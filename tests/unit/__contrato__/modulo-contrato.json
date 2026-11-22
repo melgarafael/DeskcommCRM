@@ -341,6 +341,7 @@
       "GET /api/v1/pipelines",
       "GET /api/v1/pipelines/[id]/agent-mapping",
       "GET /api/v1/pipelines/[id]/forecast",
+      "GET /api/v1/pipelines/[id]/negocios",
       "GET /api/v1/pipelines/[id]/stages",
       "GET /api/v1/pipelines/[id]/stages/win-rates",
       "GET /api/v1/pipelines/default",
@@ -348,6 +349,7 @@
       "PATCH /api/v1/pipelines/[id]",
       "PATCH /api/v1/pipelines/[id]/stages/[id]",
       "POST /api/v1/pipelines",
+      "POST /api/v1/pipelines/[id]/negocios",
       "POST /api/v1/pipelines/[id]/stages",
       "POST /api/v1/pipelines/importar",
       "PUT /api/v1/pipelines/[id]/agent-mapping"
@@ -1462,6 +1464,16 @@
           "nome": "bodySchema",
           "origem": "local",
           "hash": "341874070d107bdd"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]/negocios": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "5ad9070ac9aad5a9"
         }
       ],
       "resposta": []
