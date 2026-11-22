@@ -8,20 +8,22 @@
  * campo leva para a tela o que a API já aceita, sem mudar o envio:
  *
  * · Escolher: a lista é dos arquivos que JÁ estão no Storage desta organização,
- *   as imagens das respostas rápidas (`message_templates.midias`). É o mesmo
+ *   as imagens das respostas rápidas (`message_templates.midias`) — é o mesmo
  *   vocabulário que a configuração grava (caminho, mime e tamanho), preenchido
- *   pela rota de upload que confere os bytes. Nada de upload novo aqui: enviar
- *   uma imagem nova é anexá-la a uma resposta rápida, na tela de sempre.
+ *   pela rota de upload que confere os bytes — mais os arquivos enviados AQUI.
+ * · Enviar: imagem, vídeo ou PDF vão por `POST /api/v1/prospecting/arquivo`,
+ *   que fareja os bytes e aplica `classificarMidiaDaAbordagem` — a MESMA régua
+ *   deste componente, do schema e do worker. O descritor que a rota devolve é o
+ *   que entra na configuração, sem tradução no meio: o caminho que a tela manda
+ *   é o que `prepararMidiaDaAbordagem` assina no envio.
  * · Filtrar pela MESMA régua do envio (`classificarMidiaDaAbordagem`): o que a
  *   lista oferece é o que o schema aceita, e nada que ele recusaria aparece.
  * · Remover: o campo vazio tira a chave da configuração, e a campanha sai só
  *   com texto, como a campanha que nunca teve mídia.
- *
- * Vídeo e PDF continuam aceitos pela API, mas ainda não há rota que os receba
- * fora de uma conversa; a tela diz isso em vez de prometer o que não oferece.
  */
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -101,6 +103,9 @@ export function ArquivoDaAbordagem({
   travado?: boolean;
 }) {
   const t = useT();
+  const [enviando, setEnviando] = useState(false);
+  const [erroDoEnvio, setErroDoEnvio] = useState<string | null>(null);
+  const [enviados, setEnviados] = useState<ArquivoOferecido[]>([]);
   const templates = useQuery({
     queryKey: CHAVE_DOS_TEMPLATES,
     queryFn: async () =>
@@ -108,13 +113,66 @@ export function ArquivoDaAbordagem({
     staleTime: 60_000,
     enabled: !travado,
   });
-  const oferecidos = arquivosOferecidos(templates.data?.data);
+  /**
+   * O que a tela oferece: primeiro o que foi enviado AQUI (o arquivo novo não
+   * está em resposta rápida nenhuma), depois as imagens que já moram no CRM.
+   */
+  const daCasa = arquivosOferecidos(templates.data?.data);
+  const oferecidos = [
+    ...enviados,
+    ...daCasa.filter((o) => !enviados.some((e) => e.midia.storage_path === o.midia.storage_path)),
+  ];
   const escolhido = valor
     ? oferecidos.find((o) => o.midia.storage_path === valor.storage_path)
     : undefined;
   const tipoDoValor = valor ? classificarMidiaDaAbordagem(valor) : null;
   const rotulo = (o: ArquivoOferecido) =>
     `${o.origem} · ${t(ROTULO_DO_TIPO[o.tipo])} ${o.posicao} · ${tamanhoLegivel(o.midia.media_size_bytes)}`;
+
+  /**
+   * Sobe o arquivo pela rota que confere os BYTES e devolve o descritor que a
+   * configuração guarda. O que entra em `onChange` é esse descritor, sem
+   * remontar nada: o `storage_path` que o worker assina é o mesmo que veio da
+   * rota. Recusa da rota (tipo ou tamanho) aparece como texto, e nada muda na
+   * configuração.
+   */
+  async function enviarArquivo(file: File | undefined) {
+    if (!file) return;
+    setErroDoEnvio(null);
+    setEnviando(true);
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const res = await fetch("/api/v1/prospecting/arquivo", { method: "POST", body: form });
+      const json = (await res.json().catch(() => null)) as
+        | { data?: { midia: MidiaDaAbordagem; nome: string }; error?: { message?: string } }
+        | null;
+      if (!res.ok || !json?.data) {
+        setErroDoEnvio(json?.error?.message ?? t("Não foi possível enviar o arquivo."));
+        return;
+      }
+      const classificada = classificarMidiaDaAbordagem(json.data.midia);
+      if (!classificada.ok) {
+        setErroDoEnvio(classificada.motivo);
+        return;
+      }
+      const novo: ArquivoOferecido = {
+        midia: json.data.midia,
+        origem: json.data.nome,
+        posicao: 1,
+        tipo: classificada.tipo,
+      };
+      setEnviados((atuais) => [
+        novo,
+        ...atuais.filter((o) => o.midia.storage_path !== novo.midia.storage_path),
+      ]);
+      onChange(json.data.midia);
+    } catch {
+      setErroDoEnvio(t("Não foi possível enviar o arquivo."));
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   return (
     <div>
@@ -153,14 +211,38 @@ export function ArquivoDaAbordagem({
         )}
       </p>
       {!travado && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t(
-            "A lista mostra as imagens que você já enviou nas respostas rápidas. Para usar uma imagem nova, anexe-a a uma resposta rápida e volte aqui. Vídeo e PDF, por enquanto, só pela API da campanha.",
-          )}{" "}
-          <Link href="/app/templates" className="underline">
-            {t("Abrir respostas rápidas")}
-          </Link>
-        </p>
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              id="prospecting-arquivo-upload"
+              type="file"
+              aria-label={t("Enviar um arquivo do computador")}
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/quicktime,application/pdf"
+              disabled={enviando}
+              onChange={(e) => {
+                void enviarArquivo(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+              className="text-sm"
+            />
+            {enviando && (
+              <span className="text-xs text-muted-foreground">{t("Enviando o arquivo…")}</span>
+            )}
+          </div>
+          {erroDoEnvio && (
+            <p role="alert" className="mt-1 text-xs text-destructive">
+              {erroDoEnvio}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(
+              "A lista mostra os arquivos que você já tem no CRM; para usar um arquivo novo, envie por aqui mesmo — o tipo é conferido pelos bytes antes de guardar.",
+            )}{" "}
+            <Link href="/app/templates" className="underline">
+              {t("Abrir respostas rápidas")}
+            </Link>
+          </p>
+        </>
       )}
       {valor && !travado && (
         <>

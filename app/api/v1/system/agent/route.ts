@@ -55,6 +55,26 @@ const runProgress = z.object({
   step: z.enum(["backup", "codigo", "banco"]),
 });
 
+/**
+ * O pedido espera a janela de manutenção (#4334). O agente manda isto a cada
+ * ciclo fora da janela, com a hora da próxima rodada dentro dela (epoch em
+ * segundos — o `date +%s` do host, sem fuso a interpretar). A cerca das
+ * extensões e a tela leem `scheduled_for` para saber que o pedido segue de pé.
+ */
+const runScheduled = z.object({
+  kind: z.literal("run_scheduled"),
+  run_id: z.string().uuid(),
+  scheduled_for_epoch: z.number().int().positive(),
+});
+
+/**
+ * A janela é de horário e nunca passa de um dia; a folga de uma hora para trás
+ * cobre relógio do host atrasado. Fora disso o agendamento não é crível, e
+ * gravá-lo seguraria a cerca das extensões por um prazo que ninguém escolheu.
+ */
+const AGENDAMENTO_MAX_FUTURO_MS = 25 * 60 * 60 * 1000;
+const AGENDAMENTO_MAX_PASSADO_MS = 60 * 60 * 1000;
+
 const runResult = z.object({
   kind: z.literal("run_result"),
   run_id: z.string().uuid(),
@@ -98,7 +118,7 @@ const rollback = z.object({
   reason: z.string().max(2_000),
 });
 
-const body = z.discriminatedUnion("kind", [heartbeat, runProgress, runResult, rollback]);
+const body = z.discriminatedUnion("kind", [heartbeat, runProgress, runScheduled, runResult, rollback]);
 
 /**
  * As três colunas da rodada do banco, numa escrita própria e best-effort.
@@ -364,6 +384,30 @@ export async function POST(req: NextRequest): Promise<Response> {
         runId: payload.run_id,
       });
       return fail("internal_error", "Não consegui gravar o passo.", 500);
+    }
+    return ok({ update_requested: false, run_id: payload.run_id });
+  }
+
+  if (payload.kind === "run_scheduled") {
+    if (run.status !== "dispatched") {
+      return fail("state_conflict", "Esta atualização já terminou.", 409);
+    }
+    const agendadoMs = payload.scheduled_for_epoch * 1000;
+    const agora = Date.now();
+    if (agendadoMs > agora + AGENDAMENTO_MAX_FUTURO_MS || agendadoMs < agora - AGENDAMENTO_MAX_PASSADO_MS) {
+      return fail("validation_failed", "Horário de agendamento fora do alcance da janela.", 422);
+    }
+    const { error } = await db
+      .from("system_update_runs")
+      .update({ scheduled_for: new Date(agendadoMs).toISOString() })
+      .eq("id", payload.run_id)
+      .eq("status", "dispatched");
+    if (error) {
+      logger.error("[system/agent] run_scheduled falhou", {
+        error: error.message,
+        runId: payload.run_id,
+      });
+      return fail("internal_error", "Não consegui gravar o agendamento.", 500);
     }
     return ok({ update_requested: false, run_id: payload.run_id });
   }
