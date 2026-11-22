@@ -20,6 +20,92 @@ source "$KIT_DIR/_common.sh"
 # shellcheck source=manutencao.sh
 source "$KIT_DIR/manutencao.sh"
 enter_project
+
+# ── Cadeado: uma atualização por vez, inclusive contra o painel (#5052) ─────
+# O `.update.lock` existia, mas só o `agent.sh` (o botão "Atualizar agora") o
+# tomava: o `update.sh` rodado pelo terminal entrava sem cadeado nenhum, e duas
+# atualizações podiam aplicar o `supabase/baseline.sql` no MESMO banco ao mesmo
+# tempo — o par de erros do incidente 1.118 → 1.119 (`cannot change name of
+# input parameter`), em duas aplicações defasadas em 2,75–3,5 s (medido no
+# #5030). O baseline é DDL: uma aplicação pode dropar o que a outra recém-criou,
+# e o banco fica sem a regra, sem erro visível na tela.
+#
+# O cadeado é tomado AQUI, antes de tudo, para a ordem valer de ponta a ponta:
+# cadeado → backup → código → banco. Tomá-lo depois do backup (:303) não
+# serviria — dois backups concorrentes disputariam a mesma pasta (#4222), e a
+# corrida que interessa é a do banco.
+#
+# 🔴 O caminho do BOTÃO passa por aqui também, e chega com o cadeado na mão: o
+# `agent.sh` abre o fd 9, trava e chama este script como FILHO. Tentar `flock -n`
+# num descritor NOVO ali faria o botão travar contra o próprio pai (o cadeado é
+# da descrição de arquivo aberta, e o pai é o dono) — o update nunca rodaria.
+# Por isso a trava HERDADA é detectada e reaproveitada: o filho não re-toma nem
+# sai. Só o caminho do terminal toma um cadeado próprio.
+TRAVA_PROPRIA=""
+soltar_trava_de_atualizacao() {  # chamada pelos gatilhos de saída; idempotente
+  [ -n "$TRAVA_PROPRIA" ] || return 0
+  TRAVA_PROPRIA=""
+  exec 9>&- 2>/dev/null || true
+  return 0
+}
+# O descritor já aberto aponta para o NOSSO `.update.lock`? `exec 8>&N` falha
+# quando o fd está fechado, e é assim que "herdado" se distingue de "não
+# existe". O `readlink` cobre o caso de quem chama o update.sh de dentro de um
+# processo que já segura o cadeado sem declarar o fd (o `agent.sh` declara).
+trava_herdada() {  # imprime o número do fd herdado; 1 quando não há
+  local fd="${DESKCOMM_UPDATE_LOCK_FD:-9}" alvo aponta
+  ( exec 8>&"$fd" ) 2>/dev/null || return 1
+  if [ -n "${DESKCOMM_UPDATE_LOCK_FD:-}" ]; then printf '%s' "$fd"; return 0; fi
+  alvo="$(readlink -f "$PROJECT_DIR/.update.lock" 2>/dev/null || printf '%s' "$PROJECT_DIR/.update.lock")"
+  aponta="$(readlink -f "/proc/self/fd/$fd" 2>/dev/null || true)"
+  [ -n "$aponta" ] && [ "$aponta" = "$alvo" ] || return 1
+  printf '%s' "$fd"
+}
+# A recusa é DIDÁTICA de propósito: quem roda o update.sh no terminal precisa
+# saber que quem está trabalhando é o painel, e que a saída foi limpa. Sai com 0
+# porque nada falhou — a atualização vai acontecer, só não é esta execução (o
+# `agent.sh` sai do mesmo jeito quando não pega o cadeado).
+recusar_por_trava_ocupada() {
+  c_ylw "⚠ Já há uma atualização em andamento pelo painel (ou por outro terminal) — esta execução saiu sem fazer nada."
+  c_ylw "  O cadeado é o '$PROJECT_DIR/.update.lock'. Duas atualizações ao mesmo tempo aplicariam o"
+  c_ylw "  mesmo supabase/baseline.sql no MESMO banco em paralelo — foi o que produziu o par de erros"
+  c_ylw "  'cannot change name of input parameter' do incidente 1.118 → 1.119."
+  c_ylw "  Não parei serviço, não baixei código, não toquei no backup nem no banco."
+  c_ylw "  Espere a atualização em andamento terminar e rode este comando de novo."
+  c_ylw "  Para acompanhar a que está rodando:  tail -f $PROJECT_DIR/.update.log"
+  exit 0
+}
+tomar_trava_de_atualizacao() {
+  local fd="" alvo="$PROJECT_DIR/.update.lock"
+  if ! command -v flock >/dev/null 2>&1; then
+    # Host sem util-linux (o kit não instala pacote nenhum): seguir como antes é
+    # melhor que inventar uma recusa que o operador não consegue resolver — e o
+    # `agent.sh` já sai sem o flock, então a corrida do painel não existe por
+    # esse caminho.
+    c_ylw "⚠ O comando 'flock' não existe neste servidor: sigo SEM o cadeado que impede duas atualizações ao mesmo tempo. Não clique em \"Atualizar agora\" no painel enquanto esta estiver rodando."
+    return 0
+  fi
+  if fd="$(trava_herdada)"; then
+    # Trava herdada do agent.sh: o cadeado já é desta execução. `flock -n` aqui
+    # só CONFIRMA — falhar significa que o fd herdado não é dono de nada e
+    # outro processo é, o que é a mesma corrida que a trava própria barra.
+    if ! flock -n "$fd"; then recusar_por_trava_ocupada; fi
+    DESKCOMM_UPDATE_LOCK_FD="$fd"; export DESKCOMM_UPDATE_LOCK_FD
+    return 0
+  fi
+  exec 9>"$alvo"
+  # `-n` e não bloqueante: quem não pegou SAI. Ficar na fila faria a segunda
+  # atualização rodar logo depois da primeira, aplicando um baseline que já não
+  # precisa e reiniciando o app de novo, sem ninguém ter pedido.
+  if ! flock -n 9; then
+    exec 9>&-
+    recusar_por_trava_ocupada
+  fi
+  TRAVA_PROPRIA=1
+  DESKCOMM_UPDATE_LOCK_FD=9; export DESKCOMM_UPDATE_LOCK_FD
+}
+tomar_trava_de_atualizacao
+
 aviso_rede_do_supabase
 
 # ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
@@ -35,7 +121,9 @@ aviso_rede_do_supabase
 DIAGNOSTICO_ARQUIVO="$PROJECT_DIR/.deskcomm-update-diagnostico.log"
 UPDATE_STATUS="em andamento"
 UPDATE_ETAPA="início, antes de decidir a versão"
-trap diagnostico_de_atualizacao EXIT
+# O cadeado sai DEPOIS do diagnóstico: as duas funções leem `$?` na entrada, e
+# soltar primeiro entregaria a elas o 0 do `exec 9>&-` no lugar do desfecho real.
+trap 'diagnostico_de_atualizacao; soltar_trava_de_atualizacao' EXIT
 
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
 while [ $# -gt 0 ]; do
@@ -409,7 +497,11 @@ fi
 # EXIT nao basta: interrupcao (Ctrl+C, cron matando a rodada, reinicio da
 # maquina) nao passa por ele em todos os casos — e o desfecho seria a
 # instalacao com as pecas do banco paradas, que foi o que se mediu.
-trap restaurar_servicos EXIT INT TERM HUP
+#
+# O cadeado (#5052) é devolvido no mesmo gatilho, DEPOIS do `restaurar_servicos`:
+# ele lê `$?` na entrada, e liberar primeiro trocaria o desfecho real pelo 0 do
+# `exec`.
+trap 'restaurar_servicos; soltar_trava_de_atualizacao' EXIT INT TERM HUP
 
 step "Atualizando o banco de dados"
 # O que sobrou de errado no banco, para ser repetido no FIM da execução.
