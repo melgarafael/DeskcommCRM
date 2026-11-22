@@ -26,7 +26,7 @@ interface ChannelKnobsRow {
   atraso_minimo_ms: number | null;
   atraso_maximo_ms: number | null;
   allow_sunday: boolean | null;
-  /** O teto conta só a abordagem (#3851, 9452). NULL = régua de sempre (conta todo disparo). */
+  /** O teto conta só a abordagem (#3851, 9455). NULL = régua de sempre (conta todo disparo). */
   teto_so_abordagem: boolean | null;
   /** Teto diário próprio do follow-up (#4063). NULL = o default de `defaults.ts` (200). */
   followup_daily_cap: number | null;

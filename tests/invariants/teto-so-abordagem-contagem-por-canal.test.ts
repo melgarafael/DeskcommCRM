@@ -7,7 +7,7 @@ import { decidePacing } from "@/lib/agent-engine/pacing/engine";
 import { loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 
 /**
- * O TETO QUE CONTA SÓ A ABORDAGEM, CONTRA O SCHEMA REAL (migration 9452, #3851).
+ * O TETO QUE CONTA SÓ A ABORDAGEM, CONTRA O SCHEMA REAL (migration 9455, #3851).
  *
  * `channel_knobs.teto_so_abordagem` diz que o teto conta só a 1ª mensagem a
  * pessoa nova; `pacing_ledger.abordagem` é o que permite contar assim. Os testes

@@ -89798,7 +89798,7 @@ comment on column public.crm_metas.alvo is
 comment on table public.crm_metas is
   'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
--- ---- teto do dia só na abordagem (migration 9452, #3851) ----
+-- ---- teto do dia só na abordagem (migration 9455, #3851) ----
 -- Opção POR CANAL (#3851): ligada, o teto diário conta e barra só a 1ª mensagem
 -- a pessoa nova; o follow-up de quem já foi abordado não gasta nem espera o
 -- teto. O porquê inteiro está no cabeçalho da migration.
@@ -89814,7 +89814,7 @@ alter table public.pacing_ledger
 comment on column public.pacing_ledger.abordagem is
   'true = 1ª mensagem a pessoa nova (abordagem). false = follow-up de quem já foi abordado. Só a coluna `teto_so_abordagem` do canal faz o teto do dia ler isto; resposta é marcada por `resposta` e nunca conta (#3851).';
 
--- ---- teto próprio do follow-up (migration 9453, #4063) ----
+-- ---- teto próprio do follow-up (migration 9456, #4063) ----
 -- A opção `teto_so_abordagem` tira o teto de ABORDAGEM do follow-up — era o
 -- pedido — e com isso o follow-up ficava sem teto nenhum: 200, 300, 400 no mesmo
 -- dia saíam todos. `followup_daily_cap` é o teto de SEGURANÇA desse volume,
