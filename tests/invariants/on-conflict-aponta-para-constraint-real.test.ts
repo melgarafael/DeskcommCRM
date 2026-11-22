@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { sql } from "./gov-helpers";
+import { provisionadorasDoCatalogo } from "./molde-de-provisionadora";
 
 /**
  * TODO `onConflict` APONTA PARA UMA CONSTRAINT QUE EXISTE.
@@ -114,6 +115,16 @@ function conjuntosUnicos(tabela: string): string[][] {
     .filter((l) => l.length > 0)
     .map((l) => l.split(",").map((c) => c.trim()).sort());
 }
+
+/**
+ * O banco de cada arquivo nasce sem módulo instalado, e a tabela de um módulo de
+ * tabela (ADR-0002) só existe depois da provisionadora dele. Sem provisionar, o
+ * `upsert` de um módulo como o `amigo` lia "nenhum índice único" numa tabela que
+ * simplesmente ainda não existia, e a régua não conferia o alvo de verdade.
+ */
+beforeAll(() => {
+  for (const p of provisionadorasDoCatalogo()) sql(`select public.${p.nome}();`);
+});
 
 describe("onConflict × constraints reais", () => {
   const arquivos = arquivosDoRepo();

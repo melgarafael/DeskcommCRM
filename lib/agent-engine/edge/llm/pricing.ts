@@ -97,8 +97,10 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // Gravação de cache: as linhas 5.6 e 6 cobram 1.25× a entrada; nas demais é 1×.
   // Linhas históricas preservadas; Terra6.1 usa tarifas próprias 30m/12h.
   // Fonte: developers.openai.com/api/docs/guides/prompt-caching, 28/10/2026.
-  // Fora da tabela: a faixa de contexto longo (> 272K tokens, preço 2×) da 5.4/5.5/5.6,
-  // e a da linha 6 (2× a entrada e o cache, 1.5× a saída).
+  // As tarifas abaixo são as de base. A faixa longa dos modelos cobertos fica
+  // em LIMIARES_DE_CONTEXTO_LONGO.
+  // Ainda sem cálculo de faixa longa: os demais modelos com essa tarifa nas
+  // linhas 5.4/5.5/5.6 e 6, incluindo gpt-6.1-sol e gpt-6-astra (catálogo 0646).
   'gpt-6-astra': { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5 },
   'gpt-6.1-sol': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
   'gpt-6.1-terra': { input: 1, output: 5, cacheRead: 0.05, cacheWrite30m: 1.25, cacheWrite12h: 2.5 },
@@ -119,9 +121,21 @@ const USD_PER_MTOK: Record<string, Preco> = {
   'gpt-5.4-nano': { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite5m: 0.2, cacheWrite1h: 0.2 },
   'gpt-5.4-pro': { input: 30, output: 180, cacheRead: 30, cacheWrite5m: 30, cacheWrite1h: 30 },
 
-  // Google — os seis Gemini do catálogo curado (migrations 0023 e 0101), com o
+  // Google — os Gemini do catálogo curado (migrations 0023 e 0101), com o
   // preço do `ai_pricing` em vigor (centavos/100). Sem estas linhas o custo de
   // toda org em Google saía NULL e o teto mensal não disparava.
+  //
+  // Os quatro Gemini 2.x abaixo (2.5 Pro, 2.5 Flash, 2.5 Flash-Lite, 2.0 Flash)
+  // são APOSENTADOS: 404 medido em 18/11/2026 com chave real (#4925) — o 2.0
+  // "no longer available", os três 2.5 "no longer available to new users". O
+  // preço deles fica porque instalação antiga e roteador (Requesty serve
+  // `google/gemini-2.5-flash`) ainda os chamam, e custo NULL calado é o defeito
+  // da #3013. O que NÃO pode acontecer é ESCOLHÊ-LOS — quem barra é o sexto
+  // parâmetro de `escolherModeloEconomico`, alimentado por
+  // `modelos-aposentados.ts`. Sem esse barramento o tier econômico os pegava por
+  // serem os mais baratos (10/40) e tomava 404 em todo turno. O econômico do
+  // Google é o `gemini-3.1-flash-lite` (0.25 / 1.50; Standard em
+  // aistudio.google.com/docs/pricing, 18/11/2026).
   // Cache: o caching implícito liga sozinho do 2.5 em diante e o motor monta um
   // prefixo estável para reaproveitá-lo, então num turno típico a maior parte da
   // entrada chega como `cacheReadTokens` (o @ai-sdk/google mapeia
@@ -150,7 +164,17 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // 0.05× a entrada, não o 0.1× do resto do Google. Só cache implícito.
   'gemini-4-argon': { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 4, cacheWrite1h: 4 },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite5m: 0.25, cacheWrite1h: 0.25 },
-  'gemini-3.5-flash': { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
+  // 3.5 Flash: APOSENTADO em 19/05/2026 e o endpoint NÃO morreu — toda requisição
+  // é roteada ao 3.6 Flash e faturada na tarifa dele (tabela de aposentados de
+  // aistudio.google.com/docs/deprecations, lida em 18/11/2026; a página de preços,
+  // aistudio.google.com/docs/pricing, não tem mais seção do 3.5 Flash). A linha
+  // fica porque este é o DEFAULT do Google no catálogo (`ai_models`, migration
+  // 0101) e instalação antiga continua chamando — custo NULL calado é o defeito da
+  // #3013. Valores iguais aos do 3.6 Flash de propósito: mesmo roteamento, mesma
+  // fatura, mesma promo até 2027-01-01. O 1,50/9,00 que ficava aqui não existe na
+  // página oficial em faixa nenhuma: cobrava 2× a entrada e 2,4× a saída do que o
+  // Google fatura hoje (0,75/3,75).
+  'gemini-3.5-flash': { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite5m: 1.5, cacheWrite1h: 1.5 },
   // 3.5 Flash-Lite: tarifa Standard de ai.google.dev/gemini-api/docs/pricing
   // (06/10/2026). O armazenamento de cache ($1/MTok/h) não é por chamada.
   'gemini-3.5-flash-lite': { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite5m: 0.3, cacheWrite1h: 0.3 },
@@ -193,6 +217,14 @@ export interface TokenUsage {
   cacheWrite12hTokens?: number;
 }
 
+// Tokens de entrada por requisição, incluindo cache. Catálogos 0646 (Luna) e
+// 9031 (6.1 Terra), e faixa da linha 5.6 na tabela Standard da OpenAI (#5018).
+const LIMIARES_DE_CONTEXTO_LONGO: ReadonlyMap<string, number> = new Map([
+  ['gpt-6.1-terra', 272_000],
+  ['gpt-6-luna', 272_000],
+  ['gpt-5.6-terra', 272_000],
+]);
+
 /**
  * O preço de um id, tolerando o sufixo de data do vendor (`-20250805` ou `-2024-08-06`).
  *
@@ -217,7 +249,9 @@ const PROMO_GEMINI_FLASH_36_38: Preco = {
 
 /**
  * Ids cuja tabela (e `ai_pricing`, PK só em `model`) guarda a tarifa POSTERIOR
- * à promo. Gemini 3.6/3.7/3.8 Flash: "January 1, 2027". Gemini 4 Argon: promo
+ * à promo. Gemini 3.5/3.6/3.7/3.8 Flash: "January 1, 2027" — o 3.5 entra na
+ * lista porque o endpoint dele roteia ao 3.6 Flash e é a tarifa do 3.6 que o
+ * Google fatura (deprecations, lida em 18/11/2026). Gemini 4 Argon: promo
  * "through Nov 30, 2026" e o dobro "from Dec 1, 2026" (página de pricing,
  * lida em 19/10/2026).
  */
@@ -225,6 +259,7 @@ const PROMOCOES: Record<string, { ateMs: number; preco: Preco }> = {
   'gemini-3.8-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-3.7-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-3.6-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
+  'gemini-3.5-flash': { ateMs: ATE_GEMINI_FLASH_36_38_MS, preco: PROMO_GEMINI_FLASH_36_38 },
   'gemini-4-argon': {
     ateMs: Date.parse('2026-12-01T00:00:00.000Z'),
     preco: { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2, cacheWrite1h: 2 },
@@ -237,7 +272,14 @@ function chaveDoModelo(model: string): string | undefined {
   // na MESMA ordem da tolerância do sufixo de data, para um id com prefixo+sufixo
   // (`anthropic/claude-sonnet-5-20250929`) casar também. O id completo segue
   // tentado PRIMEIRO: um id que a tabela conheça com barra vence o recorte.
+  //
+  // O catálogo do OpenRouter escreve a versão com PONTO (`anthropic/claude-haiku-5.5`)
+  // e a tabela indexa com HÍFEN (`claude-haiku-5-5`). Por isso as variantes com o
+  // ponto trocado por hífen entram no FIM: o id exato, o sem data e o sem prefixo
+  // continuam vencendo, e um id que a tabela já conhece COM ponto (`gpt-6.1-terra`)
+  // não é reescrito (issue #1931).
   const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
+  const comHifen = (id: string) => id.replace(/\./g, "-");
   const candidatos = [
     model,
     model.replace(/-\d{8}$/, ""),
@@ -245,6 +287,10 @@ function chaveDoModelo(model: string): string | undefined {
     semPrefixo,
     semPrefixo.replace(/-\d{8}$/, ""),
     semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, ""),
+    comHifen(semPrefixo),
+    comHifen(semPrefixo.replace(/-\d{8}$/, "")),
+    comHifen(semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")),
+    comHifen(model),
   ];
   return candidatos.find((id) => USD_PER_MTOK[id] !== undefined);
 }
@@ -273,7 +319,7 @@ export function temPrecoNoMotor(model: string): boolean {
  *
  * `em` é o instante da chamada. Sem ele, vale agora — é o que grava
  * `llm_calls.cost_cents`. Só os ids de PROMOCOES trocam de tarifa com ele
- * (3.6/3.7/3.8 Flash em 2027-01-01T00:00:00Z, 4 Argon em 2026-12-01T00:00:00Z);
+ * (3.5/3.6/3.7/3.8 Flash em 2027-01-01T00:00:00Z, 4 Argon em 2026-12-01T00:00:00Z);
  * os outros ids ignoram o instante.
  */
 export function costCents(
@@ -287,9 +333,10 @@ export function costCents(
     return null;
   }
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
-  const longoTerra = chaveDoModelo(model) === 'gpt-6.1-terra' && usage.inputTokens > 272_000;
-  const fatorEntrada = longoTerra ? 2 : 1;
-  const fatorSaida = longoTerra ? 1.5 : 1;
+  const limiar = LIMIARES_DE_CONTEXTO_LONGO.get(chaveDoModelo(model) ?? '');
+  const contextoLongo = limiar !== undefined && usage.inputTokens > limiar;
+  const fatorEntrada = contextoLongo ? 2 : 1;
+  const fatorSaida = contextoLongo ? 1.5 : 1;
   const usd =
     ((noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +
@@ -397,7 +444,7 @@ export function costCentsComVirada(
 }
 
 /** SDK usage de UMA requisição. O total de um tool loop não determina a faixa. */
-interface UsoDePassoTerra {
+interface UsoDePasso {
   inputTokens?: number;
   outputTokens?: number;
   inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number };
@@ -410,11 +457,11 @@ interface UsoDePassoTerra {
  * O SDK instalado pode omitir cache_write_tokens na normalização; o usage cru
  * documentado conserva a informação. Somamos custos por passo, não os contextos.
  */
-export function custoTerraPorPassos(model: string, result: {
-  usage: UsoDePassoTerra;
-  steps?: ReadonlyArray<{ usage?: UsoDePassoTerra }>;
+export function custoPorPassosComFaixaLonga(model: string, result: {
+  usage: UsoDePasso;
+  steps?: ReadonlyArray<{ usage?: UsoDePasso }>;
 }): number | undefined {
-  if (chaveDoModelo(model) !== 'gpt-6.1-terra') return undefined;
+  if (!LIMIARES_DE_CONTEXTO_LONGO.has(chaveDoModelo(model) ?? '')) return undefined;
   const passos = result.steps?.length ? result.steps.map(s => s.usage) : [result.usage];
   return passos.reduce((total, u) => {
     const raw = u?.raw as { input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } | undefined;

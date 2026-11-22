@@ -52,7 +52,7 @@ const FONTE = {
   name: "Tabela de preços",
   status: "ready",
   is_active: true,
-  source_metadata: { blob_path: "org-1/tabela.pdf", filename: "tabela.pdf", ext: "pdf" },
+  source_metadata: { blob_path: "org-1/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf", filename: "tabela.pdf", ext: "pdf" },
 };
 
 const EVENTO = {
@@ -66,11 +66,13 @@ const EVENTO = {
   created_at: new Date().toISOString(),
 };
 
+let fonteDaVez: typeof FONTE = FONTE;
 let carimbos: Array<Record<string, unknown>> = [];
 let avisos: Array<Record<string, unknown>> = [];
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  fonteDaVez = FONTE;
   carimbos = [];
   avisos = [];
 
@@ -80,7 +82,7 @@ beforeEach(async () => {
         const leitura = {
           select: () => leitura,
           eq: () => leitura,
-          maybeSingle: () => Promise.resolve({ data: FONTE, error: null }),
+          maybeSingle: () => Promise.resolve({ data: fonteDaVez, error: null }),
         };
         return {
           ...leitura,
@@ -135,5 +137,36 @@ describe("rag-indexer — falha de extração guarda a causa", () => {
 
     expect(avisos).toHaveLength(1);
     expect(String(avisos[0]!["body"])).toContain("Object not found: org-1/tabela.pdf");
+  });
+});
+
+describe("rag-indexer — só lê o arquivo da pasta da organização dona da fonte", () => {
+  // O download é com o admin client, que não olha prefixo. Um `blob_path`
+  // gravado à mão apontando para a pasta de outra organização não pode chegar
+  // ao extrator.
+  it("blob_path de outra organização falha sem baixar nada", async () => {
+    fonteDaVez = {
+      ...FONTE,
+      source_metadata: { blob_path: "org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf", filename: "alheio.pdf", ext: "pdf" },
+    };
+    const resultado = await processRagIndexer(EVENTO as never);
+
+    expect(resultado.status).toBe("error");
+    expect(extrairTextoDoArquivo).not.toHaveBeenCalled();
+    const falha = carimbos.find((c) => c["last_index_status"] === "failed");
+    expect(String(falha?.["last_index_error"])).toContain("fora da pasta desta organização");
+  });
+
+  it.each([
+    "org-1/../org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/%2e%2e/org-2/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/..%2forg-2%2f0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1\\..\\org-2\\0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.pdf",
+    "org-1/qualquer-nome.pdf",
+    "org-1/0f8c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.p%64f",
+  ])("caminho fora do formato <org>/<uuid>.<ext> é recusado: %s", async (blob_path) => {
+    fonteDaVez = { ...FONTE, source_metadata: { blob_path, filename: "x.pdf", ext: "pdf" } };
+    await processRagIndexer(EVENTO as never);
+    expect(extrairTextoDoArquivo).not.toHaveBeenCalled();
   });
 });

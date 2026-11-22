@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
+import { useSectors } from "@/hooks/team/useSectors";
 import { roleAtLeast } from "@/lib/auth/types";
 import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConversations";
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import { recusaNotaDeVoz } from "@/lib/channels/capabilities";
 import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import { composerBloqueadoAteAssumir } from "@/lib/inbox/bloqueio-ate-assumir";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
@@ -33,6 +35,7 @@ import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import type { ModuloDaLateral } from "@/lib/inbox/modulos-da-lateral";
+import type { AbaDaPessoa } from "@/lib/inbox/abas-da-inbox";
 import type { Message as ConversationMensagem } from "@/lib/types/messaging";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 
@@ -43,7 +46,7 @@ import { OpenConversationProvider } from "@/hooks/notifications/OpenConversation
 // ADR-05: ícone de feature sai do mapa canônico, nunca do pacote direto.
 import { CaretLeft, ChatCircle, IdentificationCard, MagnifyingGlass, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { togglePainelDoContato } from "@/app/actions/inbox/togglePainelDoContato";
@@ -221,13 +224,28 @@ export function tabToFilter(
       // "Devolver ao automático"), então a aba vivia mostrando 2 enquanto o robô
       // atendia 47. Agora ela pergunta a régua do MOTOR.
       return { comando: ["automatico"] };
+    case "pessoal":
+      // A ABA PESSOAL (#4434) INVERTE a exclusão da spec 21: a lista devolve SÓ
+      // o pessoal de quem está olhando. Sem `status` de propósito — marcar um
+      // contato FECHA as conversas dele (rota de marcar, efeito 6), então
+      // filtrar por status deixaria a aba vazia justamente para quem acabou de
+      // marcar alguém.
+      return { pessoais: true };
     case "all":
     default:
       return {};
   }
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+const FILTER_TABS: InboxTab[] = [
+  "unassigned",
+  "mine",
+  "all",
+  "closed",
+  "archived",
+  "ai",
+  "pessoal",
+];
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
@@ -280,6 +298,11 @@ interface InboxLayoutProps {
    * faria a lateral nascer completa e "pular" para a escolhida.
    */
   modulosDaLateral?: ModuloDaLateral[];
+  /**
+   * A ordem das abas e as que ficam no menu "Mais" (#3313). Vem do SERVIDOR
+   * (`carregarAbasDaInbox`), pela mesma razão dos módulos acima.
+   */
+  abasDaInbox?: AbaDaPessoa[];
 }
 
 export function InboxLayout({
@@ -287,9 +310,20 @@ export function InboxLayout({
   rascunho = null,
   painelRecolhidoInicial = false,
   modulosDaLateral,
+  abasDaInbox,
 }: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
+  /**
+   * AS FILAS DA ORGANIZAÇÃO (#3876) — buscadas AQUI, e não na barra de filtros.
+   *
+   * Setores é módulo opcional (doc 213): desligado, a rota responderia 404 e o
+   * pedido nem sai (`enabled`). A página já tem o `activeOrg` e vive dentro do
+   * `QueryClientProvider`; a barra de filtros recebe a lista pronta e continua
+   * sem consultar o servidor, como sempre foi.
+   */
+  const setoresLigados = (activeOrg?.modulos_ligados ?? []).includes("setores");
+  const { data: filasDaOrganizacao } = useSectors(setoresLigados);
   useParticipacoesRealtime(user.id, activeOrg?.orgId ?? null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
@@ -369,8 +403,25 @@ export function InboxLayout({
   const ultimoIdNaUrl = useRef(idNaUrl);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
-  /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
+  /**
+   * A ficha do contato como gaveta — só abaixo do `xl`, onde ela não é coluna.
+   *
+   * DUAS PORTAS, UMA GAVETA (#4822): abaixo de 768px o gatilho é o botão da
+   * barra do celular; entre 768 e 1279px é o botão "Ficha" do cabeçalho da
+   * conversa. Acima de 1280px a ficha é a terceira coluna e nenhuma porta
+   * aparece — abrir a gaveta ali duplicaria o mesmo painel na tela.
+   */
   const [fichaAberta, setFichaAberta] = useState(false);
+  /**
+   * QUEM ABRIU A GAVETA, para o foco voltar a ele ao fechar. Sem `SheetTrigger`
+   * o Radix não tem para onde devolver o foco (o `triggerRef` dele fica nulo e o
+   * foco cai no `body`); com duas portas, quem sabe qual foi usada é este ref.
+   */
+  const portaDaFicha = useRef<HTMLElement | null>(null);
+  const abrirFicha = useCallback((porta: HTMLElement) => {
+    portaDaFicha.current = porta;
+    setFichaAberta(true);
+  }, []);
   /**
    * O PAINEL DO CONTATO RECOLHIDO (issue #3004).
    *
@@ -464,6 +515,10 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
+      // A FILA (#3876): o seletor da barra vira o mesmo `sector_id` que a rota
+      // lê. Sem esta linha o controle existiria e a lista não mudaria — a
+      // rotura silenciosa que o schema e a rota já documentam nas duas pontas.
+      sector_id: filterValue.sector_id,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -475,6 +530,7 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
+      filterValue.sector_id,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,
@@ -951,7 +1007,12 @@ export function InboxLayout({
         )}
       >
         <BotaoIniciarConversa />
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
+        <InboxFilters
+          value={filterValue}
+          onChange={setFilterValue}
+          filas={filasDaOrganizacao?.data ?? []}
+          abasIniciais={abasDaInbox}
+        />
         {podeAgirEmLote && (
           <BarraDeAcoesEmLote
             quantidade={selecao.quantidade}
@@ -1027,28 +1088,58 @@ export function InboxLayout({
             </Button>
             <div className="flex-1" />
             {selectedConversation && (
-              <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1 px-2 xl:hidden">
-                    <IdentificationCard size={16} />
-                    {t("Ficha")}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
-                  <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
-                  <CRMSidePanel
-                    conversation={selectedConversation}
-                    modulosIniciais={modulosDaLateral}
-                  />
-                </SheetContent>
-              </Sheet>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 px-2 xl:hidden"
+                data-testid="ficha-no-celular"
+                title={t("Ficha do contato")}
+                aria-haspopup="dialog"
+                aria-expanded={fichaAberta}
+                onClick={(e) => abrirFicha(e.currentTarget)}
+              >
+                <IdentificationCard size={16} aria-hidden />
+                {t("Ficha")}
+              </Button>
             )}
           </div>
+        )}
+        {/* ─── A GAVETA DA FICHA É UMA SÓ (#4822) ───────────────────────────────
+            Antes ela morava DENTRO da barra `md:hidden`: a gaveta existia, mas a
+            única porta ficava abaixo de 768px, e entre 768 e 1279px não havia
+            como abrir a ficha — nem o follow-up, que só é montado no painel
+            (`CRMSidePanel`). Aqui o `Sheet` sobe para fora da barra e passa a
+            ser UM só, controlado por `fichaAberta`; as duas portas (a barra do
+            celular e o botão da faixa do meio no cabeçalho) só chamam
+            `abrirFicha`, que guarda a porta para o foco voltar a ela. Continua sendo a MESMA gaveta e o MESMO
+            `CRMSidePanel`: nenhum segundo painel é montado.
+
+            Sem `SheetTrigger` porque são dois gatilhos em lugares diferentes da
+            árvore — um `Root` do Radix aceita vários, mas dois botões com o
+            mesmo papel acessível confundiriam `getByRole`. O conteúdo é portal,
+            então onde o `Root` mora não muda o que aparece. */}
+        {selectedConversation && (
+          <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
+            <SheetContent
+              side="right"
+              className="w-[min(22rem,90vw)] overflow-y-auto p-0"
+              onCloseAutoFocus={(e) => {
+                e.preventDefault();
+                portaDaFicha.current?.focus();
+              }}
+            >
+              <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
+              <CRMSidePanel conversation={selectedConversation} modulosIniciais={modulosDaLateral} />
+            </SheetContent>
+          </Sheet>
         )}
         {selectedConversation ? (
           <>
             {/* `key`: trocar de conversa desmonta a confirmação de Fechar/Arquivar
-                aberta — senão o clique de dentro agiria sobre a conversa nova. */}
+                aberta — senão o clique de dentro agiria sobre a conversa nova.
+                `onAbrirFicha` é a PORTA DA FICHA ENTRE 768 E 1279px (#4822): o
+                estado e a gaveta são daqui, o cabeçalho só desenha o botão na
+                faixa que hoje não tem nem coluna nem barra de celular. */}
             <ConversationHeader
               key={selectedConversation.id}
               conversation={selectedConversation}
@@ -1060,6 +1151,8 @@ export function InboxLayout({
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              onAbrirFicha={abrirFicha}
+              fichaAberta={fichaAberta}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -1103,6 +1196,7 @@ export function InboxLayout({
                   nome: selectedConversation.assigned_to_user_name ?? null,
                 }}
                 contatoId={selectedConversation.contacts?.id ?? null}
+                contatoRecusaEnvio={Boolean(selectedConversation.contacts?.is_blocked || selectedConversation.contacts?.is_personal)}
               />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
@@ -1130,6 +1224,9 @@ export function InboxLayout({
               key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : "composer"}
               ref={composerRef}
               conversationId={selectedConversation.id}
+              agendamentoLigado={
+                Boolean(selectedConversation.contacts?.id && selectedConversation.channel_session_id) && !supportReadonly
+              }
               blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
@@ -1158,6 +1255,9 @@ export function InboxLayout({
               // e o botão da faixa abre essa conversa. É a mesma seleção que a
               // faixa do número fora do ar e o cabeçalho já usam.
               onAbrirConversa={handleSelect}
+              // O microfone some no canal que recusa a nota de voz que ele grava
+              // (Instagram/Facebook): a pergunta é à capability, nunca ao provider.
+              recusaNotaDeVoz={recusaNotaDeVoz(selectedConversation.channel_sessions?.provider)}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}
@@ -1179,7 +1279,7 @@ export function InboxLayout({
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
+      <div data-testid="ficha-em-coluna" className="hidden h-full min-h-0 min-w-0 xl:block">
         <CRMSidePanel
           conversation={selectedConversation}
           recolhido={painelRecolhido}

@@ -19,6 +19,8 @@ import {
   type ProviderDeMensagem,
 } from "@/lib/channels/capabilities";
 import { canalDesativado } from "@/lib/channels/desativado";
+import { abrirNegocioDaConversaNova } from "@/lib/leads/entrada-automatica-no-funil";
+import { logger } from "@/lib/logger";
 
 
 /** O que o CHAMADOR sabe sobre o destino e esta porta não pode adivinhar. */
@@ -166,5 +168,45 @@ export async function ensureConversation(
   contactId: string,
   channelSessionId: string,
 ): Promise<string> {
-  return (await beginServiceAtOrigin(admin, organizationId, contactId, channelSessionId)).conversation_id;
+  const boundary = await beginServiceAtOrigin(admin, organizationId, contactId, channelSessionId);
+  const conversationId = boundary.conversation_id;
+
+  /**
+   * A CONVERSA QUE NASCE AQUI ENTRA NO FUNIL — SE A ORGANIZAÇÃO LIGOU (#3603).
+   *
+   * Esta é a porta ÚNICA das conversas que o CRM abre por conta própria: o
+   * "Iniciar conversa" do Inbox (`openSharedContactConversation`), a ficha do
+   * contato, o lembrete de agenda e de tarefa e a ferramenta de início de
+   * conversa do agente de IA passam todos por aqui. Ligar a entrada automática
+   * em cada chamador seria N cópias da mesma regra; aqui é uma. A conversa que
+   * CHEGA não passa por aqui e já ganha negócio sempre; a chave
+   * `settings.entrada_automatica_no_funil.ativa` vale só para esta porta, e o
+   * destino é o mesmo da entrada (funil padrão + etapa de entrada do Inbox).
+   *
+   * ⚠️ NUNCA derruba a abertura. Quem chama está no meio de um atendimento (ou
+   * de um cron), e a conversa é o pedido — o card é consequência. Abaixo há um
+   * `try` porque a promessa é essa: preferir um card a menos a uma conversa que
+   * não abre. Sem configuração na organização, nada é escrito e nada muda.
+   *
+   * ⚠️ A conversa pode ser REABERTA (não criada) por esta RPC — `fn_service_begin`
+   * reaproveita a aberta e reabre a fechada. O card não distingue os dois casos:
+   * a pergunta que ele responde é "o contato desta conversa tem negócio
+   * aberto?", e ela é idempotente por desenho (RPC serializada). Uma conversa
+   * reaberta de quem não tem card é uma demanda nova, e é assim que o
+   * nascimento pela ingestão já trata a segunda mensagem. Com
+   * `reabrir_perdido_dias` ligado no funil, um lembrete de agenda ou de tarefa
+   * pode, por isso, reabrir um negócio PERDIDO recente em vez de criar outro.
+   */
+  try {
+    await abrirNegocioDaConversaNova(admin, { organizationId, contactId, conversationId });
+  } catch (erro) {
+    logger.error("[start-conversation] entrada no funil não pôde ser aplicada", {
+      organizationId,
+      contactId,
+      conversationId,
+      motivo: erro instanceof Error ? erro.message.slice(0, 120) : String(erro).slice(0, 120),
+    });
+  }
+
+  return conversationId;
 }

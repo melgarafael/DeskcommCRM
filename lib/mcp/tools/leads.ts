@@ -15,19 +15,36 @@ import { z } from "zod";
 
 import {
   listLeadsHandler,
+  countLeadsHandler,
   getLeadHandler,
   createLeadHandler,
   updateLeadHandler,
   moveLeadHandler,
   retomarLeadHandler,
 } from "@/app/api/v1/leads/_handler";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import {
+  CHAVE_DA_REFERENCIA,
+  descricaoComReferencia,
+  ehReferenciaExterna,
+} from "@/lib/leads/referencia-externa";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
+import { completarDestinoDoNegocio } from "@/lib/external-db/receitas/destino-pela-referencia";
 import { conferirCamposPersonalizados } from "../conferencia-de-campos";
 import { proporCamposDoNegocio } from "@/lib/leads/proposta-de-campos-por-documento";
+import {
+  TETO_DE_BYTES_DO_ANEXO,
+  TETO_DE_CARACTERES_DO_ANEXO,
+  lerAnexoDoNegocio,
+  listarAnexosDoNegocio,
+  type RecusaDeAnexo,
+} from "@/lib/leads/anexos-do-negocio";
 import { audit } from "@/lib/audit";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
+import { filtrarCamposLegiveisPelaIa } from "@/lib/leads/campos-do-funil";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 
 /**
  * A recusa ÚNICA das leituras de negócio durante um turno: negócio de outro
@@ -57,7 +74,7 @@ const NEGOCIO_CONTATO_PESSOAL = {
     "nem escreva aqui; siga a conversa com quem está falando.",
 } as const;
 
-async function recusaSeLeadDePessoal(
+export async function recusaSeLeadDePessoal(
   ctx: McpContext,
   leadId: string,
 ): Promise<typeof NEGOCIO_CONTATO_PESSOAL | null> {
@@ -167,6 +184,49 @@ async function enrichLeads(
   }));
 }
 
+/**
+ * O recorte do turno (#4669): DENTRO de um turno de agente o `custom_fields`
+ * de TODA resposta de negócio é o que o modelo lê — leitura e escrita, porque
+ * `crm_update_lead` e as irmãs devolvem a linha inteira (`select *`) e o modelo
+ * a lê do mesmo jeito. Só saem as chaves que o dono do funil marcou "A IA pode
+ * ler". Sem turno (token de pessoa) a ficha volta inteira: quem lê é uma
+ * pessoa, com a permissão dela. Um `settings` por funil distinto, sem N+1.
+ */
+async function recortarParaOTurno(
+  ctx: McpContext,
+  leads: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  if (!ctx.contatoDoTurno || leads.length === 0) return leads;
+  const funis = [...new Set(leads.map((l) => l.pipeline_id as string | null | undefined))];
+  const settingsPorFunil = new Map(
+    await Promise.all(
+      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const),
+    ),
+  );
+  return leads.map((l) =>
+    "custom_fields" in l
+      ? {
+          ...l,
+          custom_fields: filtrarCamposLegiveisPelaIa(
+            settingsPorFunil.get(l.pipeline_id as string | null | undefined) as
+              | Record<string, unknown>
+              | null,
+            l.custom_fields,
+          ),
+        }
+      : l,
+  );
+}
+
+/** O mesmo recorte para a resposta de UM negócio. */
+async function recortarUmParaOTurno(
+  ctx: McpContext,
+  lead: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const [recortado] = await recortarParaOTurno(ctx, [lead]);
+  return recortado ?? lead;
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -221,10 +281,47 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
       },
     );
     return {
-      leads: await enrichLeads(ctx, result.leads),
+      leads: await enrichLeads(ctx, await recortarParaOTurno(ctx, result.leads)),
       cursor: result.cursor,
       has_more: result.has_more,
     };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// count
+// ---------------------------------------------------------------------------
+const countInputShape = {
+  pipeline_id: z.string().uuid().optional(),
+  stage_id: z.string().uuid().optional(),
+  status: z.enum(["open", "won", "lost"]).optional(),
+};
+
+export const crmCountLeads: McpToolDefinition<typeof countInputShape> = {
+  name: "crm_count_leads",
+  description:
+    "Conta leads por pipeline, stage e status e devolve só números (total e, sem filtro de status, o total por status), nunca nomes nem ids. " +
+    "Para 'quantos leads?', use esta em vez de paginar crm_list_leads. Em atendimento, conta só os negócios do contato da conversa.",
+  inputSchema: countInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    return countLeadsHandler(
+      ctx.supabase,
+      {
+        organization_id: ctx.organizationId,
+        actor: ctx.actor,
+        requestId: ctx.requestId,
+      },
+      {
+        pipeline_id: input.pipeline_id,
+        stage_id: input.stage_id,
+        status: input.status,
+        // Mesmo escopo do turno da listagem, no WHERE.
+        contact_id: ctx.contatoDoTurno,
+      },
+    );
   },
 };
 
@@ -275,7 +372,7 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
       // Defesa em profundidade — service-role bypassa RLS.
       throw new Error("not_found");
     }
-    const [enriched] = await enrichLeads(ctx, [lead]);
+    const [enriched] = await enrichLeads(ctx, await recortarParaOTurno(ctx, [lead]));
     return { lead: enriched };
   },
 };
@@ -285,8 +382,19 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
 // ---------------------------------------------------------------------------
 
 const createInputShape = {
-  pipeline_id: z.string().uuid(),
-  stage_id: z.string().uuid(),
+  // Opcionais SÓ por causa da `referencia_externa`: com a referência de um item cuja
+  // receita tem funil de destino, o sistema completa os dois (R5c). Sem ela, a
+  // ausência é recusada com a mensagem de ensino (`completarDestinoDoNegocio`).
+  pipeline_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Omita, com stage_id, ao passar referencia_externa."),
+  stage_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Omita, com pipeline_id, ao passar referencia_externa."),
   title: z.string().min(2).max(200),
   description: z.string().max(2000).optional(),
   contact_id: z.string().uuid().optional(),
@@ -302,6 +410,19 @@ const createInputShape = {
     .optional(),
   tags: z.array(z.string()).optional(),
   source: z.string().optional(),
+  /**
+   * O item do banco externo que o cliente escolheu (Spec 25, R5a): `<receita>:<id>`,
+   * montado do resultado de `crm_consultar_receita`. Fica no negócio para o humano
+   * continuar de onde o robô parou, e o mesmo cliente repetindo o interesse no
+   * mesmo item NÃO abre outro negócio.
+   */
+  referencia_externa: z
+    .string()
+    // `refine`, não `.regex()`: o padrão iria no esquema de todo passo de todo turno,
+    // em toda instalação, e este campo só serve a quem usa o banco externo.
+    .refine(ehReferenciaExterna, "use o formato <receita>:<id>")
+    .optional()
+    .describe("O item que o cliente escolheu num resultado de receita: <receita>:<id>, com o id da linha. Nunca invente."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
    *
@@ -325,11 +446,74 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
-    const parsed = createLeadSchema.parse({
+    // Spec 25 (R5c) — funil e etapa podem faltar quando o agente passa só a
+    // referência de um item: o sistema os acha na receita. No turno do agente o
+    // wrapper (`lib/ai/runtime/tools.ts`) já completou ANTES do escopo de funil;
+    // aqui vale para quem chega por outra porta (MCP externo, rota). Sem nada
+    // disso, a ausência é recusada com a mensagem de ensino.
+    //
+    // #4763, item 2: com funil à mão e sem referência, a guarda também consulta
+    // o destino das receitas ativas — o funil que é destino de item, num turno
+    // de conversa, recusa a criação sem a referência. `ctx.contatoDoTurno` é o
+    // contexto de confiança do turno (nunca vem dos argumentos da tool), e a
+    // ausência dele mantém rota e integração exatamente como estavam.
+    const destinoArgs: Record<string, unknown> = {
       pipeline_id: input.pipeline_id,
       stage_id: input.stage_id,
+      referencia_externa: input.referencia_externa,
+    };
+    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs, {
+      turnoComContato: !!ctx.contatoDoTurno,
+    });
+    if (!completo.ok) return completo.resposta;
+    const pipelineId = destinoArgs.pipeline_id as string;
+    const stageId = destinoArgs.stage_id as string;
+
+    // Spec 25 (R5a) — o MESMO cliente repetindo o interesse no MESMO item não abre
+    // outro negócio: acha o que já está aberto no funil e deixa uma nota na
+    // timeline. Só com contato (sem ele não há "mesmo cliente") e só entre os
+    // ABERTOS — um negócio perdido ou ganho não impede o interesse novo. Filtra a
+    // organização à mão: o cliente de serviço ignora a RLS.
+    // No turno do agente o contato TEM de ser o da conversa (a conferência de escopo
+    // já o exige antes de chegar aqui; repetida como nas ferramentas irmãs), e o
+    // negócio de contato pessoal está fora da operação.
+    const doTurno = ctx.contatoDoTurno;
+    const contatoDeOutraConversa =
+      !!doTurno && !!input.contact_id && input.contact_id.toLowerCase() !== doTurno.toLowerCase();
+    if (input.referencia_externa && input.contact_id && !contatoDeOutraConversa) {
+      const { data: existente } = await ctx.supabase
+        .from("crm_leads")
+        .select("id, title, pipeline_id, stage_id, status")
+        .eq("organization_id", ctx.organizationId)
+        .eq("contact_id", input.contact_id)
+        .eq("pipeline_id", pipelineId)
+        .eq("status", "open")
+        .eq(`source_metadata->>${CHAVE_DA_REFERENCIA}`, input.referencia_externa)
+        .limit(1)
+        .maybeSingle();
+      if (existente) {
+        const recusaPessoal = await recusaSeLeadDePessoal(ctx, (existente as { id: string }).id);
+        if (recusaPessoal) return recusaPessoal;
+        await emitLeadActivity(ctx.supabase, {
+          organizationId: ctx.organizationId,
+          leadId: (existente as { id: string }).id,
+          contactId: input.contact_id,
+          type: "note",
+          sourceModule: "referencia-externa",
+          actor: ctx.actor,
+          reason: `O cliente voltou a demonstrar interesse em ${input.referencia_externa}`,
+          payload: { [CHAVE_DA_REFERENCIA]: input.referencia_externa },
+        });
+        return { lead: existente, ja_existia: true };
+      }
+    }
+    const parsed = createLeadSchema.parse({
+      pipeline_id: pipelineId,
+      stage_id: stageId,
       title: input.title,
-      description: input.description ?? null,
+      description: input.referencia_externa
+        ? descricaoComReferencia(input.description, input.referencia_externa)
+        : (input.description ?? null),
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
       // A mensalidade viaja SEPARADA do valor único (fatia 1 da #3602). Sem
@@ -354,7 +538,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // a régua devolve o 422 — coerente: o cliente não disse.
     const conferencia = await conferirCamposPersonalizados(
       ctx,
-      { pipelineId: input.pipeline_id },
+      { pipelineId },
       input.custom_fields,
     );
     const custom_fields = conferencia.custom_fields ?? input.custom_fields;
@@ -375,10 +559,13 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       {
         ...parsed,
         ...(custom_fields === undefined ? {} : { custom_fields }),
+        ...(input.referencia_externa
+          ? { source_metadata: { [CHAVE_DA_REFERENCIA]: input.referencia_externa } }
+          : {}),
       },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -408,7 +595,40 @@ const updateInputShape = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  tags: z.array(z.string()).optional(),
+  /**
+   * AS ETIQUETAS DO NEGÓCIO (#4666) — e a descrição de `tags` diz a verdade.
+   *
+   * `tags` SUBSTITUI a lista inteira, e é o contrato antigo: renomear ou
+   * reinterpretar o campo quebraria quem já o manda. O que faltava era
+   * `tags_adicionar`/`tags_remover` — o que o agente quase sempre quer — e a
+   * frase que avisa que a lista é substituída, porque sem ela o modelo apagava
+   * etiqueta acreditando acrescentar.
+   *
+   * A normalização NÃO mora no shape: `z.toJSONSchema` recusa `transform`
+   * ("Transforms cannot be represented in JSON Schema", medido no zod 4.6), e o
+   * shape bruto é justamente o que vira o esquema que o modelo lê. Ela mora em
+   * `updateLeadSchema` (`lib/schemas/leads.ts`), que é o schema que este handler
+   * parseia com `updateLeadSchema.parse(rest)` — a mesma régua para o MCP e para
+   * o PATCH REST, sem uma segunda regra.
+   */
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Substitui a lista INTEIRA de etiquetas do negócio: o que não vier aqui é APAGADO. " +
+        "Para acrescentar use tags_adicionar; para tirar só algumas, tags_remover.",
+    ),
+  tags_adicionar: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Etiquetas a ACRESCENTAR à lista atual (união): as que já estão ficam. É o que usar " +
+        'para "marcar o negócio com X".',
+    ),
+  tags_remover: z
+    .array(z.string())
+    .optional()
+    .describe("Etiquetas a REMOVER da lista atual (diferença): as demais ficam."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields`.
    *
@@ -418,7 +638,8 @@ const updateInputShape = {
    * monta `{...rest}` a partir DESTE shape, e `z.object` descarta chave que não
    * declarou, o valor morria antes de chegar ao schema que o aceitaria.
    *
-   * Efeito da ausência: o produto deixa criar até 50 campos por funil, desenha
+   * Efeito da ausência: o produto deixa criar até `MAX_CAMPOS_DO_NEGOCIO`
+   * campos por funil, desenha
    * todos na ficha do lead — e nenhum agente conseguia preencher um. Quem
    * modelou o funil no vocabulário do próprio nicho recebia a IA como leitora,
    * nunca como escrivã.
@@ -429,7 +650,8 @@ const updateInputShape = {
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_lead",
   description:
-    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers.",
+    "Atualiza campos editáveis de um lead. Stage transitions são via crm_move_lead_stage; status é gerenciado por triggers. " +
+    "`tags` SUBSTITUI a lista inteira de etiquetas; para acrescentar use `tags_adicionar`.",
   inputSchema: updateInputShape,
   category: "write",
   requiresRole: "agent",
@@ -457,7 +679,7 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         : { ...parsed, custom_fields: conferencia.custom_fields },
     );
     return {
-      lead,
+      lead: await recortarUmParaOTurno(ctx, lead),
       ...(conferencia.recusados.length > 0
         ? {
             campos_nao_gravados: conferencia.recusados,
@@ -529,7 +751,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
         lost_reason: input.lost_reason,
       },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
@@ -570,7 +792,7 @@ export const crmRetomarLead: McpToolDefinition<typeof retomarInputShape> = {
       input.lead_id,
       { stage_id: input.stage_id },
     );
-    return { lead };
+    return { lead: await recortarUmParaOTurno(ctx, lead) };
   },
 };
 
@@ -680,5 +902,103 @@ export const crmProposeLeadFieldsFromDocument: McpToolDefinition<typeof camposDo
         "As propostas entraram na FILA de revisão do negócio; ninguém gravou o card ainda. Diga ao cliente que os " +
         "dados do documento foram separados para a equipe conferir — não diga que o cadastro foi atualizado.",
     };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// crm_list_lead_attachments / crm_get_lead_attachment — o documento do card (#4544)
+// ---------------------------------------------------------------------------
+
+/**
+ * O documento que a pessoa anexou no card era o ÚNICO lugar do fluxo que o
+ * agente não alcançava: `crm_propose_lead_fields_from_document` já aceitava um
+ * `attachment_id`, mas descobrir esse id — e ler o PDF — exigia abrir a tela.
+ * As duas ferramentas abaixo são o par que fecha o caso real (apólice, voucher,
+ * localizador): listar para descobrir o id, ler para tirar os valores do texto.
+ *
+ * As duas DELEGAM para `lib/leads/anexos-do-negocio`, que repete o caminho da
+ * rota de mídia (negócio na organização → linha do anexo presa ao negócio →
+ * posse do caminho → extração única de `extrairTextoDoArquivo`). Nenhuma
+ * ferramenta abre leitura própria de arquivo.
+ *
+ * Contato pessoal continua fora da operação: as duas passam pelo MESMO portão
+ * das demais leituras de negócio, e o contato do turno continua mandando — o
+ * anexo não é uma porta lateral para o negócio de outro cliente.
+ */
+function recusaDeAnexoComoResultado(recusa: RecusaDeAnexo) {
+  if (recusa.erro.codigo === "negocio_fora_da_conversa") return NEGOCIO_FORA_DA_CONVERSA;
+  return { erro: recusa.erro };
+}
+
+const listarAnexosInputShape = {
+  lead_id: z.string().uuid(),
+  /**
+   * A chave do campo de ARQUIVO do funil, quando o agente quer só o que está
+   * naquele campo ("Voucher", "Apólice"). Omitida, devolve todos os anexos.
+   */
+  campo: z.string().trim().min(1).max(60).optional(),
+};
+
+export const crmListLeadAttachments: McpToolDefinition<typeof listarAnexosInputShape> = {
+  name: "crm_list_lead_attachments",
+  description:
+    "Lista os DOCUMENTOS ANEXADOS a um negócio: id, nome do arquivo, tipo, tamanho e data. " +
+    "É o primeiro passo quando o dado que o cliente pede está num documento (apólice, voucher, " +
+    "bilhete, confirmação de hotel): use o id devolvido em crm_get_lead_attachment para ler o " +
+    "conteúdo e depois registrar os valores com crm_propose_lead_fields_from_document. " +
+    "Só enxerga anexos de negócio desta conta; em conversa de atendimento, só do negócio deste cliente.",
+  inputSchema: listarAnexosInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    const pessoal = await recusaSeLeadDePessoal(ctx, input.lead_id);
+    if (pessoal) return pessoal;
+
+    const r = await listarAnexosDoNegocio(ctx.supabase, {
+      organizationId: ctx.organizationId,
+      leadId: input.lead_id,
+      contatoDoTurno: ctx.contatoDoTurno ?? null,
+      campo: input.campo ?? null,
+    });
+    if (!r.ok) return recusaDeAnexoComoResultado(r);
+
+    return { anexos: r.anexos, total: r.anexos.length };
+  },
+};
+
+const lerAnexoInputShape = {
+  lead_id: z.string().uuid(),
+  /** O id que `crm_list_lead_attachments` devolveu — nunca um id inventado. */
+  attachment_id: z.string().uuid(),
+};
+
+export const crmGetLeadAttachment: McpToolDefinition<typeof lerAnexoInputShape> = {
+  name: "crm_get_lead_attachment",
+  description:
+    "Lê o CONTEÚDO de um documento anexado ao negócio (o id vem de crm_list_lead_attachments) e devolve o " +
+    "texto extraído, para você tirar dali os valores do card. Documentos que são PDF com texto são lidos " +
+    `até ${TETO_DE_CARACTERES_DO_ANEXO / 1000}k caracteres por chamada — o que passar volta parcial, com o motivo. ` +
+    `Arquivo maior que ${TETO_DE_BYTES_DO_ANEXO / (1024 * 1024)} MB é recusado. IMAGEM e binário NÃO são transcritos nem ` +
+    "viram base64: a resposta traz conteudo vazio, legivel_como_texto=false e o motivo — nesse caso peça o dado a " +
+    "uma pessoa e nunca invente o que o arquivo diria. Depois de ler, registre os valores com " +
+    "crm_propose_lead_fields_from_document (que NÃO grava o card: a equipe confere).",
+  inputSchema: lerAnexoInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    const pessoal = await recusaSeLeadDePessoal(ctx, input.lead_id);
+    if (pessoal) return pessoal;
+
+    const r = await lerAnexoDoNegocio(ctx.supabase, {
+      organizationId: ctx.organizationId,
+      leadId: input.lead_id,
+      attachmentId: input.attachment_id,
+      contatoDoTurno: ctx.contatoDoTurno ?? null,
+    });
+    if (!r.ok) return recusaDeAnexoComoResultado(r);
+
+    return { anexo: r.anexo };
   },
 };

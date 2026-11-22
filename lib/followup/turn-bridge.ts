@@ -18,7 +18,11 @@ import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-serve
  */
 import type pg from "pg";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+
 import type { AdminClient, EnrollmentPatch } from "./engine";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { flowGraphSchema } from "./graph-schema";
 import { EVENTO_ACAO_ADIADA, EVENTO_CLASSIFICACAO_ESPERANDO, classEdgeMatch, selectEdge, type EnrollmentRow } from "./node-handlers";
 import { coletarEsperasAdaptativas, montarTimingPlan, type PropostaDeEspera } from "./timing-plan";
@@ -53,7 +57,7 @@ export type TurnResult =
    * turno já re-agendou o job para esse instante — o que falta é o enrollment
    * saber disso. Ver `EVENTO_ACAO_ADIADA` em node-handlers.ts.
    */
-  | { kind: "deferred"; until: Date; reason: string }
+  | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria?: boolean }
   /** Plano de tempo do fluxo inteiro, proposto no acionamento — cru, antes do clamp. */
   | { kind: "planned"; propostas: PropostaDeEspera[]; modelo: string };
 
@@ -195,7 +199,15 @@ export async function completeTurnForEnrollment(
     const evento = {
       node_id: node.id,
       event_type: EVENTO_ACAO_ADIADA,
-      payload: { until: result.until.toISOString(), next_eval_at: voltaEm.toISOString(), reason: result.reason },
+      payload: {
+        until: result.until.toISOString(),
+        next_eval_at: voltaEm.toISOString(),
+        reason: result.reason,
+        // O ESCOPO vai junto com o motivo: é o que permite o dossiê não culpar
+        // a janela de 24 h numa conexão por QR. Quem sabe o provedor é o turno
+        // que adiou (ele já leu o canal); a ponte só transporta.
+        janela_regulatoria: result.janelaRegulatoria !== false,
+      },
       idempotency_key: `${node.id}:${enrollment.steps_taken}:adiado:${jobId ?? "inline"}:${result.reason}:${result.until.toISOString()}`,
     };
     await db.assertServiceBoundary?.(enrollment);
@@ -388,14 +400,17 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      const { rows: contacts } = await pool.query<{ name: string | null }>(
-        `select name from contacts where organization_id = $1 and id = $2`,
+      const { rows: contacts } = await pool.query<{ name: string | null; tags: string[] | null }>(
+        `select name, tags from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
       const lead = leads[0];
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção põe a etiqueta do
+        // nicho no CONTATO (`marcarEtiquetasDaCampanha`); o #4606 copia para o
+        // card, mas só no nascimento. Ver `etiquetas-do-lead.ts`.
+        tags: etiquetasDoLead(lead?.tags, contacts[0]?.tags),
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},
       };
@@ -456,6 +471,13 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       );
       return rows[0]?.name ?? null;
     },
+    async loadOrgLocale(orgId) {
+      const { rows } = await pool.query<{ locale: string | null }>(
+        `select locale from organizations where id = $1`,
+        [orgId],
+      );
+      return rows[0]?.locale ?? null;
+    },
     async insertDeadInboxItem(item) {
       await pool.query(
         `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
@@ -489,12 +511,25 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       //
       // `on conflict do nothing` casa o índice parcial da 0224
       // (inbox_appointment_revision_unique): repetir num reprocesso é no-op.
+      //
+      // Título e corpo vão como PARÂMETRO, no idioma da organização: a Central
+      // mostra o texto como foi gravado. Ler o idioma nunca barra o aviso.
+      let idioma: Idioma = IDIOMA_PADRAO;
+      try {
+        const { rows } = await pool.query<{ locale: string | null }>(
+          `select locale from organizations where id = $1`,
+          [item.organization_id],
+        );
+        idioma = normalizarIdioma(rows[0]?.locale ?? null);
+      } catch {
+        idioma = IDIOMA_PADRAO;
+      }
       await pool.query(
         `insert into agent_inbox_items
            (organization_id, kind, severity, title, body, ref_kind, ref_id, appointment_revision)
          select $1, 'appointment_recovery_review', 'warn',
-                'Cliente faltou e não respondeu à recuperação',
-                'As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.',
+                $4::text,
+                $5::text,
                 'appointment', a.id, $3
            from calendar_appointments a
            join contacts c
@@ -506,7 +541,16 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
          on conflict (organization_id, ref_id, appointment_revision, kind)
            where ref_kind = 'appointment' and appointment_revision is not null
            do nothing`,
-        [item.organization_id, item.appointment_id, item.appointment_revision],
+        [
+          item.organization_id,
+          item.appointment_id,
+          item.appointment_revision,
+          traduzir("Cliente faltou e não respondeu à recuperação", idioma),
+          traduzir(
+            "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.",
+            idioma,
+          ),
+        ],
       );
     },
     async persistirRespostaFollowup(input) {

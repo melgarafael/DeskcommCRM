@@ -27,6 +27,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   camposComAnexo,
   recusaDeCamposObrigatorios,
@@ -63,6 +64,13 @@ export interface EncerraDemandaInput {
   razaoNaTimeline?: string;
   /** Acrescentado ao `payload` da linha (ex.: para onde o negócio foi). */
   payloadNaTimeline?: Record<string, unknown>;
+  /**
+   * Para quem fecha SEM intenção humana (o aviso de pago do provedor): só fecha
+   * negócio ainda aberto e na etapa lida, e a condição vai no PRÓPRIO update.
+   * Se alguém encerrou ou mexeu no card nesse meio-tempo, 409 `state_conflict`
+   * e nada é escrito — a decisão humana vence. Os caminhos humanos não usam.
+   */
+  travaOtimista?: boolean;
 }
 
 export interface DemandaEncerrada {
@@ -84,10 +92,20 @@ function actorAuditPayload(actor: Actor): {
   };
 }
 
+function conflitoDeEstado(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    409,
+    "state_conflict",
+    undefined,
+    ctx.requestId,
+    traduzir("O negócio mudou enquanto era encerrado.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
 /**
  * Fecha o negócio movendo-o para o estágio terminal do funil.
  *
- * ⚠️ SEM TRAVA OTIMISTA, de propósito (o comportamento que já existia): encerrar
+ * ⚠️ SEM TRAVA OTIMISTA por padrão (o comportamento que já existia): encerrar
  * é intenção explícita, e recusar porque o card se mexeu entre o clique e o
  * commit obrigaria a pessoa a repetir uma decisão que ela já tomou. O `status` e
  * o `closed_at` são do trigger `fn_crm_lead_close_on_stage` — não se escreve
@@ -135,6 +153,9 @@ export async function encerraDemanda(
 
   if ((lead as { status: string }).status === input.desfecho) {
     return { lead: lead as Record<string, unknown>, jaEstava: true };
+  }
+  if (input.travaOtimista && (lead as { status: string }).status !== "open") {
+    throw conflitoDeEstado(ctx);
   }
 
   const colunaTerminal = input.desfecho === "won" ? "is_won" : "is_lost";
@@ -197,6 +218,7 @@ export async function encerraDemanda(
   const settings = await settingsDoFunil(
     supabase,
     (lead as { pipeline_id: string }).pipeline_id,
+    ctx.organization_id,
   );
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as Record<string, unknown>,
@@ -259,11 +281,14 @@ export async function encerraDemanda(
     patch.won_reason = input.motivo.trim();
   }
 
-  const { error: updErr } = await supabase
+  const escrita = supabase
     .from("crm_leads")
     .update(patch)
     .eq("id", input.leadId)
     .eq("organization_id", ctx.organization_id);
+  const { data: alcancadas, error: updErr } = input.travaOtimista
+    ? await escrita.eq("status", "open").eq("stage_id", (lead as { stage_id: string }).stage_id).select("id")
+    : await escrita;
 
   if (updErr) {
     // Rede de segurança (#917) — mesma dos outros três caminhos (arrasto, lote,
@@ -279,6 +304,9 @@ export async function encerraDemanda(
     }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
+  if (input.travaOtimista && (alcancadas ?? []).length === 0) {
+    throw conflitoDeEstado(ctx);
+  }
 
   const { data: fresh } = await supabase
     .from("crm_leads")
@@ -287,6 +315,37 @@ export async function encerraDemanda(
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   const finalLead = (fresh ?? lead) as Record<string, unknown>;
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatia 5) ─────────────────────────────────
+  //
+  // Esta é a porta compartilhada do botão Ganhar/Perder: `/win`, `/lose`, a
+  // origem do clone, a ação `create_or_move_lead`, o `crm_close_demand` (MCP),
+  // o frio (cold call) e a troca de funil passam TODOS por aqui. Uma chamada
+  // neste ponto cobre todas as portas de uma vez — e é o mesmo desenho da régua
+  // de campos obrigatórios, que também vive aqui para não haver duas respostas.
+  //
+  // ⚠️ DEPOIS do `jaEstava`: negócio que já estava ganho/perdido retorna antes
+  // e não toca no financeiro. Ganhar duas vezes é idempotente no banco (índice
+  // único parcial, migration 9316), mas nem chega a tentar.
+  //
+  // Falha BAIXA pelo módulo do cerco: o negócio já fechou e o card não pode
+  // voltar a aberto porque o molde não nasceu.
+  await moveARecorrenciaNoFecho({
+    organizationId: ctx.organization_id,
+    leadId: input.leadId,
+    pipelineId: (lead as { pipeline_id?: string | null }).pipeline_id ?? null,
+    etapa: {
+      is_won: input.desfecho === "won",
+      is_lost: input.desfecho === "lost",
+    },
+    valorRecorrente:
+      (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+    meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
+    criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+    userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+    origem: "lib/leads/encerramento.encerraDemanda",
+    requestId: ctx.requestId,
+  });
 
   // `fn_crm_lead_close_on_stage` atualiza o status e o trigger de eventos grava
   // lead.won/lead.lost no event_log. Não emitir novamente via emit_event aqui:
@@ -336,6 +395,7 @@ export async function encerraDemanda(
   await audit({
     action: eventType,
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: input.leadId,

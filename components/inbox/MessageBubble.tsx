@@ -3,11 +3,14 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -16,8 +19,13 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
-import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
+import {
+  lerMencoesDeGrupo,
+  PALAVRA_DE_MENCAO_DESCONHECIDA,
+  textoComMencoesResolvidas,
+} from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
+import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
@@ -33,11 +41,49 @@ import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
+import { TextoRetidoDaMensagem } from "@/components/inbox/TextoRetidoDaMensagem";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import {
   extractCitations,
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
+
+const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
+const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
+
+// O emoji-mart tem largura fixa de `colunas × 36px + 28px` (9 colunas = 352px), e o
+// modal só oferece `janela − 2rem − p-3 − borda` = janela − 58px. A 375px isso dá
+// 317px, e o seletor de 9 colunas vazava 22px pela borda do modal. As colunas saem
+// da largura da janela, entre 6 e 9.
+export function colunasDoSeletorDeReacao(larguraDaJanela: number): number {
+  return Math.max(6, Math.min(9, Math.floor((larguraDaJanela - 58 - 28) / 36)));
+}
+// Identificador persistido no navegador; não é texto de marca exibido ao usuário.
+const REACOES_STORAGE = ["desk", "comm:reacoes-frequentes:v1"].join("");
+
+function lerContagens(): Record<string, number> {
+  try {
+    const data: unknown = JSON.parse(localStorage.getItem(REACOES_STORAGE) ?? "{}");
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    return Object.fromEntries(Object.entries(data).filter(([emoji, n]) =>
+      emoji.length > 0 && emoji.length <= 64 && typeof n === "number" && Number.isFinite(n) && n > 0,
+    ));
+  } catch { return {}; }
+}
+
+function cincoMaisUsados(contagens: Record<string, number>): string[] {
+  const usados = Object.entries(contagens).sort((a, b) => b[1] - a[1]).map(([emoji]) => emoji);
+  return [...new Set([...usados, ...REACOES_INICIAIS])].slice(0, 5);
+}
+
+/** Quem não tem histórico recebe cinco opções; as escolhas confirmadas sobem para o início. */
+function registrarReacao(emoji: string): string[] {
+  const contagens = lerContagens();
+  contagens[emoji] = (contagens[emoji] ?? 0) + 1;
+  try { localStorage.setItem(REACOES_STORAGE, JSON.stringify(contagens)); } catch { /* Sem armazenamento, o menu ainda funciona. */ }
+  return cincoMaisUsados(contagens);
+}
 
 interface Props {
   message: Message;
@@ -52,8 +98,25 @@ interface Props {
   onEncaminhar?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
+  /**
+   * #4575 — o fio acabou de ser alcançado: o balão pisca por um instante.
+   *
+   * Quem sabe que a rolagem aconteceu é o `ChatThread` (dono do scroller), não
+   * esta bolha. Aqui só se desenha o destaque que ele liga e desliga.
+   */
+  destacada?: boolean;
+  /**
+   * #4575 — tocar no trecho citado leva à mensagem original.
+   *
+   * O gesto mora na bolha, mas a rolagem (e, quando a original ficou fora da
+   * página, o carregamento do histórico até ela) é do `ChatThread`: ele é quem
+   * tem o scroller e as páginas. Sem este callback o fio continua desenhado,
+   * só não é clicável — é a leitura do super-admin, que não tem o fio inteiro.
+   */
+  onIrParaCitada?: (id: string) => void;
   /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
   reacoes?: ReacaoNoBalao[];
+  onReagir?: (emoji: string) => Promise<void>;
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -83,8 +146,13 @@ interface Props {
 /** Quem tem um motor que reenvia sozinho quando a conexão volta (`redriveQueued`). */
 const SAI_SOZINHA_QUANDO_VOLTAR = new Set(["ai", "automation", "system"]);
 
-function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
-  status: string; paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
+function AckIndicator({ status, deliveredAt, readAt, paradaSemConexao, saiSozinha, t }: {
+  status: string;
+  /** Carimbo da entrega (`delivered_at`) — o canal oficial só tem aqui o "entregue". */
+  deliveredAt?: string | null;
+  /** Carimbo da leitura (`read_at`) — idem para o "lida". */
+  readAt?: string | null;
+  paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
 }) {
   // Só a linha que o envio PAROU por falta de conexão (`queued_reason`). Todo
   // envio nasce `queued` por um instante; mostrar o relógio nele diria
@@ -102,16 +170,62 @@ function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
       </span>
     );
   }
-  if (status === "read") {
+  // A Cloud API oficial NÃO muda `status` — ele fica colapsado em `sent |
+  // failed` de propósito (`lib/channels/meta/status-update.ts`), e entrega e
+  // leitura vivem só nos carimbos. Por isso o tique parte dos FATOS, na ordem
+  // em que acontecem (leitura > entrega > status), e o `status` fica como
+  // último recurso para o canal que ainda usa o domínio fino.
+  if (readAt || status === "read") {
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
-  if (status === "delivered") {
+  if (deliveredAt || status === "delivered") {
     return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
   }
   if (status === "sent") {
     return <Check size={12} weight="bold" className="text-current/70" aria-label={t("Enviada")} />;
   }
   return null;
+}
+
+/**
+ * O trecho da citação: BOTÃO quando o fio sabe rolar até a original, TEXTO
+ * quando não sabe.
+ *
+ * #4575 — a citação virou o caminho para a mensagem original, mas o `MessageBubble`
+ * também é renderizado onde não existe fio rolável (o super-admin lê a conversa
+ * de outra organização em `app/admin`, sem a paginação do `ChatThread`). Com
+ * `disabled` amarrado ao handler, o controle nascia cinza em toda linha dessas
+ * telas — ausência com cara de permissão. Aqui ele deixa de ser controle: onde
+ * não há para onde ir, não há botão.
+ */
+function CitacaoDaBolha({
+  aoTocar,
+  rotulo,
+  className,
+  children,
+}: {
+  aoTocar?: () => void;
+  rotulo: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  // O aria-label dá o nome da AÇÃO e apaga o conteúdo do nome acessível:
+  // o trecho citado volta ao leitor de tela como descrição do botão.
+  const idDoTrecho = useId();
+  if (!aoTocar) return <div className={className}>{children}</div>;
+  return (
+    <button
+      type="button"
+      onClick={aoTocar}
+      aria-label={rotulo}
+      aria-describedby={idDoTrecho}
+      className={className}
+    >
+      <span id={idDoTrecho} className="contents">
+        {children}
+      </span>
+    </button>
+  );
 }
 
 export function MessageBubble({
@@ -121,7 +235,10 @@ export function MessageBubble({
   onResponder,
   onEncaminhar,
   citada,
+  destacada = false,
+  onIrParaCitada,
   reacoes,
+  onReagir,
   viewerUserId,
   onEditar,
   onApagar,
@@ -136,6 +253,19 @@ export function MessageBubble({
   const [ocultando, setOcultando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [confirmandoReenvio, setConfirmandoReenvio] = useState(false);
+  const [seletorDeReacaoAberto, setSeletorDeReacaoAberto] = useState(false);
+  const [reacoesFrequentes, setReacoesFrequentes] = useState(REACOES_INICIAIS);
+  const reacaoPendente = useRef(false);
+  const enviarReacao = async (emoji: string) => {
+    if (!onReagir || reacaoPendente.current) return;
+    reacaoPendente.current = true;
+    try {
+      await onReagir(emoji);
+      setReacoesFrequentes(registrarReacao(emoji));
+    } finally {
+      reacaoPendente.current = false;
+    }
+  };
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const abrindoEdicao = useRef(false);
@@ -200,7 +330,19 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
-  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  // RESPONDER CITANDO (#4787): a citação é o CONTEÚDO da mensagem num segundo
+  // lugar da tela — e, no envio, uma referência que sai para a plataforma. Se a
+  // linha foi apagada, citá-la é (a) mostrar de volta o que saiu do ar e (b)
+  // mandar ao canal um id que não existe mais lá. A régua é a MESMA régua de
+  // Encaminhar/Reagir/Baixar: o que foi apagado não ganha atalho de volta.
+  // O servidor recusa de novo (`citacao_apagada`) — aqui é a tela que não oferece.
+  const podeResponder = Boolean(onResponder) && !apagada;
+  const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
+  // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
+  // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
+  // propósito, e o menu não deve ser o atalho de volta a ele.
+  const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(podeResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -308,18 +450,36 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // Cada pessoa do grupo tem uma cor fixa no NOME, como no WhatsApp do celular.
+  // A apagada fica de fora: ela já foi para o cinza de propósito (ver abaixo).
+  const corDoRemetente = remetente && !apagada ? corDoParticipante(remetente) : null;
   // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
   // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
-  // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
-  // texto sai idêntico (o número que já estava lá é a informação disponível).
+  // dois contatos chamados "João" não trocam de lugar. Quem não está no CRM sai
+  // com a palavra do dicionário — o LID cru não aparece. O `remetente` acima é o
+  // AUTOR da mensagem e nunca vira rótulo de menção (#3566).
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  const corpo = textoComMencoesResolvidas(message.body, mencoes);
+  const corpo =
+    textoComMencoesResolvidas(message.body, mencoes, {
+      palavraDesconhecida: t(PALAVRA_DE_MENCAO_DESCONHECIDA),
+    }) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
   const anuncio = !isOutbound ? lerAnuncioDaMensagem(message.metadata?.anuncio) : null;
+  /**
+   * #4575 — QUEM É A CITADA, mesmo quando ela não está carregada.
+   *
+   * O `citada` vem resolvido pela lista que já está na tela. Quando a original
+   * é antiga e ficou fora da página carregada, ele vem nulo — e o fio, até
+   * aqui, simplesmente desaparecia. Era o defeito registrado na issue: some o
+   * trecho E o gesto. Com o id do vínculo (`reply_to_message_id`, que a linha
+   * sempre traz) o bloco continua desenhado com um rótulo genérico, e o clique
+   * pede ao `ChatThread` que carregue o histórico até ela.
+   */
+  const idDaCitada = citada?.id ?? message.reply_to_message_id ?? null;
 
   async function reenviar(confirmado: boolean) {
     if (!onReenviar || ocupado) return;
@@ -348,6 +508,11 @@ export function MessageBubble({
   return (
     <div
       data-search-match={searchMatch || undefined}
+      // #4575 — a identidade da mensagem no DOM. É por este atributo que o
+      // clique na citação acha o alvo (o `id` do banco é uuid: nenhum
+      // caractere precisa de escape em seletor de atributo entre aspas).
+      data-message-id={message.id}
+      data-destacada={destacada || undefined}
       className={cn(
         "group flex w-full min-w-0 items-center gap-1 px-4 py-1",
         isOutbound ? "justify-end" : "justify-start",
@@ -384,6 +549,11 @@ export function MessageBubble({
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
           searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
+          // #4575 — o "achei" do clique na citação: o MESMO desenho do achado
+          // da busca, em cor de destaque e passageiro (quem liga e desliga é o
+          // ChatThread). Sem ele o fio rola até a original e ninguém sabe qual
+          // bolha era.
+          destacada && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           // Espaço para a marca de reação, que fica metade para fora do balão.
           Boolean(reacoes?.length) && "mb-3",
         )}
@@ -392,6 +562,7 @@ export function MessageBubble({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
+                onClick={() => setReacoesFrequentes(cincoMaisUsados(lerContagens()))}
                 className={cn(
                   "absolute right-1 top-1 z-10 rounded-md p-0.5 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1",
                   // No toque, a área que pega o dedo passa a ~48px sem mudar o desenho:
@@ -413,14 +584,31 @@ export function MessageBubble({
                 editorRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
                 editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
               }}>
-              {onResponder && (
-                <DropdownMenuItem onSelect={() => onResponder(message)}>
+              {podeResponder && (
+                <DropdownMenuItem onSelect={() => onResponder?.(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeReagir && reacoesFrequentes.map((emoji) => (
+                <DropdownMenuItem key={emoji} aria-label={t("Reagir com {emoji}").replace("{emoji}", emoji)} onSelect={() => void enviarReacao(emoji).catch(() => undefined)}>
+                  {emoji}
+                </DropdownMenuItem>
+              ))}
+              {podeReagir && (
+                <DropdownMenuItem onSelect={() => setSeletorDeReacaoAberto(true)}>
+                  {t("Mais emojis")}
                 </DropdownMenuItem>
               )}
               {podeEncaminhar && (
                 <DropdownMenuItem onSelect={() => onEncaminhar?.(message)}>
                   <ArrowBendUpRight size={16} aria-hidden />{t("Encaminhar")}
+                </DropdownMenuItem>
+              )}
+              {podeBaixar && (
+                <DropdownMenuItem asChild>
+                  <a href={mediaDownloadSrc(message.id)} download>
+                    <DownloadSimple size={16} aria-hidden />{t("Baixar")}
+                  </a>
                 </DropdownMenuItem>
               )}
               {podeEditar && onEditar && (
@@ -457,19 +645,34 @@ export function MessageBubble({
 
           Mostra de quem era e um trecho. `line-clamp-2` porque serve para
           reconhecer, não para reler: a original está logo acima no histórico.
+
+          #4575 — e o trecho é um BOTÃO: tocar nele leva à mensagem original e
+          a destaca por um instante, como no WhatsApp. Quem rola é o
+          `ChatThread`; aqui só se avisa QUAL id foi pedido. Vale para as duas
+          direções (resposta do cliente e da equipe), porque o gesto é do fio,
+          não do autor.
         */}
-        {citada && (
-          <div
+        {idDaCitada && (
+          <CitacaoDaBolha
+            aoTocar={onIrParaCitada ? () => onIrParaCitada(idDaCitada) : undefined}
+            rotulo={t("Ir para a mensagem citada")}
             className={cn(
-              "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
+              "mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
               isOutbound
                 ? "border-primary-foreground/50 bg-primary-foreground/10"
                 : "border-primary bg-background/60",
+              // O trecho inteiro é a área de toque — no celular o fio é estreito
+              // e o gesto é o ponto do pedido, então não se economiza alvo.
+              onIrParaCitada
+                ? "cursor-pointer hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-1"
+                : "",
             )}
           >
-            <div className="font-medium opacity-80">
-              {citada.direction === "outbound" ? t("Você") : t("Cliente")}
-            </div>
+            <span className="block font-medium opacity-80">
+              {citada
+                ? citada.direction === "outbound" ? t("Você") : t("Cliente")
+                : t("Mensagem citada")}
+            </span>
             {/*
               A CITADA PODE TER SIDO APAGADA — e aí o texto dela não volta aqui.
 
@@ -480,19 +683,43 @@ export function MessageBubble({
               continuava legível dentro de cada resposta que a citou. O fio
               permanece (a citação some, não a resposta); o conteúdo, não.
             */}
-            <div className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada.revoked_at || citada.metadata?.crm_hidden_at) && "italic")}>
-              {citada.revoked_at
+            <span className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada?.revoked_at || citada?.metadata?.crm_hidden_at) && "italic")}>
+              {!citada
+                ? t("Toque para carregar a original")
+                : citada.revoked_at
                 ? t("Esta mensagem foi apagada")
                 : citada.metadata?.crm_hidden_at
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
-                : citada.body?.trim() || t("(sem texto)")}
-            </div>
-          </div>
+                : citada.body?.trim()
+                ? // Link dentro do <button> da citação é HTML inválido (controle
+                  // interativo aninhado): o clique no endereço também dispararia
+                  // o "ir para a original". Quando a citação é botão, o endereço
+                  // sai como texto; quando não há para onde ir, continua link (#4582).
+                  onIrParaCitada
+                  ? citada.body.trim()
+                  : <TextoComLinks texto={citada.body.trim()} />
+                : t("(sem texto)")}
+            </span>
+          </CitacaoDaBolha>
         )}
         {remetente && (
-          <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+          <p
+            className={cn(
+              "mb-0.5 text-[11px] font-medium text-muted-foreground",
+              corDoRemetente &&
+                "font-semibold text-[color:var(--cor-participante)] dark:text-[color:var(--cor-participante-escuro)]",
+            )}
+            style={
+              corDoRemetente
+                ? ({
+                    "--cor-participante": corDoRemetente.claro,
+                    "--cor-participante-escuro": corDoRemetente.escuro,
+                  } as CSSProperties)
+                : undefined
+            }
+          >
             {rotuloDoRemetente(remetente)}
           </p>
         )}
@@ -544,8 +771,16 @@ export function MessageBubble({
             {textoApagadoVisivel && message.body && (
               <div className="border-t border-current/20 pt-1">
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
-                <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+                <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body} /></p>
               </div>
+            )}
+            {/* Apagada pelo CONTATO: o corpo não vem no payload (#4500). Quem
+                decide se ele aparece é o servidor, ao clique — e o aviso de
+                exclusão CONTINUA acima, porque a mensagem segue apagada. O
+                botão só existe com `texto_retido`: o servidor só manda o sinal
+                quando há corpo guardado E a empresa autorizou algum perfil. */}
+            {!textoApagadoVisivel && message.texto_retido === true && (
+              <TextoRetidoDaMensagem mensagemId={message.id} />
             )}
           </div>
         ) : ocultaNoCrm ? (
@@ -590,7 +825,7 @@ export function MessageBubble({
             )}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={corpo} /></p>
             )}
 
             {botoesDoModelo.length > 0 && (
@@ -634,7 +869,9 @@ export function MessageBubble({
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
           )}
-          {isOutbound && !isFailed && <AckIndicator status={message.status} paradaSemConexao={paradaSemConexao}
+          {isOutbound && !isFailed && <AckIndicator status={message.status}
+            deliveredAt={message.delivered_at} readAt={message.read_at}
+            paradaSemConexao={paradaSemConexao}
             saiSozinha={SAI_SOZINHA_QUANDO_VOLTAR.has(message.sent_via)} t={t} />}
           {isFailed && !pulo && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
@@ -718,6 +955,27 @@ export function MessageBubble({
           </span>
         ) : null}
       </div>
+      <Dialog open={seletorDeReacaoAberto} onOpenChange={setSeletorDeReacaoAberto}>
+        <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-3 sm:max-w-fit">
+          <DialogHeader>
+            <DialogTitle>{t("Escolha uma reação")}</DialogTitle>
+          </DialogHeader>
+          {seletorDeReacaoAberto && (
+            <Suspense fallback={<Skeleton className="h-[420px] w-[min(352px,calc(100vw-4rem))]" />}>
+              <PickerDeReacao
+                data={async () => (await import("@emoji-mart/data")).default}
+                locale="pt"
+                previewPosition="none"
+                perLine={colunasDoSeletorDeReacao(window.innerWidth)}
+                onEmojiSelect={(e: { native: string }) => {
+                  setSeletorDeReacaoAberto(false);
+                  void enviarReacao(e.native).catch(() => undefined);
+                }}
+              />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>
           <AlertDialogHeader>

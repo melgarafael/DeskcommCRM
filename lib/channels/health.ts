@@ -34,6 +34,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 import { PROVIDERS_DE_MENSAGEM } from "./capabilities";
+import { startingPresoHa, limitesDoStartingPreso } from "./starting-preso";
 import {
   DETALHE_NAO_RECEBE,
   PREFIXO_ENVIO_RESTRITO,
@@ -55,9 +56,12 @@ export const STATUS_SAUDAVEL = "WORKING";
  * propósito e não ser avisado é um incômodo pequeno; não ser avisado de uma
  * parada que ninguém pediu é o defeito que motivou este arquivo.
  *
- * `STARTING` NÃO entra: é o estado normal de todo boot, e avisar nele faria o
- * sistema gritar a cada reinício — o caminho mais curto para o operador aprender
- * a ignorar o aviso.
+ * `STARTING` NÃO entra NESTA LISTA: é o estado normal de todo boot, e avisar
+ * nele faria o sistema gritar a cada reinício — o caminho mais curto para o
+ * operador aprender a ignorar o aviso. Ele tem um caminho próprio, por IDADE:
+ * `STARTING` acima do prazo de `starting-preso.ts` (o mesmo que o vigia usa
+ * para reiniciar) avisa em `avisoDaConexao`. Trinta segundos de boot continuam
+ * em silêncio; três dias, não.
  */
 export const STATUS_QUE_AVISAM = ["SCAN_QR_CODE", "FAILED", "STOPPED"] as const;
 
@@ -172,6 +176,65 @@ function avisoDoDefeito(defeito: DefeitoDoNumero, apelido: string, idioma: Idiom
  */
 export const PREFIXO_EMPURRAO = "PUSH:";
 
+/**
+ * Quantas observações SEGUIDAS de queda antes de acreditar nela.
+ *
+ * ─── O defeito que isto existe para impedir ─────────────────────────────────
+ *
+ * Medido numa instalação real: a conexão oficial saiu de WORKING e voltou cinco
+ * minutos depois. Nesse intervalo o operador mandou duas mensagens, as duas
+ * foram para `queued` com `channel_session_not_working`, e nenhuma saiu nunca.
+ * Não houve queda de verdade: a pergunta ao provedor falhou UMA vez, e a
+ * varredura traduziu isso em queda na primeira tentativa.
+ *
+ * Uma pergunta que falha não é uma conexão caída. Com a varredura de 5 em 5
+ * minutos, exigir DUAS confirmações custa no pior caso ~5 minutos a mais para
+ * anunciar uma queda real — e evita anunciar a que não existe, que é a que
+ * derruba mensagem de cliente.
+ *
+ * ─── Por que 2, e não 3 ─────────────────────────────────────────────────────
+ *
+ * Porque o outro lado do erro também é caro: cada rodada a mais é tempo em que
+ * uma queda REAL segue sem aviso. Dois é o menor número que descarta o pisco
+ * isolado, que foi o padrão observado.
+ *
+ * A coluna `consecutive_health_fails` existe desde o desenho original e a spec
+ * descreve incrementá-la — nenhum código o fazia. Este é o consumidor que
+ * faltava; ela é zerada ao reconectar, e volta a zero em qualquer observação boa.
+ */
+export const CONFIRMACOES_PARA_QUEDA = 2;
+
+export interface JulgamentoDaQueda {
+  /** Acreditar na queda AGORA (só então o status vai ao banco e o aviso abre). */
+  confirmada: boolean;
+  /** O que gravar em `consecutive_health_fails`. */
+  contador: number;
+}
+
+/**
+ * Uma observação ruim confirma a queda, ou ainda é pisco?
+ *
+ * Observação BOA zera na hora — recuperação nunca espera confirmação: o custo de
+ * acreditar cedo numa volta é nenhum, e o de demorar é seguir barrando envio de
+ * um canal que já voltou.
+ *
+ * "Não deu para perguntar" (`reachable: false`) conta como ruim de propósito:
+ * do lado de quem atende, um provedor que não responde e um canal caído são a
+ * mesma coisa — ninguém recebe mensagem. O que muda é o texto do aviso, não se
+ * ele existe.
+ */
+export function julgarQueda(saude: SaudeObservada, contadorAtual: number): JulgamentoDaQueda {
+  const status = (saude.status ?? "").toUpperCase();
+  const ruim = !saude.reachable || (STATUS_QUE_AVISAM as readonly string[]).includes(status);
+
+  if (!ruim) return { confirmada: false, contador: 0 };
+
+  // Para no teto: a sessão caída não paga um UPDATE por rodada para um número
+  // que ninguém mais lê.
+  const contador = Math.min(contadorAtual + 1, CONFIRMACOES_PARA_QUEDA);
+  return { confirmada: contador >= CONFIRMACOES_PARA_QUEDA, contador };
+}
+
 export interface AvisoDeConexao {
   kind: "qr_rescan" | "channel_number_alert";
   severity: "warn" | "critical";
@@ -186,6 +249,19 @@ export interface SaudeObservada {
   status: string | null;
   detail: string | null;
   defeitosSemMedida?: DefeitoDoNumero["tipo"][];
+  /**
+   * Há quantos SEGUNDOS a sessão está no status observado (`last_status_change_at`
+   * do espelho). Só o `STARTING` usa: os outros status avisam pelo estado, e
+   * `undefined` (quem não leu o carimbo) mantém o comportamento de sempre —
+   * nenhum aviso por idade, para não acusar um boot normal.
+   */
+  segundosNoStatus?: number | null;
+  /**
+   * O vigia do worker já gastou as tentativas de restart deste episódio
+   * (`metadata.vigia_starting.esgotado`). É o que transforma "presa" em "presa e
+   * sem tentativas" — o segundo nível do aviso.
+   */
+  restartsEsgotados?: boolean;
 }
 
 /**
@@ -253,6 +329,41 @@ export function avisoDaConexao(
     return defeito ? avisoDoDefeito(defeito, apelido, idioma) : null;
   }
   if (!status) return null;
+
+  // ─── `STARTING` PRESO (#4870) ─────────────────────────────────────────────
+  //
+  // `STARTING` sai em silêncio enquanto é boot. O defeito é quando ele NÃO
+  // acaba: a sessão fica dias sem receber mensagem e o único sinal é a pausa da
+  // campanha, que só existe para quem tem campanha ativa. A régua é a IDADE —
+  // a mesma do vigia que reinicia (`starting-preso.ts`), para os dois nunca
+  // discordarem sobre o que é "preso".
+  //
+  // Sem idade lida (`undefined`), nada muda: é o boot normal e é o que o
+  // webhook vê quando acabou de receber o evento.
+  if (status === "STARTING") {
+    const limites = limitesDoStartingPreso();
+    const segundos = saude.segundosNoStatus;
+    const msNoStatus = typeof segundos === "number" && Number.isFinite(segundos) ? segundos * 1000 : null;
+    if (!startingPresoHa(msNoStatus, limites.prazoMs)) return null;
+    const minutos = Math.max(1, Math.round(limites.prazoMs / 60_000));
+    if (saude.restartsEsgotados) {
+      return {
+        kind: "channel_number_alert",
+        severity: "critical",
+        title: `WhatsApp "${apelido}" não voltou depois das tentativas automáticas de religar`,
+        body: `A conexão está presa em "Conectando…" e as ${limites.limite} tentativas de religar não a trouxeram de volta. Nenhuma mensagem entra nem sai por este número. Abra Conexões e use Reconectar: no modo padrão ele não pede o QR de novo.`,
+        episodio: "STARTING_PRESO_ESGOTADO",
+      };
+    }
+    return {
+      kind: "channel_number_alert",
+      severity: "warn",
+      title: `WhatsApp "${apelido}" está preso em "Conectando…"`,
+      body: `A conexão está nesse estado há mais de ${minutos} minutos, e nesse estado nenhuma mensagem entra nem sai. O sistema vai tentar religá-la sozinho; se as tentativas acabarem sem volta, este aviso sobe para crítico.`,
+      episodio: "STARTING_PRESO",
+    };
+  }
+
   if (!(STATUS_QUE_AVISAM as readonly string[]).includes(status)) return null;
 
   if (status === "SCAN_QR_CODE") {

@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/catalogo/moeda-da-org", () => ({ moedaDaOrganizacao: vi.fn(async () => "BRL") }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 // A guarda anti-SSRF é da URL de mídia, exercitada em
 // lib/messaging/media/url-de-midia-externa.test.ts: aqui ela é dublada (resolver
 // DNS em teste de unidade é dependência de rede) e apenas ESPIADA.
@@ -138,6 +139,28 @@ describe("#3587 — o download da planilha é o mesmo da API", () => {
     // O que foi para o banco são os CAMINHOS dos arquivos que subiram, na ordem.
     expect(gravado.fotos).toEqual(uploads.map((u) => u.caminho));
     expect((gravado.fotos as string[]).every((c) => c.startsWith(`${ORG}/${gravado.id as string}/`))).toBe(true);
+  });
+
+  it("corpo interrompido devolve 422 e limpa a primeira foto sem criar produto", async () => {
+    vi.stubGlobal("fetch", async (url: string | URL) => {
+      if (String(url) !== URL_B) return new Response(JPEG, { status: 200 });
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.error(new TypeError("conexão interrompida")); },
+      }), { status: 200 });
+    });
+
+    try {
+      const resposta = await POST(corpo({ ...produtoNovo, fotos: [URL_A, URL_B] }));
+      const json = await resposta.json();
+
+      expect(resposta.status).toBe(422);
+      expect(json.error.message).toContain(URL_B);
+      expect(insercoes).toHaveLength(0);
+      expect(uploads).toHaveLength(1);
+      expect(removidos).toEqual([uploads[0]!.caminho]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("uma foto que não baixa derruba o cadastro inteiro e limpa o que já subiu", async () => {

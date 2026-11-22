@@ -122,22 +122,24 @@ function makeSupabase(resolve: Resolver) {
   };
   return {
     from,
-    auth: {
-      admin: {
-        getUserById: (id: string) =>
-          Promise.resolve({
-            data:
-              id in NOMES_NA_INSTALACAO
-                ? { user: { user_metadata: { full_name: NOMES_NA_INSTALACAO[id] } } }
-                : { user: null },
-            error: null,
-          }),
-      },
+    // O nome do responsável vem de UMA consulta a `fn_nomes_dos_membros`
+    // (#4326, fatia 3); a função devolve só quem tem vínculo com a org pedida.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      const daOrg = args.p_org === ORG ? MEMBROS_DE_ORG : [];
+      return Promise.resolve({
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({ user_id: id, full_name: NOMES_NA_INSTALACAO[id] ?? null, email: null })),
+        error: null,
+      });
     },
   };
 }
 
-function makeCtx(resolve: Resolver): McpContext {
+function makeCtx(resolve: Resolver, cima: Partial<McpContext> = {}): McpContext {
   return {
     organizationId: ORG,
     role: "agent",
@@ -146,6 +148,7 @@ function makeCtx(resolve: Resolver): McpContext {
     requestId: "req",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase: makeSupabase(resolve) as any,
+    ...cima,
   } as McpContext;
 }
 
@@ -447,5 +450,105 @@ describe("crm_get_lead / crm_list_leads — governança + shape", () => {
     const keys = Object.keys(lead);
     expect(keys).not.toContain("owner_email");
     expect(keys).not.toContain("owner_phone");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// crm_get_lead — a marca "A IA pode ler" do campo do funil (#4669)
+// ---------------------------------------------------------------------------
+//
+// Dois leitores do MESMO `custom_fields`: o modelo, dentro do turno, e uma
+// pessoa, por token. A marca só pode apertar o primeiro — e o controle
+// positivo (fora do turno a chave VEM) é a metade que impede o conserto de
+// virar perda de dado para quem usa a API à mão.
+describe("crm_get_lead / crm_list_leads — só o campo marcado \"A IA pode ler\" chega ao turno (#4669)", () => {
+  const CONTATO = "c0000000-0000-4000-8000-0000000000aa";
+  const FUNIL: Record<string, unknown> = {
+    fields: [
+      { key: "documento", label: "Documento", type: "text", ia_pode_ler: true },
+      { key: "observacao_interna", label: "Observação interna", type: "text", ia_pode_ler: false },
+      // Campo antigo: a definição existe no funil e NÃO tem a marca.
+      { key: "condicao_de_saude", label: "Condição de saúde", type: "text" },
+    ],
+  };
+  const CUSTOM = {
+    documento: "cnh-digital.pdf",
+    observacao_interna: "cliente com proposta de outro fornecedor",
+    condicao_de_saude: "diabetes tipo 2",
+  };
+
+  function resolverComFunil(settings: Record<string, unknown>): Resolver {
+    const dasLeads = leadResolver([leadRow({ contact_id: CONTATO, custom_fields: CUSTOM })]);
+    return (q) => {
+      if (q.table === "crm_pipelines" && q.terminal === "maybeSingle") {
+        return { data: { settings }, error: null };
+      }
+      return dasLeads(q);
+    };
+  }
+
+  it("no turno, a chave desmarcada não vem", async () => {
+    const res = (await crmGetLead.handler(
+      { lead_id: leadRow({}).id as string },
+      makeCtx(resolverComFunil(FUNIL), { contatoDoTurno: CONTATO, role: "ai_operator" }),
+    )) as { lead: Record<string, unknown> };
+
+    const campos = res.lead.custom_fields as Record<string, unknown>;
+    expect(campos).toEqual({ documento: "cnh-digital.pdf" });
+    expect(campos).not.toHaveProperty("observacao_interna");
+    // O campo antigo, sem a marca, também não passa: ausência é desmarcado.
+    expect(campos).not.toHaveProperty("condicao_de_saude");
+  });
+
+  it("fora do turno (token de pessoa), a mesma chave VEM", async () => {
+    const res = (await crmGetLead.handler(
+      { lead_id: leadRow({}).id as string },
+      makeCtx(resolverComFunil(FUNIL)),
+    )) as { lead: Record<string, unknown> };
+
+    // Controle positivo: sem `contatoDoTurno` quem lê é uma pessoa com a
+    // própria permissão, e a ficha volta inteira — byte a byte como antes.
+    expect(res.lead.custom_fields).toEqual(CUSTOM);
+  });
+
+  it("funil sem nenhum campo marcado devolve `custom_fields` vazio no turno, não a ficha", async () => {
+    const semMarca = {
+      fields: [
+        { key: "documento", label: "Documento", type: "text" },
+        { key: "observacao_interna", label: "Observação interna", type: "text", ia_pode_ler: false },
+      ],
+    };
+    const res = (await crmGetLead.handler(
+      { lead_id: leadRow({}).id as string },
+      makeCtx(resolverComFunil(semMarca), { contatoDoTurno: CONTATO, role: "ai_operator" }),
+    )) as { lead: Record<string, unknown> };
+
+    // `{}` e não `undefined`: o recorte foi aplicado e o modelo recebe "nada
+    // liberado" — sem a chave, o consumidor não saberia distinguir de uma
+    // ficha que nunca teve campo personalizado.
+    expect(res.lead.custom_fields).toEqual({});
+    // O resto do lead continua no payload: o filtro é do campo, não do negócio.
+    expect(res.lead.title).toBe("Pedido #1");
+  });
+
+  // A lista é o mesmo `custom_fields` no mesmo turno: recortar só o get deixava
+  // o modelo ler pela lista a chave que o funil desmarcou.
+  it("crm_list_leads no turno: a chave desmarcada não vem", async () => {
+    const res = (await crmListLeads.handler(
+      { limit: 20 } as Parameters<typeof crmListLeads.handler>[0],
+      makeCtx(resolverComFunil(FUNIL), { contatoDoTurno: CONTATO, role: "ai_operator" }),
+    )) as { leads: Array<Record<string, unknown>> };
+
+    expect(res.leads).toHaveLength(1);
+    expect(res.leads[0]?.custom_fields).toEqual({ documento: "cnh-digital.pdf" });
+  });
+
+  it("crm_list_leads fora do turno: a ficha volta inteira", async () => {
+    const res = (await crmListLeads.handler(
+      { limit: 20 } as Parameters<typeof crmListLeads.handler>[0],
+      makeCtx(resolverComFunil(FUNIL)),
+    )) as { leads: Array<Record<string, unknown>> };
+
+    expect(res.leads[0]?.custom_fields).toEqual(CUSTOM);
   });
 });

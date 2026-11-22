@@ -5,8 +5,9 @@
  * ligado na frente dele.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PainelDeProvedores } from "./PainelDeProvedores";
 
@@ -372,5 +373,396 @@ describe("PainelDeProvedores — ponto com menu fechado", () => {
     fireEvent.click(await screen.findByTestId("avancado-perceber"));
     expect(screen.getByTestId("servico-transcricao_de_audio")).toHaveTextContent("Automático");
     expect(screen.getByTestId("salvar-transcricao_de_audio")).toBeEnabled();
+  });
+});
+
+describe("PainelDeProvedores — voz do agente (#4260, item 2)", () => {
+  // O Radix Select usa pointer capture e `scrollIntoView`; o jsdom não os tem
+  // (mesmos dublês de `components/ui/select.test.tsx`).
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  const VOZES_DO_PROVEDOR = [
+    { id: "21m00Tcm4TlvDq8ikWAM", nome: "Ana", idioma: "Português" },
+    { id: "EXAVITQu4vr4xnSDxMaL", nome: "Beto", idioma: "Espanhol" },
+  ];
+
+  function resposta(dados: unknown, status = 200): Response {
+    return new Response(JSON.stringify(status >= 400 ? dados : { data: dados }), { status });
+  }
+
+  /**
+   * O dublê da API inteira do painel. `voz` é o que o GET da voz devolve;
+   * `preview` é o que o POST da prévia devolve (uma recusa, no caso do
+   * provedor); `patch` sobrepõe o PATCH da voz quando o caso precisa de falha.
+   */
+  function dublar(opcoes: {
+    voz: Record<string, unknown>;
+    preview?: () => Response;
+    patch?: () => Response;
+  }) {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const metodo = init?.method ?? "GET";
+      if (url === "/api/v1/ai/voz" && metodo === "GET") return resposta(opcoes.voz);
+      if (url === "/api/v1/ai/voz" && metodo === "PATCH") {
+        if (opcoes.patch) return opcoes.patch();
+        const corpo = JSON.parse(String(init?.body ?? "{}")) as { voice_id?: string };
+        return resposta({ voiceId: corpo.voice_id, modelId: null });
+      }
+      if (url === "/api/v1/ai/voz/preview" && metodo === "POST") {
+        return opcoes.preview
+          ? opcoes.preview()
+          : resposta({ audioBase64: "AA==", mimeType: "audio/mpeg" });
+      }
+      if (url === "/api/v1/ai/jev") return resposta(jev(false));
+      return resposta({ ...PROVEDORES, podeEditar: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  function patchDaVoz(fetchMock: ReturnType<typeof vi.fn>) {
+    const chamada = fetchMock.mock.calls.find(
+      ([url, init]) => url === "/api/v1/ai/voz" && (init as RequestInit | undefined)?.method === "PATCH",
+    );
+    if (!chamada) return null;
+    return JSON.parse(String((chamada[1] as RequestInit).body)) as { voice_id?: string };
+  }
+
+  it("(a) escolher uma voz da lista e salvar grava o id escolhido", async () => {
+    const fetchMock = dublar({
+      voz: {
+        voiceId: null,
+        vozesDisponiveis: VOZES_DO_PROVEDOR.map((v) => v.id),
+        catalogo: VOZES_DO_PROVEDOR,
+        catalogoVeioDoProvedor: true,
+        temCredencial: true,
+      },
+    });
+    montar();
+
+    // Nome e idioma aparecem: é o que o catálogo do provedor acrescenta.
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId("voz-escolher-da-lista"));
+    await user.click(await screen.findByRole("option", { name: "Ana — Português" }));
+    expect(screen.getByTestId("voz-voice-id")).toHaveValue("21m00Tcm4TlvDq8ikWAM");
+
+    fireEvent.click(screen.getByTestId("voz-salvar"));
+    await waitFor(() => expect(patchDaVoz(fetchMock)).toEqual({ voice_id: "21m00Tcm4TlvDq8ikWAM" }));
+  });
+
+  it("(b) id escrito à mão é aceito e salvo mesmo fora da lista", async () => {
+    const fetchMock = dublar({
+      voz: {
+        voiceId: null,
+        vozesDisponiveis: VOZES_DO_PROVEDOR.map((v) => v.id),
+        catalogo: VOZES_DO_PROVEDOR,
+        catalogoVeioDoProvedor: true,
+        temCredencial: true,
+      },
+    });
+    montar();
+
+    const campo = await screen.findByTestId("voz-voice-id");
+    // Voz própria do cliente: não está em `catalogo` e isso NÃO é erro.
+    fireEvent.change(campo, { target: { value: "vozPropriaDoCliente123" } });
+    fireEvent.click(screen.getByTestId("voz-salvar"));
+
+    await waitFor(() => expect(patchDaVoz(fetchMock)).toEqual({ voice_id: "vozPropriaDoCliente123" }));
+    expect(screen.queryByTestId("voz-erro-de-formato")).toBeNull();
+  });
+
+  it("(c) formato inválido é recusado na tela, sem chamar a API", async () => {
+    const fetchMock = dublar({
+      voz: { voiceId: null, vozesDisponiveis: [], catalogo: [], temCredencial: true },
+    });
+    montar();
+
+    const campo = await screen.findByTestId("voz-voice-id");
+    fireEvent.change(campo, { target: { value: "minha voz!" } });
+    fireEvent.click(screen.getByTestId("voz-salvar"));
+
+    expect(await screen.findByTestId("voz-erro-de-formato")).toHaveTextContent(
+      "Voice ID inválido: use só letras, números, hífen e sublinhado (8 a 64 caracteres).",
+    );
+    expect(patchDaVoz(fetchMock)).toBeNull();
+  });
+
+  it("(d) catálogo do provedor falhando: cai na lista antiga, sem erro fatal e com o campo livre", async () => {
+    dublar({
+      voz: {
+        voiceId: "21m00Tcm4TlvDq8ikWAM",
+        vozesDisponiveis: ["21m00Tcm4TlvDq8ikWAM", "pNInz6obpgDQGcFmaJgB"],
+        catalogo: [
+          { id: "21m00Tcm4TlvDq8ikWAM", nome: "21m00Tcm4TlvDq8ikWAM", idioma: null },
+          { id: "pNInz6obpgDQGcFmaJgB", nome: "pNInz6obpgDQGcFmaJgB", idioma: null },
+        ],
+        catalogoVeioDoProvedor: false,
+        temCredencial: true,
+      },
+    });
+    montar();
+
+    expect(await screen.findByTestId("cartao-de-voz")).toBeInTheDocument();
+    expect(screen.getByTestId("voz-catalogo-antigo")).toHaveTextContent(/lista abaixo é a da última validação/);
+    // A lista de antes continua escolhível...
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("voz-escolher-da-lista"));
+    expect(await screen.findByRole("option", { name: "pNInz6obpgDQGcFmaJgB" })).toBeInTheDocument();
+    // ...e o campo livre segue aceitando um id que ela não conhece.
+    expect(screen.getByTestId("voz-voice-id")).toHaveValue("21m00Tcm4TlvDq8ikWAM");
+  });
+
+  it("(e) sem credencial do ElevenLabs a voz não é oferecida: só o aviso e o link", async () => {
+    dublar({
+      voz: {
+        voiceId: null,
+        vozesDisponiveis: [],
+        catalogo: [],
+        catalogoVeioDoProvedor: false,
+        temCredencial: false,
+      },
+    });
+    montar();
+
+    expect(await screen.findByTestId("cartao-de-voz")).toHaveTextContent(
+      "Sem credencial do ElevenLabs validada ainda.",
+    );
+    // Nenhuma porta para escolher/colar voz: sem credencial não há o que listar
+    // nem como sintetizar, e salvar aqui deixaria uma escolha inutilizável.
+    expect(screen.queryByTestId("voz-escolher-da-lista")).toBeNull();
+    expect(screen.queryByTestId("voz-voice-id")).toBeNull();
+    expect(screen.queryByTestId("voz-salvar")).toBeNull();
+    expect(screen.queryByTestId("voz-ouvir-previa")).toBeNull();
+  });
+
+  it("a recusa do provedor sobre a voz chega à tela com a mensagem dele", async () => {
+    dublar({
+      voz: {
+        voiceId: "vozPropriaDoCliente123",
+        vozesDisponiveis: [],
+        catalogo: [{ id: "vozPropriaDoCliente123", nome: "vozPropriaDoCliente123", idioma: null }],
+        catalogoVeioDoProvedor: true,
+        temCredencial: true,
+      },
+      preview: () =>
+        resposta(
+          {
+            error: {
+              code: "synthesis_failed",
+              message: "O provedor recusou esta voz: A voice with voice_id vozPropriaDoCliente123 was not found.",
+              request_id: "req-1",
+              details: { erroDoProvedor: "A voice with voice_id vozPropriaDoCliente123 was not found." },
+            },
+          },
+          502,
+        ),
+    });
+    montar();
+
+    fireEvent.click(await screen.findByTestId("voz-ouvir-previa"));
+    expect(await screen.findByTestId("voz-erro-do-provedor")).toHaveTextContent(
+      "A voice with voice_id vozPropriaDoCliente123 was not found.",
+    );
+  });
+});
+
+/**
+ * A RESIDÊNCIA DO TEXTO CHEGA À TELA PELO CATÁLOGO (#4519).
+ *
+ * O teste do componente (`app/app/ai/_components/OndeOTextoEProcessado.test.tsx`)
+ * prova as quatro respostas. Este prova o encanamento: a rota devolve
+ * `PROVEDORES` inteiro, e o painel tem de repassar o objeto do provedor
+ * ESCOLHIDO — inclusive quando a resposta é "não declara". Um `filter` na lista
+ * ou um `if (paisDeclarado)` aqui esconderia justamente o caso que precisa
+ * aparecer.
+ */
+describe("PainelDeProvedores — onde o texto é processado", () => {
+  const PROVEDORES_COM_PAIS = [
+    {
+      id: "deepseek",
+      rotulo: "DeepSeek",
+      quandoUsar: "Barata.",
+      ondePegarAChave: "https://platform.deepseek.com/api_keys",
+      aceitaEndpointProprio: true,
+      pais: "CN",
+      fonteDoPais: {
+        url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+        consultadoEm: "2026-11-12",
+      },
+    },
+    {
+      id: "anthropic",
+      rotulo: "Anthropic (Claude)",
+      quandoUsar: "Padrão.",
+      ondePegarAChave: "https://console.anthropic.com/settings/keys",
+      aceitaEndpointProprio: false,
+      // A sede declarada vem do catálogo, sem fonte por provedor — como o #4520
+      // publicou.
+      pais: "US",
+      fonteDoPais: null,
+    },
+    {
+      id: "requesty",
+      rotulo: "Requesty",
+      quandoUsar: "Vários modelos.",
+      ondePegarAChave: "https://app.requesty.ai/api-keys",
+      aceitaEndpointProprio: true,
+      pais: "desconhecido",
+      fonteDoPais: null,
+    },
+  ];
+
+  function dublarProvedores(extra: Record<string, unknown> = {}) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : { ...PROVEDORES, provedores: PROVEDORES_COM_PAIS, podeEditar: true, ...extra };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+  }
+
+  it("no cartão do padrão, o provedor escolhido mostra país, fonte e data", async () => {
+    dublarProvedores({
+      padrao: { provider: "deepseek", defaultModel: "deepseek-chat" },
+    });
+    montar();
+
+    const padrao = await screen.findByTestId("cartao-do-padrao");
+    const linha = within(padrao).getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "declarado");
+    expect(linha).toHaveTextContent("China");
+    expect(linha).toHaveTextContent("consultada em 12/11/2026");
+    expect(within(padrao).getByRole("link", { name: "fonte: política do provedor" })).toHaveAttribute(
+      "href",
+      "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+    );
+  });
+
+  it("no cartão do ponto, o provedor sem país aparece com o aviso — não some", async () => {
+    // O ponto aponta para quem NÃO declara país (a Requesty); com a Anthropic o
+    // cartão mostraria a sede declarada pelo #4520.
+    dublarProvedores({
+      padrao: { provider: "requesty", defaultModel: null },
+      pontos: [
+        {
+          ...PROVEDORES.pontos[0]!,
+          efetivo: { ...PROVEDORES.pontos[0]!.efetivo, provider: "requesty", modelId: "auto", origem: "escolha" },
+        },
+      ],
+    });
+    montar();
+
+    await screen.findByTestId("cartao-do-padrao");
+    fireEvent.click(screen.getByTestId("avancado-entender"));
+    const ponto = screen.getByTestId("ponto-sentiment_classify");
+    const linha = within(ponto).getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "desconhecido");
+    expect(linha).toHaveTextContent("O provedor não declara o país; consulte a política dele");
+  });
+});
+describe("PainelDeProvedores — Gemini aposentados (#5103)", () => {
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  const gemini = (model_id: string, display_name: string) => ({
+    provider: "google",
+    model_id,
+    display_name,
+    supports_tools: true,
+    supports_vision: true,
+    input_price_per_million_cents: 10,
+  });
+  const MODELOS_GOOGLE = [
+    gemini("gemini-2.5-flash", "Gemini 2.5 Flash"),
+    gemini("gemini-2.5-pro", "Gemini 2.5 Pro"),
+    gemini("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+  ];
+  const PONTO_GOOGLE = {
+    ...PROVEDORES.pontos[0]!,
+    efetivo: {
+      ...PROVEDORES.pontos[0]!.efetivo,
+      provider: "google",
+      modelId: "gemini-3.5-flash-lite",
+    },
+  };
+
+  function dublar(extra: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : { ...PROVEDORES, modelos: MODELOS_GOOGLE, podeEditar: true, ...extra };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+  }
+
+  it("o modelo padrão não oferece os aposentados", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-3.5-flash-lite" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId("padrao-modelo"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 3.5 Flash-Lite",
+    ]);
+    expect(
+      screen.queryByText("Este modelo foi aposentado pelo provedor. Escolha outro modelo."),
+    ).toBeNull();
+  });
+
+  it("o padrão já salvo num aposentado continua visível, com o aviso", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-2.5-pro" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    const padrao = await screen.findByTestId("cartao-do-padrao");
+    expect(within(padrao).getByTestId("padrao-modelo")).toHaveTextContent("Gemini 2.5 Pro");
+    expect(within(padrao).getByRole("alert")).toHaveTextContent(
+      "Este modelo foi aposentado pelo provedor.",
+    );
+    const user = userEvent.setup();
+    await user.click(within(padrao).getByTestId("padrao-modelo"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 2.5 Pro",
+      "Gemini 3.5 Flash-Lite",
+    ]);
+  });
+
+  it("o modelo por ponto não oferece os aposentados", async () => {
+    dublar({
+      padrao: { provider: "google", defaultModel: "gemini-3.5-flash-lite" },
+      pontos: [PONTO_GOOGLE],
+    });
+    montar();
+    await screen.findByTestId("cartao-do-padrao");
+    fireEvent.click(screen.getByTestId("avancado-entender"));
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("modelo-sentiment_classify"));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Gemini 3.5 Flash-Lite",
+    ]);
   });
 });

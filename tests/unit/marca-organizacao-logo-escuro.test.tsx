@@ -44,6 +44,7 @@ function pintar(gravada: { logo_path: string | null; logo_dark_path: string | nu
         email_reply_to: null,
         ...gravada,
       }}
+      contaResend={{ from_email: null, last4: null }}
       instalacao={{
         app_name: null,
         logo_url: null,

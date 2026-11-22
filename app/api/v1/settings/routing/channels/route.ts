@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
 import { requireRole } from "@/lib/auth/require-role";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -9,14 +13,42 @@ import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { audit } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+/**
+ * GET aceita sessão (como sempre) OU Bearer `dsk_…` (`config:read`, papel admin
+ * via `tokenRole`). A sessão segue IDÊNTICA: `allowPlatformAdmin: "leitura"` e a
+ * prova de MFA (`mfaEmDivida`). Só o ramo do token é novo, e a organização dele
+ * vem da linha do token, nunca da query. O PATCH fica só de sessão
+ * (`fn_set_channel_routing` exige `auth.uid()`).
+ */
+async function responder(
+  obterDb: () => Promise<SupabaseClient>,
+  organizationId: string,
+  requestId: string,
+): Promise<Response> {
+  try {
+    return ok(await loadChannelRoutingSettings(await obterDb(), organizationId), { requestId });
+  } catch { return fail("internal_error", "Não foi possível carregar os responsáveis. Tente novamente.", 500, { requestId }); }
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "settings_routing",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "settings.routing_channels", requestId);
+    if (teto) return teto;
+    return responder(async () => authz.supabase, authz.organizationId, requestId);
+  }
   const auth = await requireRole("manager", { requestId, resource: "settings_routing", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
-  try {
-    return ok(await loadChannelRoutingSettings(await createClient(), auth.org.orgId), { requestId });
-  } catch { return fail("internal_error", "Não foi possível carregar os responsáveis. Tente novamente.", 500, { requestId }); }
+  return responder(() => createClient(), auth.org.orgId, requestId);
 }
 
 export async function PATCH(req: Request): Promise<Response> {
@@ -44,9 +76,27 @@ export async function PATCH(req: Request): Promise<Response> {
     if (error.code === "42501") return fail("forbidden", "Esta sessão não pode alterar os responsáveis.", 403, { requestId });
     return fail("internal_error", "Não foi possível salvar. Tente novamente.", 500, { requestId });
   }
+  // "Esperar a IA qualificar antes de distribuir" (#3966, doc 311): opção do
+  // NÚMERO, desligada de fábrica. Gravada por RPC própria, DEPOIS da regra do
+  // número (ela precisa existir), e só quando o corpo traz o campo — omitir
+  // preserva o que valia, para a tela antiga não desligar ninguém por omissão.
+  // O reset já apagou a regra inteira, e a espera foi junto.
+  const ai_wait_minutes = parsed.data.reset ? null : parsed.data.ai_wait_minutes;
+  if (!parsed.data.reset && ai_wait_minutes !== undefined) {
+    const { error: esperaErr } = await db.rpc("fn_set_channel_ai_wait", {
+      p_org: auth.org.orgId, p_channel: parsed.data.channel_session_id, p_minutes: ai_wait_minutes,
+    });
+    if (esperaErr) {
+      if (esperaErr.code === "42501") return fail("forbidden", "Esta sessão não pode alterar os responsáveis.", 403, { requestId });
+      if (esperaErr.code === "22023") return fail("validation_failed", "Confira o prazo de espera pela IA deste número.", 422, { requestId });
+      return fail("internal_error", "Os responsáveis foram salvos, mas o prazo de espera pela IA não. Tente novamente.", 500, { requestId });
+    }
+  }
   void audit({ action: "routing.config_changed", actorUserId: auth.user.id, organizationId: auth.org.orgId,
     resourceType: "channel_session", resourceId: parsed.data.channel_session_id, requestId,
     metadata: { user_ids: parsed.data.user_ids, reset: parsed.data.reset,
-      distribution_mode, default_assignee_user_id } });
-  return ok(data, { requestId });
+      distribution_mode, default_assignee_user_id,
+      ...(ai_wait_minutes !== undefined ? { ai_wait_minutes } : {}) } });
+  return ok(ai_wait_minutes !== undefined && data && typeof data === "object"
+    ? { ...(data as Record<string, unknown>), ai_wait_minutes } : data, { requestId });
 }

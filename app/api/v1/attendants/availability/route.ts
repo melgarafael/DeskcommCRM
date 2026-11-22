@@ -28,12 +28,11 @@ import type { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { estaPresente } from "@/lib/atendimento/presenca";
 import { isServiceRoleConfigured } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { carregarRosterDeAtendimento } from "@/lib/escalacao/atendentes";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -71,27 +70,35 @@ async function setoresPorAtendente(
   return porUsuario;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const agora = new Date();
 
-  const authz = await requireRole("agent", { requestId, resource: "attendant_availability" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "attendant_availability",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "attendants_availability", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
 
   // Dev sem service role: devolve só as linhas de availability (org-wide via RLS
   // própria da tabela), sem roster completo nem nomes.
   if (!isServiceRoleConfigured()) {
-    const supabase = await createClient();
+    const supabase = authz.supabase;
     const { data, error } = await supabase
       .from("attendant_availability")
       .select(SELECT_COLS)
-      .eq("organization_id", activeOrg.orgId);
+      .eq("organization_id", orgId);
     if (error) return fail("internal_error", error.message, 500, { requestId });
     const rows = (data ?? []) as AvailabilityRow[];
     let setores: Map<string, string[]>;
     try {
-      setores = await setoresPorAtendente(supabase, activeOrg.orgId);
+      setores = await setoresPorAtendente(supabase, orgId);
     } catch (err) {
       return fail("internal_error", err instanceof Error ? err.message : "setores", 500, { requestId });
     }
@@ -127,8 +134,8 @@ export async function GET(_req: NextRequest): Promise<Response> {
   let setores: Map<string, string[]>;
   try {
     [roster, setores] = await Promise.all([
-      carregarRosterDeAtendimento(admin, activeOrg.orgId, agora),
-      setoresPorAtendente(admin, activeOrg.orgId),
+      carregarRosterDeAtendimento(admin, orgId, agora),
+      setoresPorAtendente(admin, orgId),
     ]);
   } catch (err) {
     return fail("internal_error", err instanceof Error ? err.message : "roster", 500, {
@@ -147,7 +154,8 @@ export async function GET(_req: NextRequest): Promise<Response> {
       const u = userRes?.user;
       names.set(userId, {
         name: (u?.user_metadata?.full_name as string | undefined) ?? null,
-        email: u?.email ?? null,
+        // E-mail de login só para a sessão: a lista que o token recebe não o leva.
+        email: authz.via === "session" ? (u?.email ?? null) : null,
       });
     }),
   );

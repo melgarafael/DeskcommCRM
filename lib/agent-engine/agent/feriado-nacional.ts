@@ -56,6 +56,17 @@
  * podendo atender — quem sabe disso é a equipe, e é por isso que o texto manda
  * confirmar antes de prometer, em vez de afirmar que está fechado.
  *
+ * Quem QUER o feriado como dia fechado liga a opção do agente "não atender em
+ * feriado nacional" (`business_hours.fechado_em_feriado_nacional`, desligada de
+ * fábrica): aí o turno usa `ehFeriadoNacionalNoFuso` para adiar até o próximo
+ * dia útil e o aviso de fora do horário sai (ver `inbound-turn.ts`).
+ *
+ * A mesma opção decide o tom do bloco (#5039). Desligada, o texto não proíbe
+ * compromisso: manda seguir os horários livres da Agenda, que é onde a equipe
+ * diz se abre no feriado. Antes, "nem marque compromisso lá" travava a véspera
+ * inteira de quem atende em feriado e tinha a Agenda aberta para o dia. Ligada,
+ * o texto de antes vale como está: o feriado é dia fechado.
+ *
  * ─── Falha ABERTA ───────────────────────────────────────────────────────────
  *
  * `organizations.timezone` não tem CHECK e o `Intl` lança em fuso torto: fuso
@@ -95,6 +106,19 @@ function diaMesAno(dataIso: string): string {
  */
 function ehFeriadoNacionalBrasileiro(dataIso: string): boolean {
   return isHolidayBR(new Date(`${dataIso}T12:00:00.000Z`));
+}
+
+/**
+ * O dia civil de `instante`, no `fuso`, é feriado nacional brasileiro? É a
+ * régua de `feriadoNacionalNoTurno` para um instante qualquer — a opção "não
+ * atender em feriado nacional" (#3877) precisa olhar além de hoje e amanhã para
+ * achar o próximo dia útil (Carnaval são dois dias seguidos).
+ *
+ * NÃO consulta o país: quem chama só a usa depois de `lerFeriadoDoTurno` ter
+ * dito que o calendário brasileiro vale para a organização.
+ */
+export function ehFeriadoNacionalNoFuso(instante: Date, fuso: string): boolean {
+  return ehFeriadoNacionalBrasileiro(dataIsoNoFuso(instante, fusoValido(fuso) ? fuso : FUSO_PADRAO));
 }
 
 /**
@@ -172,8 +196,26 @@ export async function lerFeriadoDoTurno(
  * de DATAS, e inventar o nome para cada uma seria escrever, aqui, a lista que
  * o cabeçalho proíbe.
  */
-export function blocoDoFeriado(f: FeriadoNoTurno | null): string {
+/** O que o bloco precisa saber do agente, além do calendário. */
+export interface OpcoesDoBlocoDeFeriado {
+  /**
+   * A opção "não atender em feriado nacional" (`naoAtenderEmFeriadoNacional`).
+   * Ausente = desligada, o padrão de fábrica (`lerFechadoEmFeriadoNacional`).
+   */
+  fechadoEmFeriado?: boolean;
+}
+
+/**
+ * Com a opção desligada, a frase que substitui as proibições de compromisso: a
+ * Agenda é a fonte de verdade do horário, também no feriado (#5039).
+ */
+function marcarPelaAgenda(dia: string): string {
+  return `Para marcar compromisso ${dia}, siga os horários livres da Agenda: horário que aparece livre pode ser oferecido.`;
+}
+
+export function blocoDoFeriado(f: FeriadoNoTurno | null, opcoes: OpcoesDoBlocoDeFeriado = {}): string {
   if (f === null) return "";
+  const fechado = opcoes.fechadoEmFeriado === true;
 
   const hoje = `Hoje (${diaMesAno(f.hojeEm)})`;
   const amanha = `Amanhã (${diaMesAno(f.amanhaEm)})`;
@@ -183,7 +225,10 @@ export function blocoDoFeriado(f: FeriadoNoTurno | null): string {
       "## Feriado nacional",
       `${hoje} e ${amanha.charAt(0).toLowerCase()}${amanha.slice(1)} são feriados nacionais no Brasil. ` +
         "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para nenhum dos dois dias. " +
-        "Não prometa atendimento nesses dias e não convide a pessoa a ir até a loja sem antes confirmar com a equipe.",
+        (fechado
+          ? "Não prometa atendimento nesses dias e não convide a pessoa a ir até a loja sem antes confirmar com a equipe."
+          : `${marcarPelaAgenda("nesses dias")} ` +
+            "Fora disso, não prometa atendimento nesses dias nem convide a pessoa a ir até a loja sem antes confirmar com a equipe."),
     ].join("\n");
   }
 
@@ -192,7 +237,10 @@ export function blocoDoFeriado(f: FeriadoNoTurno | null): string {
       "## Feriado nacional",
       `${hoje} é feriado nacional no Brasil. ` +
         "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para hoje. " +
-        "Não diga que a empresa atende hoje nem convide a pessoa a ir até a loja sem antes confirmar com a equipe.",
+        (fechado
+          ? "Não diga que a empresa atende hoje nem convide a pessoa a ir até a loja sem antes confirmar com a equipe."
+          : `${marcarPelaAgenda("hoje")} ` +
+            "Fora disso, não diga que a empresa atende hoje nem convide a pessoa a ir até a loja sem antes confirmar com a equipe."),
     ].join("\n");
   }
 
@@ -201,7 +249,10 @@ export function blocoDoFeriado(f: FeriadoNoTurno | null): string {
       "## Feriado nacional",
       `${amanha} é feriado nacional no Brasil. ` +
         "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para amanhã. " +
-        "Não prometa atendimento para amanhã assumindo dia útil nem marque compromisso lá; se a pessoa pedir, confirme com a equipe.",
+        (fechado
+          ? "Não prometa atendimento para amanhã assumindo dia útil nem marque compromisso lá; se a pessoa pedir, confirme com a equipe."
+          : `${marcarPelaAgenda("amanhã")} ` +
+            "Fora disso, não prometa atendimento para amanhã assumindo dia útil; se a pessoa pedir, confirme com a equipe."),
     ].join("\n");
   }
 

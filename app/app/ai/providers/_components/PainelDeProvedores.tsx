@@ -29,6 +29,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
+import { modeloAposentadoNoProvedor } from "@/lib/agent-engine/edge/llm/modelos-aposentados";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +45,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { normalizarVoiceId, problemaNoVoiceId } from "@/lib/ai/voz/voice-id";
 
+import { OndeOTextoEProcessado } from "../../_components/OndeOTextoEProcessado";
 import { CartaoDeMapas } from "./CartaoDeMapas";
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
 
@@ -94,6 +98,12 @@ interface Provedor {
   ondePegarAChave: string;
   /** Aceita apontar para outro endpoint (é compatível com a API da OpenAI). */
   aceitaEndpointProprio: boolean;
+  /**
+   * Onde o texto é processado — vem do catálogo junto com a fonte (#4518). A
+   * rota devolve `PROVEDORES` inteiro, então o dado chega sem campo novo de API.
+   */
+  pais: string;
+  fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
 interface Dados {
@@ -261,6 +271,16 @@ export function PainelDeProvedores() {
   );
 }
 
+/**
+ * O catálogo ainda lista os Gemini que o Google aposentou: eles saem das opções
+ * novas, como no seletor do agente (#5100). O já salvo fica, porque o seletor só
+ * mostra um valor que esteja entre as opções, e quem o usa precisa vê-lo para trocar.
+ */
+function semAposentados(modelos: Modelo[], provider: string, salvo: string | null): Modelo[] {
+  if (provider !== "google") return modelos;
+  return modelos.filter((m) => !modeloAposentadoNoProvedor(m.model_id) || m.model_id === salvo);
+}
+
 /** O que o grupo usa hoje, sem obrigar a abrir ponto a ponto. */
 function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Promise<void> }) {
   const t = useT();
@@ -269,8 +289,13 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
   const [salvando, setSalvando] = useState(false);
 
   const modelosDoProvedor = useMemo(
-    () => dados.modelos.filter((m) => m.provider === provider),
-    [dados.modelos, provider],
+    () =>
+      semAposentados(
+        dados.modelos.filter((m) => m.provider === provider),
+        provider,
+        dados.padrao.defaultModel,
+      ),
+    [dados.modelos, dados.padrao.defaultModel, provider],
   );
 
   // Quantos pontos herdam HOJE. É o número que explica por que esta caixa
@@ -286,6 +311,11 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
   );
 
   const mudou = provider !== dados.padrao.provider || modelId !== (dados.padrao.defaultModel ?? "");
+
+  // A linha de residência segue a ESCOLHA na tela, não o que está gravado: quem
+  // troca o provedor no seletor precisa ver para onde o texto passa a ir antes
+  // de salvar.
+  const provedorEscolhido = dados.provedores.find((p) => p.id === provider);
 
   async function salvar() {
     setSalvando(true);
@@ -386,6 +416,11 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
               </SelectContent>
             </Select>
           )}
+          {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+            </p>
+          ) : null}
         </div>
 
         {dados.podeEditar && (
@@ -399,6 +434,8 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
           </Button>
         )}
       </div>
+
+      {provedorEscolhido && <OndeOTextoEProcessado provedor={provedorEscolhido} className="mt-3" />}
 
       {especialistas.length > 0 && (
         <p className="mt-3 text-xs text-muted-foreground" data-testid="padrao-especialistas">
@@ -418,13 +455,28 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
  * `voz_enabled` (editor de agente). Separado de `CartaoDoPadrao` porque é
  * outro eixo: aquele é modelo de CONVERSA por ponto; isto é um recurso
  * contratado uma vez (ElevenLabs), igual à chave em si.
+ *
+ * Duas portas para o MESMO valor (#4260, item 2): a lista do provedor (nome e
+ * idioma, quando dá para perguntar) e o campo de texto. A lista é atalho, não
+ * permissão — cliente com voz própria na conta ElevenLabs cola o id e ele vale.
+ * Se a listagem falhar, a tela cai na lista da última validação da credencial e
+ * diz que está nela; o campo continua aceitando qualquer id.
  */
+interface VozDoCatalogo {
+  id: string;
+  nome: string;
+  idioma: string | null;
+}
+
 function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
   const t = useT();
   const [carregando, setCarregando] = useState(true);
   const [voiceId, setVoiceId] = useState("");
-  const [vozesDisponiveis, setVozesDisponiveis] = useState<string[]>([]);
+  const [catalogo, setCatalogo] = useState<VozDoCatalogo[]>([]);
+  const [catalogoVeioDoProvedor, setCatalogoVeioDoProvedor] = useState(false);
   const [temCredencial, setTemCredencial] = useState(false);
+  const [erroDeFormato, setErroDeFormato] = useState<string | null>(null);
+  const [erroDoProvedor, setErroDoProvedor] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [ouvindo, setOuvindo] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -432,11 +484,24 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
   const carregar = useCallback(async () => {
     try {
       const res = await apiClient.get<{
-        data: { voiceId: string | null; vozesDisponiveis: string[]; temCredencial: boolean };
+        data: {
+          voiceId: string | null;
+          vozesDisponiveis?: string[];
+          catalogo?: VozDoCatalogo[];
+          catalogoVeioDoProvedor?: boolean;
+          temCredencial: boolean;
+        };
       }>("/api/v1/ai/voz");
       setVoiceId(res.data.voiceId ?? "");
-      // Resposta incompleta não derruba o painel inteiro: sem lista, sem vozes.
-      setVozesDisponiveis(res.data.vozesDisponiveis ?? []);
+      // Resposta incompleta não derruba o painel inteiro: sem catálogo, cai na
+      // lista de ids que já era a da tela; sem nenhuma das duas, fica só o campo.
+      const doCatalogo = res.data.catalogo ?? [];
+      setCatalogo(
+        doCatalogo.length > 0
+          ? doCatalogo
+          : (res.data.vozesDisponiveis ?? []).map((id) => ({ id, nome: id, idioma: null })),
+      );
+      setCatalogoVeioDoProvedor(res.data.catalogoVeioDoProvedor === true);
       setTemCredencial(res.data.temCredencial === true);
     } catch (err) {
       showApiError(err);
@@ -449,12 +514,31 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
     void carregar();
   }, [carregar]);
 
+  /** Valida o FORMATO antes de gastar requisição/síntese. Não consulta lista. */
+  function idParaUsar(): string | null {
+    const problema = problemaNoVoiceId(voiceId);
+    if (problema === null) {
+      setErroDeFormato(null);
+      return normalizarVoiceId(voiceId);
+    }
+    setErroDeFormato(
+      problema === "vazio"
+        ? t("Informe um Voice ID.")
+        : t("Voice ID inválido: use só letras, números, hífen e sublinhado (8 a 64 caracteres)."),
+    );
+    return null;
+  }
+
   async function salvar() {
+    const id = idParaUsar();
+    if (id === null) return;
+    setErroDoProvedor(null);
     setSalvando(true);
     try {
       const res = await apiClient.patch<{ data: { voiceId: string } }>("/api/v1/ai/voz", {
-        voice_id: voiceId,
+        voice_id: id,
       });
+      setVoiceId(res.data.voiceId);
       toast.success(`${t("Voz salva:")} ${res.data.voiceId}`);
     } catch (err) {
       showApiError(err);
@@ -464,17 +548,26 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
   }
 
   async function ouvirPrevia() {
+    const id = idParaUsar();
+    if (id === null) return;
+    setErroDoProvedor(null);
     setOuvindo(true);
     try {
       const res = await apiClient.post<{ data: { audioBase64: string; mimeType: string } }>(
         "/api/v1/ai/voz/preview",
-        { voice_id: voiceId },
+        { voice_id: id },
       );
       if (audioRef.current) {
         audioRef.current.src = `data:${res.data.mimeType};base64,${res.data.audioBase64}`;
         await audioRef.current.play();
       }
     } catch (err) {
+      // A recusa do provedor sobre a voz aparece AQUI, com o texto dele: é o
+      // que diferencia "id errado" de "ElevenLabs fora do ar" para quem colou
+      // um id que a lista não conhece.
+      const detalhes = err instanceof ApiError ? err.details : undefined;
+      const doProvedor = detalhes?.erroDoProvedor;
+      if (typeof doProvedor === "string" && doProvedor.trim() !== "") setErroDoProvedor(doProvedor);
       showApiError(err);
     } finally {
       setOuvindo(false);
@@ -482,6 +575,8 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
   }
 
   if (carregando) return null;
+
+  const naLista = catalogo.some((v) => v.id === voiceId);
 
   return (
     <Card className="mb-6 space-y-3 p-4" data-testid="cartao-de-voz">
@@ -501,54 +596,99 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-64">
-          <Label className="text-xs">{t("Voice ID")}</Label>
-          {vozesDisponiveis.length === 0 ? (
+      {temCredencial && !catalogoVeioDoProvedor && (
+        <p className="text-xs text-muted-foreground" data-testid="voz-catalogo-antigo">
+          {t(
+            "Não consegui listar as vozes no ElevenLabs agora. A lista abaixo é a da última validação da credencial — e colar um Voice ID continua funcionando.",
+          )}
+        </p>
+      )}
+
+      {/* Sem credencial validada a voz não é oferecida (#4260, item 2): não há
+          catálogo a listar nem prévia a sintetizar, e salvar um id aqui só
+          deixaria uma escolha que o turno não consegue usar. O caminho é o
+          link acima, que leva a cadastrar a chave. */}
+      {temCredencial && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-64 space-y-1.5">
+            <Label className="text-xs" htmlFor="voz-voice-id">
+              {t("Voice ID")}
+            </Label>
+            {catalogo.length > 0 && (
+              <Select
+                value={naLista ? voiceId : ""}
+                onValueChange={(id) => {
+                  setVoiceId(id);
+                  setErroDeFormato(null);
+                }}
+                disabled={!podeEditar}
+              >
+                <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
+                  <SelectValue placeholder={t("escolha da lista")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {catalogo.map((voz) => (
+                    <SelectItem key={voz.id} value={voz.id}>
+                      {voz.nome === voz.id
+                        ? voz.id
+                        : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Input
+              id="voz-voice-id"
               value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
+              onChange={(e) => {
+                setVoiceId(e.target.value);
+                setErroDeFormato(null);
+              }}
               placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
               data-testid="voz-voice-id"
               disabled={!podeEditar}
+              aria-invalid={erroDeFormato !== null}
             />
-          ) : (
-            <Select value={voiceId} onValueChange={setVoiceId} disabled={!podeEditar}>
-              <SelectTrigger data-testid="voz-voice-id">
-                <SelectValue placeholder={t("escolha")} />
-              </SelectTrigger>
-              <SelectContent>
-                {vozesDisponiveis.map((id) => (
-                  <SelectItem key={id} value={id}>
-                    {id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
+              )}
+            </p>
+            {erroDeFormato !== null && (
+              <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
+                {erroDeFormato}
+              </p>
+            )}
+          </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={ouvindo || voiceId.trim() === ""}
-          onClick={() => void ouvirPrevia()}
-          data-testid="voz-ouvir-previa"
-        >
-          {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
-        </Button>
-
-        {podeEditar && (
           <Button
             size="sm"
-            disabled={salvando || voiceId.trim() === ""}
-            onClick={() => void salvar()}
-            data-testid="voz-salvar"
+            variant="outline"
+            disabled={ouvindo || voiceId.trim() === ""}
+            onClick={() => void ouvirPrevia()}
+            data-testid="voz-ouvir-previa"
           >
-            {salvando ? t("Salvando…") : t("Salvar voz")}
+            {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
           </Button>
-        )}
-      </div>
+
+          {podeEditar && (
+            <Button
+              size="sm"
+              disabled={salvando || voiceId.trim() === ""}
+              onClick={() => void salvar()}
+              data-testid="voz-salvar"
+            >
+              {salvando ? t("Salvando…") : t("Salvar voz")}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {erroDoProvedor !== null && (
+        <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-do-provedor">
+          {t("O provedor recusou esta voz:")} {erroDoProvedor}
+        </p>
+      )}
 
       <audio ref={audioRef} data-testid="voz-audio-previa" />
     </Card>
@@ -610,13 +750,17 @@ function CartaoDoPonto({
   const [baseUrl, setBaseUrl] = useState(ponto.efetivo.baseUrl ?? "");
   const [salvando, setSalvando] = useState(false);
 
-  const modelosDoProvider = dados.modelos.filter((m) => m.provider === provider);
+  const modelosDoProvider = semAposentados(
+    dados.modelos.filter((m) => m.provider === provider),
+    provider,
+    ponto.efetivo.modelId,
+  );
   const credsDoProvider = dados.credenciais.filter((c) => c.provider === provider);
   // Endpoint próprio só faz sentido em provedor compatível com a API da OpenAI
   // — é a mesma condição que `lib/ai/pontos/provedores.ts` declara e que o
   // registry aplica junto da allowlist do egress.
-  const aceitaEndpointProprio =
-    dados.provedores.find((p) => p.id === provider)?.aceitaEndpointProprio === true;
+  const provedorDoPonto = dados.provedores.find((p) => p.id === provider);
+  const aceitaEndpointProprio = provedorDoPonto?.aceitaEndpointProprio === true;
 
   const editavel = dados.podeEditar && ponto.fixo === null && !ponto.mandadoPeloAgente;
 
@@ -750,6 +894,23 @@ function CartaoDoPonto({
         </p>
       )}
 
+      {provedorDoPonto && (
+        <OndeOTextoEProcessado
+          provedor={provedorDoPonto}
+          // O que está na tela vence o gravado: com o campo preenchido (e o
+          // provedor aceitando), o destino é do operador — e a linha diz isso
+          // antes de o Salvar confirmar. Sem `aceitaEndpointProprio` a linha
+          // volta a falar do catálogo, para um `baseUrl` de provedor anterior
+          // não virar resposta do provedor novo.
+          enderecoProprio={
+            aceitaEndpointProprio
+              ? baseUrl.trim() || (provider === ponto.efetivo.provider ? ponto.efetivo.baseUrl : null)
+              : null
+          }
+          className="mt-2"
+        />
+      )}
+
       {editavelComoMenu && opcoesFixas && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
@@ -871,6 +1032,11 @@ function CartaoDoPonto({
                 </SelectContent>
               </Select>
             )}
+            {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+              <p role="alert" className="mt-1 text-sm text-destructive">
+                {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+              </p>
+            ) : null}
           </div>
 
           <div>

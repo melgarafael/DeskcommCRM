@@ -236,16 +236,29 @@ export function modeloOpenAIRaciocina(modelId: string): boolean {
 }
 
 /**
+ * O esforço aceito muda por família, e mandar o knob como está é 400 em toda
+ * resposta que não trouxe `reasoning.effort` (o turno do agente, o rascunho, o
+ * fechamento).
+ *
+ * Linha 5: o `gpt-5` (e `gpt-5-mini`, `gpt-5-nano`) lista `minimal, low,
+ * medium, high` — NÃO lista `none`; do `gpt-5.1` em diante é o contrário,
+ * `none` entra e `minimal` sai (`none, low, medium, high`), com `xhigh` a mais
+ * do 5.2 ao 5.6. Fonte: `getGpt5ReasoningEfforts` do `@ai-sdk/openai` 4.0.108
+ * (`node_modules/@ai-sdk/openai/dist/index.js`, l. 467-495) — a mesma lista
+ * que o SDK publica em `supportedReasoningEfforts` e a que a doc de cada id
+ * repete.
+ *
  * Da linha 6 em diante nenhum modelo lista `minimal`, e só `gpt-6-luna`, `gpt-6-sol` e
  * `gpt-6.1-terra` listam `none` (doc oficial de cada id em 11/10/2026: o gpt-6.1-sol diz
  * "`none` and `minimal` reasoning efforts are not supported", o gpt-6-astra lista
  * low…max, o gpt-6-luna lista none, low…max; o @ai-sdk/openai declara as mesmas listas
  * em `supportedReasoningEfforts`. O gpt-6.1-terra, em 27/10/2026, lista none, low…max).
- * Mandar o knob como está seria 400 em toda resposta.
  *
- * `none`/`minimal` é pedido de velocidade, então vira `none` onde ele existe e `low`
- * onde não existe. `minimal` NÃO vira `low` no Luna: medido acima, lá `low` é mais
- * lento até que o padrão, e `none` é o único que entrega o que o operador pediu.
+ * `none`/`minimal` é pedido de velocidade, então vira o MAIS RÁPIDO que o modelo
+ * aceita: `minimal` no gpt-5, `none` do 5.1 em diante, `none` onde ele existe na
+ * linha 6 e `low` onde não existe. `minimal` NÃO vira `low` no Luna: medido
+ * acima, lá `low` é mais lento até que o padrão, e `none` é o único que entrega
+ * o que o operador pediu.
  */
 function esforcoAceitoPeloModelo(
   modelId: string,
@@ -253,8 +266,13 @@ function esforcoAceitoPeloModelo(
 ): EsforcoDeRaciocinioOpenAI {
   if (esforco !== 'none' && esforco !== 'minimal') return esforco;
   const id = modelId.toLowerCase();
-  const major = /^gpt-(\d+)/.exec(id)?.[1];
-  if (major === undefined || Number(major) < 6) return esforco;
+  const versao = /^gpt-(\d+)(?:\.(\d+))?/.exec(id);
+  if (versao === null) return esforco;
+  const major = Number(versao[1]);
+  // `gpt-5` sem minor é o 5.0: aceita `minimal`, não aceita `none`.
+  const minor = versao[2] === undefined ? 0 : Number(versao[2]);
+  if (major === 5) return minor === 0 ? 'minimal' : 'none';
+  if (major < 6) return esforco;
   const aceitaNone = id === 'gpt-6-luna' || id === 'gpt-6-sol' || id === 'gpt-6.1-terra';
   return aceitaNone ? 'none' : 'low';
 }
@@ -395,6 +413,10 @@ export function createDefaultRegistry(opts?: {
       // /responses e recebia a página do chat), enquanto gpt-4o/4.1 passavam
       // por sorte do roteamento. `.chat()` fixa o formato que a OpenRouter
       // realmente serve, para qualquer família de modelo.
+      // O id do exemplo acima foi APOSENTADO pelo Google (404 "no longer
+      // available to new users", medido em 18/11/2026, #4925): a medição do
+      // FORMATO continua valendo para qualquer modelo, o id não. Para Google na
+      // OpenRouter, use um que o provedor sirva (`google/gemini-3.1-flash-lite`).
       return provider.chat(modelId);
     },
     /**
@@ -443,6 +465,11 @@ export function createDefaultRegistry(opts?: {
         apiKey,
         baseURL: baseUrl,
         fetch: fetchParaDestinoDaOrganizacao(contain(baseUrl)),
+        // Gateway OpenAI-compatível (9Router, LiteLLM...) pode assumir streaming quando o
+        // pedido não traz `stream`; o SDK não manda o campo em generateText, e a resposta
+        // vira SSE que o parse de JSON recusa ("Invalid JSON response" com HTTP 200). Pedir
+        // JSON explicitamente é o que a chamada sem streaming quer de qualquer forma.
+        headers: { Accept: 'application/json' },
       }).chat(modelId);
     },
   };

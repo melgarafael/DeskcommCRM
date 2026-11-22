@@ -54,6 +54,13 @@ export const RESOLVEDORES = ["inbox", "campanha", "automacao", "fluxo"] as const
 
 export type Resolvedor = (typeof RESOLVEDORES)[number];
 
+/**
+ * As variáveis que falam do NOME da pessoa — as que a trava de envio do Inbox
+ * precisa conferir quando o contato não tem nome (#2744). Lista semântica, não
+ * vocabulário de tela: vive aqui para a trava e o catálogo não divergirem.
+ */
+export const VARIAVEIS_DE_NOME_DO_CONTATO: readonly string[] = ["nome", "primeiro_nome"];
+
 /** O arquivo de cada resolvedor — para o erro do teste nomear onde a variável nasceu. */
 export const ARQUIVOS_DOS_RESOLVEDORES: Readonly<Record<Resolvedor, string>> = {
   inbox: "lib/inbox/template-vars.ts",
@@ -70,10 +77,35 @@ export interface OrigemDoDado {
   regra: string;
 }
 
+/** Os grupos em que o seletor mostra as variáveis — a ordem é a de leitura. */
+export const GRUPOS_DE_VARIAVEL = [
+  "contato",
+  "campo-do-negocio",
+  "campo-do-contato",
+  "acao",
+] as const;
+
+export type GrupoDeVariavel = (typeof GRUPOS_DE_VARIAVEL)[number];
+
+/**
+ * O título de cada grupo, em português — chave do dicionário, traduzida onde vira
+ * cabeçalho de lista (`SeletorDeVariavel`). É rótulo de tela, não dado.
+ */
+export const ROTULO_DO_GRUPO: Readonly<Record<GrupoDeVariavel, string>> = {
+  contato: "Contato",
+  "campo-do-negocio": "Campo do negócio",
+  "campo-do-contato": "Campo do contato",
+  // Grupo das variáveis que a AÇÃO preenche (o `{{resumo}}` do e-mail): não são
+  // variáveis de CRM e por isso não estão no catálogo.
+  acao: "Da ação",
+};
+
 /** Uma entrada do catálogo. Curinga (`lead.*`) termina em `.*` e cobre um mapa. */
 export interface VariavelDoCatalogo {
   /** A chave literal, sem `{{` e sem `}}`. */
   nome: string;
+  /** O grupo do seletor — não é vocabulário, é a organização da lista. */
+  grupo: GrupoDeVariavel;
   descricao: string;
   /** Como o token fica DEPOIS de resolvido — o que o operador deve esperar ver. */
   exemplo: string;
@@ -95,6 +127,17 @@ export const RAIZES_DE_CAMPO = ["lead", "contato", "contact"] as const;
 export type RaizDeCampo = (typeof RAIZES_DE_CAMPO)[number];
 
 /**
+ * O que o seletor mostra no lugar de um curinga. `{{lead.*}}` não é token: a
+ * marcação não casa com `*` e iria LITERAL para o cliente — então o curinga não
+ * é item de inserir, é DICA de como escrever o caminho. Chave do dicionário.
+ */
+export const DICA_DO_CURINGA: Readonly<Record<RaizDeCampo, string>> = {
+  lead: "Para outro dado do negócio, escreva {{lead.nome_do_campo}}",
+  contato: "Para um campo do contato, escreva {{contato.nome_do_campo}}",
+  contact: "Para uma coluna do contato, escreva {{contact.nome_da_coluna}}",
+};
+
+/**
  * O catálogo. A ORDEM é a de leitura na tela: primeiro o que toda mensagem usa,
  * depois os aliases que só a automação tem, e por último os caminhos — que não
  * são uma variável, são um mapa.
@@ -102,6 +145,7 @@ export type RaizDeCampo = (typeof RAIZES_DE_CAMPO)[number];
 export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   {
     nome: "nome",
+    grupo: "contato",
     descricao: "Nome do contato, como está no cadastro",
     exemplo: "Ana Souza",
     origem: {
@@ -117,6 +161,7 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "primeiro_nome",
+    grupo: "contato",
     descricao: "Só a primeira palavra do nome",
     exemplo: "Ana",
     origem: {
@@ -130,20 +175,24 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "saudacao",
+    grupo: "contato",
     descricao: "Bom dia / Boa tarde / Boa noite, na hora do envio",
     exemplo: "Boa tarde",
     origem: {
       fonte: "relógio do envio, no fuso do canal (nunca o do servidor)",
       regra:
         "Antes das 12h, `Bom dia`; antes das 18h, `Boa tarde`; depois, `Boa noite`. Só resolve " +
-        "quando há instante do envio: na prévia da campanha o token continua literal, porque " +
-        "cravar uma saudação ali ensinaria o operador a esperar aquela. Fora da campanha não " +
-        "existe: no Inbox sai literal, na automação sai VAZIO (ver `LACUNAS_CONHECIDAS`).",
+        "quando há instante do envio: na prévia da campanha, no editor de automação e no " +
+        "compositor do Inbox o token continua literal, porque cravar uma saudação ali ensinaria " +
+        "o operador a esperar aquela. Com o instante (o #3687 levou a conta para as quatro " +
+        "telas), sai igual em automação, follow-up, campanha e resposta rápida. No fluxo não há " +
+        "origem para escolher.",
     },
-    disponivelEm: ["campanha"],
+    disponivelEm: ["inbox", "campanha", "automacao"],
   },
   {
     nome: "telefone",
+    grupo: "contato",
     descricao: "Telefone do contato, como está no cadastro",
     exemplo: "+5511999998888",
     origem: {
@@ -157,6 +206,7 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "email",
+    grupo: "contato",
     descricao: "E-mail do contato, como está no cadastro",
     exemplo: "ana@exemplo.com",
     origem: {
@@ -169,6 +219,7 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "lead.*",
+    grupo: "campo-do-negocio",
     descricao:
       "Caminho do NEGÓCIO: campo personalizado (campanha, fluxo) ou coluna do card (automação)",
     exemplo: "{{lead.gancho}} → “vi que vocês vendem bolo de casamento”",
@@ -187,6 +238,7 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "contato.*",
+    grupo: "campo-do-contato",
     descricao: "Campo personalizado do CONTATO, escrito como `{{contato.<campo>}}`",
     exemplo: "{{contato.link_previa}} → “https://<a-loja-do-cliente>/previa/ana”",
     origem: {
@@ -202,6 +254,7 @@ export const VARIAVEIS_DO_CATALOGO: readonly VariavelDoCatalogo[] = [
   },
   {
     nome: "contact.*",
+    grupo: "campo-do-contato",
     descricao:
       "Caminho do CONTATO na automação: `{{contact.<coluna>}}` ou `{{contact.custom_fields.<campo>}}`",
     exemplo: "{{contact.phone_number}} → “+5511999998888”",
@@ -275,9 +328,15 @@ export function normalizarToken(token: string): string {
 
 /** As variáveis que UMA fonte conhece hoje, na ordem do catálogo. */
 export function variaveisDe(resolvedor: Resolvedor): string[] {
-  return VARIAVEIS_DO_CATALOGO.filter((v) => v.disponivelEm.includes(resolvedor)).map(
-    (v) => v.nome,
-  );
+  return entradasDe(resolvedor).map((v) => v.nome);
+}
+
+/**
+ * As ENTRADAS que uma fonte conhece — o que o seletor de tela precisa para
+ * oferecer rótulo, descrição e grupo sem uma segunda lista.
+ */
+export function entradasDe(resolvedor: Resolvedor): VariavelDoCatalogo[] {
+  return VARIAVEIS_DO_CATALOGO.filter((v) => v.disponivelEm.includes(resolvedor));
 }
 
 /**
@@ -306,20 +365,6 @@ export interface Lacuna {
  * reprova, e apagar uma linha aqui sem cobrir a fonte também.
  */
 export const LACUNAS_CONHECIDAS: readonly Lacuna[] = [
-  {
-    variavel: "saudacao",
-    fonte: "inbox",
-    efeito:
-      'O token sai LITERAL e vai para o cliente: "{{saudacao}}, Ana" chega assim. A reserva ' +
-      "não cobre, porque a chave é desconhecida no Inbox.",
-  },
-  {
-    variavel: "saudacao",
-    fonte: "automacao",
-    efeito:
-      'Sai STRING VAZIA, sem aviso: "Bom dia, {{primeiro_nome}}! {{saudacao}}" vira "Bom dia, ' +
-      'Ana! ". O operador só descobre na mensagem que já foi.',
-  },
   {
     variavel: "saudacao",
     fonte: "fluxo",
@@ -468,9 +513,9 @@ export const VOCABULARIOS_ABERTOS: readonly VocabularioAberto[] = [
   {
     arquivo: "app/app/webhooks/_components/ActionConfigForm.tsx",
     dialeto:
-      "Três botões fixos (`{{nome}}`, `{{telefone}}`, `{{lead.title}}`) mais os campos do funil.",
+      "Extras do seletor único: o título do card (`{{lead.title}}`) e os campos do funil.",
     motivo:
-      "É seletor de tela, não resolvedor: o teste de paridade confere que todo botão fixo é uma " +
-      "variável catalogada e que o motor resolve o token que ele insere.",
+      "É seletor de tela, não resolvedor: o catálogo só tem o curinga `lead.*`, que o seletor " +
+      "mostra como dica (não insere), e o caminho concreto que a tela oferece vem daqui.",
   },
 ];

@@ -15,8 +15,14 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
+import { extractBearer } from "@/lib/mcp/auth";
+import { moduloSemContato, redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   roteiaProximasAcoes,
@@ -24,7 +30,12 @@ import {
   type PropostaAmbigua,
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
-import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
+import {
+  anexarDadosDoContato,
+  anexarNomeDoContato,
+  type LinhaDoContatoNoQuadro,
+  type NomeDoContatoNoQuadro,
+} from "@/lib/kanban/dados-do-contato";
 import {
   anexarAnexosAosNegocios,
   type LinhaDoAnexoNoQuadro,
@@ -32,7 +43,9 @@ import {
 import { camposDeArquivoDoNegocio } from "@/lib/leads/campos-do-funil";
 import { diasDeRecorte, recortaEncerradosAntigos } from "@/lib/kanban/recorte-de-encerrados";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
+import { withOwnerUserNames } from "@/lib/kanban/nome-do-dono";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { lerPaginado, lerPaginadoEmLotes } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
@@ -59,7 +72,7 @@ interface RouteCtx {
  * RLS do caller, nunca do body.
  */
 async function withOwnerAgents(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -143,7 +156,7 @@ async function withOwnerAgents(
  * do handler — o que não pode é o usuário perder o board por causa do aviso.
  */
 async function avisaAmbiguas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   ambiguas: PropostaAmbigua[],
 ): Promise<void> {
@@ -193,7 +206,7 @@ async function avisaAmbiguas(
  * lugar onde o CHECK de coerência não alcança.
  */
 async function withScores(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -265,7 +278,7 @@ async function withScores(
  * custaria outra ida ao banco por quadro aberto.
  */
 async function withConversas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -348,9 +361,11 @@ async function withConversas(
  * (`anexarDadosDoContato`): uma consulta por quadro, não duas.
  */
 async function withMarcadoresDoContato(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leadsDoQuadro: Lead[],
+  /** Só módulo sem `contatos`: lê também o nome, para o filtro de texto livre (a resposta continua sem ele). */
+  lerNome = false,
 ): Promise<{ leads: Lead[]; error: string | null }> {
   const contactIds = [
     ...new Set(leadsDoQuadro.map((l) => l.contact_id).filter((c): c is string => !!c)),
@@ -360,14 +375,28 @@ async function withMarcadoresDoContato(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select("id, tags, phone_number, email, custom_fields, is_anonymized")
+      .select("id, tags, phone_number, email, custom_fields, is_anonymized, avatar_storage_path")
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
   if (error) return { leads: leadsDoQuadro, error: error.message };
 
   const linhas = (data ?? []) as Array<{ id: string; tags: string[] | null } & LinhaDoContatoNoQuadro>;
-  const leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+  let leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+
+  // Só módulo sem `contatos`: uma leitura À PARTE do nome, que serve ao filtro de texto livre e é
+  // anulada na resposta. A consulta de cima fica igual para sessão e módulo com `contatos`.
+  if (lerNome) {
+    const nomes = await buscaEmLotes(contactIds, (lote) =>
+      supabase
+        .from("contacts")
+        .select("id, name, display_name, is_anonymized")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    );
+    if (nomes.error) return { leads: leadsDoQuadro, error: nomes.error.message };
+    leads = anexarNomeDoContato(leads, (nomes.data ?? []) as NomeDoContatoNoQuadro[]);
+  }
 
   const porContato = new Map<string, string[]>();
   for (const row of linhas) {
@@ -386,10 +415,11 @@ async function withMarcadoresDoContato(
 }
 
 async function withNextActions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
   defaultPipelineId: string | null,
+  abreAvisos: boolean,
 ): Promise<{ leads: Lead[]; error: string | null }> {
   const contactIds = [
     ...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c)),
@@ -433,7 +463,13 @@ async function withNextActions(
   // de negócios abertos AGORA, e é aqui que esse olhar acontece. Fazer no
   // momento da escrita da proposta perderia o caso em que o segundo negócio
   // nasce depois dela.
-  await avisaAmbiguas(supabase, organizationId, ambiguas);
+  //
+  // Só na SESSÃO (`abreAvisos`). Leitura com token de integração não abre aviso:
+  // o GET do token tem escopo `config:read` e não pode gravar em
+  // `agent_inbox_items` como efeito colateral (nem sai em `api_audit_log`). A
+  // resposta continua trazendo o `next_action` calculado; o aviso aparece quando
+  // alguém abre o quadro pela sessão.
+  if (abreAvisos) await avisaAmbiguas(supabase, organizationId, ambiguas);
 
   if (porLead.size === 0) return { leads, error: null };
 
@@ -459,26 +495,37 @@ async function withNextActions(
  * justamente no dia em que não sabe.
  */
 async function withTarefas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
-): Promise<{ leads: Lead[]; error: string | null }> {
+): Promise<{ leads: Lead[]; error: string | null; truncado: boolean }> {
   const leadIds = leads.map((l) => l.id);
-  if (leadIds.length === 0) return { leads, error: null };
+  if (leadIds.length === 0) return { leads, error: null, truncado: false };
 
-  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
-    supabase
-      .from("crm_tasks")
-      .select("lead_id, due_date, status")
-      .eq("organization_id", organizationId)
-      .in("lead_id", lote)
-      .in("status", ["pending", "in_progress"]),
+  // PAGINADO (#4321): `buscaEmLotes` sozinho quebra o `.in()` em lotes de 100
+  // ids, mas cada lote era UMA consulta sem `.range()` — e o PostgREST corta
+  // aquela consulta em 1.000 linhas caladas. Para `crm_tasks` isso não é
+  // teórico: 100 negócios com uma dúzia de tarefas abertas cada já passam de
+  // mil, e os cards do fim do lote perdiam o selo sem aviso nenhum. A ordem
+  // `id` é o desempate que faz a página seguinte ser determinística.
+  const { linhas, truncado, erro } = await lerPaginadoEmLotes<LinhaDaTarefaNoQuadro>(
+    leadIds,
+    (lote, inicio, fim, contar) =>
+      supabase
+        .from("crm_tasks")
+        .select("lead_id, due_date, status", contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote)
+        .in("status", ["pending", "in_progress"])
+        .order("id")
+        .range(inicio, fim),
   );
-  if (error) return { leads, error: error.message };
+  if (erro) return { leads, error: erro, truncado: false };
 
   return {
-    leads: anexarTarefasAosNegocios(leads, (data ?? []) as LinhaDaTarefaNoQuadro[]),
+    leads: anexarTarefasAosNegocios(leads, linhas),
     error: null,
+    truncado,
   };
 }
 
@@ -498,36 +545,118 @@ async function withTarefas(
  * depender desta contagem para deixar o negócio andar.
  */
 async function withAnexos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
   campos: ReturnType<typeof camposDeArquivoDoNegocio>,
-): Promise<{ leads: Lead[]; error: string | null }> {
-  if (leads.length === 0 || campos.length === 0) return { leads, error: null };
+): Promise<{ leads: Lead[]; error: string | null; truncado: boolean }> {
+  if (leads.length === 0 || campos.length === 0) return { leads, error: null, truncado: false };
 
   const leadIds = leads.map((l) => l.id);
   const chaves = campos.map((campo) => campo.key);
 
-  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
-    supabase
-      .from("crm_lead_attachments")
-      .select("lead_id, field_key, id, file_name, mime_type, file_size, created_at")
-      .eq("organization_id", organizationId)
-      .in("lead_id", lote)
-      .in("field_key", chaves)
-      .order("created_at", { ascending: true }),
+  // Paginado pelo mesmo motivo das tarefas (#4321): os anexos de 100 negócios
+  // também crescem com o filho e também eram cortados em 1.000 por lote. A
+  // ordem é a que o card já esperava (`created_at`), com `id` como desempate
+  // para a página seguinte não repetir nem pular linha.
+  const { linhas, truncado, erro } = await lerPaginadoEmLotes<LinhaDoAnexoNoQuadro>(
+    leadIds,
+    (lote, inicio, fim, contar) =>
+      supabase
+        .from("crm_lead_attachments")
+        .select("lead_id, field_key, id, file_name, mime_type, file_size, created_at", contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote)
+        .in("field_key", chaves)
+        .order("created_at", { ascending: true })
+        .order("id")
+        .range(inicio, fim),
   );
-  if (error) return { leads, error: error.message };
+  if (erro) return { leads, error: erro, truncado: false };
 
   return {
-    leads: anexarAnexosAosNegocios(leads, (data ?? []) as LinhaDoAnexoNoQuadro[], campos) as Lead[],
+    leads: anexarAnexosAosNegocios(leads, linhas, campos) as Lead[],
     error: null,
+    truncado,
   };
 }
+
+/**
+ * As colunas do negócio que o quadro REALMENTE entrega (#4321).
+ *
+ * O `select("*")` antigo puxava a linha inteira de `crm_leads` — colunas que
+ * nenhum card lê viajavam em cada página de cada leitura. Esta lista é a do
+ * contrato `Lead` (`lib/types/leads.ts`): o que sai daqui é o que a tela
+ * consome, e o que não está aqui não sai. Coluna nova no contrato do quadro
+ * entra AQUI junto com o tipo — o teste de forma (`route-paginacao.test.ts`)
+ * cobra as duas coisas na mesma régua.
+ *
+ * `organization_id` e `position_in_stage`/`id` não são decoração: são as três
+ * primeiras colunas de `idx_crm_leads_org_pipeline_position_id`
+ * (`supabase/baseline.sql`), o índice que só é usado quando o filtro por
+ * organização vai junto — e são elas que dão a ordem estável da paginação.
+ */
+const COLUNAS_DO_QUADRO = [
+  "id",
+  "organization_id",
+  "pipeline_id",
+  "stage_id",
+  "contact_id",
+  "title",
+  "description",
+  "status",
+  "lost_reason",
+  "position_in_stage",
+  "value_cents",
+  "recurring_value_cents",
+  "recurring_period",
+  "recurring_months",
+  "currency",
+  "owner_user_id",
+  "owner_kind",
+  "owner_agent_id",
+  "assigned_at",
+  "last_activity_at",
+  "stage_changed_at",
+  "expected_close_date",
+  "closed_at",
+  "source",
+  "source_metadata",
+  "external_id",
+  "custom_fields",
+  "tags",
+  "created_at",
+  "updated_at",
+  "created_by_user_id",
+].join(", ");
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
+
+  // Token de integração (receita B): `config:read` e papel admin, com o teto do
+  // token. Sem `Authorization`, o ramo de sessão abaixo segue como era.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "pipeline_board",
+      role: "viewer",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "pipelines.board", requestId);
+    if (teto) return teto;
+    return responder(
+      authz.supabase,
+      authz.organizationId,
+      pipelineId,
+      req,
+      requestId,
+      authz.idioma ?? IDIOMA_PADRAO,
+      authz,
+    );
+  }
 
   const supabase = await createClient();
   const {
@@ -538,41 +667,77 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  return responder(supabase, null, pipelineId, req, requestId, authUser?.idioma ?? "pt-BR");
+}
 
-  const [
-    { data: pipeline, error: pipelineErr },
-    { data: stages, error: stagesErr },
-    { data: leads, error: leadsErr },
-  ] = await Promise.all([
-    supabase.from("crm_pipelines").select("*").eq("id", pipelineId).maybeSingle(),
+/**
+ * O corpo do quadro, com o cliente e o filtro de organização já decididos pelo
+ * portão. `orgDoToken` é `null` na sessão: a organização sai do próprio funil,
+ * como sempre saiu. No token ela vem da linha do token e entra em cada consulta
+ * à mão, porque o cliente é o admin (service role, sem RLS).
+ */
+async function responder(
+  supabase: SupabaseClient,
+  orgDoToken: string | null,
+  pipelineId: string,
+  req: NextRequest,
+  requestId: string,
+  idioma: Idioma,
+  /** Só no caminho do token: módulo sem a área `contatos` não recebe dado de contato (Spec 33, F3). */
+  quemChama?: { actor: { type: string }; contatoVisivel?: boolean },
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
+
+  let consultaDoFunil = supabase.from("crm_pipelines").select("*").eq("id", pipelineId);
+  if (orgDoToken) consultaDoFunil = consultaDoFunil.eq("organization_id", orgDoToken);
+  const { data: pipeline, error: pipelineErr } = await consultaDoFunil.maybeSingle();
+  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
+  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+
+  // Etapas e negócios filtram pela organização do funil nos dois ramos: a RLS
+  // só vale na sessão, e o token usa o cliente admin.
+  const orgId = (pipeline as Pipeline).organization_id;
+
+  const [{ data: stages, error: stagesErr }, leituraDosLeads] = await Promise.all([
     supabase
       .from("crm_stages")
       .select("*")
+      .eq("organization_id", orgId)
       .eq("pipeline_id", pipelineId)
       .eq("is_archived", false)
       .order("position"),
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .neq("status", "archived")
-      .order("position_in_stage")
-      // O DESEMPATE (#3461): a ordem do quadro tem de ser ESTÁVEL. Sem esta
-      // linha, dois cards com a MESMA `position_in_stage` — o lote antigo que
-      // gravou a mesma posição em N linhas, ou duas entradas que empataram —
-      // saem na ordem que o plano escolher, e essa ordem pode mudar de uma
-      // leitura para outra: os dois cards TROCAM DE LUGAR a cada render, sem
-      // ninguém arrastar nada. `id` é imutável, então a ordem é a mesma em toda
-      // leitura. Mesma regra (e mesmo motivo) do `.order("id")` da lista em
-      // `app/api/v1/pipelines/[id]/leads/route.ts`.
-      .order("id"),
+    // ─── A LEITURA PAGINADA (#4321) ────────────────────────────────────────
+    // O PostgREST corta TODA resposta em `max_rows` (1000, `supabase/config.toml`)
+    // sem erro: sem `.range()` o quadro de um funil grande chegava com um pedaço
+    // arbitrário e a tela dizia que era o funil inteiro. `lerPaginado` lê por
+    // páginas e prova o fim pelo `count` exato da primeira — quando não consegue
+    // provar (mais páginas que o teto), devolve `truncado` e a resposta AVISA.
+    //
+    // O `organization_id` não é redundância com a RLS: é a PRIMEIRA coluna de
+    // `idx_crm_leads_org_pipeline_position_id` (`supabase/baseline.sql`). Sem
+    // ele o índice não serve e a consulta varre o funil inteiro filtrando a
+    // organização linha a linha.
+    lerPaginado<Lead>((inicio, fim, contar) =>
+      supabase
+        .from("crm_leads")
+        // O genérico explícito (`<string, Lead>`) porque a lista de colunas é
+        // montada em tempo de execução: sem ele o tipo da linha vira
+        // `GenericStringError[]` e o `lerPaginado<Lead>` não fecha.
+        .select<string, Lead>(COLUNAS_DO_QUADRO, contar ? { count: "exact" } : undefined)
+        .eq("organization_id", orgId)
+        .eq("pipeline_id", pipelineId)
+        .neq("status", "archived")
+        .order("position_in_stage")
+        .order("id")
+        .range(inicio, fim),
+    ),
   ]);
 
-  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
   if (stagesErr) return fail("internal_error", stagesErr.message, 500, { requestId });
-  if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
-  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+  if (leituraDosLeads.erro) {
+    return fail("internal_error", leituraDosLeads.erro, 500, { requestId });
+  }
+  const leads = leituraDosLeads.linhas;
 
   // Contato pessoal some do board mas a linha continua no banco (spec 21, etapa
   // 8, decisão 2 — critério 4): o card não é listado e volta ao desmarcar, com
@@ -621,6 +786,14 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsWithOwner.error, 500, { requestId });
   }
 
+  // O NOME do responsável humano (#3945, fatia 2): leituras fixas por quadro,
+  // nunca uma por card — ver `lib/kanban/nome-do-dono.ts`. Falha aqui NÃO
+  // derruba o quadro: o card cai no rótulo anterior.
+  const leadsComNomeDoDono = await withOwnerUserNames(
+    (pipeline as Pipeline).organization_id,
+    leadsWithOwner.leads,
+  );
+
   const { data: pipelinePadrao } = await supabase
     .from("crm_pipelines")
     .select("id")
@@ -631,8 +804,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const leadsComAcao = await withNextActions(
     supabase,
     (pipeline as Pipeline).organization_id,
-    leadsWithOwner.leads,
+    leadsComNomeDoDono,
     (pipelinePadrao as { id: string } | null)?.id ?? null,
+    // Aviso de ambiguidade é efeito de escrita: só a sessão o abre (ver
+    // `withNextActions`). Com token (`orgDoToken` preenchido) a leitura é pura.
+    orgDoToken === null,
   );
   if (leadsComAcao.error) {
     return fail("internal_error", leadsComAcao.error, 500, { requestId });
@@ -675,6 +851,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComAnexos.error, 500, { requestId });
   }
 
+  // O AVISO de recorte (#4321) soma TODAS as leituras do quadro que provam o
+  // próprio fim: os negócios, as tarefas e os anexos. Antes, só a primeira
+  // sabia se tinha sido cortada — e as duas de apoio cortavam caladas.
+  const truncado = leituraDosLeads.truncado || leadsComTarefas.truncado || leadsComAnexos.truncado;
+
   const leadsComConversa = await withConversas(
     supabase,
     (pipeline as Pipeline).organization_id,
@@ -688,6 +869,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     supabase,
     (pipeline as Pipeline).organization_id,
     leadsComConversa.leads,
+    quemChama ? moduloSemContato(quemChama) : false,
   );
   if (leadsComMarcadores.error) {
     return fail("internal_error", leadsComMarcadores.error, 500, { requestId });
@@ -700,7 +882,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       (lead) =>
         ocultarProvaMetaNaResposta(lead as unknown as Record<string, unknown>) as unknown as Lead,
     ),
+    // O AVISO anda com o corpo (#4321): quando a leitura não conseguiu provar o
+    // fim, quem desenha o quadro precisa saber que está vendo um recorte — o
+    // resto do contrato fica igual. Ausente quando o fim foi provado, então o
+    // quadro pequeno responde byte a byte o que respondia antes.
+    ...(truncado ? { truncado: true as const } : {}),
   };
 
-  return ok(board, { requestId });
+  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, {
+    requestId,
+    headers: truncado ? { "X-Quadro-Truncado": "1" } : undefined,
+  });
 }

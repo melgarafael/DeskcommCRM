@@ -15,8 +15,17 @@
  */
 import type pg from 'pg';
 
-import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
-import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
+import { lerFraseDoAvisoConfigurada } from '@/lib/escalacao/frase-do-aviso-configurada';
+
+import {
+  lerFechadoEmFeriadoNacional,
+  lerJanelaDeAtendimento,
+  type JanelaDeAtendimento,
+} from './janela-de-atendimento';
+import {
+  lerTextoDoAvisoDeFeriadoForaDoHorario,
+  lerTextoDoAvisoForaDoHorario,
+} from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
 import { lerModoDeConhecimento } from './modo-de-conhecimento';
 import {
@@ -24,6 +33,7 @@ import {
   carregarFatosDoContato,
   lerPublicoDoGatilho,
   type DecisaoDoPublico,
+  type PublicoDoAgente,
 } from './publico-do-gatilho';
 
 export interface PublishedAgentConfig {
@@ -37,6 +47,17 @@ export interface PublishedAgentConfig {
   provider: string;
   model: string;
   credentialId: string | null;
+  /**
+   * A RESERVA DE MODELO (#4600): provedor e modelo para onde a chamada cai
+   * quando o principal falha por cota (429), servidor (5xx) ou tempo esgotado.
+   * `ai_agent_versions.reserve_provider` / `reserve_model`, NULOS por padrão —
+   * sem configuração não há degrau, e o comportamento é o de antes.
+   *
+   * Opcionais na interface porque nascem depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? null`.
+   */
+  reserveProvider?: string | null;
+  reserveModel?: string | null;
   maxSteps: number;
   historyMessageWindow: number;
   historyTokenWindow: number;
@@ -156,6 +177,27 @@ export interface PublishedAgentConfig {
    */
   avisoForaDoHorario?: string | null;
   /**
+   * A frase que o cliente lê quando a IA sai de campo (#3725), escrita pelo
+   * tenant em `ai_agents.config.aviso_de_handoff`. `null` = sem frase própria:
+   * sai o padrão do produto (curto e humano) de `textoDoAviso`. Lida por
+   * `lerFraseDoAvisoConfigurada`, que também recusa frase vazia/absurda — um
+   * aviso de passagem inválido não pode virar silêncio.
+   */
+  fraseDoAviso?: string | null;
+  /**
+   * Texto do aviso de FERIADO NACIONAL (#3877), da chave irmã
+   * `filters.business_hours.notice_feriado`. `null` = não configurado, e o
+   * feriado sai com o `notice` de sempre. Opcional pela mesma razão acima.
+   */
+  avisoDeFeriadoForaDoHorario?: string | null;
+  /**
+   * "Não atender em feriado nacional" (#3877, doc 316 A), da chave irmã
+   * `filters.business_hours.fechado_em_feriado_nacional`. Ligada, o feriado
+   * nacional conta como dia FECHADO da janela: sai o aviso e o turno espera o
+   * próximo dia útil. Opcional pela mesma razão acima; ausente = desligada.
+   */
+  naoAtenderEmFeriadoNacional?: boolean;
+  /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
@@ -171,8 +213,27 @@ export interface PublishedAgentConfig {
    * não existe — Fase 7).
    */
   vozEnabled: boolean;
-  /** `'nunca' | 'espelhar' | 'sempre'` — decidido em `voz-do-turno.ts`. */
-  vozQuando: 'nunca' | 'espelhar' | 'sempre';
+  /** `'nunca' | 'espelhar' | 'sempre' | 'quando_pede'` — decidido em `voz-do-turno.ts`. */
+  vozQuando: 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
+  /**
+   * O PÚBLICO que a versão declara no `trigger_config` (#3722, fatia 2).
+   * `null`/ausente = atende todo mundo.
+   *
+   * Existe para o ROTEADOR: o fallback do router é carregado por
+   * `loadPublishedAgentConfigById`, e sem o público aqui ele assumiria o
+   * contato que a régua barrou. Opcional porque nasce depois das fixtures que
+   * montam este tipo à mão — ausente vale "sem público", o lado que não cala.
+   * Mora no jsonb, como `janelaDeAtendimento`/`filtroDePalavraChave`; nenhuma
+   * coluna nova, nenhuma migration.
+   */
+  publico?: PublicoDoAgente | null;
+  /**
+   * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228), em
+   * `voice_id` do ElevenLabs. `null` = herda a voz da organização — mesma
+   * resolução de antes desta fatia. Opcional porque nasce depois das fixtures
+   * que montam este tipo à mão; quem consome lê com `?? null`.
+   */
+  vozVoiceId?: string | null;
 }
 
 interface Row {
@@ -186,6 +247,8 @@ interface Row {
   provider: string;
   model: string;
   credential_id: string | null;
+  reserve_provider: string | null;
+  reserve_model: string | null;
   max_steps: number;
   history_message_window: number;
   history_token_window: number;
@@ -224,6 +287,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.provider,
             v.model,
             v.credential_id,
+            v.reserve_provider,
+            v.reserve_model,
             v.max_steps,
             v.history_message_window,
             v.history_token_window,
@@ -254,6 +319,13 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
 
+/** `config.voz_voice_id` como o turno precisa: string não vazia, ou `null` (= herda). */
+function lerVozDoAgente(bruto: unknown): string | null {
+  if (typeof bruto !== 'string') return null;
+  const limpo = bruto.trim();
+  return limpo === '' ? null : limpo;
+}
+
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
@@ -261,6 +333,10 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    voz_voice_id?: unknown;
+    aviso_de_handoff?: unknown;
+    aviso_de_passagem?: unknown;
+    handoff_notice?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -290,6 +366,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     provider: r.provider,
     model: r.model,
     credentialId: r.credential_id,
+    // Nulos por padrão no banco: sem reserva configurada não há degrau nenhum.
+    reserveProvider: r.reserve_provider ?? null,
+    reserveModel: r.reserve_model ?? null,
     maxSteps: r.max_steps,
     historyMessageWindow: r.history_message_window,
     historyTokenWindow: r.history_token_window,
@@ -334,6 +413,12 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // #3725: `null` = sem frase própria, sai o padrão do produto. A leitura
+    // valida tamanho e conteúdo (ver `frase-do-aviso-configurada.ts`).
+    fraseDoAviso: lerFraseDoAvisoConfigurada(r.config),
+    avisoDeFeriadoForaDoHorario: lerTextoDoAvisoDeFeriadoForaDoHorario(r.trigger_config),
+    // `=== true` lá dentro: ausente/outro tipo é DESLIGADA (feriado = dia comum).
+    naoAtenderEmFeriadoNacional: lerFechadoEmFeriadoNacional(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
@@ -347,9 +432,21 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? 'espelhar'` é o default do BANCO, repetido aqui só por simetria com
     // o resto do mapeamento — nunca deveria faltar (coluna NOT NULL), e um
     // valor fora do vocabulário (CHECK do banco impede, mas TS não confia
-    // cegamente num texto livre) cai no mesmo default seguro.
+    // cegamente num texto livre) cai no mesmo default seguro. `quando_pede`
+    // (#4345) entra na lista: sem ele aqui, a versão que pede a leitura do
+    // turno voltaria a espelhar só o canal, em silêncio.
     vozQuando:
-      r.voz_quando === 'nunca' || r.voz_quando === 'sempre' ? r.voz_quando : 'espelhar',
+      r.voz_quando === 'nunca' ||
+      r.voz_quando === 'sempre' ||
+      r.voz_quando === 'quando_pede'
+        ? r.voz_quando
+        : 'espelhar',
+    // Mesma leitura defensiva de `janelaDeAtendimento`: lista torta ⇒ `null`
+    // (atende todo mundo), nunca uma mordaça acidental.
+    publico: lerPublicoDoGatilho(r.trigger_config),
+    // Leitura defensiva: jsonb livre. Texto vazio/espaço, número ou objeto ⇒
+    // `null` (herda a voz da organização), nunca um id torto indo à ElevenLabs.
+    vozVoiceId: lerVozDoAgente(cfg.voz_voice_id),
   };
 }
 
@@ -415,6 +512,18 @@ export interface RastroDoPublico {
   candidatos: CandidatoNoRastroDoPublico[];
   /** Quem ganhou. `null` = o público barrou todo mundo (silêncio). */
   escolhidoAgentId: string | null;
+  /**
+   * De ONDE veio a fila (#3722, fatia 2). Ausente/`'numero'` = a seleção do
+   * agente do número (fatia 1), comportamento e formato de antes. `'roteador'`
+   * = a régua passou sobre os MEMBROS do roteador antes da pergunta do
+   * classificador; aí `escolhidoAgentId` é o agente que o turno de fato
+   * escolheu (ou `null` no silêncio).
+   */
+  origem?: 'numero' | 'roteador';
+  /** Quantos candidatos (membros e, quando avaliado, o fallback) o público barrou. */
+  barrados?: number;
+  /** Por que o turno ficou sem agente, quando foi o público. */
+  motivo?: 'publico_barrou';
 }
 
 /**
@@ -584,6 +693,29 @@ export async function loadPublishedAgentConfigById(
   const r = rows[0];
   if (r === undefined) return null;
   return mapAgentConfigRow(r);
+}
+
+/**
+ * O override que o turno passa ao seam, montado num lugar só (#4600): provedor,
+ * credencial e — quando CONFIGURADA — a reserva de modelo da versão publicada.
+ *
+ * A reserva só entra no objeto quando os dois campos existem: um provedor sem
+ * modelo (ou o contrário) é configuração pela metade, e meia reserva não é
+ * reserva — o seam recebe o campo ausente e segue com o comportamento de hoje.
+ */
+export function overrideLlmDoAgente(
+  config: PublishedAgentConfig,
+  reservaDeModelo?: { provider: string; model: string },
+): {
+  provider: string;
+  credentialId: string | null;
+  reservaDeModelo?: { provider: string; model: string };
+} {
+  return {
+    provider: config.provider,
+    credentialId: config.credentialId,
+    ...(reservaDeModelo ? { reservaDeModelo } : {}),
+  };
 }
 
 /**

@@ -85,6 +85,7 @@ function decisaoDoMotor(
       forceHuman: false,
       aiOptOut: false,
       assigneeKind: "ai",
+      metadataDaConversa: null,
       botSilencedUntil: null,
       aiAuthorizedAt: contato.aiAuthorizedAt,
       agora,

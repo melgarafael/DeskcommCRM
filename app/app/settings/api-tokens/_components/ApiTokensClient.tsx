@@ -85,6 +85,18 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "messages:write", label: "Enviar mensagens" },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
+  // #4515: registrar presença sempre foi decisão de gente, e o `mcp:write` não
+  // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
+  // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito
+  // que o #1613 e o #2052 fecharam nos escopos vizinhos.
+  // O rótulo nomeia as DUAS caixas que a rota também cobra (`mcp:write` e o
+  // papel de gerente, em `despachar` de app/api/v1/agenda/agendamentos/route.ts):
+  // na prova pela tela do #4523, quem marcou só esta recebeu 403 sem saber por quê.
+  {
+    id: "agenda:attendance",
+    label:
+      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela (exige também AGIR no CRM e tratar o token como gerente)",
+  },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 
@@ -149,7 +161,7 @@ export function ApiTokensClient() {
                 <TableHead>{t("Nome")}</TableHead>
                 <TableHead>{t("Prefixo")}</TableHead>
                 <TableHead>{t("Escopos")}</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("Status")}</TableHead>
                 <TableHead>{t("Expira")}</TableHead>
                 <TableHead className="w-[120px]" />
               </TableRow>
@@ -157,7 +169,19 @@ export function ApiTokensClient() {
             <TableBody>
               {tokens.map((tok) => (
                 <TableRow key={tok.id}>
-                  <TableCell className="font-medium">{tok.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {tok.module_slug ? (
+                      // Token de MÓDULO conectado (spec 33, F2): identificado pelo módulo, nunca editável.
+                      <span className="flex flex-wrap items-center gap-2" data-token-de-modulo>
+                        {t("Módulo")} {tok.module_slug}
+                        <Badge variant="outline" className="text-xs">
+                          {t("Módulo conectado")}
+                        </Badge>
+                      </span>
+                    ) : (
+                      tok.name
+                    )}
+                  </TableCell>
                   <TableCell>
                     <code className="text-xs">{tok.prefix}…</code>
                   </TableCell>
@@ -189,8 +213,12 @@ export function ApiTokensClient() {
                         size="sm"
                         disabled={revoke.isPending}
                         onClick={async () => {
-                          await revoke.mutateAsync(tok.id);
-                          toast.success(t("Token revogado."));
+                          const res = await revoke.mutateAsync(tok.id);
+                          toast.success(
+                            res.data.module_deactivated
+                              ? t("Módulo desativado e token revogado.")
+                              : t("Token revogado."),
+                          );
                         }}
                       >
                         {t("Revogar")}

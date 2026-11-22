@@ -25,17 +25,26 @@ import { ehCanalDeConversa } from "@/lib/channels/canais-de-conversa";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { audit } from "@/lib/audit";
 import { corpoDaLocalizacao } from "@/lib/messaging/localizacao";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { emitirTelefoneGanho } from "@/lib/contacts/telefone-ganho";
+import {
+  ehCanalDeIdentidade,
+  normalizarIdentificador,
+  type CanalDeIdentidade,
+} from "@/lib/contacts/identidades";
 
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
-import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  pausarIaPorAtendimentoManual,
+  type FalhaDaPausa,
+  type MotivoDaPausaNaoGravada,
+} from "@/lib/escalacao/atendimento-manual";
 import {
   ecoDaTransmissao,
   ligarEcoAoDestinatario,
@@ -55,6 +64,28 @@ export interface ZernioIngestResult {
   messageId?: string;
   /** Por que foi ignorado — vai para o log, e é o que se lê quando "sumiu". */
   reason?: string;
+  /**
+   * A mensagem ENTROU, mas a pausa da IA não foi garantida (#534). O motivo é
+   * nomeado (`corrida_persistente`, `conversa_inexistente`, …) e a falha também
+   * vai para o audit: a ingestão não pode dizer "ingested" limpo quando a IA
+   * pode falar por cima do atendente.
+   */
+  pausaDaIANaoGravada?: MotivoDaPausaNaoGravada;
+}
+
+/** Aviso durável de que a pausa da IA não foi garantida (#534). */
+function avisarPausaNaoGravada(falha: FalhaDaPausa): Promise<void> {
+  return audit({
+    action: "ai.pausa_nao_gravada",
+    organizationId: falha.organizationId,
+    resourceType: "conversation",
+    resourceId: falha.conversationId,
+    metadata: {
+      canal: falha.canal ?? "zernio",
+      motivo: falha.motivo,
+      detalhe: falha.detalhe ?? null,
+    },
+  });
 }
 
 /**
@@ -172,6 +203,8 @@ export async function ingestZernioInbound(
     input.channelSessionId,
   );
   if (existente) {
+    /** Preenchido quando a pausa da IA falhou — sobe no resultado (#534). */
+    let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
     if (input.socialMessage) {
       // A plataforma vai CRUA para uma coluna com CHECK. Num clone cujo banco
       // ainda não conhece esta rede, o INSERT volta 23514 — e como o provedor
@@ -254,17 +287,31 @@ export async function ingestZernioInbound(
           enviadaEm: msg.sentAt,
         });
       }
-      if (input.socialMessage && msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+      // #4749: a mesma régua do ramo da conversa nova (ver `ehRespostaManual`).
+      // Antes, só a rede social pausava aqui, e quem respondia pelo celular no
+      // WhatsApp via Zernio tinha a IA falando por cima na conversa já existente.
+      if (ehRespostaManual(msg)) {
+        // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
         await pausarIaPorAtendimentoManual(admin, {
           organizationId: input.organizationId,
           conversationId: existente.id,
           canal: "zernio",
+          avisar: (falha) => {
+            pausaDaIANaoGravada = falha.motivo;
+            return avisarPausaNaoGravada(falha);
+          },
         });
       }
     }
-    return inseridaNaExistente === "duplicate"
-      ? desfechoDaDuplicata(admin, input, msg, existente.id)
-      : { status: "ingested", conversationId: existente.id, messageId: inseridaNaExistente };
+    if (inseridaNaExistente === "duplicate") {
+      return desfechoDaDuplicata(admin, input, msg, existente.id);
+    }
+    return {
+      status: "ingested",
+      conversationId: existente.id,
+      messageId: inseridaNaExistente,
+      ...(pausaDaIANaoGravada ? { pausaDaIANaoGravada } : {}),
+    };
   }
 
   const identity = input.socialMessage
@@ -277,7 +324,7 @@ export async function ingestZernioInbound(
   }
 
   const contactId = input.socialMessage
-    ? await upsertSocialContact(admin, input.organizationId, identity, msg.identity.displayName)
+    ? await contatoDaRedeSocial(admin, input.organizationId, identity, msg.identity.displayName, input.socialMessage)
     : await upsertContact(admin, input.organizationId, msg, identity);
   if (!contactId) return { status: "ignored", reason: "contato_nao_resolvido" };
 
@@ -339,15 +386,26 @@ export async function ingestZernioInbound(
   // lista de uma vez (migration 0712). Medido em 16/10/2026: sem esta exceção,
   // cada número novo da lista ficava com a IA calada pelo prazo do atendimento
   // manual — justamente quando as respostas chegam juntas.
-  if (msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+  let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
+  if (ehRespostaManual(msg)) {
+    // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
     await pausarIaPorAtendimentoManual(admin, {
       organizationId: input.organizationId,
       conversationId,
       canal: "zernio",
+      avisar: (falha) => {
+        pausaDaIANaoGravada = falha.motivo;
+        return avisarPausaNaoGravada(falha);
+      },
     });
   }
 
-  return { status: "ingested", conversationId, messageId: inserted };
+  return {
+    status: "ingested",
+    conversationId,
+    messageId: inserted,
+    ...(pausaDaIANaoGravada ? { pausaDaIANaoGravada } : {}),
+  };
 }
 
 async function desfechoDaDuplicata(
@@ -511,11 +569,6 @@ async function efeitosDaEntrada(
   // contato ainda não tem `ad_platform`.
   const atribuicao = extrairAtribuicaoMeta(msg.referral);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, input.organizationId, contactId, atribuicao);
-
-  // Irmão do bloco acima, para o Google: o dado não vem no `referral` (que é
-  // exclusivo da Meta), vem no PRÓPRIO texto da mensagem — ver o cabeçalho de
-  // `lib/plataformas-de-anuncio/google/atribuicao.ts`. Best-effort, mesma postura.
-  await extrairEEstamparAtribuicaoGoogle(admin, input.organizationId, contactId, msg.text);
 
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: input.organizationId,
@@ -872,6 +925,25 @@ function ehDeTransmissao(msg: ZernioInboundMessage): boolean {
   return msg.direction === "outbound" && (msg.sentVia === "broadcast" || !!msg.broadcastId);
 }
 
+/**
+ * A saída é uma PESSOA respondendo por fora do CRM — e a IA para (#4749).
+ *
+ * Uma régua só para os dois ramos (conversa nova e conversa já existente) e
+ * para os dois tipos de conversa (WhatsApp e rede social). Ficam de fora:
+ *
+ *  - a transmissão do provedor (`ehDeTransmissao`, migration 0712);
+ *  - o envio pela API do provedor (`sentVia = "api"`), que é o caminho do
+ *    próprio CRM. O eco do nosso envio normalmente sai como `"duplicate"` pelo
+ *    `unique (organization_id, external_id)`; quando o webhook chega ANTES de o
+ *    envio carimbar o id (a corrida que `limparEco` trata em
+ *    `app/api/v1/messages/_handler.ts`), a linha nasce como saída comum, e sem
+ *    esta exceção a IA se calaria pela própria resposta. O digitado no
+ *    aplicativo do celular chega com `sentVia` nulo (ver `webhook.ts`).
+ */
+function ehRespostaManual(msg: ZernioInboundMessage): boolean {
+  return msg.direction === "outbound" && !ehDeTransmissao(msg) && msg.sentVia !== "api";
+}
+
 /** A campanha e o destinatário do eco, quando ele é de uma transmissão de campanha. */
 async function ecoDeTransmissao(
   admin: SupabaseClient,
@@ -960,6 +1032,82 @@ export async function aplicarEdicaoZernio(
     .select("id");
 
   return (data ?? []).length > 0 ? "aplicado" : "sem_alvo";
+}
+
+/** A identidade que a DM entrega, na forma que `contact_identities` grava. */
+function identidadeDaDm(
+  social: SocialMessage,
+): { canal: CanalDeIdentidade; identificador: string } | null {
+  if (!ehCanalDeIdentidade(social.platform)) return null;
+  const identificador = normalizarIdentificador(social.platform, social.participantId);
+  return identificador ? { canal: social.platform, identificador } : null;
+}
+
+/**
+ * A ficha de quem escreveu pela rede social (#3764, fatia 1).
+ *
+ * Procura PRIMEIRO em `contact_identities`, porque é lá que a fusão deixa a
+ * identidade da ficha absorvida: `fn_mesclar_contatos` reponta a linha para a
+ * vencedora, enquanto o `social_identity` da absorvida só é herdado quando a
+ * vencedora não tem o seu. Sem esta busca, a próxima conversa daquela pessoa
+ * não achava ficha viva e criava uma nova — a duplicata que a fusão desfez.
+ *
+ * Achada a ficha pelo `social_identity` (ou criada), grava a identidade, para
+ * que a próxima busca e a próxima fusão já a encontrem na tabela. As fichas de
+ * antes da migration 9419 entram pela carga inicial dela.
+ *
+ * O identificador é o id do participante, e não o `@`: o `@` vem nulo às vezes
+ * e a pessoa pode trocá-lo; o id é a âncora que `social_identity` já usa.
+ * ponytail: a chave não leva a conta conectada (o `social_identity` leva) —
+ * assume que a rede não repete o id de participante entre duas contas; se
+ * repetir, a tabela ganha a coluna da conta e o unique passa a incluí-la.
+ */
+async function contatoDaRedeSocial(
+  admin: SupabaseClient,
+  org: string,
+  identity: string,
+  name: string | null,
+  social: SocialMessage,
+): Promise<string> {
+  const perfil = identidadeDaDm(social);
+  if (perfil) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("contact_id, contacts!inner(id)")
+      .eq("organization_id", org)
+      .eq("canal", perfil.canal)
+      .eq("identificador", perfil.identificador)
+      // A fusão reponta a linha, mas a ficha MESCLADA continua não sendo alvo
+      // (o mesmo motivo de `upsertSocialContact` logo abaixo).
+      .is("contacts.is_merged_into", null)
+      .maybeSingle();
+    if (error) throw new Error("social_identity_lookup_failed");
+    const dono = (data as { contact_id?: unknown } | null)?.contact_id;
+    if (typeof dono === "string") return dono;
+  }
+
+  const contactId = await upsertSocialContact(admin, org, identity, name);
+  if (perfil) {
+    const { error } = await admin.from("contact_identities").insert({
+      organization_id: org,
+      contact_id: contactId,
+      canal: perfil.canal,
+      identificador: perfil.identificador,
+    });
+    // 23505: a primeira mensagem concorrente já gravou. Qualquer outra falha
+    // não derruba a ingestão — a ficha já está resolvida pelo `social_identity`
+    // e a próxima DM tenta gravar de novo —, mas fica no log.
+    if (error && error.code !== "23505") {
+      logger.error("zernio: identidade da rede social não gravada", {
+        organization_id: org,
+        contact_id: contactId,
+        canal: perfil.canal,
+        code: error.code,
+        detail: error.message,
+      });
+    }
+  }
+  return contactId;
 }
 
 /** Concurrent first messages share a database uniqueness constraint. */

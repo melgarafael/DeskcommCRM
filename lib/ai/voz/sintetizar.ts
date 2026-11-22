@@ -17,6 +17,12 @@ import {
   SAIDA_OPUS_DA_ELEVENLABS,
   type FormatoDaVoz,
 } from "./formato";
+import {
+  embrulharPcmEmWav,
+  MIME_DO_WAV,
+  SAIDA_PCM_DA_ELEVENLABS,
+  TAXA_DO_PCM_DA_ELEVENLABS,
+} from "./wav";
 
 export interface SintetizarVozInput {
   apiKey: string;
@@ -29,8 +35,9 @@ export interface SintetizarVozInput {
   /** 0–1. Default 0.75 — idem. */
   similarityBoost?: number;
   /**
-   * `mp3` (o default de sempre) ou `ogg_opus`, o que o canal oficial exige para
-   * nota de voz — quem escolhe é `formatoDaVozParaCanal` (`./formato.ts`).
+   * `mp3` (o default de sempre), `ogg_opus` (o que o canal oficial exige para
+   * nota de voz) ou `wav` (a DM do Instagram) — quem escolhe é
+   * `formatoDaVozParaCanal` (`./formato.ts`).
    */
   formato?: FormatoDaVoz;
 }
@@ -40,7 +47,8 @@ export interface SintetizarVozResultado {
   /**
    * `audio/mpeg` no formato padrão (`mp3_44100_128`); `audio/ogg;codecs=opus`
    * quando `formato` é `ogg_opus` — a etiqueta que o canal oficial aceita, não o
-   * `audio/opus` que a ElevenLabs devolve (ver `./formato.ts`).
+   * `audio/opus` que a ElevenLabs devolve (ver `./formato.ts`); `audio/wav`
+   * quando `formato` é `wav`.
    */
   mimeType: string;
   /** Caracteres de `texto` — a unidade de cobrança (`custoDeVozCents` em pricing.ts). */
@@ -49,13 +57,49 @@ export interface SintetizarVozResultado {
 
 const DEFAULT_MODEL = "eleven_multilingual_v2";
 
+/**
+ * A recusa do provedor, com o motivo que ELE deu.
+ *
+ * `message` continua `synthesis_<status>` porque é o que chamadores e testes já
+ * leem; o texto do provedor vai em `mensagemDoProvedor` para a rota de prévia
+ * levar até a tela (#4260: um `voice_id` fora do catálogo é válido até o
+ * provedor dizer o contrário — e quando disser, a pessoa precisa saber por quê,
+ * não só "não foi possível").
+ */
+// A classe mora em arquivo próprio: quem a consome na ROTA não pode depender
+// do módulo que fala com o provedor — teste que troca `sintetizar` por dublê
+// deixaria a classe indefinida e o `instanceof` explodiria.
+import { ErroDoProvedorDeVoz } from "./erro-do-provedor";
+
+export { ErroDoProvedorDeVoz };
+
+/** O `detail` do ElevenLabs é `{status, message}` — mas texto puro também aparece. */
+function motivoDaRecusa(corpo: string): string | null {
+  const texto = corpo.trim();
+  if (texto === "") return null;
+  try {
+    const json = JSON.parse(texto) as { detail?: unknown };
+    const detalhe = json.detail;
+    if (typeof detalhe === "string" && detalhe.trim() !== "") return detalhe.trim().slice(0, 300);
+    if (detalhe && typeof detalhe === "object") {
+      const mensagem = (detalhe as { message?: unknown }).message;
+      if (typeof mensagem === "string" && mensagem.trim() !== "") return mensagem.trim().slice(0, 300);
+    }
+  } catch {
+    // Corpo não-JSON: o texto cru já é a melhor mensagem disponível.
+  }
+  return texto.slice(0, 300);
+}
+
 export async function sintetizarVoz(
   input: SintetizarVozInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<SintetizarVozResultado> {
   const opus = input.formato === "ogg_opus";
+  const wav = input.formato === "wav";
+  const saida = opus ? SAIDA_OPUS_DA_ELEVENLABS : wav ? SAIDA_PCM_DA_ELEVENLABS : null;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(input.voiceId)}${
-    opus ? `?output_format=${SAIDA_OPUS_DA_ELEVENLABS}` : ""
+    saida ? `?output_format=${saida}` : ""
   }`;
   const res = await fetchImpl(
     url,
@@ -68,7 +112,7 @@ export async function sintetizarVoz(
         // contrato não depender de um default que a ElevenLabs pode mudar. Em
         // opus quem manda é o `output_format` da URL, e a resposta vem como
         // `audio/opus` (medido) — por isso o `accept` não a restringe.
-        accept: opus ? "*/*" : "audio/mpeg",
+        accept: saida ? "*/*" : "audio/mpeg",
       },
       body: JSON.stringify({
         text: input.texto,
@@ -80,7 +124,12 @@ export async function sintetizarVoz(
       }),
     },
   );
-  if (!res.ok) throw new Error(`synthesis_${res.status}`);
+  if (!res.ok) {
+    // Só LÊ o corpo depois de saber que a chamada falhou: no caminho feliz o
+    // corpo é o áudio, e consumi-lo como texto o destruiria.
+    const corpo = await res.text().catch(() => "");
+    throw new ErroDoProvedorDeVoz(res.status, motivoDaRecusa(corpo));
+  }
   const audio = Buffer.from(await res.arrayBuffer());
   if (opus) {
     // Conferido no BYTE, não no cabeçalho: um opus cru (sem contêiner) ou um mp3
@@ -90,9 +139,26 @@ export async function sintetizarVoz(
     if (!ehContainerOgg(audio)) throw new Error("synthesis_formato_inesperado");
     return { audio, mimeType: MIME_DA_NOTA_DE_VOZ_OPUS, caracteres: input.texto.length };
   }
+  if (wav) {
+    // PCM cru não tem assinatura própria — o que se confere é que NÃO veio um
+    // contêiner (mp3, ogg, wav pronto) no lugar dele: embrulhado, um mp3 viraria
+    // um WAV de ruído que o Instagram aceita e o cliente ouve como chiado.
+    if (pareceContainer(audio)) throw new Error("synthesis_formato_inesperado");
+    return {
+      audio: embrulharPcmEmWav(audio, TAXA_DO_PCM_DA_ELEVENLABS),
+      mimeType: MIME_DO_WAV,
+      caracteres: input.texto.length,
+    };
+  }
   return {
     audio,
     mimeType: res.headers.get("content-type") ?? "audio/mpeg",
     caracteres: input.texto.length,
   };
+}
+
+/** Os inícios de arquivo que dizem "isto já é um contêiner, não PCM cru". */
+function pareceContainer(audio: Buffer): boolean {
+  const inicio = audio.subarray(0, 4).toString("latin1");
+  return inicio === "OggS" || inicio === "RIFF" || inicio.startsWith("ID3") || inicio.startsWith("{");
 }

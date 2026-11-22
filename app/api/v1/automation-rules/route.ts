@@ -7,6 +7,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -14,6 +15,12 @@ import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
+import {
+  CAMPO_DO_MOTIVO_DA_PERDA,
+  acoesDePerdaSemMotivo,
+  lerEtapasDasAcoes,
+  mensagemDaEtapaDePerdaSemMotivo,
+} from "@/lib/automation/motivo-da-perda-na-acao";
 import { createAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,17 +29,24 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "automation_rules",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "automation_rules_lista", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("automation_rules")
     .select("*")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false });
   if (error) return fail("internal_error", error.message, 500, { requestId });
   return ok(data ?? [], { requestId });
@@ -74,6 +88,25 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // ── A ETAPA DE PERDA EXIGE MOTIVO — RECUSADA NO CADASTRO (#4297) ───────────
+  //
+  // A ação não tinha como informar o motivo, então a regra que apontava para a
+  // etapa de perda era SALVA e falhava em toda execução (o #917 recusa mover
+  // sem motivo). A pergunta é da porta: a etapa de destino fecha o negócio como
+  // perdido e a ação não diz por quê?
+  const etapasDaRegra = await lerEtapasDasAcoes(supabase, activeOrg.orgId, parsed.data.actions);
+  if ("erro" in etapasDaRegra) return fail("internal_error", etapasDaRegra.erro, 500, { requestId });
+  const semMotivo = acoesDePerdaSemMotivo(parsed.data.actions, etapasDaRegra.etapas);
+  if (semMotivo.length > 0) {
+    return fail(
+      "invalid_request",
+      t(mensagemDaEtapaDePerdaSemMotivo(semMotivo.map((achado) => achado.etapa), authz.user.idioma)),
+      422,
+      { requestId, details: { campo: CAMPO_DO_MOTIVO_DA_PERDA } },
+    );
+  }
+
   const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
   if (typeof webhookSourceId === "string") {
     const { data: source, error: sourceError } = await supabase

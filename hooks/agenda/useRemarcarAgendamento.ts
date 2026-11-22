@@ -37,14 +37,36 @@ export function useRemarcarAgendamento() {
     mutationFn: async (entrada: {
       id: string;
       revision?: number;
-      starts_at: string;
+      /**
+       * O novo início. AUSENTE quando só a duração muda (a borda da grade,
+       * #4450): aí a rota reescreve só o fim e não trata como remarcação.
+       */
+      starts_at?: string;
       guest_email?: string;
+      /**
+       * Só vai quando a lista foi EDITADA (#4006): ausente não mexe, e um `[]`
+       * mandado por omissão desconvidaria a equipe a cada remarcação.
+       */
+      team_guest_user_ids?: string[];
+      /**
+       * A duração do bloco, em minutos (#4450). Vai quando a pessoa mudou o
+       * tempo na remarcação; ausente mantém o comprimento que o bloco já tem e
+       * é o que o cliente antigo (sem o campo) continua mandando.
+       */
+      duration_minutes?: number;
     }) => apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
-    onSuccess: () => {
-      toast.success(t("Agendamento remarcado."));
+    // O aviso diz o que aconteceu: sem `starts_at` nada foi remarcado — só o
+    // tempo mudou, e "Agendamento remarcado." seria mentira (#4450).
+    onSuccess: (_dados, entrada) => {
+      toast.success(entrada.starts_at ? t("Agendamento remarcado.") : t("Duração alterada."));
       void qc.invalidateQueries({ queryKey: ["agenda"] });
     },
-    onError: (err) => showApiError(err),
+    onError: (err) => {
+      showApiError(err);
+      // Recusado ou passado para trás (409): a grade volta a ler o que vale
+      // agora, em vez de seguir desenhando a versão que o servidor recusou.
+      void qc.invalidateQueries({ queryKey: ["agenda"] });
+    },
   });
 }
 

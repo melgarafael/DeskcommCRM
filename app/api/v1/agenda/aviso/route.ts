@@ -24,9 +24,11 @@ import { z } from "zod";
 
 import { confereGrupoDaConexao } from "@/lib/agenda/grupo-do-aviso-de-agendamento";
 import { lerEstadoDaTelaDoAvisoDeAgendamento } from "@/lib/agenda/tela-do-aviso-de-agendamento";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { criarDepsDeGrupos } from "@/lib/grupos/servico";
@@ -62,6 +64,16 @@ const corpo = z
       .nullable()
       .optional(),
     ligado: z.boolean(),
+    /**
+     * Também lembrar antes de cada horário (migration 9326). Ausente = não
+     * mexe na escolha salva — o formulário antigo continua valendo.
+     */
+    lembrar_antes: z.boolean().optional(),
+    /**
+     * O resumo das 7h só sai em dia com agendamento (migration 9434, #4988).
+     * Ausente = não mexe na escolha salva, como `lembrar_antes`.
+     */
+    resumo_so_com_agendamento: z.boolean().optional(),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -108,6 +120,11 @@ const RECUSAS_DO_RPC = {
     status: 422 as const,
     frase: "Esse grupo não é válido. Escolha um grupo da lista.",
   },
+  aviso_de_agendamento_sem_config: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Salve primeiro o número que recebe os avisos.",
+  },
   aviso_de_agendamento_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
     status: 422 as const,
@@ -116,8 +133,19 @@ const RECUSAS_DO_RPC = {
   },
 } as const;
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // Só a LEITURA aceita o token de integração (Spec 33): cada consulta da tela
+  // filtra `organization_id` e o número sai mascarado. O PUT segue de sessão:
+  // `fn_definir_aviso_de_agendamento` lê `auth.uid()`.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, { requestId, resource: RECURSO, role: "admin", scope: "mcp:read" });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "agenda_aviso", requestId);
+    if (teto) return teto;
+    return ok(await lerEstadoDaTelaDoAvisoDeAgendamento(authz.supabase, authz.organizationId), { requestId });
+  }
+
   const authz = await requireRole("admin", { requestId, resource: RECURSO });
   if (!authz.ok) return authz.response;
 
@@ -209,6 +237,43 @@ export async function PUT(req: NextRequest): Promise<Response> {
   limparCacheDoNumeroInterno();
   const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
 
+  // O lembrete antes do horário é uma segunda porta (9326), depois da primeira:
+  // a linha de configuração já existe aqui. Se ela recusar, o resto já foi
+  // salvo — a resposta diz o que faltou, e a tela relê o estado.
+  let antesLembrava: boolean | null = null;
+  if (dados.lembrar_antes !== undefined) {
+    const lembrete = await db.rpc(
+      "fn_definir_lembrete_do_aviso_de_agendamento" as never,
+      { p_org: authz.org.orgId, p_lembrar: dados.lembrar_antes } as never,
+    );
+    if (lembrete.error) {
+      const recusa = Object.entries(RECUSAS_DO_RPC).find(([nome]) =>
+        (lembrete.error?.message ?? "").includes(nome),
+      )?.[1];
+      if (recusa) return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+      return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
+    }
+    antesLembrava = Boolean(lembrete.data);
+  }
+
+  // O resumo só em dia com agendamento é a terceira porta (9434), pelo mesmo
+  // motivo da do lembrete: a assinatura da primeira não muda.
+  let antesSoComAgendamento: boolean | null = null;
+  if (dados.resumo_so_com_agendamento !== undefined) {
+    const resumo = await db.rpc(
+      "fn_definir_resumo_do_aviso_de_agendamento" as never,
+      { p_org: authz.org.orgId, p_so_com_agendamento: dados.resumo_so_com_agendamento } as never,
+    );
+    if (resumo.error) {
+      const recusa = Object.entries(RECUSAS_DO_RPC).find(([nome]) =>
+        (resumo.error?.message ?? "").includes(nome),
+      )?.[1];
+      if (recusa) return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+      return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
+    }
+    antesSoComAgendamento = Boolean(resumo.data);
+  }
+
   // O número entra MASCARADO: `api_audit_log` é append-only e a cascata de
   // LGPD não o alcança.
   void audit({
@@ -226,6 +291,15 @@ export async function PUT(req: NextRequest): Promise<Response> {
       depois_ligado: dados.ligado,
       confirmou_contato: dados.confirma_contato ?? false,
       com_grupo: Boolean(dados.grupo),
+      ...(dados.lembrar_antes !== undefined
+        ? { antes_lembrava: antesLembrava, depois_lembra: dados.lembrar_antes }
+        : {}),
+      ...(dados.resumo_so_com_agendamento !== undefined
+        ? {
+            antes_resumo_so_com_agendamento: antesSoComAgendamento,
+            depois_resumo_so_com_agendamento: dados.resumo_so_com_agendamento,
+          }
+        : {}),
     },
   });
 

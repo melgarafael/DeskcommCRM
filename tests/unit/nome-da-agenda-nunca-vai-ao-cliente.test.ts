@@ -110,10 +110,12 @@ const QUEM_LE_A_AGENDA: Record<string, string> = {
   "app/api/v1/cron/contact-names/route.ts": "a varredura que ESCREVE o campo",
   "lib/channels/meta/ingest.ts": "o app WhatsApp Business (coexistência) que ESCREVE o campo",
   "lib/contacts/nome-da-agenda.ts": "decide o que a varredura grava",
+  "lib/modulo/redigir-contato.ts":
+    "usa o nome da agenda (que vem no objeto do contato das conversas) só para TIRÁ-LO do texto livre do módulo sem `contatos`; o objeto sai inteiro",
   "lib/contacts/agenda-do-celular.ts":
     "o 'Sincronizar agenda' (#2776) que ESCREVE o campo no contato que acabou de nascer; não lê nem monta mensagem",
   "lib/contacts/rotulo-do-contato.ts": "rotuloParaAEquipe, o rótulo das telas da equipe",
-  "lib/automation/template.ts": "a guarda que recusa {{contact.address_book_name}}",
+  "lib/variaveis/resolvedor.ts": "a guarda que recusa {{contact.address_book_name}}",
   "lib/database.types.ts": "tipos gerados do banco",
   "lib/audit/actions.ts": "só o NOME da ação de auditoria (contact.address_book_name_filled); não lê a coluna",
   "lib/types/contacts.ts": "tipo da ficha e da lista de contatos",

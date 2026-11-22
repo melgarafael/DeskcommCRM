@@ -14,16 +14,31 @@ import { applyMapping, type MappingField, type SheetMatrix } from "@/lib/crm-b2b
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { logger } from "@/lib/logger";
+import type { LinhaClassificada } from "@/lib/crm-b2b/import-previa";
 
 type SB = SupabaseClient;
 
 export interface ProcessImportOpts {
   organizationId: string;
   batchId: string;
-  userId: string;
+  /**
+   * Quem pediu a importação, como AUTOR das linhas (`created_by`,
+   * `created_by_user_id`). `null` quando quem pediu foi um token de servidor:
+   * o id de um token não existe em `auth.users`, e as quatro colunas aceitam nulo.
+   */
+  userId: string | null;
   sheet: SheetMatrix;
   mapping: Partial<Record<MappingField, string>>;
   enrichCompanies?: boolean;
+  /**
+   * O veredito da PRÉVIA por linha (A23, #4888), indexado pelo número da linha na
+   * planilha. Só as `nova` são gravadas; as demais viram `import_rows` com o
+   * motivo (`conflict` para já existe/conflito/repetida, `failed` para sem
+   * telefone/inválida) e nada é criado por elas. Ausente = o comportamento
+   * antigo (grava todas).
+   */
+  classificacao?: ReadonlyMap<number, LinhaClassificada>;
 }
 
 export interface ProcessImportResult {
@@ -35,6 +50,7 @@ export interface ProcessImportResult {
 
 type CompanyCacheKey = string; // normalized_cnpj OR __name__:normalized trade/legal
 type PersonCacheKey = string; // companyId + '|' + normalized_name
+type PessoaDoLote = { id: string; vinculada: boolean };
 
 export async function processCompaniesPeopleImport(
   supabase: SB,
@@ -54,7 +70,7 @@ export async function processCompaniesPeopleImport(
     .eq("organization_id", organizationId);
 
   const companyByKey = new Map<CompanyCacheKey, string>();
-  const personByKey = new Map<PersonCacheKey, string>();
+  const personByKey = new Map<PersonCacheKey, PessoaDoLote>();
   const companiesToEnrich = new Set<string>();
 
   let successful = 0;
@@ -62,7 +78,7 @@ export async function processCompaniesPeopleImport(
   let conflict = 0;
 
   for (let i = 0; i < sheet.rows.length; i++) {
-    const rowNumber = i + 2; // 1-based data with header on line 1
+    const rowNumber = sheet.rowNumbers?.[i] ?? i + 2;
     const rawCells = sheet.rows[i]!;
     const rawObj: Record<string, string> = {};
     sheet.headers.forEach((h, idx) => {
@@ -90,6 +106,20 @@ export async function processCompaniesPeopleImport(
       continue;
     }
     const rowId = rowRec.id as string;
+
+    // A23: a prévia já disse que esta linha não entra (só `nova` e `anexada` gravam). Registra o motivo e segue.
+    const veredito = opts.classificacao?.get(rowNumber);
+    if (veredito && veredito.status !== "nova" && veredito.status !== "anexada") {
+      const statusDaLinha = veredito.status === "sem_telefone" || veredito.status === "invalida" ? "failed" : "conflict";
+      await supabase
+        .from("import_rows")
+        .update({ status: statusDaLinha, error: veredito.motivo })
+        .eq("id", rowId)
+        .eq("organization_id", organizationId);
+      if (statusDaLinha === "conflict") conflict += 1;
+      else failed += 1;
+      continue;
+    }
 
     try {
       const outcome = await processOneRow(supabase, {
@@ -173,10 +203,10 @@ async function processOneRow(
   ctx: {
     organizationId: string;
     batchId: string;
-    userId: string;
+    userId: string | null;
     mapped: Record<MappingField, string>;
     companyByKey: Map<string, string>;
-    personByKey: Map<string, string>;
+    personByKey: Map<PersonCacheKey, PessoaDoLote>;
     companiesToEnrich: Set<string>;
   },
 ): Promise<{
@@ -281,10 +311,8 @@ async function processOneRow(
   if (personName) {
     const nName = normalizePersonName(personName) ?? personName.toLowerCase();
     const pKey = `${companyId ?? "none"}|${nName}`;
-    const cachedP = ctx.personByKey.get(pKey);
-    if (cachedP) {
-      personId = cachedP;
-    } else {
+    let pessoa = ctx.personByKey.get(pKey);
+    if (!pessoa) {
       const { data: created, error } = await supabase
         .from("people")
         .insert({
@@ -304,21 +332,41 @@ async function processOneRow(
           normalizedCnpj,
         };
       }
-      personId = created.id as string;
-      ctx.personByKey.set(pKey, personId);
+      pessoa = { id: created.id as string, vinculada: false };
+      ctx.personByKey.set(pKey, pessoa);
+    }
+    personId = pessoa.id;
 
-      if (companyId) {
-        await supabase.from("company_people").upsert(
-          {
-            organization_id: organizationId,
-            company_id: companyId,
-            person_id: personId,
-            job_title: mapped.job_title.trim() || null,
-            is_decision_maker: true,
-          },
-          { onConflict: "company_id,person_id", ignoreDuplicates: true },
-        );
+    // A pessoa já gravada pode ser reutilizada mesmo se o vínculo falhar.
+    if (companyId && !pessoa.vinculada) {
+      const { error } = await supabase.from("company_people").upsert(
+        {
+          organization_id: organizationId,
+          company_id: companyId,
+          person_id: personId,
+          job_title: mapped.job_title.trim() || null,
+          is_decision_maker: true,
+        },
+        { onConflict: "company_id,person_id", ignoreDuplicates: true },
+      );
+      if (error) {
+        logger.warn("importacao_b2b.vinculo_falhou", {
+          organization_id: organizationId,
+          batch_id: ctx.batchId,
+          company_id: companyId,
+          person_id: personId,
+          code: error.code,
+        });
+        return {
+          status: "failed",
+          error: "Falha ao vincular a pessoa à empresa.",
+          companyId,
+          personId,
+          phoneE164,
+          normalizedCnpj,
+        };
       }
+      pessoa.vinculada = true;
     }
   }
 

@@ -123,6 +123,12 @@ const schema = z.object({
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
   /**
+   * Módulo `amigo` (#4227): troca a origem da API do Amigo por ESTE computador,
+   * para a prova de tela com receptor de mentira. Só `http(s)://127.0.0.1|localhost`
+   * vale; qualquer outro valor é ignorado (`origemDoAmigo`, lib/amigo/transport.ts).
+   */
+  AMIGO_API_ORIGIN_LOCAL: z.string().optional().default(""),
+  /**
    * Segredo do DONO DA INSTALAÇÃO para `POST /api/v1/tenants/provision` (um
    * sistema externo cria organizações). Vazio por padrão = a rota não existe
    * (404); com menos de 32 caracteres também fica desligada.
@@ -479,6 +485,7 @@ const schema = z.object({
    * e são o piso de rollback. Todas `optional().default()`: `.env` antigo não
    * quebra ao atualizar.
    */
+  CADENCIA_LIMITE_EMAILS_POR_DIA: z.coerce.number().int().min(1).max(10_000).optional().default(60),
   SMTP_HOST: z.string().optional().default(""),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_SECURITY: z.enum(["starttls", "tls", "none"]).optional().default("starttls"),
@@ -701,6 +708,13 @@ const schema = z.object({
    */
   VAPID_PUBLIC_KEY: z.string().optional().default(""),
   VAPID_PRIVATE_KEY: z.string().optional().default(""),
+
+  /**
+   * Chave PRIVADA (PEM PKCS#8, curva P-256) com que o host assina o JWT de contexto do módulo
+   * conectado (spec 33, F3). Vazio = recurso desligado: a rota de contexto responde 503 e o módulo
+   * fica com teto `agent` e sem pessoa. Instalação fresca não precisa dela. Nunca vai a log.
+   */
+  MODULE_JWT_PRIVATE_KEY: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);

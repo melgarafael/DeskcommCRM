@@ -25,16 +25,18 @@ import { embedText } from "@/lib/ai/embed";
 import { MODELO_DE_EMBEDDING_DO_GOOGLE } from "@/lib/ai/embeddings/chave";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
 import {
-  AVISO_CORPO,
-  AVISO_TITULO,
-  BLOQUEIO_TITULO,
-  CORPO_TETO_DO_PLANO,
+  corpoDoAvisoDeGasto,
   corpoDoBloqueio,
+  corpoDoTetoDoPlano,
   decidirOrcamento,
   decidirTetoDoPlano,
   HANDOFF_REASON_ORCAMENTO,
-  TITULO_TETO_DO_PLANO,
+  tituloDoAvisoDeGasto,
+  tituloDoBloqueio,
+  tituloDoTetoDoPlano,
 } from "@/lib/agent-engine/edge/llm/orcamento";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import type { OrigemDaChaveLlm } from "@/lib/agent-engine/edge/llm/credentials";
 import { computeCost } from "@/lib/ai/cost";
 import { silencioVigente } from "@/lib/inbox/comando-da-conversa";
@@ -44,6 +46,7 @@ import { renderSystemPrompt } from "@/lib/ai/render-system-prompt";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
+import { donoHumanoVetaIA, lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import { checkG1, checkG3, checkG4Legal, checkG4Stage } from "@/lib/ai/handoff/triggers";
 import type {
   BotContext,
@@ -510,8 +513,8 @@ async function vetoPorTetoDeGasto(alvo: {
     await abrirItemDeOrcamento(admin, orgId, {
       kind: "budget_warning",
       severity: "warn",
-      title: AVISO_TITULO,
-      body: AVISO_CORPO,
+      title: (idioma) => tituloDoAvisoDeGasto(idioma),
+      body: (idioma) => corpoDoAvisoDeGasto(idioma),
       refKind: "ai_budget",
     });
     logger.warn("[ai-response] gasto de IA passou do aviso — a resposta SEGUE", {
@@ -526,8 +529,8 @@ async function vetoPorTetoDeGasto(alvo: {
   await abrirItemDeOrcamento(admin, orgId, {
     kind: "budget_exceeded",
     severity: "critical",
-    title: BLOQUEIO_TITULO,
-    body: corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents),
+    title: (idioma) => tituloDoBloqueio(idioma),
+    body: (idioma) => corpoDoBloqueio(status.current_month_consumed_cents, status.monthly_limit_cents, idioma),
     refKind: "ai_budget",
   });
 
@@ -595,8 +598,8 @@ async function vetoPorTetoDoPlano(
   await abrirItemDeOrcamento(admin, alvo.orgId, {
     kind: "budget_exceeded",
     severity: "critical",
-    title: TITULO_TETO_DO_PLANO,
-    body: CORPO_TETO_DO_PLANO,
+    title: (idioma) => tituloDoTetoDoPlano(idioma),
+    body: (idioma) => corpoDoTetoDoPlano(idioma),
     refKind: "plano",
   });
   return devolverAoHumanoPorTeto(alvo, {
@@ -651,7 +654,14 @@ async function devolverAoHumanoPorTeto(
 async function abrirItemDeOrcamento(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  item: { kind: string; severity: string; title: string; body: string; refKind: "ai_budget" | "plano" },
+  item: {
+    kind: string;
+    severity: string;
+    /** Texto no idioma da organização: a Central mostra o item como foi gravado. */
+    title: (idioma: Idioma) => string;
+    body: (idioma: Idioma) => string;
+    refKind: "ai_budget" | "plano";
+  },
 ): Promise<void> {
   const { count, error: erroDaBusca } = await admin
     .from("agent_inbox_items")
@@ -671,12 +681,14 @@ async function abrirItemDeOrcamento(
   }
   if ((count ?? 0) > 0) return;
 
+  // Só depois do dedup: o idioma é lido apenas quando o item vai mesmo nascer.
+  const idioma = await idiomaDoAviso(admin, orgId);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: orgId,
     kind: item.kind,
     severity: item.severity,
-    title: item.title,
-    body: item.body,
+    title: item.title(idioma),
+    body: item.body(idioma),
     ref_kind: item.refKind,
     ref_id: orgId,
   });
@@ -764,7 +776,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const { data: candidatos } = await admin
     .from("ai_agents")
     .select(
-      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, published_version_id, archived_at, paused_at",
+      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, channel, published_version_id, archived_at, paused_at",
     )
     .eq("organization_id", input.organizationId)
     .eq("is_active", true)
@@ -780,7 +792,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const { data: conv, error: convErr } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, name, display_name, locale, is_blocked, is_personal, force_human, ai_opt_out)",
+      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, metadata, contacts:contact_id(id, name, display_name, locale, is_blocked, is_personal, force_human, ai_opt_out)",
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -798,6 +810,8 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
     bot_silenced_until: string | null;
     last_handoff_at: string | null;
     assignee_kind: string | null;
+    /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+    metadata: unknown;
     contacts: {
       id: string;
       name: string | null;
@@ -822,7 +836,15 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   if (c.contacts.ai_opt_out) return skip("ai_opt_out");
   // G3-02 — assignee de 1ª classe: humano atendendo (kind='user') veta o bot
   // deterministicamente, mesma família de guard de force_human/bot_silenced_until.
-  if (c.assignee_kind === "user") return skip("assigned_to_human");
+  //
+  // #3967: exceto no modo "IA com o dono", ligado POR CONVERSA em
+  // `conversations.metadata.ai_com_dono`. A regra é `donoHumanoVetaIA` — a MESMA
+  // que o gate puro usa —, e não uma comparação local: duas cópias divergiriam
+  // na primeira vez que alguém acrescentasse um caso, e o caso aqui é que o modo
+  // vale só com dono humano de verdade e não fura nenhuma outra trava.
+  if (donoHumanoVetaIA({ assigneeKind: c.assignee_kind, iaComDono: lerModoIaComDono(c.metadata) })) {
+    return skip("assigned_to_human");
+  }
 
   // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
   // Este worker é o caminho PRÉ-ENGINE: responde as orgs sem versão de agente

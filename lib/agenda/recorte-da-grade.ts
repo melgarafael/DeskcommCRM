@@ -1,4 +1,4 @@
-import { addDays, startOfDay, startOfMonth, startOfWeek } from "date-fns";
+import { addDays, format, startOfDay, startOfMonth, startOfWeek, subDays } from "date-fns";
 
 import type { VisaoDaAgenda } from "@/components/agenda/tipos";
 
@@ -37,4 +37,16 @@ export function recorteDaGrade(visao: VisaoDaAgenda, ancora: Date): { de: Date; 
   }
   const de = visao === "semana" ? startOfWeek(ancora, { weekStartsOn: 0 }) : startOfDay(ancora);
   return { de, ate: addDays(de, visao === "semana" ? 7 : 1) };
+}
+
+/**
+ * O primeiro e o último dia que a grade desenha, em `YYYY-MM-DD`.
+ *
+ * É leitura LOCAL, como a chave das colunas da grade: a âncora já é o dia da
+ * organização posto ao meio-dia local (`ancoraLocalDoDia`). Passar esse recorte
+ * por outro fuso desloca o dia para quem abre a Agenda de fora dele.
+ */
+export function diasDoRecorte(visao: VisaoDaAgenda, ancora: Date): { de: string; ate: string } {
+  const { de, ate } = recorteDaGrade(visao, ancora);
+  return { de: format(de, "yyyy-MM-dd"), ate: format(subDays(ate, 1), "yyyy-MM-dd") };
 }

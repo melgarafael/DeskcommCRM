@@ -1,6 +1,7 @@
 // @vitest-environment node
 /** A rota real escolhe o campo, conserva o default legado e recusa tema antes de escrever. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   user: { id: "11111111-1111-4111-8111-111111111111", is_platform_admin: false },
@@ -69,7 +70,7 @@ beforeEach(() => {
   mocks.remove.mockResolvedValue({ error: null });
   mocks.audit.mockResolvedValue(undefined);
 });
-function post(tema?: string, escopo = "organizacao") {
+async function post(tema?: string, escopo = "organizacao") {
   const form = new FormData();
   form.set("escopo", escopo);
   if (tema !== undefined) form.set("tema", tema);
@@ -87,7 +88,7 @@ function post(tema?: string, escopo = "organizacao") {
     ),
   );
   return POST(
-    new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+    await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
   );
 }
 describe("upload por tema", () => {

@@ -105,8 +105,12 @@ describe("store.message busca pela PK e só cai no metadata se a PK não achar",
     expect(await pgSendLedger(db).message("org", "k")).toEqual({ id: "k", status: "sent" });
     expect(db.sqls).toHaveLength(1);
     expect(db.sqls[0]).toMatch(/\bid=\$2/);
-    expect(db.sqls[0]).not.toContain("metadata");
-    expect(db.params[0]).toEqual(["org", "k"]);
+    // A busca sem índice (`metadata->>'idempotency_key'`) não acontece. O que lê
+    // `metadata` aqui é só a PROJEÇÃO da natureza da recusa
+    // (`lib/channels/falha-de-envio.ts`), nunca filtro.
+    expect(db.sqls[0]).not.toContain("idempotency_key");
+    expect(db.sqls[0]!.split(/\bwhere\b/i)[1]).not.toContain("metadata");
+    expect(db.params[0]).toEqual(["org", "k", "falha_de_envio"]);
   });
 
   it("pg: PK vazia → reserva pelo metadata (linha anterior à convenção)", async () => {
@@ -130,7 +134,11 @@ describe("store.message busca pela PK e só cai no metadata se a PK não achar",
       return q;
     });
     const sb = { from } as unknown as SupabaseClient;
-    expect(await supabaseSendLedger(sb).message("org", "k")).toEqual({ id: "k", status: "sent" });
+    expect(await supabaseSendLedger(sb).message("org", "k")).toEqual({
+      id: "k",
+      status: "sent",
+      metadata: { falha_de_envio: null },
+    });
     expect(filtros).toEqual([[["organization_id", "org"], ["id", "k"]]]);
   });
 });

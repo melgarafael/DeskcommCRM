@@ -158,6 +158,50 @@ describe("descreveEvento", () => {
     expect(r.autor).toBe("motor");
   });
 
+  it("conexão por QR: o adiamento NÃO culpa a janela de 24 h (#4913)", () => {
+    // O relato: número em "Números por QR", follow-up ativo, a IA escreveu, o
+    // envio não saiu, e o histórico dizia "a janela estava fechada" — uma regra
+    // que não existe naquele canal. O motivo verdadeiro viaja em `reason`, e o
+    // escopo em `janela_regulatoria`, gravado por quem leu o provedor.
+    const r = descreveEvento(
+      evento({
+        node_id: "action-1",
+        event_type: EVENTO_ACAO_ADIADA,
+        payload: {
+          until: "2026-08-11T12:00:00.000Z",
+          reason: "pessoa_no_comando",
+          janela_regulatoria: false,
+        },
+      }),
+      nos,
+      "pt-BR",
+    );
+    expect(r.titulo).toBe("Esperou uma pessoa devolver a conversa ao automático");
+    expect(r.detalhe).toContain("confere de novo em");
+    expect(`${r.titulo} ${r.detalhe ?? ""}`.toLowerCase()).not.toContain("janela");
+  });
+
+  it("canal oficial: a frase da janela de 24 h continua a mesma", () => {
+    // Regressão do lado oposto: onde a janela EXISTE, a linha do tempo diz o que
+    // sempre disse. O fix é de alcance, não de texto.
+    const r = descreveEvento(
+      evento({
+        node_id: "action-1",
+        event_type: EVENTO_ACAO_ADIADA,
+        payload: {
+          until: "2026-08-11T12:00:00.000Z",
+          reason: "messaging_window_closed",
+          janela_regulatoria: true,
+        },
+      }),
+      nos,
+      "pt-BR",
+    );
+    expect(r.titulo).toBe("Segurou o envio até o horário permitido");
+    expect(r.detalhe).toContain("a janela estava fechada");
+    expect(r.detalhe).toContain("envia em");
+  });
+
   it("o turno descartado pela suspensão diz o motivo e que o envio volta (migration 0501)", () => {
     const r = descreveEvento(
       evento({ node_id: "action-1", event_type: EVENTO_TURNO_DESCARTADO, payload: { motivo: "org_nao_operante" } }),
@@ -187,6 +231,15 @@ describe("descreveEvento", () => {
         expect(en[frase], `sem inglês: ${frase}`).toBeTruthy();
       }
     }
+  });
+
+  it("o encerramento pela recusa 'sem interesse' diz o motivo, é do cliente, e tem espanhol e inglês (decisão D3)", () => {
+    const en = JSON.parse(readFileSync("lib/i18n/traducoes/en.json", "utf8")) as Record<string, string>;
+    const r = descreveEvento(evento({ event_type: "cancelled_sem_interesse" }), nos, "pt-BR");
+    expect(r.titulo).toBe("Encerrado porque o cliente disse que não tem interesse");
+    expect(r.autor).toBe("cliente");
+    expect(DICIONARIO[r.titulo]?.es).toBeTruthy();
+    expect(en[r.titulo]).toBeTruthy();
   });
 
   it("o classificar que espera a resposta diz que ESPERA, e até quando — não parece travado", () => {

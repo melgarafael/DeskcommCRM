@@ -43,7 +43,7 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   csvDosContatos,
@@ -210,7 +210,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     },
   });
 
-  return new Response(corpo, {
+  return comIdDaRequisicao(new Response(corpo, {
     status: 200,
     headers: {
       "Content-Type": formato === "csv" ? "text/csv; charset=utf-8" : "text/vcard; charset=utf-8",
@@ -219,5 +219,5 @@ export async function GET(req: NextRequest): Promise<Response> {
       "X-Request-Id": requestId,
       ...(truncado ? { "X-Export-Truncado": "true" } : {}),
     },
-  });
+  }), requestId);
 }

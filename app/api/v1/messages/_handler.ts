@@ -33,7 +33,9 @@ import { ApiError } from "@/lib/api/types";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { podeVerPessoal } from "@/lib/inbox/pessoal";
 import { assertOrgOperante } from "@/lib/organizacao/operante";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
@@ -48,8 +50,17 @@ import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import {
+  CHAVE_DO_NOME_NA_METADATA,
+  nomeDeArquivoLimpo,
+  nomeDoAnexoParaEnviar,
+} from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import {
+  nomeDeArquivoSeguro,
+  nomeDoDocumentoParaEnvio,
+} from "@/lib/messaging/media/nome-para-envio";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
@@ -69,8 +80,12 @@ import {
 } from "@/lib/channels/numero-do-atendente";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { recebidasQueARespostaLe } from "@/lib/messaging/recebidas-a-ler";
+import { canalMarcaLidasPorMensagem } from "@/lib/channels/capabilities";
+import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
+import { CHAVE_DA_FALHA_DE_ENVIO, registroDaFalhaDeEnvio } from "@/lib/channels/falha-de-envio";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -207,6 +222,8 @@ export function origemDaMensagem(actor: Actor): "user" | "ai" | "automation" | "
   // rótulo errado no balão. Um mecanismo só decide os quatro valores — quando
   // eram dois (uma função e um mapa), o mesmo contrato tinha duas verdades.
   if (actor.type === "api_token") return "system";
+  // Módulo conectado também não é IA: é um sistema de fora (spec 33).
+  if (actor.type === "module") return "system";
   // A regra dispara, mas nem sempre ESCREVE. A ação "Mensagem escrita pela IA"
   // manda texto de um agente publicado com este mesmo ator, e a decisão da #652
   // é por AUTORIA: ali a linha é da IA. Decidir só pelo tipo do ator carimbaria
@@ -264,6 +281,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -275,7 +293,7 @@ function actorAuditPayload(actor: Actor): {
  * auditoria já espera.
  */
 function apiTokenIdDoActor(actor: Actor): string | undefined {
-  if (actor.type === "api_token") return actor.id;
+  if (actor.type === "api_token" || actor.type === "module") return actor.id;
   if (actor.type === "ai_agent") return actor.api_token_id;
   return undefined;
 }
@@ -287,15 +305,34 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
 interface MsgCursorPayload {
   sent_at: string;
   id: string;
+  /**
+   * O desempate do meio (ver a ordem em `listMessagesHandler`). Opcional porque
+   * um cursor emitido antes dele — numa aba aberta durante a atualização — não
+   * o traz, e tem de continuar paginando como antes em vez de virar 400.
+   */
+  created_at?: string;
 }
 
 function encodeMsgCursor(p: MsgCursorPayload): string {
   return Buffer.from(JSON.stringify(p), "utf8").toString("base64url");
 }
+/**
+ * Os valores do cursor entram por interpolação no `.or()` do PostgREST. Os
+ * filtros de organização e de conversa são parâmetros separados (somados com
+ * AND), então um cursor forjado não sai da conversa — mas vírgula ou parêntese
+ * ali reescreveria o filtro de dentro dela. Só passa o FORMATO que o servidor
+ * emite: UUID e instante ISO-8601.
+ */
+const UUID_DO_CURSOR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INSTANTE_DO_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
     if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
+    if (parsed.created_at !== undefined && typeof parsed.created_at !== "string") return null;
+    if (!UUID_DO_CURSOR.test(parsed.id) || !INSTANTE_DO_CURSOR.test(parsed.sent_at)) return null;
+    if (parsed.created_at !== undefined && !INSTANTE_DO_CURSOR.test(parsed.created_at)) return null;
     return parsed;
   } catch {
     return null;
@@ -314,9 +351,15 @@ export async function listMessagesHandler(
   conversationId: string,
   q: ListMessagesQuery,
 ): Promise<ListMessagesResult> {
-  // Pessoal não é alcançável nem pelo histórico (spec 21, etapa 7): a conversa
-  // sumiu da lista e o link direto dá 404, então o histórico recusa junto —
-  // defesa em profundidade, com o mesmo 404 mudo para não revelar a conversa.
+  // Pessoal não é alcançável pelo histórico de QUEM NÃO É DONO (spec 21, etapa
+  // 7): a conversa sumiu da lista e o link direto dá 404, então o histórico
+  // recusa junto — defesa em profundidade, com o mesmo 404 mudo para não
+  // revelar a conversa.
+  //
+  // #4434: o dono da marca LÊ o seu. Sem esta troca a feature nasceria pela
+  // metade — a conversa abriria no cabeçalho e a thread viria vazia, que é pior
+  // que o 404, porque parece que as mensagens sumiram.
+  //
   // Duas consultas planas (sem embed, sem `maybeSingle`): o dublê do invariante
   // de paginação traduz a cadeia em SQL literal e só modela esses métodos.
   const { data: donas } = await supabase
@@ -326,17 +369,22 @@ export async function listMessagesHandler(
     .eq("organization_id", ctx.organization_id)
     .limit(1);
   const contatoId = ((donas ?? []) as Array<{ contact_id?: string | null }>)[0]?.contact_id ?? null;
-  let ehPessoal = false;
+  let contatoDaConversa: { is_personal?: boolean; personal_owner_user_id?: string | null } | null =
+    null;
   if (contatoId) {
     const { data: contato } = await supabase
       .from("contacts")
-      .select("is_personal")
+      .select("is_personal, personal_owner_user_id")
       .eq("id", contatoId)
       .eq("organization_id", ctx.organization_id)
       .limit(1);
-    ehPessoal = ((contato ?? []) as Array<{ is_personal?: boolean }>)[0]?.is_personal === true;
+    contatoDaConversa =
+      ((contato ?? []) as Array<{
+        is_personal?: boolean;
+        personal_owner_user_id?: string | null;
+      }>)[0] ?? null;
   }
-  if (ehPessoal) {
+  if (!podeVerPessoal(ctx.actor, contatoDaConversa)) {
     throw new ApiError(
       404,
       "not_found",
@@ -369,6 +417,16 @@ export async function listMessagesHandler(
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: false })
+    // DESEMPATE PELA CHEGADA, não pelo id.
+    //
+    // `sent_at` vem do canal com precisão de SEGUNDO (a API oficial da Meta manda
+    // `timestamp` em segundos). Quem manda 3 fotos de uma vez gera 3 mensagens no
+    // mesmo `sent_at`, e o `id` é `uuid_generate_v4()` — sorteado. Desempatar por
+    // ele punha as fotos em ordem aleatória: medido numa instalação real em
+    // 09/11/2026, Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1. `created_at` é o
+    // instante (com microssegundos) em que cada uma foi gravada, na ordem em que
+    // o canal as entregou. O `id` fica por último, só para a ordem ser total.
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
 
@@ -383,7 +441,14 @@ export async function listMessagesHandler(
         traduzir("Cursor inválido.", ctx.idioma ?? "pt-BR"),
       );
     }
-    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
+    query = query.or(
+      c.created_at
+        ? `sent_at.lt.${c.sent_at},` +
+            `and(sent_at.eq.${c.sent_at},created_at.lt.${c.created_at}),` +
+            `and(sent_at.eq.${c.sent_at},created_at.eq.${c.created_at},id.lt.${c.id})`
+        : // Cursor anterior ao desempate pela chegada: segue o critério antigo.
+          `sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`,
+    );
   }
 
   const { data, error } = await query;
@@ -399,12 +464,41 @@ export async function listMessagesHandler(
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
   const cursor =
-    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, id: oldest.id }) : null;
+    hasMore && oldest
+      ? encodeMsgCursor({ sent_at: oldest.sent_at, created_at: oldest.created_at, id: oldest.id })
+      : null;
 
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
   // entram na página, não a ordem em que saem.
-  return { messages: page.slice().reverse(), cursor, has_more: hasMore };
+  //
+  // O CORPO DA APAGADA PELO CONTATO NÃO SAI DAQUI (#4500). Até esta mudança ele
+  // viajava inteiro nesta resposta — o balão escondia e o JSON entregava, para
+  // qualquer leitor da rota ou do histórico pelo MCP. Revelar passou a ser porta
+  // própria, com perfil autorizado e auditoria (`texto-retido/route.ts`); o que
+  // esta leitura devolve no lugar do corpo é `body: null` + `texto_retido: true`.
+  // A máscara mora no fim, no único ponto por onde TODOS os consumidores passam
+  // — inclusive os que leem com service role e não têm RLS no caminho.
+  //
+  // O sinal `texto_retido` (o botão) só vai quando a organização LIGOU a porta —
+  // ao menos um perfil autorizado. A consulta às configurações só acontece se a
+  // página tem alguma apagada pelo contato, e é PLANA (sem `maybeSingle`) pelo
+  // mesmo motivo das consultas do topo: o dublê do invariante de paginação.
+  let portaLigada = false;
+  if (page.some((m) => m.direction === "inbound" && m.revoked_at != null)) {
+    const { data: orgs } = await supabase
+      .from("organizations")
+      .select("settings")
+      .eq("id", ctx.organization_id)
+      .limit(1);
+    const settings = ((orgs ?? []) as Array<{ settings?: unknown }>)[0]?.settings ?? null;
+    portaLigada = perfisDoTextoRetido(settings).length > 0;
+  }
+  return {
+    messages: page.map((m) => mascararTextoRetido(m, portaLigada)).reverse(),
+    cursor,
+    has_more: hasMore,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +567,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -540,9 +634,16 @@ export async function sendMessageHandler(
       phone_number: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
+      /** Instagram/Facebook: o testador social do pré-go-live casa por aqui. */
+      social_identity?: string | null;
       is_blocked: boolean;
-      /** Spec 21: pessoal não recebe por nenhum caminho — o veto é no mesmo ponto do bloqueio. */
+      /** Spec 21: pessoal fora da operação. #4434: o DONO responde o seu. */
       is_personal: boolean;
+      /**
+       * #4434 — o dono da marca pessoal. É a ÚNICA entrada para responder:
+       * papel não abre esta porta, nem `admin`, nem `manager`.
+       */
+      personal_owner_user_id?: string | null;
     } | null;
     channel_sessions: (ChannelSessionRef & { status: string; metadata?: Record<string, unknown> | null; archived_at?: string | null }) | null;
   };
@@ -558,18 +659,38 @@ export async function sendMessageHandler(
     );
   }
 
-  // Contato pessoal (spec 21, etapa 11 — critério 7): TUDO recusado, manual ou
-  // automático, no mesmo ponto do bloqueio — sem exceção para gerente (a spec
-  // pede literalmente essa sabotagem: liberar gerente e ver o teste acusar).
+  // ── CONTATO PESSOAL: fora da OPERAÇÃO, dentro do ALCANCE do dono ──────────
+  //
+  // Spec 21 (etapa 11, critério 7): tudo recusado, manual ou automático, no
+  // mesmo ponto do bloqueio — a IA, a automação, a campanha e o token não falam
+  // com contato pessoal, e isso continua valendo.
+  //
+  // #4434: esconder da operação não pode tornar o contato inalcançável para quem
+  // o marcou. Quem responde é a PESSOA dona da marca, por ação humana — e mais
+  // ninguém: `admin` e `manager` NÃO são exceção. A comparação é com o dono, não
+  // com o papel, então não existe "sou admin, logo posso": o pessoal de outra
+  // pessoa não tem porta de entrada por papel.
+  //
+  // Dono nulo (contato marcado antes da 9360, ou dono removido) não casa
+  // ninguém: `null === id` é falso, e o contato segue fechado até alguém marcar
+  // de novo e adotar.
+  //
   // Erro padrão, sem vazar dado do contato.
   if (c.contacts?.is_personal === true) {
-    throw new ApiError(
-      403,
-      "forbidden",
-      undefined,
-      ctx.requestId,
-      traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
-    );
+    const humano = origemDaMensagem(ctx.actor) === "user";
+    const donoDaMarca = c.contacts.personal_owner_user_id ?? null;
+    // `humano` já implica `actor.type === "user"`; o `donoDaMarca !== null`
+    // deixa explícito que contato legado não é de ninguém.
+    const autorizado = humano && donoDaMarca !== null && donoDaMarca === ctx.actor.id;
+    if (!autorizado) {
+      throw new ApiError(
+        403,
+        "forbidden",
+        undefined,
+        ctx.requestId,
+        traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
+      );
+    }
   }
 
   // ─── De quem é o número desta conversa (#3642) ─────────────────────────────
@@ -914,11 +1035,20 @@ export async function sendMessageHandler(
   //
   // Recusar em silêncio (citar nada) seria pior que recusar alto: quem clicou
   // "responder" veria a mensagem sair sem o fio e não saberia por quê.
+  //
+  // E A APAGADA NÃO É CITÁVEL (#4787). O menu deixou de oferecer a ação, mas o
+  // id pode chegar assim mesmo: a citação escolhida ANTES da exclusão continua
+  // no compositor, um cliente da API manda o campo direto e o MCP também. Aqui
+  // é o único ponto por onde TODOS passam — e a recusa é ANTES do insert, do
+  // carimbo em `contacts` e de qualquer chamada ao canal: nada sai para a
+  // plataforma, o rascunho fica na tela e o reenvio sem citação é permitido.
+  // A régua é a da linha (`revoked_at`), não a da direção: apagada é apagada,
+  // e a tela já esconde a ação das duas.
   let citada: { id: string; external_id: string | null } | null = null;
   if (input.reply_to_message_id) {
     const { data: alvo } = await supabase
       .from("messages")
-      .select("id, external_id")
+      .select("id, external_id, revoked_at")
       .eq("id", input.reply_to_message_id)
       .eq("organization_id", ctx.organization_id)
       .eq("conversation_id", c.id)
@@ -931,6 +1061,18 @@ export async function sendMessageHandler(
         undefined,
         ctx.requestId,
         traduzir("A mensagem citada não é desta conversa.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+    if ((alvo as { revoked_at?: string | null }).revoked_at) {
+      throw new ApiError(
+        422,
+        "citacao_apagada",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "A mensagem citada foi apagada e não pode ser citada. Envie a resposta sem citá-la.",
+          ctx.idioma ?? "pt-BR",
+        ),
       );
     }
     citada = alvo as { id: string; external_id: string | null };
@@ -962,6 +1104,20 @@ export async function sendMessageHandler(
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
   const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
+  // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
+  // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
+  // na linha porque o balão e o download leem `metadata.media_filename` — sem
+  // isso o histórico continuaria mostrando o nome aleatório. `null` quando o
+  // envio não traz nome (token que só manda o storage_path): aí o balão segue
+  // com o rótulo de sempre, em vez de exibir um `out-<uuid>`.
+  // Por `media_url` (#4524) o nome DECLARADO passa pela guarda do envio — a
+  // mesma que nomeia o documento no payload — e a linha guarda esse mesmo
+  // nome, para o cartão e o download não contarem outra história. Requisição
+  // antiga, sem o campo, não ganha chave nova no JSONB.
+  const nomeOriginalDoAnexo = input.media_storage_path
+    ? nomeDeArquivoLimpo(input.media_filename)
+    : nomeDeArquivoSeguro(input.media_filename);
   const botoesDoModeloEnviado =
     input.type === "template"
       ? await botoesDaDefinicao(supabase, {
@@ -1007,6 +1163,9 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      // Depois do `metadata` do cliente de propósito: o nome do arquivo é dado
+      // do ENVIO (#4457), e o cliente da API não o sobrescreve por metadata.
+      ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1092,6 +1251,7 @@ export async function sendMessageHandler(
     organizationId: ctx.organization_id,
     channelSessionId: c.channel_session_id,
     contactPhoneNumber: c.contacts?.phone_number ?? "",
+    contactSocialIdentity: c.contacts?.social_identity ?? null,
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
   if (acessoAtual && !acessoAtual.permite) {
     const { data: updated, error } = await supabase.from("messages").update({
@@ -1201,6 +1361,23 @@ export async function sendMessageHandler(
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
       // método) do outro lado do seam.
       let externalId: string | null;
+      // As mensagens do cliente que ESTA resposta lê, para o canal marcá-las
+      // como lidas (visto azul, #2981): o NOWEB sem "Guardar histórico" só marca
+      // por mensagem (#5015). Template não passa por `adapter.send`, então não
+      // pergunta; grupo não leva visto; canal que não marca por id não paga a
+      // leitura (`marcaLidasPorMensagem`). Nada novo, falha ou leitura lenta =
+      // `undefined`, e o canal faz o pedido de antes.
+      const readExternalIds =
+        input.type === "template" ||
+        c.is_group ||
+        !canalMarcaLidasPorMensagem(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER)
+          ? undefined
+          : await recebidasQueARespostaLe(supabase, {
+              organizationId: ctx.organization_id,
+              conversationId: c.id,
+              envioId: message.id,
+            });
+      const lidas = readExternalIds !== undefined ? { readExternalIds } : {};
       if (input.type === "template") {
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em
         // texto/mídia) porque o payload da plataforma é outro — e porque o envio
@@ -1275,7 +1452,10 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        // O nome ORIGINAL vence o basename aleatório do bucket (#4457). Sem
+        // nome — chamada por token, que só conhece o storage_path —, o
+        // basename continua sendo o que sai, como sempre foi.
+        const filename = nomeDoAnexoParaEnviar(input.media_filename, input.media_storage_path);
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1293,6 +1473,7 @@ export async function sendMessageHandler(
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.media_url) {
         // A spec da proposta comercial já previa isto ("Enviar | sendFile com
@@ -1303,6 +1484,20 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        //
+        // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
+        // — e o adaptador do canal grava o literal `file`, que no celular parece arquivo
+        // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
+        // `media_filename`, depois o `metadata.media_filename` que a ingestão
+        // já grava (#2613), depois o último segmento da URL com extensão, e
+        // por fim uma reserva legível vinda do MIME. Nunca `file`, e nunca uma
+        // exceção: o nome é rótulo, não condição de envio.
+        const nomeDoDocumento = nomeDoDocumentoParaEnvio({
+          nomeExplicito: input.media_filename,
+          metadata: input.metadata,
+          url: input.media_url,
+          mime: input.media_mime,
+        });
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1314,9 +1509,11 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename: nomeDoDocumento,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.type === "contact") {
         const sc = outboundMetadata.shared_contact as
@@ -1346,6 +1543,7 @@ export async function sendMessageHandler(
             whatsappId: phoneToWhatsappId(telefone),
             vcard: buildVcard(nome, telefone),
           },
+          ...lidas,
         }));
       } else {
         await checkBoundary();
@@ -1358,6 +1556,7 @@ export async function sendMessageHandler(
           kind: input.type,
           body: corpoDoCanal(input.body ?? "") ?? "",
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       }
 
@@ -1556,12 +1755,19 @@ export async function sendMessageHandler(
         return message;
       }
 
+      // A NATUREZA da recusa vai junto (`lib/channels/falha-de-envio.ts`): o
+      // motor do agente lê daqui se re-tentar o turno repetiria a mesma recusa
+      // (4xx do provedor) ou se a próxima tentativa pode sair (5xx, rede).
       const { data: updated } = await supabase
         .from("messages")
         .update({
           status: "failed",
           error_code: code,
           error_message: msg,
+          metadata: {
+            ...((message.metadata ?? {}) as Record<string, unknown>),
+            [CHAVE_DA_FALHA_DE_ENVIO]: registroDaFalhaDeEnvio(err),
+          },
         })
         .eq("id", message.id)
         .select(MSG_COLS)

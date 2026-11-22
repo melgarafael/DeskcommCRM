@@ -9,16 +9,14 @@
  * surpreenderia quem for mexer num sem saber que existe o outro. É a mesma
  * decisão que já separa `lib/nuvemshop/state.ts` do irmão da Agenda.
  *
- * A carga é só `organizationId` — a conexão de Ads é da ORGANIZAÇÃO, não da
- * pessoa (mesmo desenho de `ad_platform_connections`): duas pessoas admin da
- * mesma organização reconectando não criam duas linhas, sobrescrevem a mesma.
- * `userId` ainda entra, mas só para o audit log saber quem autorizou — não
- * para achar a linha certa no callback.
+ * A organização, o admin e a sessão viajam assinados. Na conexão de relatórios,
+ * o state também identifica o anunciante que o admin pretende consultar.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type { ApiDeConversaoGoogle } from "../types";
+import { contaDeRelatorio, type ContaDeRelatorio } from "./conta-de-relatorio";
 
 export const VALIDADE_DO_ESTADO_MS = 10 * 60 * 1000;
 
@@ -32,6 +30,7 @@ export interface EstadoDaConexaoDeAds {
   expiraEmMs: number;
   /** Sessão de quem iniciou: a régua de suporte do callback confere por ela. */
   authSessionId?: string;
+  relatorio?: ContaDeRelatorio;
 }
 
 function assinar(carga: string, segredo: string): Buffer {
@@ -49,7 +48,7 @@ function conferirSegredo(segredo: string): string {
 }
 
 export function emitirEstado(
-  dados: { organizationId: string; userId: string; api?: ApiDeConversaoGoogle; authSessionId?: string },
+  dados: Pick<EstadoDaConexaoDeAds, "organizationId" | "userId" | "authSessionId" | "relatorio"> & { api?: ApiDeConversaoGoogle },
   opcoes: { segredo: string; agora: Date; nonce?: string; validadeMs?: number },
 ): string {
   const segredo = conferirSegredo(opcoes.segredo);
@@ -67,7 +66,12 @@ export function emitirEstado(
   const nonce = opcoes.nonce?.trim() || randomBytes(16).toString("hex");
   const expira = opcoes.agora.getTime() + (opcoes.validadeMs ?? VALIDADE_DO_ESTADO_MS);
   const sessao = dados.authSessionId ? `.${dados.authSessionId}` : "";
-  const carga = `${organizationId}.${userId}.${nonce}.${expira}.${dados.api ?? "google_ads"}${sessao}`;
+  let carga = `${organizationId}.${userId}.${nonce}.${expira}.${dados.api ?? "google_ads"}${sessao}`;
+  if (dados.relatorio) {
+    if (!dados.authSessionId || dados.api !== "google_ads") throw new Error("Sessão de relatório inválida");
+    const conta = contaDeRelatorio.parse(dados.relatorio);
+    carga += `.${Buffer.from(JSON.stringify(conta), "utf8").toString("base64url")}`;
+  }
   const assinatura = assinar(carga, segredo).toString("hex");
   return `${Buffer.from(carga, "utf8").toString("base64url")}.${assinatura}`;
 }
@@ -102,12 +106,21 @@ export function verificarEstado(
   if (!timingSafeEqual(recebida, esperada)) return null;
 
   const campos = carga.split(".");
-  if (campos.length < 4 || campos.length > 6) return null;
-  const [organizationId, userId, nonce, expiraTexto, api = "google_ads", authSessionId] = campos;
+  if (campos.length < 4 || campos.length > 7) return null;
+  const [organizationId, userId, nonce, expiraTexto, api = "google_ads", authSessionId, conta] = campos;
   if (api !== "google_ads" && api !== "data_manager") return null;
   const expiraEmMs = Number(expiraTexto);
   if (!organizationId || !userId || !nonce || !Number.isFinite(expiraEmMs)) return null;
   if (opcoes.agora.getTime() > expiraEmMs) return null;
 
-  return { organizationId, userId, nonce, expiraEmMs, api, ...(authSessionId ? { authSessionId } : {}) };
+  const estado: EstadoDaConexaoDeAds = { organizationId, userId, nonce, expiraEmMs, api, ...(authSessionId ? { authSessionId } : {}) };
+  if (conta !== undefined) {
+    if (api !== "google_ads" || !authSessionId) return null;
+    try {
+      estado.relatorio = contaDeRelatorio.parse(JSON.parse(Buffer.from(conta, "base64url").toString("utf8")));
+    } catch {
+      return null;
+    }
+  }
+  return estado;
 }

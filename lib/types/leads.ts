@@ -69,6 +69,16 @@ export interface Lead {
   /** Derivado (não é coluna): quem é o agente dono — ver LeadOwnerAgent. */
   owner_agent?: LeadOwnerAgent | null;
   /**
+   * Derivado (não é coluna): o NOME do responsável humano, resolvido no
+   * servidor por quadro, nunca por card (`lib/kanban/nome-do-dono.ts`).
+   * `null` = olhei e não há nome utilizável; ausente = não resolvido (sem
+   * service role, ou resposta de mutação). Os dois caem no rótulo anterior.
+   * Só o nome: nunca e-mail ou `user_metadata` (LGPD).
+   */
+  owner_user_name?: string | null;
+  /** Derivado: `true` quando o responsável humano não está mais na equipe. */
+  owner_user_removed?: boolean;
+  /**
    * Derivado (não é coluna): a próxima ação que o agente propôs para o CONTATO,
    * já roteada para o negócio ativo dele. Ver lib/leads/next-action.ts — só
    * aparece quando o roteamento é inequívoco.
@@ -145,6 +155,21 @@ export interface Lead {
   contact_phone?: string;
   contact_email?: string;
   contact_links?: Array<{ tipo: string; href: string }>;
+  /**
+   * Derivado (não é coluna): o contato tem foto de perfil guardada
+   * (`contacts.avatar_storage_path`, mantida pelo cron `contact-avatars`). O
+   * caminho do arquivo NÃO sai no payload — o card pede a imagem a
+   * `/api/v1/contacts/[id]/avatar`, a mesma rota da lista do Inbox. Ausente
+   * quando não há foto ou o contato foi anonimizado (LGPD).
+   */
+  contact_has_avatar?: true;
+  /**
+   * Derivado (não é coluna), SÓ para token de módulo sem a área `contatos`: o nome do contato, lido para o
+   * filtro de texto livre (`lib/modulo/redigir-contato.ts`) e anulado em seguida. Sessão e módulo com
+   * `contatos` nunca recebem estes campos.
+   */
+  contact_name?: string;
+  contact_display_name?: string;
   /**
    * Derivado (não é coluna): os marcadores das CONVERSAS do contato deste
    * negócio — a terceira caixa, "Tags da conversa" no painel do Inbox, onde a

@@ -28,6 +28,9 @@ export function isMediaPathInOrganization(path: string, orgId: string): boolean 
 export function isMediaPathOwnedBy(path: string, orgId: string, conversationId: string): boolean {
   const prefixo = `${orgId}/${conversationId}/`;
   if (!path.startsWith(prefixo)) return false;
+  // #5034: o SDK cola o path na URL de assinatura, e a URL normaliza `%2e%2e` em `..`. A régua da
+  // organização já recusa `%`, `?`, `#`, controle e espaço final — o que passa aqui é o que se assina.
+  if (!isMediaPathInOrganization(path, orgId)) return false;
   // O prefixo sozinho não prova posse: `{org}/{conv}/../../{outra}/x` começa certo e,
   // se o Storage resolver o `..`, aponta para o arquivo de outra conversa ou organização.
   // Só segmento de nome comum depois do prefixo — nada de `..`, `.`, vazio ou barra invertida.
@@ -47,7 +50,12 @@ export function isLeadAttachmentPathOwnedBy(path: string, orgId: string, leadId:
   return isMediaPathOwnedBy(path, orgId, `leads/${leadId}`);
 }
 
-const DOCUMENT_MIMES = new Set([
+/**
+ * A allowlist de documentos do upload outbound — exportada porque o bucket do
+ * material da empresa (#4129) promete a MESMA lista, e um teste de invariante
+ * precisa comparar as duas sem uma terceira cópia.
+ */
+export const DOCUMENT_MIMES = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -58,6 +66,8 @@ const DOCUMENT_MIMES = new Set([
   "text/plain",
   "text/csv",
   "application/zip",
+  "application/xml",
+  "text/xml",
 ]);
 
 /**

@@ -10,7 +10,9 @@ import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
 import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
-import { conditionsSchema } from "@/lib/automation/conditions";
+import { condicoesDeCampo, conditionsSchema } from "@/lib/automation/conditions";
+import type { Conditions, RuleCondition } from "@/lib/automation/conditions";
+import { CAMPOS_DE_ETIQUETA_GOOGLE_ADS } from "@/lib/automation/etiquetas-google-ads";
 import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
@@ -103,6 +105,30 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // regras do mesmo gatilho com N diferentes disparariam juntas.
   "lead.silent_for": "crm_lead",
   "lead.stage_stale": "crm_lead",
+  // O NEGÓCIO FOI EDITADO (#1749): o gatilho de "negócio alterado".
+  //
+  // O evento já existia e já era emitido — `updateLeadHandler` grava
+  // `lead.updated` com `payload: { fields }` (os NOMES das colunas que a edição
+  // mudou, por `lib/leads/campos-alterados.ts`) desde a wave 6. Faltava o
+  // consumidor: a linha nascia `done` porque o tipo estava na lista de REGISTRO
+  // (`fn_event_log_e_registro`, migration 0239), e nenhuma regra podia reagir a
+  // uma mudança de campo. A migration 9383 tira o tipo dessa lista — o mesmo
+  // conserto que a 0417 fez com `message.failed` —, e a partir daqui o motor o
+  // assina como qualquer outro gatilho de negócio.
+  //
+  // A entidade é `crm_lead` porque é o que `buildContext` hidrata: a regra vê o
+  // lead de AGORA (condições sobre valor atual, ex. `lead.custom_fields.status
+  // eq aprovado`, funcionam como em qualquer gatilho de lead), enquanto a lista
+  // de nomes em `event.fields` responde "o que mudou nesta edição". O payload
+  // NÃO carrega valor de campo — e a condição por campo (#1749) foi desenhada
+  // sobre os nomes justamente para manter isso (§9: nenhuma PII nova no evento).
+  "lead.updated": "crm_lead",
+  // A LIGAÇÃO RECEBIDA QUE NINGUÉM ATENDEU (#4365). Nasce do worker de voz
+  // (`workers/voice-agent`, via `lib/voip/evento-de-ligacao-perdida.ts`), que é
+  // quem encerra a linha `ringing` como `timeout`. A entidade é o CONTATO — é
+  // ele que a ação de WhatsApp precisa no contexto do motor; o telefone e o
+  // `call_id` viajam no payload.
+  "voice_call.missed": "contact",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
@@ -212,6 +238,52 @@ function recusarLacoDeLead(
 ): void {
   if (!acoesQueFechamLaco(regra.trigger_event, regra.actions).length) return;
   ctx.addIssue({ code: "custom", path: ["actions"], message: MENSAGEM_DO_LACO_DE_LEAD });
+}
+
+/**
+ * O gatilho cujo payload é a lista de NOMES de campo que a edição mudou (#1749).
+ *
+ * A condição `campo_alterado` lê `event.fields`, que SÓ o `lead.updated` carrega.
+ * Em qualquer outro evento ela seria sempre falsa — e uma regra salva que nunca
+ * dispara é o defeito que este repositório já pagou várias vezes (o operador
+ * acredita que configurou, e quem descobre é o cliente que não recebeu nada).
+ */
+export const GATILHO_DO_NEGOCIO_ALTERADO = "lead.updated" satisfies GatilhoDeAutomacao;
+
+/** A frase da recusa, a MESMA na porta da API (`t()`) e no desenho da regra. */
+export const MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO =
+  "A condição “foi alterado” só existe no gatilho “negócio alterado” (quando um negócio for editado): troque o gatilho ou escolha outro operador.";
+
+/**
+ * As condições `campo_alterado` que NÃO podem existir com este gatilho.
+ *
+ * Mora aqui, e não em `lib/automation/conditions.ts`, porque é o único lugar
+ * que conhece os dois lados: o avaliador sabe ler `event.fields` e não sabe (nem
+ * precisa saber) de que gatilho veio a regra. A porta da criação cobra o par
+ * inteiro; o PATCH cobra o par MESCLADO (o patch pode trazer só o gatilho e
+ * deixar as condições gravadas) — a mesma forma do veto de laço da #1528, na
+ * rota irmã.
+ */
+export function condicoesQueSoExistemNoNegocioAlterado(
+  triggerEvent: string | undefined,
+  conditions: Conditions | undefined,
+): RuleCondition[] {
+  if (!conditions) return [];
+  const doCampoAlterado = condicoesDeCampo(conditions).filter((c) => c.op === "campo_alterado");
+  if (!doCampoAlterado.length) return [];
+  return triggerEvent === GATILHO_DO_NEGOCIO_ALTERADO ? [] : doCampoAlterado;
+}
+
+function recusarCampoAlteradoForaDoGatilho(
+  regra: { trigger_event?: string; conditions?: Conditions },
+  ctx: z.RefinementCtx,
+): void {
+  if (!condicoesQueSoExistemNoNegocioAlterado(regra.trigger_event, regra.conditions).length) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["conditions"],
+    message: MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO,
+  });
 }
 
 export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
@@ -393,7 +465,31 @@ function umRodizioPorRegra(
  * Os objetos são os MESMOS de sempre, byte a byte — só mudou onde moram.
  */
 const acoesFixas = [
-  z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
+  z.object({
+    type: z.literal("create_or_move_lead"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      stage_id: z.string().uuid(),
+      /**
+       * #4297 — O MOTIVO DA PERDA, quando a etapa de destino é de perda.
+       *
+       * A etapa exige motivo (issue #917: `decideMotivoDaPerda`), e sem esta
+       * chave a ação não tinha como informá-lo: toda regra que apontava para a
+       * etapa de perda falhava em execução. Opcional aqui de propósito — as
+       * regras JÁ gravadas não têm a chave e continuam válidas; elas é que
+       * passam a falhar com o código real no recibo em vez de `internal_error`.
+       * Quem exige o preenchimento é a porta de gravação, que sabe ler
+       * `is_lost` da etapa (`lib/automation/motivo-da-perda-na-acao.ts`).
+       *
+       * O editor deixa o campo como "" quando a etapa não é de perda; "" vira
+       * AUSÊNCIA aqui, e não um motivo vazio que o trigger recusaria.
+       */
+      lost_reason: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.string().trim().min(1).max(500).optional(),
+      ),
+    }),
+  }),
   z.object({
     type: z.literal("send_whatsapp_message"),
     config: z.object({
@@ -487,13 +583,32 @@ const acoesFixas = [
   z.object({
     type: z.literal("add_tag"),
     config: z.object({
-      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+      tags: z.array(z.string().min(1).max(60)).max(10),
+      google_ads_fields: z.array(z.enum(CAMPOS_DE_ETIQUETA_GOOGLE_ADS)).max(5).optional(),
       /**
        * #2498 — onde a etiqueta é GRAVADA: `card` (padrão, o comportamento de
        * sempre) ou `contato`. Opcional de propósito: as regras antigas não têm
        * a chave e continuam iguais; sem `.optional()` o zod descartaria o campo
        * no save e a tela mostraria uma escolha que não foi gravada.
        */
+      destino: z.enum(["card", "contato"]).optional(),
+    }).superRefine((config, ctx) => {
+      const campos = config.google_ads_fields ?? [];
+      const quantidade = config.tags.length + campos.length;
+      if (quantidade < 1 || quantidade > 10) {
+        ctx.addIssue({ code: "custom", path: ["tags"], message: "Escolha de uma a dez etiquetas, incluindo os campos do Google Ads." });
+      }
+      if (new Set(campos).size !== campos.length) {
+        ctx.addIssue({ code: "custom", path: ["google_ads_fields"], message: "Escolha cada campo do Google Ads uma única vez." });
+      }
+    }),
+  }),
+  // A irmã da `add_tag`: TIRA as etiquetas, do card ou do contato, com a mesma
+  // forma de config e o mesmo destino padrão (`card`).
+  z.object({
+    type: z.literal("remove_tag"),
+    config: z.object({
+      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
       destino: z.enum(["card", "contato"]).optional(),
     }),
   }),
@@ -750,6 +865,42 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * sistemas.
    */
   reuse_open_lead_on_capture: z.boolean().optional(),
+  /**
+   * A PÁGINA da Meta que esta fonte representa (issue #3768, migration 9320).
+   *
+   * É a chave de ROTEAMENTO do aviso: a plataforma tem UMA URL de destino para o
+   * objeto page, então o token do path não distingue de quem é o lead — a página
+   * distingue. `null` limpa a reivindicação e devolve a fonte ao modo "recebo o
+   * que chegar na minha URL".
+   *
+   * `string` de dígitos e não `number`: id de página da plataforma passa de
+   * 2^53 em alguns casos, e virar número perderia precisão em silêncio.
+   */
+  meta_page_id: z
+    .string()
+    .regex(/^\d{1,32}$/, "O id da página é só de dígitos.")
+    .nullish(),
+  /**
+   * O token de PÁGINA, em texto claro, só nesta entrada (issue #3768).
+   *
+   * Write-only, como `secret`: a leitura da fonte devolve `has_meta_page_token`.
+   * Ele é cifrado por `encryptWebhookSecret` antes de tocar a coluna, e sem a
+   * chave mestra de cifra o PATCH RECUSA em vez de degradar para texto claro.
+   * `null` remove o token.
+   *
+   * O mínimo é 32 porque o que a plataforma emite é bem maior: um valor curto
+   * aqui é quase sempre um id de página ou um token truncado ao copiar.
+   */
+  meta_page_token: z.string().min(32).max(1000).nullish(),
+  /**
+   * A opção da fatia 1-bis: quando o aviso chega sem as respostas (o normal),
+   * buscar as respostas na Graph API com o token da página.
+   *
+   * Nasce DESLIGADA por DEFAULT na coluna (migration 9320), pelo critério da doc
+   * 235: no núcleo, desligada por padrão, quem administra liga. Ligar sem token
+   * é recusado na rota do PATCH — a opção não promete o que não pode cumprir.
+   */
+  meta_lead_retrieval: z.boolean().optional(),
 });
 
 export const createAutomationRuleSchema = z
@@ -773,7 +924,8 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarAntecedenciaTorta)
-  .superRefine(recusarLacoDeLead);
+  .superRefine(recusarLacoDeLead)
+  .superRefine(recusarCampoAlteradoForaDoGatilho);
 
 /**
  * "Dias de antecedência" do aniversário (#3726) é um inteiro de 0 a 365.

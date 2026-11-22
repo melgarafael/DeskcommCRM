@@ -139,3 +139,13 @@ describe("PATCH /api/v1/ai/agents/:id — nome repetido", () => {
     expect(res.status).toBe(200);
   });
 });
+
+it("o canal só pode ser escolhido na criação", async () => {
+  const banco = bancoFake(null);
+  deps.admin.mockReturnValue(banco);
+
+  const res = await PATCH(pedido({ channel: "voice" }), ctx);
+
+  expect(res.status).toBe(422);
+  expect(banco.escritas).toHaveLength(0);
+});

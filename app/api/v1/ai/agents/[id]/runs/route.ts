@@ -41,14 +41,25 @@
  *
  * Cursor pagination opaco base64 (created_at + id), como as demais rotas.
  * Filtro opcional ?status=.
+ *
+ * ## Sessão OU token de integração (Spec 33, R1)
+ *
+ * O token precisa de `config:read` e de papel admin (`tokenRole`), como o irmão
+ * `GET /ai/agents/:id`. A organização sai de `authz.organizationId` (linha do
+ * token, nunca do path). No ramo do token o cliente é a service role, que
+ * ignora a RLS: o `organization_id` da consulta abaixo deixou de ser reforço e
+ * é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +68,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const CALL_COLUMNS =
   "id, organization_id, agent_id, contact_id, purpose, status, error_code, error_message, " +
-  "input_tokens, output_tokens, cost_cents, latency_ms, created_at";
+  "input_tokens, output_tokens, cost_cents, latency_ms, created_at, preview_run_id";
 
 /**
  * O vocabulário de `llm_calls.status` ('ok' | 'erro') traduzido para o que a
@@ -89,13 +100,98 @@ interface LlmCallRow {
   cost_cents: number | null;
   latency_ms: number | null;
   created_at: string;
+  /**
+   * O run de prévia que causou esta chamada (#4426) — `null` em toda execução
+   * real. É por ele que a linha do teste encontra a pergunta e a resposta.
+   */
+  preview_run_id: string | null;
+}
+
+/** O que o run de PRÉVIA guarda (#4426) e a linha de teste passa a mostrar. */
+export interface ConteudoDoTeste {
+  input_text: string | null;
+  output_text: string | null;
+  /**
+   * As AÇÕES que o teste propôs (`ai_agent_runs.tool_calls`, escrito pelo POST
+   * `/test`). Sem elas o trace da linha de teste cai em "Sem trace disponível.":
+   * as propostas existiam no banco e nenhuma tela as lia.
+   */
+  tool_calls: unknown;
+}
+
+type ClienteDeSessao = SupabaseClient;
+
+/**
+ * Busca, para as linhas de TESTE desta página, o que o run de prévia guardou:
+ * a pergunta, a resposta e as ações propostas.
+ *
+ * ─── Por que uma segunda consulta, e por que por `id` ──────────────────────
+ *
+ * A aba lê `llm_calls` — é o motor que responde de verdade —, e o texto mora em
+ * `ai_agent_runs` (o único escritor vivo dela é a prévia). O elo é
+ * `llm_calls.preview_run_id`, então a busca é `in (ids)` sobre a PK: UMA
+ * consulta por página, indexada, e não um `select` por linha.
+ *
+ * O filtro por organização é obrigatório aqui, embora `id` já seja único: pela
+ * sessão a policy de `ai_agent_runs` repete o recorte, mas pelo token (Spec 33)
+ * o cliente é a service role, que ignora a RLS, e esta consulta passa a ser a
+ * única barreira entre a página e o run de outra organização.
+ *
+ * Falhar aqui NÃO derruba a lista: a aba continua com custo, tokens e status, e
+ * a linha do teste volta sem texto — o estado de antes do conserto. O aviso vai
+ * para o log, porque um texto que some em silêncio é o defeito que esta issue
+ * descreve.
+ */
+async function textosDoTeste(
+  supabase: ClienteDeSessao,
+  organizationId: string,
+  chamadas: readonly LlmCallRow[],
+  requestId: string,
+): Promise<Map<string, ConteudoDoTeste>> {
+  const mapa = new Map<string, ConteudoDoTeste>();
+  const ids = Array.from(
+    new Set(
+      chamadas
+        .filter((c) => c.purpose === "agent_preview" && c.contact_id === null)
+        .map((c) => c.preview_run_id)
+        .filter((id): id is string => typeof id === "string" && id !== ""),
+    ),
+  );
+  if (ids.length === 0) return mapa;
+
+  const { data, error } = await supabase
+    .from("ai_agent_runs")
+    .select("id, input_text, output_text, tool_calls")
+    .eq("organization_id", organizationId)
+    .in("id", ids);
+
+  if (error) {
+    logger.warn("[ai.runs] texto do teste não lido (a lista segue sem ele)", {
+      request_id: requestId,
+      runs: ids.length,
+      error: error.message,
+    });
+    return mapa;
+  }
+
+  for (const linha of (data ?? []) as Array<{ id: string } & ConteudoDoTeste>) {
+    mapa.set(linha.id, {
+      input_text: linha.input_text,
+      output_text: linha.output_text,
+      tool_calls: linha.tool_calls,
+    });
+  }
+  return mapa;
 }
 
 /**
  * `llm_calls` → o shape que a tela já consome. Exportada para o teste medir o
  * mapeamento sem precisar de banco (`tests/unit/aba-de-execucoes-le-o-motor-vivo`).
  */
-export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
+export function paraLinhaDeExecucao(
+  c: LlmCallRow,
+  texto: ConteudoDoTeste | null = null,
+): Record<string, unknown> {
   return {
     id: c.id,
     organization_id: c.organization_id,
@@ -119,7 +215,10 @@ export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
     // Nenhum dos três existe em `llm_calls`. Ver o cabeçalho: null é honesto,
     // zero seria uma afirmação falsa sobre o turno.
     steps_count: null,
-    tool_calls: null,
+    // #4426: a linha de TESTE recebe as ações que a prévia propôs — elas já
+    // estão gravadas em `ai_agent_runs.tool_calls` (é o que o drawer desenha no
+    // trace). Nada é copiado para `llm_calls`: a leitura é do mesmo run.
+    tool_calls: texto?.tool_calls ?? null,
     // `agent_preview` NÃO quer dizer teste: o rascunho do modo assistido
     // (`reply-drafts.ts`, `kind: "assisted"`) grava o mesmo purpose sobre conversa
     // real com contato real. O que separa o ensaio é o contato: o sandbox roda com
@@ -127,6 +226,10 @@ export function paraLinhaDeExecucao(c: LlmCallRow): Record<string, unknown> {
     // isso que chega a `llm_calls.contact_id`. Versão e run do teste não estão em
     // `llm_calls`.
     is_dry_run: c.purpose === "agent_preview" && c.contact_id === null,
+    // #4426: o conteúdo do teste, quando a linha é de teste. `null` em toda
+    // execução real — e não `""`, que a tela desenharia como caixa vazia.
+    input_text: texto?.input_text ?? null,
+    output_text: texto?.output_text ?? null,
     started_at: c.created_at,
     completed_at: c.created_at,
     created_at: c.created_at,
@@ -160,10 +263,18 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, supabase } = authz;
 
   const sp = req.nextUrl.searchParams;
   const parsed = runsListQuerySchema.safeParse({
@@ -179,13 +290,12 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
   let query = supabase
     .from("llm_calls")
     .select(CALL_COLUMNS)
-    // `organization_id` explícito mesmo com RLS: é a convenção do repo e o que
-    // sobrevive a alguém trocar o client por um admin um dia.
-    .eq("organization_id", activeOrg.orgId)
+    // `organization_id` explícito: pela sessão a RLS repete o filtro; pelo
+    // token o cliente é a service role e este é o único.
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -207,7 +317,13 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data, error } = await query;
   if (error) return fail("internal_error", t("Erro ao listar execuções."), 500, { requestId });
 
-  const rows = ((data ?? []) as unknown as LlmCallRow[]).map(paraLinhaDeExecucao);
+  const chamadas = (data ?? []) as unknown as LlmCallRow[];
+  // #4426: as linhas de TESTE levam a pergunta e a resposta; as reais ficam sem
+  // texto (o mapa só tem as prévias desta página).
+  const textos = await textosDoTeste(supabase, organizationId, chamadas, requestId);
+  const rows = chamadas.map((c) =>
+    paraLinhaDeExecucao(c, (c.preview_run_id && textos.get(c.preview_run_id)) || null),
+  );
   const hasMore = rows.length > q.limit;
   const slice = hasMore ? rows.slice(0, q.limit) : rows;
   const last = slice[slice.length - 1];

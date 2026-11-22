@@ -64,6 +64,24 @@ function psqlAssincrono(script: string): Promise<{ saida: string; ms: number }> 
   });
 }
 
+/**
+ * O mesmo script, com o tempo medido pelo RELÓGIO DO BANCO em volta da
+ * chamada, na mesma sessão; a última linha da saída é esse tempo, em ms.
+ *
+ * O tempo de parede do `psqlAssincrono` inclui subir `docker exec` + `psql`,
+ * e esse custo é da máquina, não da trava: numa VPS com CPU disputada (roubo
+ * do hipervisor) a subida sozinha passou de 700 ms, sem trava nenhuma. Com o
+ * relógio do banco, o caso do pulo mede só o que ele testa: se a chamada
+ * esperou a trava.
+ */
+function comTempoNoBanco(chamada: string): string {
+  return [
+    "select clock_timestamp() as t0 \\gset",
+    `${chamada};`,
+    "select round(extract(epoch from clock_timestamp() - :'t0'::timestamptz) * 1000);",
+  ].join("\n");
+}
+
 function semear() {
   sql(`
     delete from conversations where organization_id = '${ORG}';
@@ -130,12 +148,16 @@ describe("a conversa que nasce durante a trava do contato (issue #2748)", () => 
     // A MESMA mensagem de novo: a conversa existe, o upsert só conflita — não
     // há valor a calcular, e o gatilho não pode pagar a leitura com lock.
     const conflitando = await psqlAssincrono(
-      `select public.fn_upsert_wa_conversation('${ORG}', '${C1}', '${SESS}');`,
+      comTempoNoBanco(`select public.fn_upsert_wa_conversation('${ORG}', '${C1}', '${SESS}')`),
     );
     await segurando;
 
+    // O tempo é o do banco, só da chamada: esperar a trava seria esperar o
+    // commit da sessão concorrente (o `pg_sleep(2)`), sem a subida do processo.
+    const msNoBanco = lastLine(conflitando.saida.trim());
+    expect(msNoBanco, "a saída não trouxe o tempo medido no banco").toMatch(/^\d+$/);
     expect(
-      conflitando.ms,
+      Number(msNoBanco),
       "a mensagem em conversa existente esperou a trava — o pulo da leitura caiu",
     ).toBeLessThan(700);
     // E o bit segue o do contato (oupsert de mensagem não mexe nele).

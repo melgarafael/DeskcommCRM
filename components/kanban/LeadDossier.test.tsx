@@ -59,6 +59,16 @@ vi.mock("@/hooks/leads/useLeadTimeline", () => ({
   }),
 }));
 
+// A seção "Conversas e ligações dos números" (#3669) só existe quando há pessoa
+// relacionada. Este arquivo mede a CASCA do dossiê — ordem e recolhimento —, e
+// com a lista vazia a seção não entra: é assim que a ordem esperada abaixo
+// continua sendo a de três seções. A seção com relacionado tem teste próprio
+// (`dossie-dos-numeros.test.tsx`).
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
+
 vi.mock("./ContatoDoNegocio", () => ({ ContatoDoNegocio: () => <div data-peca="contato" /> }));
 vi.mock("./LeadFieldsForm", () => ({ LeadFieldsForm: () => <div data-peca="campos" /> }));
 vi.mock("./TarefasDoNegocio", () => ({ TarefasDoNegocio: () => <div data-peca="tarefas" /> }));
@@ -66,6 +76,7 @@ vi.mock("./PropostasDoNegocio", () => ({ PropostasDoNegocio: () => null }));
 vi.mock("./ConversaNoDossie", () => ({ ConversaNoDossie: () => null }));
 vi.mock("./ScoreSlot", () => ({ ScoreSlot: () => null }));
 vi.mock("./OwnerBadge", () => ({ OwnerBadge: () => null }));
+vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => <div data-peca="vendas" /> }));
 vi.mock("./LeadTimeline", () => ({
   LeadTimeline: ({ itens }: { itens: Array<{ id: string; type: string }> }) => (
     <ul data-peca="linha-do-tempo">
@@ -94,12 +105,12 @@ const LEAD = {
   owner_agent: null,
 } as unknown as Lead;
 
-function montarDossie() {
+function montarDossie(lead = LEAD) {
   return render(
     <LeadDossier
       open
       onOpenChange={() => undefined}
-      lead={LEAD}
+      lead={lead}
       pipelineId="funil-1"
       fieldDefs={[]}
       stageName="Novo"
@@ -128,23 +139,34 @@ function seisAtividades() {
   return ["a6", "a5", "a4", "a3", "a2", "a1"].map((id) => ({ id, type: "stage_changed" }));
 }
 
+it("mostra a campanha do próprio negócio e omite conta e palavra-chave ausentes", () => {
+  montarDossie({
+    ...LEAD,
+    source: "google_ads",
+    source_metadata: { ad_platform: "google_ads", utm_campaign: "Pesquisa de verão" },
+  });
+  expect(screen.getByText("Pesquisa de verão")).toBeInTheDocument();
+  expect(screen.queryByText("Conta do Google Ads")).toBeNull();
+  expect(screen.queryByText("Palavra-chave")).toBeNull();
+});
+
 describe("a ordem das seções do dossiê (#3181)", () => {
   beforeEach(() => {
     window.localStorage.clear();
     linhaDoTempo.itens = seisAtividades();
   });
 
-  it("⭐ a ordem padrão é Contato, Dados do negócio, Linha do tempo", () => {
+  it("⭐ a ordem padrão é Contato, Dados do negócio, Vendas, Linha do tempo", () => {
     montarDossie();
 
-    expect(ordemDasSecoes()).toEqual(["contato", "dados-do-negocio", "linha-do-tempo"]);
+    expect(ordemDasSecoes()).toEqual(["contato", "dados-do-negocio", "vendas", "linha-do-tempo"]);
 
     // A mesma ordem pelo TEXTO que o atendente lê, e não só pelos ids: o id
     // poderia estar certo com o título trocado de lugar. O seletor pega o
     // primeiro `<span>` do cabeçalho — o segundo é o sinal `+`/`−`, que é
     // `aria-hidden` mas continua no `textContent` do `<h3>`.
     const titulos = ordemDasSecoes().map((id) => secao(id).querySelector("h3 button span")?.textContent);
-    expect(titulos).toEqual(["Contato", "Dados do negócio", "Linha do tempo"]);
+    expect(titulos).toEqual(["Contato", "Dados do negócio", "Vendas", "Linha do tempo"]);
 
     // E os campos do negócio vêm ANTES de a linha do tempo começar: era
     // exatamente isso que a ordem antiga não entregava.
@@ -155,10 +177,10 @@ describe("a ordem das seções do dossiê (#3181)", () => {
     expect(campos!.compareDocumentPosition(timeline!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("as três seções nascem ABERTAS — sem preferência salva, ninguém esconde conteúdo", () => {
+  it("as seções nascem ABERTAS — sem preferência salva, ninguém esconde conteúdo", () => {
     montarDossie();
 
-    for (const id of ["contato", "dados-do-negocio", "linha-do-tempo"]) {
+    for (const id of ["contato", "dados-do-negocio", "vendas", "linha-do-tempo"]) {
       expect(secao(id).getAttribute("data-recolhida")).toBe("nao");
       const cabecalho = within(secao(id)).getByRole("button");
       expect(cabecalho, `a seção ${id} não se anuncia aberta`).toHaveAttribute("aria-expanded", "true");
@@ -318,5 +340,61 @@ describe("os campos do negócio continuam alcançáveis (#3181)", () => {
 
     expect(secao("dados-do-negocio").getAttribute("data-recolhida")).toBe("nao");
     expect(within(secao("dados-do-negocio")).getByRole("button", { expanded: true })).toBeInTheDocument();
+  });
+});
+
+describe("a barra de etapas no topo do negócio", () => {
+  // A barra em si tem teste próprio (`tests/unit/barra-de-etapas.test.tsx`).
+  // Aqui: o dossiê de verdade a monta no cabeçalho, nos DOIS formatos, com os
+  // dias contados pela entrada na etapa — e sem permissão de mover (o dublê do
+  // `usePermission` deste arquivo devolve `false`), ela só mostra.
+  const ETAPAS = [
+    { id: "e-1", name: "Etapa A", is_won: false, is_lost: false },
+    { id: "e-2", name: "Etapa B", is_won: false, is_lost: false },
+    { id: "e-3", name: "Etapa C", is_won: false, is_lost: false },
+    { id: "e-perda", name: "Perdemos", is_won: false, is_lost: true },
+  ];
+  const QUATRO_DIAS_E_POUCO = new Date(Date.now() - (4 * 24 + 2) * 3_600_000).toISOString();
+  const NA_ETAPA_B = { ...LEAD, stage_id: "e-2", stage_changed_at: QUATRO_DIAS_E_POUCO } as unknown as Lead;
+
+  function barra(): HTMLElement {
+    return screen.getByRole("navigation", { name: "Etapas do funil" });
+  }
+
+  it("no painel: etapas abertas, a atual com os dias, desfecho fora, sem botão", () => {
+    render(
+      <LeadDossier
+        open
+        onOpenChange={() => undefined}
+        lead={NA_ETAPA_B}
+        pipelineId="funil-1"
+        stageName="Etapa B"
+        etapas={ETAPAS}
+        onMudarEtapa={() => undefined}
+      />,
+    );
+    const itens = within(barra()).getAllByRole("listitem");
+    expect(itens.map((i) => i.textContent)).toEqual(["concluída: Etapa A", "Etapa B (4 dias)", "Etapa C"]);
+    expect(itens[1]!.getAttribute("aria-current")).toBe("step");
+    expect(within(barra()).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("na página inteira, o MESMO cabeçalho traz a barra", () => {
+    render(
+      <LeadDossier
+        variante="pagina"
+        lead={NA_ETAPA_B}
+        pipelineId="funil-1"
+        stageName="Etapa B"
+        etapas={ETAPAS}
+        onMudarEtapa={() => undefined}
+      />,
+    );
+    expect(within(barra()).getByText("Etapa B (4 dias)")).toBeInTheDocument();
+  });
+
+  it("sem a lista de etapas (calendário, lista), não há barra", () => {
+    montarDossie(NA_ETAPA_B);
+    expect(screen.queryByRole("navigation", { name: "Etapas do funil" })).not.toBeInTheDocument();
   });
 });

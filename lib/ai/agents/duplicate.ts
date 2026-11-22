@@ -170,6 +170,20 @@ export function nomeLivreDoAgente(original: string, ocupados: Iterable<string>):
   return nomeDaCopia(original, ocupados, { teto: TETO_NOME_DO_AGENTE, raizVazia: "Agente" });
 }
 
+/**
+ * `ai_agents.model` da cópia: `provedor/modelo` da versão copiada quando ela
+ * diz os dois; sem isso, o cadastro da origem (o comportamento de antes).
+ */
+export function modeloDoCadastroDaCopia(
+  srcAgent: Record<string, unknown>,
+  srcVersion: Record<string, unknown> | null,
+): unknown {
+  const provedor = typeof srcVersion?.provider === "string" ? srcVersion.provider.trim() : "";
+  const modelo = typeof srcVersion?.model === "string" ? srcVersion.model.trim() : "";
+  if (provedor && modelo) return `${provedor}/${modelo}`;
+  return srcAgent.model;
+}
+
 /** O 23505 do índice de nome — e só dele: outra violação única não é corrida de nome. */
 function ehNomeRepetido(erro: { code?: string; message?: string } | null): boolean {
   return erro?.code === "23505" && (erro.message ?? "").includes("ai_agents_name_unique");
@@ -177,7 +191,10 @@ function ehNomeRepetido(erro: { code?: string; message?: string } | null): boole
 
 export async function duplicateAgentWithVersion(
   admin: SupabaseClient,
-  input: { orgId: string; agentId: string; actorUserId: string; requireVersion: boolean },
+  // `actorUserId` é `null` quando quem duplica é um token de integração: a
+  // coluna `created_by` das duas tabelas aceita nulo, e id de token nunca vai
+  // para coluna de pessoa.
+  input: { orgId: string; agentId: string; actorUserId: string | null; requireVersion: boolean },
 ): Promise<DuplicateAgentResult> {
   const { orgId, agentId, actorUserId, requireVersion } = input;
 
@@ -250,7 +267,7 @@ export async function duplicateAgentWithVersion(
     return { ok: false, error: "agent_insert_failed", message: corpoLegado.error.message };
   }
   const receitaLegada = corpoLegado
-    ? mcpAgentDraftRecords({ orgId, userId: actorUserId }, corpoLegado.data)
+    ? mcpAgentDraftRecords({ orgId, userId: actorUserId ?? "" }, corpoLegado.data)
     : null;
 
   // A cópia GRAVA o provedor da origem, e gravar passa pela mesma régua do
@@ -275,7 +292,13 @@ export async function duplicateAgentWithVersion(
         // colisão o nome livre muda, e a receita guardou o da primeira leitura.
         name: nomeTentado,
         description: receitaLegada ? receitaLegada.agent.description : src.description,
-        model: receitaLegada ? receitaLegada.agent.model : src.model,
+        // O modelo do cadastro sai da VERSÃO copiada, na mesma forma da criação
+        // (`create-draft.ts`: `provedor/modelo`). `src.model` é o modelo do dia
+        // em que a ORIGEM foi criada — publicar ou editar a versão não o
+        // sincroniza —, e a cópia nasce sem versão publicada: o cartão da lista
+        // lê justamente esta coluna e anunciava o modelo padrão (ex.: anthropic ·
+        // claude-sonnet-4-6) para uma cópia que fala com a OpenAI.
+        model: receitaLegada ? receitaLegada.agent.model : modeloDoCadastroDaCopia(src, srcVersion),
         system_prompt: receitaLegada ? receitaLegada.agent.system_prompt : src.system_prompt,
         // A origem legada SEM versão vira `mcp_agent` junto com a v1 que a
         // acompanha (#1357): um `rag_bot` sem versão é invisível para o CRM e para
@@ -340,7 +363,8 @@ export async function duplicateAgentWithVersion(
     await admin
       .from("ai_agents")
       .update({ archived_at: new Date().toISOString() })
-      .eq("id", (newAgent as { id: string }).id);
+      .eq("id", (newAgent as { id: string }).id)
+      .eq("organization_id", orgId);
     return { ok: false, error: "version_insert_failed", message: versionErr?.message };
   }
 

@@ -53,6 +53,16 @@ vi.mock("@/lib/nuvemshop/api-client", () => ({
 }));
 vi.mock("@/lib/webhooks/secrets", () => ({ decryptWebhookSecret: vi.fn(async () => "tok") }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+// O cache curto da autorização entra na lista de passos: a ORDEM da invalidação
+// (depois do commit, e o login só depois de apagado) é o que se mede.
+vi.mock("@/lib/auth/cache-curto", () => ({
+  invalidarOrg: vi.fn((...ids: string[]) => {
+    passos.push(`cache.org:${ids.join(",")}`);
+  }),
+  invalidarUsuario: vi.fn((...ids: string[]) => {
+    passos.push(`cache.usuarios:${ids.join(",")}`);
+  }),
+}));
 
 import { audit } from "@/lib/audit";
 import { desligarCanaisInventariados, inventarioDaLapide } from "@/lib/channels/desligar-da-organizacao";
@@ -424,5 +434,38 @@ describe("interrompida depois do commit — a nova tentativa retoma", () => {
       excluirOrganizacao(admin as never, { ...entrada, confirmacao: "outra" }),
     ).rejects.toMatchObject({ codigo: "confirmacao_divergente" });
     expect(desligarCanaisInventariados).not.toHaveBeenCalled();
+  });
+});
+
+describe("o cache curto da autorização — quem era membro não segue entrando até o TTL", () => {
+  it("a organização é invalidada logo depois do commit, antes do mundo externo; o login, só depois de apagado", async () => {
+    const admin = adminFalso({ status: "suspended", removiveis: ["u1", "u2"], deleteUserFalhaPara: ["u2"] });
+    await excluirOrganizacao(admin as never, entrada);
+
+    const i = (p: string) => {
+      const n = passos.indexOf(p);
+      expect(n, `passo ${p} em ${passos.join(", ")}`).toBeGreaterThanOrEqual(0);
+      return n;
+    };
+    expect(i(`cache.org:${ORG}`)).toBeGreaterThan(i("rpc:fn_excluir_organizacao"));
+    expect(i(`cache.org:${ORG}`)).toBeLessThan(i("canais.desligar"));
+    // Só quem perdeu o login: o u2, que o GoTrue manteve, segue com a sessão dele.
+    expect(i("cache.usuarios:u1")).toBeGreaterThan(i("auth.delete:u1"));
+    expect(passos.filter((p) => p.startsWith("cache."))).toEqual([`cache.org:${ORG}`, "cache.usuarios:u1"]);
+  });
+
+  it("o banco recusou: nada é invalidado (a organização segue existindo)", async () => {
+    const admin = adminFalso({ status: "suspended", rpcErro: { code: "PT409", message: "x" } });
+    await expect(excluirOrganizacao(admin as never, entrada)).rejects.toBeInstanceOf(ExclusaoRecusada);
+    expect(passos.filter((p) => p.startsWith("cache."))).toEqual([]);
+  });
+
+  it("a retomada também invalida: a tentativa que morreu depois do commit pode não ter chegado lá", async () => {
+    const admin = adminFalso({
+      auditoria: [{ action: "organization.deleted", metadata: { slug: "acme", membros: ["u1"], inventario_externo: { canais: [] } } }],
+      semVinculo: ["u1"],
+    });
+    await excluirOrganizacao(admin as never, entrada);
+    expect(passos.filter((p) => p.startsWith("cache."))).toEqual([`cache.org:${ORG}`, "cache.usuarios:u1"]);
   });
 });

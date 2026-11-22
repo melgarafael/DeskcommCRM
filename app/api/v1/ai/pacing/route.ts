@@ -13,9 +13,12 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { soltarAdiadosDaSessao } from "@/lib/agent-engine/pacing/adiados-da-janela";
@@ -49,12 +52,29 @@ async function lerFusoDaOrganizacao(
   return (data as { timezone?: string | null } | null)?.timezone ?? null;
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req?: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "channel_knobs" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  // Quem chama, pelo portão que o trouxe. Sem Bearer, a sessão segue como era.
+  let quem: { idioma: Idioma; org: { orgId: string } };
+  if (req && extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_knobs",
+      role: "agent",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_pacing", requestId);
+    if (teto) return teto;
+    quem = { idioma: authz.idioma ?? IDIOMA_PADRAO, org: { orgId: authz.organizationId } };
+  } else {
+    const authz = await requireRole("agent", { requestId, resource: "channel_knobs" });
+    if (!authz.ok) return authz.response;
+    quem = { idioma: authz.user.idioma, org: { orgId: authz.org.orgId } };
+  }
+  const t = (texto: string) => traduzir(texto, quem.idioma);
+  const org = quem.org;
 
   const admin = createAdminClient();
   const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }, fusoDaOrg] = await Promise.all([

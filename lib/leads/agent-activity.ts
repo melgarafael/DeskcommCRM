@@ -6,7 +6,14 @@ import type { ActivityType } from "@/lib/leads/activity-vocabulary";
 import { podeOperarNoFunil } from "@/lib/leads/escopo-de-funil";
 
 export interface AgentActivityInput {
-  pool: pg.Pool;
+  /**
+   * `Pick<pg.Pool, "query">`, e não `pg.Pool`: quem escreve dentro de uma
+   * transação já tem o cliente na mão (`pg.PoolClient`) e precisa que a linha
+   * da timeline caia no MESMO commit da escrita que ela descreve (#4696 —
+   * o aviso do retorno descartado nasce junto do descarte). As duas superfícies
+   * têm a mesma assinatura de `query`.
+   */
+  pool: Pick<pg.Pool, "query">;
   organizationId: string;
   /** No harness, "lead" é o CONTATO (inbound-turn: leadId = job.contact_id). */
   contactId: string;

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useDensidadeDoQuadro } from "@/hooks/kanban/useDensidadeDoQuadro";
+import { useCorDaEtapaNoQuadro } from "@/hooks/kanban/useCorDaEtapaNoQuadro";
 
 function formatError(err: unknown, t: (texto: string) => string): string {
   if (err instanceof Error) return err.message;
@@ -41,6 +42,7 @@ import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { hrefDaPaginaDoNegocio } from "@/lib/leads/pagina-do-negocio";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
 
@@ -147,6 +149,18 @@ export function PipelinePageClient({
   const router = useRouter();
   const pathname = usePathname();
   /**
+   * O ENDEREÇO DA PÁGINA INTEIRA DO NEGÓCIO (#4151).
+   *
+   * Nasce AQUI porque é aqui que a URL do quadro existe: o `pathname` e a query
+   * string com o filtro (`lib/kanban/filters.ts`) — e é ela que o "Voltar" da
+   * página devolve. O quadro só recebe a função pronta: ele conhece o lead, não
+   * o endereço (ver `hrefDaPaginaDoNegocio`).
+   */
+  const hrefDoNegocio = useCallback(
+    (leadId: string) => hrefDaPaginaDoNegocio(leadId, pathname, searchParams),
+    [pathname, searchParams],
+  );
+  /**
    * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
    *
    * `router.replace` só muda o `useSearchParams` depois da ida ao servidor
@@ -217,6 +231,8 @@ export function PipelinePageClient({
    * coluna do funil nem parâmetro de URL.
    */
   const { compacta: cardsCompactos, alternar: alternarDensidade } = useDensidadeDoQuadro();
+  // Cor da etapa só na bolinha (padrão) ou na coluna inteira: preferência de quem olha.
+  const { naColuna: corNaColuna, alternar: alternarCorNaColuna } = useCorDaEtapaNoQuadro();
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -228,7 +244,12 @@ export function PipelinePageClient({
     const settings = data?.pipeline.settings;
     return (motivo: string) => categoriaDoMotivo(motivo, settings);
   }, [data?.pipeline.settings]);
-  const filteredLeads = data ? applyFilters(data.leads, filters, { categoriaDo }) : [];
+  // `useMemo` (#4788): um array novo a cada render (tecla da busca, clique de
+  // seleção) chegava ao quadro como `leads` novo e redesenhava todos os cards.
+  const filteredLeads = useMemo(
+    () => (data ? applyFilters(data.leads, filters, { categoriaDo }) : []),
+    [data, filters, categoriaDo],
+  );
   // NÃO é a conta do FilterBar: o seletor de filtro lista as três caixas
   // (`marcadoresDoCard`: negócio, contato e conversa), e esta lista, a da tag em
   // lote, só `lead.tags` — é lá que a ação em lote grava (#852). O `useMemo` é o
@@ -379,6 +400,21 @@ export function PipelinePageClient({
               onClick={alternarDensidade}
             >
               {t("Compacta")}
+            </Button>
+          )}
+          {/* A COR DA ETAPA NA COLUNA: mesma família da densidade ("como eu olho
+              este funil"), mesmo molde — interruptor, só no Quadro, preferência
+              gravada no navegador. Desligado é a bolinha de sempre. */}
+          {visao === "quadro" && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={corNaColuna}
+              title={t("Pintar a coluna com a cor da etapa")}
+              data-testid="cor-da-etapa-no-quadro"
+              onClick={alternarCorNaColuna}
+            >
+              {t("Cor na coluna")}
             </Button>
           )}
           {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
@@ -537,8 +573,10 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          hrefDoNegocio={hrefDoNegocio}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
           denso={cardsCompactos}
+          corNaColuna={corNaColuna}
           somenteLeitura={arquivado}
         />
       )}
@@ -550,6 +588,7 @@ export function PipelinePageClient({
           vocabulary={data?.pipeline.vocabulary ?? null}
           tagsExistentes={tagsDoQuadro}
           onClear={() => setSelectedIds([])}
+          tituloDe={(id) => data?.leads.find((l) => l.id === id)?.title}
         />
       )}
     </div>

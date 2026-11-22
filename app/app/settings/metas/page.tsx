@@ -16,8 +16,10 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { mesLocal } from "@/lib/metas/periodo";
 import { createClient } from "@/lib/supabase/server";
@@ -38,35 +40,43 @@ export default async function MetaDeVendasPage() {
 
   const mes = mesLocal();
   const supabase = await createClient();
+  // Todas as metas do MÊS (empresa, vendedor, funil): o formulário mostra a que
+  // já existe para a combinação escolhida em vez de fingir campo vazio.
   const { data } = await supabase
     .from("crm_metas")
-    .select("alvo")
+    .select("indicador, vendedor_id, alvo")
     .eq("organization_id", activeOrg.orgId)
-    .eq("indicador", "vendas_ganhas")
-    .is("pipeline_id", null)
     .eq("periodo", `${mes}-01`)
-    .maybeSingle();
-  const alvoAtual = ((data as { alvo?: number } | null)?.alvo ?? null) as number | null;
+    .is("pipeline_id", null);
+  const metas = ((data ?? []) as Array<{ indicador: string; vendedor_id: string | null; alvo: number }>)
+    .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
+    .map((m) => ({
+      indicador: m.indicador as "vendas_ganhas" | "valor_vendido",
+      vendedor_id: m.vendedor_id ?? null,
+      alvo: Number(m.alvo),
+    }));
+  // A unidade do alvo em valor: a moeda que a organização declarou (cai em BRL,
+  // o default da coluna, se a linha não vier).
+  const moeda = await moedaDaOrganizacao(supabase, activeOrg.orgId);
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Meta de vendas")}</h1>
+      <CabecalhoDaSubTela className="flex flex-col gap-2" titulo={t("Meta de vendas")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
-            "Quanto a empresa quer vender neste mês. O Desempenho passa a mostrar o quanto já foi feito contra esse número — o realizado, o percentual e o quanto falta.",
+            "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
-      <FormularioDaMeta mes={mes} alvoAtual={alvoAtual} />
+      <FormularioDaMeta mes={mes} metas={metas} moeda={moeda} />
 
       <p className="max-w-2xl text-xs text-muted-foreground">
         {t(
-          "Nesta primeira versão a meta é da EMPRESA inteira, para a quantidade de vendas ganhas: o que conta é o negócio fechado como ganho dentro do mês. Meta por vendedor, por período maior e por funil ficam para as próximas fatias.",
+          "A meta da empresa conta os negócios fechados como ganhos no mês; a do vendedor conta só os dele. Metas por funil e por trimestre ficam para as próximas fatias.",
         )}
       </p>
     </div>

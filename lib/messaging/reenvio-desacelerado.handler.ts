@@ -44,12 +44,20 @@ import { ApiError } from "@/lib/api/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
+import { nomeOriginalDaMensagem } from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import type { SendMessageInput } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { EVENTO_REENVIO_DESACELERADO, reenvioDesaceleradoAtende } from "./reenvio-desacelerado";
+import {
+  EVENTO_REENVIO_DESACELERADO,
+  MAX_REENVIOS,
+  reenvioDesaceleradoAtende,
+  TETO_DA_ESPERA_DA_FILA_MS,
+} from "./reenvio-desacelerado";
+
+export { MAX_REENVIOS, TETO_DA_ESPERA_DA_FILA_MS };
 
 const CONSUMER_KEY = "messages.reenvio_desacelerado";
 export const ESPERA_PADRAO_MS = 60_000;
@@ -59,11 +67,8 @@ export const ESPERA_MAXIMA_MS = 5 * 60_000;
 export const ESPERA_DA_FILA_MS = 15_000;
 /** Quanto a mensagem do agente espera o turno que ainda é dono dela. */
 export const ESPERA_DO_TURNO_MS = 30_000;
-export const MAX_REENVIOS = 4;
 /** A mensagem da frente só segura a de trás se foi escrita há pouco — uma presa há dias não trava a conversa. */
 const JANELA_DA_FILA_MS = 30 * 60_000;
-/** E a de trás não espera a da frente para sempre: passado isto desde o pedido, segue sozinha. */
-export const TETO_DA_ESPERA_DA_FILA_MS = 10 * 60_000;
 
 const TIPOS_DE_MIDIA = new Set(["image", "audio", "video", "document"]);
 
@@ -121,10 +126,14 @@ function corpoDoReenvio(organizationId: string, m: LinhaDaMensagem): SendMessage
     m.media_storage_path &&
     isMediaPathOwnedBy(m.media_storage_path, organizationId, m.conversation_id)
   ) {
+    // O nome que a pessoa deu ao arquivo (#4457), lido da própria linha: sem
+    // ele, o documento sairia com o nome do objeto no bucket (`out-<uuid>.pdf`).
+    const nome = nomeOriginalDaMensagem(m.metadata);
     return {
       conversation_id: m.conversation_id,
       type: m.type,
       media_storage_path: m.media_storage_path,
+      ...(nome ? { media_filename: nome } : {}),
       ...(m.media_mime ? { media_mime: m.media_mime } : {}),
       ...(m.media_size_bytes ? { media_size_bytes: m.media_size_bytes } : {}),
       ...(m.body ? { body: m.body } : {}),

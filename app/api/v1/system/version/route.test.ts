@@ -33,6 +33,11 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+const resend = vi.hoisted(() => ({ configurada: false }));
+vi.mock("@/lib/email/resend", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  isEmailConfigured: async () => resend.configurada,
+}));
 
 const OWNER = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -89,6 +94,7 @@ beforeEach(() => {
   versionSelectError = null;
   runSelectError = null;
   smtpRow = null;
+  resend.configurada = false;
   smtpSelectError = null;
   versionRow = {
     id: 1,
@@ -1070,6 +1076,16 @@ describe("GET /api/v1/system/version — o estado do SMTP da instalação", () =
     expect(body.data.smtp_configured).toBe(true);
   });
 
+  it("⭐ servidor único sem SMTP, com a Resend: smtp_configured: true — o kit a leva ao login (#3039)", async () => {
+    vi.stubEnv("SINGLE_SERVER", "1");
+    resend.configurada = true;
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+
+    const body = await corpo();
+
+    expect(body.data.smtp_configured).toBe(true);
+  });
+
   it("banco que NÃO respondeu não vira 'sem SMTP' — soluço não é falta de configuração", async () => {
     // Quem lê o aviso vai configurar uma coisa que talvez já esteja lá: "não sei"
     // não pode sair da rota disfarçado de "não tem".
@@ -1177,5 +1193,108 @@ describe("capacidade de força apresentada ao dono", () => {
     vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
     const { GET } = await import("./route");
     expect((await (await GET(get())).json()).data.force_update_supported).toBe(false);
+  });
+});
+
+/**
+ * #4955 — A RELEASE QUE SAIU E O HOST AINDA NÃO PÔDE OFERECER.
+ *
+ * O batimento carrega DUAS verdades sobre a mesma pergunta: `latest_version`
+ * (o que o host ANUNCIA, e o que o botão instala) e
+ * `runtime_confirmation.published_release` (o que ele VIU publicado). Nos dois
+ * primeiros minutos de uma release — ou enquanto o run de publicação está pela
+ * metade — elas divergem de propósito: a etiqueta existe, a imagem ainda não.
+ *
+ * Medido na instalação 1.116.0: `published_release: v1.118.0` com
+ * `latest_version` vazio saía da rota como `update_available: false` +
+ * `official_latest_version: v1.118.0`, e a tela dizia "É a mais recente. Não há
+ * nada a fazer." logo abaixo de "Última release oficial: 1.118.0".
+ *
+ * A rota passa a nomear o preparo (`pending_release_version`) — e só quando a
+ * comparação foi feita de verdade. O CONTROLE importa tanto quanto o caso: sem
+ * ele, marcar tudo como "preparando" passaria, e a tela voltaria a mentir pelo
+ * outro lado.
+ */
+describe("#4955 — release publicada que ainda não pode ser oferecida", () => {
+  async function estado() {
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("./route");
+    return (await (await GET(get())).json()).data;
+  }
+
+  it("⭐ published_release preenchido com latest_version vazio: o preparo tem nome", async () => {
+    versionRow.current_version = "old-checkout";
+    versionRow.latest_version = "";
+    versionRow.runtime_confirmation = {
+      ...confirmedRuntime("1.116.0"),
+      published_release: "v1.118.0",
+    };
+
+    const data = await estado();
+
+    expect(data.current_version).toBe("1.116.0");
+    expect(data.official_latest_version).toBe("v1.118.0");
+    expect(data.pending_release_version).toBe("v1.118.0");
+    // O botão continua fora: sem imagem, clicar pararia o sistema para instalar
+    // o que não existe. O que muda é a tela poder DIZER por que ele não está aí.
+    expect(data.update_available).toBe(false);
+  });
+
+  it("os dois formatos preenchidos: há atualização e NADA pendente", async () => {
+    versionRow.current_version = "old-checkout";
+    versionRow.latest_version = "v1.118.0";
+    versionRow.runtime_confirmation = {
+      ...confirmedRuntime("1.116.0"),
+      published_release: "v1.118.0",
+    };
+
+    const data = await estado();
+
+    expect(data.update_available).toBe(true);
+    expect(data.pending_release_version).toBeNull();
+  });
+
+  it("CONTROLE — published_release igual à versão em execução não vira 'preparando'", async () => {
+    versionRow.current_version = "old-checkout";
+    versionRow.latest_version = "";
+    versionRow.runtime_confirmation = {
+      ...confirmedRuntime("1.116.0"),
+      published_release: "v1.116.0",
+    };
+
+    const data = await estado();
+
+    expect(data.pending_release_version).toBeNull();
+    expect(data.update_available).toBe(false);
+  });
+
+  it("CONTROLE — host que não conseguiu comparar diz 'não sei', não 'está sendo preparada'", async () => {
+    versionRow.current_version = "old-checkout";
+    versionRow.latest_version = "";
+    versionRow.compare_failed = true;
+    versionRow.runtime_confirmation = {
+      ...confirmedRuntime("1.116.0"),
+      published_release: "v1.118.0",
+    };
+
+    const data = await estado();
+
+    expect(data.compare_failed).toBe(true);
+    expect(data.pending_release_version).toBeNull();
+  });
+
+  it("CONTROLE — batimento antigo, sem published_release: uma fonte só, sem contradição", async () => {
+    // Kit velho continua entendido: sem `published_release`, `official_latest_version`
+    // cai no MESMO `latest_version` que `update_available` usa — as duas frases da
+    // tela nunca podem divergir, porque são a mesma.
+    versionRow.current_version = "1.116.0";
+    versionRow.latest_version = "";
+    versionRow.runtime_confirmation = null;
+
+    const data = await estado();
+
+    expect(data.official_latest_version).toBe("");
+    expect(data.pending_release_version).toBeNull();
+    expect(data.update_available).toBe(false);
   });
 });

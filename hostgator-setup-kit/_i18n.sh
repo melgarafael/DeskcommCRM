@@ -108,7 +108,7 @@ y vuelve a ejecutar. En Public Hostnames, apunta tu dominio a http://app:3000."
   ["⚠ falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — não ativei o cron das automações."]="⚠ Falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — no activé el cron de las automatizaciones."
   ["⚠ falta NEXT_PUBLIC_APP_URL — não ativei o cron das automações."]="⚠ Falta NEXT_PUBLIC_APP_URL — no activé el cron de las automatizaciones."
   ["⚠ não consegui gravar {1} — não ativei o cron das automações."]="⚠ No pude guardar {1} — no activé el cron de las automatizaciones."
-  ["✓ automações ativas (cron do event-log-drain, a cada minuto)"]="✓ Automatizaciones activas (cron del event-log-drain, cada minuto)"
+  ["✓ automações ativas (vigia do event-log-drain; quem drena é o contêiner scheduler)"]="✓ Automatizaciones activas (vigía del event-log-drain; quien drena es el contenedor scheduler)"
   ["Higienizando eventos pendentes antigos (1ª ativação do cron)"]="Depurando eventos pendientes antiguos (1.ª activación del cron)"
   ["✓ eventos pendentes com mais de 7 dias marcados como concluídos"]="✓ Eventos pendientes con más de 7 días marcados como concluidos"
   ["⚠ não consegui higienizar eventos antigos — confira manualmente a tabela event_log se necessário."]="⚠ No pude depurar eventos antiguos — revisa manualmente la tabla event_log si hace falta."
@@ -491,7 +491,7 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
 
   # ── install.sh: telemetria_no_banner() ───────────────────────────────────
   ["  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação."]="  Telemetría: DESACTIVADA — ningún reporte de error sale de esta instalación."
-  ["  Para ligar, apague a linha SENTRY_DSN do .env e rode: {1}"]="  Para activarla, borra la línea SENTRY_DSN del .env y ejecuta: {1}"
+  ["  Para ligar, ponha SENTRY_DSN=comunidade (ou o seu DSN) no .env e rode: {1}"]="  Para activarla, pon SENTRY_DSN=comunidade (o tu DSN) en el .env y ejecuta: {1}"
   ["  Telemetria: LIGADA — só relatórios de erro anonimizados vão ao Sentry do"]="  Telemetría: ACTIVADA — solo reportes de error anonimizados van al Sentry del"
   ["  projeto. Para desligar, ponha SENTRY_DSN='off' no .env e rode: {1}"]="  proyecto. Para desactivarla, pon SENTRY_DSN='off' en el .env y ejecuta: {1}"
 
@@ -503,6 +503,7 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["e-mail:"]="correo:"
   ["senha:"]="contraseña:"
   ["(a que você definiu)"]="(la que definiste)"
+  ["(a que você definiu ou a de OWNER_PASSWORD no .env da pasta do CRM)"]="(la que definiste o la de OWNER_PASSWORD en el .env de la carpeta del CRM)"
   ["Conecte o WhatsApp (2º passo do onboarding):"]="Conecta WhatsApp (2.º paso de la configuración inicial):"
   ["Deixe o WhatsApp JÁ ABERTO em Configurações → Aparelhos conectados"]="Deja WhatsApp YA ABIERTO en Configuración → Dispositivos vinculados"
   ["antes de abrir a tela — o QR code vale só uns minutos. Se expirar,"]="antes de abrir la pantalla — el código QR dura solo unos minutos. Si expira,"
@@ -541,6 +542,9 @@ identifica su red y pon TRAEFIK_NETWORK=<nombre> en el .env antes de volver a in
   ["Não sei sondar a rota pública do Supabase sem a URL do domínio e a anon key. Confira NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no .env."]="No sé sondear la ruta pública de Supabase sin la URL del dominio y la anon key. Revisa NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en el .env."
   ["A rota pública do Supabase não pegou no Traefik: {1} devolveu {2}, e quem respondeu foi o CRM, não o GoTrue do Supabase. As etiquetas de /auth/v1/* não chegaram ao Envoy (issue #2099) — sem elas a instalação termina verde e o login só falha no primeiro acesso. Confira REVERSE_PROXY=traefik no .env e as etiquetas de hostgator-setup-kit/supabase-single-server.override.yml, e rode a instalação de novo."]="La ruta pública de Supabase no quedó publicada en Traefik: {1} devolvió {2}, y quien respondió fue el CRM, no GoTrue de Supabase. Las etiquetas de /auth/v1/* no llegaron al Envoy (issue #2099) — sin ellas la instalación termina en verde y el login solo falla en el primer acceso. Revisa REVERSE_PROXY=traefik en el .env y las etiquetas de hostgator-setup-kit/supabase-single-server.override.yml, y ejecuta la instalación de nuevo."
   ["Não consegui provar a rota pública do Supabase: {1} devolveu {2}, e o esperado era 200 do GoTrue. A instalação segue, porque isso costuma ser o domínio ainda sem certificado/DNS. Se o login falhar, pode ser a rota do Supabase no Traefik que não pegou (issue #2099): confira REVERSE_PROXY=traefik no .env, o cadeado de {3} e as etiquetas de hostgator-setup-kit/supabase-single-server.override.yml."]="No pude probar la ruta pública de Supabase: {1} devolvió {2}, y lo esperado era 200 de GoTrue. La instalación sigue, porque esto suele ser el dominio todavía sin certificado/DNS. Si el login falla, puede ser la ruta de Supabase en Traefik que no quedó publicada (issue #2099): revisa REVERSE_PROXY=traefik en el .env, el candado de {3} y las etiquetas de hostgator-setup-kit/supabase-single-server.override.yml."
+  ["  ⚠ Não converti o consentimento de telemetria: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo."]="  ⚠ No convertí el consentimiento de telemetría: no puedo escribir en el .env. Revisa el permiso del archivo y ejecuta la actualización de nuevo."
+  ["  ⚠ Não converti o consentimento de telemetria no .env; a telemetria segue como estava. Para converter à mão: SENTRY_DSN=comunidade."]="  ⚠ No convertí el consentimiento de telemetría en el .env; la telemetría sigue como estaba. Para convertir a mano: SENTRY_DSN=comunidade."
+  ["✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)"]="✓ consentimiento de telemetría conservado: el .env pasó de SENTRY_DSN vacío a SENTRY_DSN=comunidade (vacío ahora significa desactivado; se aplica en el próximo reinicio de la app)"
 )
 fi
 

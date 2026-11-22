@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { podeCriarPessoaComSenha } from "@/lib/auth/criar-pessoa-com-senha";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -13,6 +14,7 @@ import { SectorsClient } from "./_components/SectorsClient";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Equipe" };
@@ -52,6 +54,24 @@ export default async function TeamPage({
   const activeOrg = await resolveActiveOrg(user);
   const isAdmin = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // A porta de "criar com senha" só aparece onde a rota aceitaria (doc 310 A).
+  const criaComSenha = isAdmin && (await podeCriarPessoaComSenha(user, createAdminClient()));
+  // #4864: o menu CRU da empresa, lido da linha da organização como faz a tela
+  // de Configurações. `activeOrg.interface_settings` NÃO serve: ele já vem
+  // combinado com o vínculo de QUEM ESTÁ VENDO (`combinarInterfaces` em
+  // `lib/auth/server.ts`), e um admin com menu próprio mais curto esconderia do
+  // seletor portas que o membro enxerga — e mostraria como "Padrão do sistema"
+  // uma tela inicial já gravada fora do menu dele.
+  const interfaceDaEmpresa =
+    isManager && activeOrg
+      ? (
+          await (await createClient())
+            .from("organizations")
+            .select("interface_settings")
+            .eq("id", activeOrg.orgId)
+            .maybeSingle()
+        ).data?.interface_settings
+      : undefined;
 
   return (
     <div className="flex h-full flex-col gap-6 md:p-6">
@@ -63,9 +83,19 @@ export default async function TeamPage({
           </p>
         </div>
         {isAdmin ? (
-          <Button asChild className="shrink-0">
-            <Link href="/app/team/invite">{t("Convidar membros")}</Link>
-          </Button>
+          // DUAS portas para a mesma pergunta ("quem entra na equipe"), lado a
+          // lado e com peso diferente: convidar é o caminho de sempre; criar com
+          // senha é o que funciona sem SMTP nem caixa postal (#3876).
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {criaComSenha ? (
+              <Button asChild variant="outline">
+                <Link href="/app/team/novo">{t("Criar usuário com senha")}</Link>
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href="/app/team/invite">{t("Convidar membros")}</Link>
+            </Button>
+          </div>
         ) : null}
       </header>
 
@@ -86,7 +116,14 @@ export default async function TeamPage({
             que fazer, como a da aba de atendimento.
           */}
           {isManager ? (
-            <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+            <TeamMembersClient
+              currentUserId={user.id}
+              canManage={isAdmin}
+              // #4864: as opções de "tela inicial" do membro são a interseção com
+              // o menu da EMPRESA, não com o do gerente que está vendo — o
+              // vínculo escolhe menos, nunca mais.
+              interfaceDaEmpresa={interfaceDaEmpresa}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {t(

@@ -168,4 +168,50 @@ describe("recibo técnico de automação não guarda a frase do provedor", () =>
       expect(JSON.stringify(seguro)).not.toContain(PESSOAL);
     },
   );
+
+  /**
+   * #4297 — a recusa do #917 chega ao recibo como CÓDIGO.
+   *
+   * A ação `create_or_move_lead` passou a devolver `ApiError.code` no lugar da
+   * frase do erro; este caso prende o outro lado do contrato: o recibo NÃO
+   * pode trocar `lost_reason_required` por `internal_error` — era isso que
+   * fazia a aba Atividade mostrar "erro interno" para uma regra que só precisava
+   * do motivo da perda.
+   */
+  it("a recusa de motivo da perda chega à Atividade com o próprio código", () => {
+    const seguro = resultadoParaRecibo({
+      type: "create_or_move_lead",
+      status: "failed",
+      error: "lost_reason_required",
+    });
+    expect(seguro.error).toBe("lost_reason_required");
+  });
+
+  it.each(["lost_reason_invalid", "required_fields_missing", "stage_pipeline_mismatch"])(
+    "as demais recusas de negócio dos caminhos de lead também sobrevivem (%s)",
+    (codigo) => {
+      expect(resultadoParaRecibo({ type: "create_or_move_lead", status: "failed", error: codigo }).error).toBe(
+        codigo,
+      );
+    },
+  );
+
+  /**
+   * A CONTRAPROVA: a allowlist continua FECHADA. Texto livre — inclusive o que
+   * parece código e carrega dado de pessoa — segue virando `internal_error`.
+   * Sem este caso, "acrescentar códigos" poderia ter afrouxado a régua sem
+   * ninguém notar.
+   */
+  it("texto livre continua internal_error — a allowlist não afrouxou (#4297)", () => {
+    for (const valor of [
+      "Escolha o “Motivo da perda” nesta ação: a etapa de destino fecha o negócio como perdido.",
+      "cliente_joana_11999990000",
+      "motivo_da_perda_do_cliente",
+      PESSOAL,
+    ]) {
+      expect(resultadoParaRecibo({ type: "create_or_move_lead", status: "failed", error: valor }).error).toBe(
+        "internal_error",
+      );
+    }
+  });
 });

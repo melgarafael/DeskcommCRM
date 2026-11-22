@@ -17,10 +17,11 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { auditMcpToolCall } from "./audit";
 import { McpAuthError, ensureRole, ensureScope, type McpAuthResult } from "./auth";
+import { recusaDaChamada, rotuloDaRecusa } from "./desfecho-da-chamada";
 import { verificarTetoMcp } from "./rate-limit";
 import { tamanhoDoResultado } from "./resultado-bytes";
 import { allTools } from "./tools";
-import { deCapacidadeDesligada, deModuloDesligado } from "./tools/catalog";
+import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "./tools/catalog";
 import { higienizarUuidsDeAterro } from "./uuid-de-aterro";
 import type { McpContext } from "./types";
 
@@ -42,6 +43,27 @@ function summarizeResult(result: unknown): string | undefined {
  * módulo desligado nem é registrada — o cliente externo não a vê na lista.
  * Ausente vale como nenhum, pela mesma razão de `pickToolsFromMcp`.
  */
+/**
+ * As DICAS de risco que o protocolo MCP leva ao cliente (`annotations`). É por
+ * elas que um cliente como o ChatGPT decide pedir confirmação antes de chamar:
+ * `readOnlyHint` para o que só consulta, `destructiveHint` para o que o
+ * catálogo marca `critico` (publicar ou reverter um assistente, desligar uma
+ * entrada de contatos…). A fonte é o MESMO risco que a tela mostra a quem
+ * configura (`lib/mcp/tools/catalogo`), não uma segunda lista.
+ */
+export function dicasDaFerramenta(
+  nome: string,
+  categoria: string,
+): { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: boolean } {
+  const entrada = catalogEntry(nome);
+  const somenteLeitura = categoria === "read";
+  return {
+    readOnlyHint: somenteLeitura,
+    destructiveHint: !somenteLeitura && entrada?.risco === "critico",
+    openWorldHint: false,
+  };
+}
+
 export function createMcpServer(
   auth: McpAuthResult,
   requestId: string,
@@ -64,6 +86,7 @@ export function createMcpServer(
       {
         description: tool.description,
         inputSchema: tool.inputSchema,
+        annotations: dicasDaFerramenta(tool.name, tool.category),
       },
       async (rawArgs) => {
         const startedAt = Date.now();
@@ -117,20 +140,34 @@ export function createMcpServer(
           // sem achado era `success: true` por aqui e `false` por lá.
           const motivoDoVazio = tool.motivoDoVazio?.(result) ?? null;
 
+          // RECUSA TAMBÉM NÃO É SUCESSO (#4343). Medido na prova do #3328:
+          // `crm_create_lead` recusou com `{ erro: "sem_destino" }`, nenhum
+          // negócio nasceu, e esta linha gravava `success: true` — a trilha
+          // afirmava uma mutação que não aconteceu. A régua é a mesma dos
+          // outros dois ingressos (`lib/mcp/desfecho-da-chamada.ts`), não uma
+          // lista de ferramentas: qualquer recusa no formato do catálogo conta.
+          const recusa = recusaDaChamada(result);
+
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
             args: argsAudit,
             durationMs,
-            success: motivoDoVazio === null,
+            success: motivoDoVazio === null && recusa === null,
             resultSummary: summarizeResult(result),
             // Mede o texto de `content` (o que a ferramenta devolve ao modelo). O `structuredContent`,
             // mais abaixo, leva o mesmo objeto para o cliente que prefere dado estruturado e NÃO entra
-            // nesta medida: um cliente que lê os dois campos recebe cerca de o dobro do que a coluna diz.
+            // nesta medida: um cliente que lê os dois campos recebe cerca do dobro do que a coluna diz.
             resultBytes: tamanhoDoResultado(result),
-            ...(motivoDoVazio === null
-              ? {}
-              : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
+            ...(recusa !== null
+              ? {
+                  errorMessage: rotuloDaRecusa(recusa),
+                  desfecho: "recusa" as const,
+                  ...(recusa.codigo === null ? {} : { motivo: recusa.codigo }),
+                }
+              : motivoDoVazio === null
+                ? {}
+                : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           });
 
           return {

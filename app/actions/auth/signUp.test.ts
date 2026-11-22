@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
+import { SENHA_LONGA_DEMAIS } from "@/lib/auth/schemas";
 
 // O client admin que `criarContaDeConvite` usa quando o GoTrue está com o
 // cadastro público fechado (#1653). Hoisted porque o factory do `vi.mock` roda
@@ -476,5 +477,71 @@ describe("signUp — o idioma e o fuso de quem se cadastra viajam até a empresa
     const dados = dadosGravados();
     expect(dados).not.toHaveProperty("idioma_do_cadastro");
     expect(dados).not.toHaveProperty("fuso_do_cadastro");
+  });
+});
+
+/**
+ * ─── O TETO DA SENHA NO CADASTRO (issue #4313) ──────────────────────────────
+ *
+ * O mesmo limite do bcrypt vale nos três caminhos em que a pessoa escolhe a
+ * própria senha. A tela de nova senha passou a recusar 73 bytes no PR #4328;
+ * o cadastro e o aceite de convite ficaram com o buraco aberto e terminavam no
+ * "Não foi possível criar a conta. Tente novamente." — com o 400 do GoTrue
+ * (`validation_failed`, "Password cannot be longer than 72 characters") só na
+ * trilha. Aqui a recusa acontece no schema, antes do provedor, e o erro do
+ * provedor tem código próprio, como em `updatePassword`.
+ */
+describe("signUp — senha acima de 72 bytes (#4313)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    signUpDoProvedor.mockReset();
+    // O mock de `createClient` é compartilhado com os casos acima: sem limpar,
+    // o "não foi chamado" mediria as chamadas deles, não as deste caso.
+    vi.mocked(createClient).mockClear();
+    vi.mocked(headers).mockResolvedValue({
+      get: (k: string) => (k === "x-forwarded-for" ? `198.51.100.${n % 250}` : null),
+    } as never);
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { signUp: signUpDoProvedor },
+    } as never);
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
+  });
+
+  const senha = (qtd: number) => `Aa1!${"b".repeat(qtd - 4)}`;
+
+  it("80 caracteres no cadastro não chegam ao GoTrue e a mensagem é a nova", async () => {
+    const { signUp } = await import("./signUp");
+    const senhaLonga = senha(80);
+
+    const res = await signUp({ ...entrada(), password: senhaLonga, password_confirm: senhaLonga });
+
+    expect(res).toMatchObject({ ok: false, error: "validation_error" });
+    expect((res as { details?: Record<string, string[]> }).details?.password).toContain(
+      SENHA_LONGA_DEMAIS,
+    );
+    // Nada saiu daqui: nem cliente do Supabase, nem chamada ao provedor.
+    expect(createClient).not.toHaveBeenCalled();
+    expect(signUpDoProvedor).not.toHaveBeenCalled();
+  });
+
+  it("o 400 de tamanho do GoTrue vira password_too_long, não o genérico", async () => {
+    // O corpo exato medido no GoTrue local: 400, validation_failed.
+    signUpDoProvedor.mockResolvedValue({
+      data: { user: null, session: null },
+      error: {
+        message: "Password cannot be longer than 72 characters",
+        code: "validation_failed",
+        status: 400,
+      },
+    });
+
+    const { signUp } = await import("./signUp");
+    // 72 bytes passam no schema e chegam ao provedor: é o caminho em que as
+    // duas réguas podem divergir.
+    const noLimite = senha(72);
+    const res = await signUp({ ...entrada(), password: noLimite, password_confirm: noLimite });
+
+    expect(res).toEqual({ ok: false, error: "password_too_long" });
+    expect(signUpDoProvedor).toHaveBeenCalledTimes(1);
   });
 });

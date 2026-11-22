@@ -13,6 +13,7 @@
  *   - caminho gravado de OUTRA organização nunca é assinado.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 import { DELETE, GET, POST } from "@/app/api/v1/settings/sons/route";
@@ -23,6 +24,13 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// `resolveAuthDual` (ramo de sessão) cria o cliente de sessão; o token não é usado aqui.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const OUTRA = "99999999-9999-4999-8999-999999999999";
@@ -96,7 +104,7 @@ function upload(tipo: string, bytes: Uint8Array<ArrayBuffer>, nome = "som.mp3", 
   const form = new FormData();
   form.append("tipo", tipo);
   form.append("arquivo", new File([new Uint8Array(bytes)], nome));
-  return new NextRequest("http://localhost/api/v1/settings/sons", { method: "POST", body: form, headers });
+  return pedidoComTamanho("http://localhost/api/v1/settings/sons", { method: "POST", body: form, headers });
 }
 
 beforeEach(() => {
@@ -107,13 +115,13 @@ beforeEach(() => {
 describe("POST /api/v1/settings/sons", () => {
   it("exige manager — e é a rota que diz, não a tela", async () => {
     banco({});
-    await POST(upload("venda", WAV));
+    await POST(await upload("venda", WAV));
     expect(vi.mocked(requireRole).mock.calls[0]![0]).toBe("manager");
   });
 
   it("aceita pelos bytes: WAV com nome .mp3 entra como .wav, sob a pasta da organização", async () => {
     const b = banco({ outra_chave: 1, sons_de_aviso: { pessoa: `${ORG}/pessoa-x.ogg` } });
-    const r = await POST(upload("venda", WAV, "qualquer.mp3"));
+    const r = await POST(await upload("venda", WAV, "qualquer.mp3"));
     expect(r.status).toBe(201);
     expect(b.subidos).toHaveLength(1);
     expect(b.subidos[0]).toMatch(new RegExp(`^${ORG}/venda-[0-9a-f-]{36}\\.wav$`));
@@ -125,7 +133,7 @@ describe("POST /api/v1/settings/sons", () => {
 
   it("o som anterior sai DEPOIS de o novo estar gravado", async () => {
     const b = banco({ sons_de_aviso: { venda: `${ORG}/venda-velho.mp3` } });
-    await POST(upload("venda", WAV));
+    await POST(await upload("venda", WAV));
     expect(b.updates).toHaveLength(1);
     expect(b.removidos).toEqual([`${ORG}/venda-velho.mp3`]);
   });
@@ -133,7 +141,7 @@ describe("POST /api/v1/settings/sons", () => {
   it("texto com extensão .mp3 é recusado (415) e nada sobe", async () => {
     const b = banco({});
     const texto = new TextEncoder().encode("isto não é áudio nenhum, só texto");
-    const r = await POST(upload("venda", texto, "som.mp3"));
+    const r = await POST(await upload("venda", texto, "som.mp3"));
     expect(r.status).toBe(415);
     expect(b.subidos).toHaveLength(0);
     expect(b.updates).toHaveLength(0);
@@ -141,21 +149,21 @@ describe("POST /api/v1/settings/sons", () => {
 
   it("tipo de aviso desconhecido é recusado (400)", async () => {
     const b = banco({});
-    const r = await POST(upload("qualquer", WAV));
+    const r = await POST(await upload("qualquer", WAV));
     expect(r.status).toBe(400);
     expect(b.subidos).toHaveLength(0);
   });
 
   it("Content-Length declarado acima do teto é recusado (413) antes de ler o corpo", async () => {
     const b = banco({});
-    const r = await POST(upload("venda", WAV, "som.wav", { "content-length": String(5 * 1024 * 1024) }));
+    const r = await POST(await upload("venda", WAV, "som.wav", { "content-length": String(5 * 1024 * 1024) }));
     expect(r.status).toBe(413);
     expect(b.subidos).toHaveLength(0);
   });
 
   it("leitura de settings que FALHOU não vira settings vazio: 500, nada sobe, nada é regravado", async () => {
     const b = banco({ outra_chave: 1 }, { erroNaLeitura: true });
-    const r = await POST(upload("venda", WAV));
+    const r = await POST(await upload("venda", WAV));
     expect(r.status).toBe(500);
     expect(b.subidos).toHaveLength(0);
     expect(b.updates).toHaveLength(0);
@@ -183,7 +191,7 @@ describe("DELETE /api/v1/settings/sons", () => {
 describe("GET /api/v1/settings/sons", () => {
   it("qualquer membro ouve; caminho de OUTRA organização nunca é assinado", async () => {
     const b = banco({ sons_de_aviso: { venda: `${ORG}/venda-a.mp3`, pessoa: `${OUTRA}/pessoa-b.mp3` } });
-    const r = await GET();
+    const r = await GET(new NextRequest("http://localhost/api/v1/settings/sons"));
     expect(vi.mocked(requireRole).mock.calls[0]![0]).toBe("viewer");
     const corpo = (await r.json()) as { data: Record<string, string | null> };
     expect(corpo.data).toEqual({ venda: `https://assinada/${ORG}/venda-a.mp3`, pessoa: null });

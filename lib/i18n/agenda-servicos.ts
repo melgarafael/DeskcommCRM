@@ -155,4 +155,21 @@ export const TEXTOS_AGENDA_SERVICOS = {
   "Confira os campos.": { es: "Compruebe los campos." },
   "Não foi possível ler a configuração do serviço.": { es: "No se pudo leer la configuración del servicio." },
   "Não foi possível salvar a configuração do serviço.": { es: "No se pudo guardar la configuración del servicio." },
+  // PAINEL DO DIA (#4029, saída 3) — leitura das reservas do dia.
+  "Painel do dia": { es: "Panel del día" },
+  "Reservas por turma neste dia, no fuso da organização.": { es: "Reservas por grupo en este día, en la zona horaria de la organización." },
+  "Não foi possível ler o painel do dia.": { es: "No fue posible leer el panel del día." },
+  "Nenhuma reserva de turma neste dia.": { es: "Ninguna reserva de grupo en este día." },
+  "Turma": { es: "Grupo" },
+  "Reservas": { es: "Reservas" },
+  "Pessoas esperadas": { es: "Personas esperadas" },
+  "Confirmadas": { es: "Confirmadas" },
+  "Confirmadas (%)": { es: "Confirmadas (%)" },
+  "Total do dia": { es: "Total del día" },
+  "Pessoas esperadas soma as pessoas das reservas pendentes e confirmadas; canceladas e faltas ficam fora. Só leitura.": {
+    es: "Personas esperadas suma las personas de las reservas pendientes y confirmadas; las canceladas y las ausencias quedan fuera. Solo lectura.",
+  },
+  "O dia passou do teto de 500 reservas: os totais cobrem só esta leitura.": {
+    es: "El día superó el tope de 500 reservas: los totales cubren solo esta lectura.",
+  },
 } as const;

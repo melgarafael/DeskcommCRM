@@ -26,7 +26,7 @@ import { consultarNomeDaAgenda } from "@/lib/contacts/nome-da-agenda";
 import { marcarConversaComoLida, resolveWahaChatId } from "@/lib/waha/send";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { DETALHE_CREDENCIAL_RECUSADA } from "../health";
-import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, RecipientInput } from "../types";
+import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, PublishStatusInput, RecipientInput } from "../types";
 
 /**
  * O HTTP que o WAHA devolveu, lido do PREFIXO da mensagem de erro.
@@ -68,6 +68,28 @@ function enderecoDaMensagem(input: { recipient: string | null; externalId: strin
  */
 function idCompletoDaMensagem(externalId: string, chatId: string): string {
   return externalId.includes("_") ? externalId : `true_${chatId}_${bareWaMessageId(externalId)}`;
+}
+
+/**
+ * Recorta os ids lidos ao chat DESTA resposta (#5015).
+ *
+ * O id serializado carrega o próprio chat (`false_<chat>_<id>`), e o WAHA lê
+ * cada um no chat que ele traz — o `chatId` do pedido não o restringe. Uma ficha
+ * com dois números junta numa conversa só mensagens de dois chats; responder a
+ * um não pode marcar como lidas as do outro. Fica o que é do endereço do envio
+ * ou do chat da mensagem mais nova, que é a que está sendo respondida (a resposta
+ * volta pelo número que escreveu por último) — assim o `@lid` da mesma conta,
+ * que não bate com o `@c.us` do envio, não se perde. Id sem chat não é
+ * endereçável e sai. Sem nada que fique, `undefined`: o pedido de antes.
+ */
+function lidasNesteChat(ids: readonly string[] | undefined, to: string): string[] | undefined {
+  if (!ids || ids.length === 0) return undefined;
+  const chatDaMaisNova = chatIdFromWaMessageId(ids[ids.length - 1]!);
+  const ficam = ids.filter((id) => {
+    const chat = chatIdFromWaMessageId(id);
+    return chat !== null && (chat === to || chat === chatDaMaisNova);
+  });
+  return ficam.length > 0 ? ficam : undefined;
 }
 
 export const wahaAdapter: ChannelAdapter = {
@@ -206,6 +228,13 @@ export const wahaAdapter: ChannelAdapter = {
     await client.editMessage(input.sessionRef, chatId, messageId, input.text);
   },
 
+  async sendReaction(input: { sessionRef: string; recipient: string | null; externalId: string; emoji: string }): Promise<{ externalId: null }> {
+    const { client, messageId } = enderecoDaMensagem(input);
+    await client.sendReaction(input.sessionRef, messageId, input.emoji);
+    // O WAHA não retorna id próprio: o webhook é a fonte da linha persistida.
+    return { externalId: null };
+  },
+
   async revokeMessage(input: {
     sessionRef: string;
     recipient: string | null;
@@ -311,6 +340,56 @@ export const wahaAdapter: ChannelAdapter = {
     return fetchWahaMedia(input.url, input.hintMime ?? null);
   },
 
+  /**
+   * Status (#3397): o público vira JID aqui, não em quem publica.
+   *
+   * O provedor endereça Status por `@c.us` — o telefone em dígitos mais o
+   * sufixo do WhatsApp —, e essa é a única parte da operação que é do CANAL:
+   * a lista chega neutra (só dígitos) e sai no dialeto do transporte. Quem
+   * está acima não precisa saber que o sufixo existe.
+   *
+   * `{ tipo: "todos" }` sai SEM lista: no provedor, "sem `contacts`" é o número
+   * inteiro. É por isso que o público é uma escolha declarada, e não um array
+   * possivelmente vazio (ver `PublicoDoStatus`).
+   *
+   * A recusa sai daqui em português, porque o `waha_status_N` só diz algo a quem
+   * conhece o transporte. Com `todos`, 400 e 422 são o mesmo fato: não há lista
+   * de contatos para o provedor usar, por acervo desligado (400) ou ainda vazio
+   * (422, `No participants to send status`).
+   *
+   * Sem HTTP legível, ou com 5xx, ninguém sabe se saiu: o teto de mídia pode
+   * vencer com o provedor ainda publicando, lote a lote. Daí `incerto`, e não
+   * erro (ver o contrato em `../types`).
+   */
+  async publishStatus(
+    input: PublishStatusInput,
+  ): Promise<{ externalId: string | null; incerto?: true }> {
+    const client = getWahaClient();
+    if (!client) throw new Error("waha_not_configured");
+    try {
+      const res = await client.sendStatusImage(input.sessionRef, {
+        mimetype: input.imagem.mime,
+        data: input.imagem.base64,
+        ...(input.legenda ? { caption: input.legenda } : {}),
+        ...(input.publico.tipo === "contatos"
+          ? { contacts: input.publico.numeros.map((numero) => `${numero}@c.us`) }
+          : {}),
+      });
+      return { externalId: parseWahaMessageId(res) };
+    } catch (erro) {
+      const http = statusHttpDoErroWaha(erro instanceof Error ? erro.message : "");
+      if (http === null || http >= 500) return { externalId: null, incerto: true };
+      if (input.publico.tipo === "todos" && (http === 400 || http === 422)) {
+        throw new Error(
+          "publico_indisponivel: o WhatsApp não tem a lista de contatos deste número. Confira se \"Guardar histórico\" está ligado na Central de Conexões. Se o número foi pareado antes disso, a lista pode ainda não existir: informe os contatos um a um.",
+        );
+      }
+      throw new Error(
+        `publicacao_recusada: o WhatsApp recusou esta publicação (HTTP ${http}). Confira a imagem e a conexão do número.`,
+      );
+    }
+  },
+
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     const client = getWahaClient();
     // Sem env de WAHA o comportamento atual é NOOP, não erro: a UI mostra o
@@ -371,10 +450,15 @@ export const wahaAdapter: ChannelAdapter = {
     // "entregue" que chegasse durante o visto se perderia, e a mensagem ficaria
     // em "enviada" (o efeito descrito em `session-reconciler.ts`). O helper
     // nunca rejeita, então não há rejeição solta.
+    //
+    // Os ids das mensagens lidas vêm de quem montou o envelope (#5015): o NOWEB
+    // sem "Guardar histórico" só aceita marcar por mensagem.
+    const lidas = lidasNesteChat(envelope.readExternalIds, to);
     void marcarConversaComoLida({
       organizationId: envelope.organizationId,
       sessionName: envelope.sessionRef,
       chatId: to,
+      ...(lidas ? { messageIds: lidas } : {}),
     });
 
     return { externalId: parseWahaMessageId(res) };

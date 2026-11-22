@@ -269,6 +269,13 @@ describe("B) quem recebe prévia", () => {
     expect(sql).toContain("order by created_at desc");
   });
 
+  it("campanha ARQUIVADA (#4359) fica fora do preparo automático: nada invisível gasta auditoria nem prévia", async () => {
+    const { pool, sqls } = montar({ candidatos: { [C1]: [] } });
+    await rodar(pool);
+    const sql = sqls.find((s) => s.sql.includes("from prospecting_campaigns") && !s.sql.includes("join ai_agents"))!.sql;
+    expect(sql).toContain("arquivada_em");
+  });
+
   it("a seleção de candidatos filtra no SQL o que o TS também recusa (não trava a fila)", async () => {
     const { pool, sqls } = montar({ candidatos: { [C1]: [] } });
     await rodar(pool);
@@ -562,6 +569,17 @@ describe("Passo 0 — o WhatsApp vem antes do site e da prévia (whatsapp.ts)", 
       consultaWhatsapp: consultaWhatsapp as never,
       dormir: async () => {},
     });
+
+  it("a pergunta do módulo leva a ORGANIZAÇÃO (#4871): a linha da empresa vale para o trabalho de fundo", async () => {
+    const { pool } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+551****0001" })] } });
+    const conferirWhatsapp = vi.fn(async (_admin: unknown, _org: string) => false);
+    await prepararCandidatos(pool as never, {} as never, ORG, "req-1", Date.now() + 60_000, {
+      conferirWhatsapp,
+      consultaWhatsapp: (async () => async () => true) as never,
+      dormir: async () => {},
+    });
+    expect(conferirWhatsapp).toHaveBeenCalledWith({}, ORG);
+  });
 
   it("módulo conferir_whatsapp desligado (o padrão): nenhuma consulta sai, e o preparo segue igual", async () => {
     const { pool, sqls } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" })] } });

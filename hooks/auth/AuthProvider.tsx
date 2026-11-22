@@ -130,6 +130,11 @@ export function useModulosLigados(): readonly string[] {
   return useContext(Ctx)?.activeOrg?.modulos_ligados ?? [];
 }
 
+/** As capacidades da organização (`telefonia`, …), com o mesmo lado seguro de `useModulosLigados`. */
+export function useCapacidadesLigadas(): readonly string[] {
+  return useContext(Ctx)?.activeOrg?.capacidades_ligadas ?? [];
+}
+
 /**
  * Permission gate based on role rank. Action mapping is intentionally
  * minimal here — feature-specific gates can extend with custom logic.
@@ -147,6 +152,8 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "pipeline.view": "viewer",
   "pipeline.create": "manager",
   "pipeline.move_card": "agent",
+  // O piso de `POST /api/v1/vendas` (`requireRole("agent")`).
+  "vendas.registrar": "agent",
   "team.invite": "admin",
   "team.change_role": "admin",
   "settings.write": "admin",

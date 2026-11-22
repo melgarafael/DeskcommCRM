@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { CaretDown, CaretLeft, CaretRight, DotsThree, MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ import {
   type ModoDeEtiqueta,
   marcadoresEscolhidos,
 } from "@/lib/inbox/marcador-da-conversa";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
@@ -37,8 +38,22 @@ import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
+import { DialogoDasAbas } from "@/components/inbox/DialogoDasAbas";
+import type { Sector } from "@/hooks/team/useSectors";
+import { abasPadrao, faixaDaPessoa, type AbaDaPessoa } from "@/lib/inbox/abas-da-inbox";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
+export type InboxTab =
+  | "unassigned"
+  | "mine"
+  | "all"
+  | "closed"
+  | "archived"
+  | "ai"
+  /**
+   * A aba "Pessoal" (#4434): o fora-da-operação que continua alcançável para
+   * quem marcou o contato. Não é trabalho, e por isso fecha a faixa.
+   */
+  | "pessoal";
 
 /**
  * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
@@ -65,6 +80,10 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
   // separada dela porque são passados diferentes (#923): fechada é atendimento
   // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
   { value: "archived", label: "Arquivadas" },
+  // PESSOAL (#4434): o fora-da-operação que continua alcançável. Fecha a faixa de
+  // propósito — é o único lugar da tela que não é trabalho, e o operador
+  // atravessa as abas de atendimento para chegar nele.
+  { value: "pessoal", label: "Pessoal" },
 ];
 
 /**
@@ -76,7 +95,17 @@ export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): 
   // `own_and_sector` (#4022): a conversa do colega do setor não está na Fila nem
   // em Minhas — sem a aba Todas ela não aparece em lugar nenhum da tela.
   const hideAll = role === "agent" && mode !== "all" && mode !== "own_and_sector";
-  return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
+  // A aba "Pessoal" (#4434) segue a MESMA régua da rota que marca e desmarca:
+  // `manager`+ (`requireRole("manager")`). Para quem não pode marcar, ela seria
+  // uma porta para um conjunto que ele nunca preenche.
+  //
+  // ⚠️ Visibilidade de ABA não é permissão: o `admin` vê a aba e, dentro dela,
+  // só o próprio pessoal. Quem decide o que aparece é o dono da marca, no
+  // servidor — esta linha é cosmética, como a de "Todas".
+  const hidePessoal = !roleAtLeast(role, "manager");
+  return INBOX_TABS.filter(
+    (t) => !(t.value === "all" && hideAll) && !(t.value === "pessoal" && hidePessoal),
+  ).map((t) => t.value);
 }
 
 export interface InboxFiltersValue {
@@ -102,6 +131,50 @@ export interface InboxFiltersValue {
    * ausente = todas. A aba Minhas já é "as minhas", então ali ele não vale.
    */
   assigned_to?: string;
+  /**
+   * A FILA escolhida (#3876): id do setor. Ausente = todas as filas. É o mesmo
+   * valor que vai para a lista (`sector_id` no GET) e para as contagens — um
+   * seletor que muda a tela sem mudar a lista seria pior que seletor nenhum.
+   */
+  sector_id?: string;
+}
+
+/**
+ * O conteúdo de UMA opção do seletor de fila (#3876): o ponto da cor, o nome e
+ * quantas conversas esperam ali.
+ *
+ * Exportado porque é a única parte da opção com informação a medir — o
+ * `SelectContent` do Radix só existe no portal DEPOIS do clique, e um teste que
+ * dependesse de abrir o menu mediria o Radix, não a cor da fila. Sem cor
+ * declarada (migration 9084), o ponto não é desenhado: um cinza fixo ao lado de
+ * toda fila transformaria "não escolhi cor" em "escolhi cinza".
+ */
+export function OpcaoDaFila({
+  fila,
+  esperando,
+}: {
+  fila: Pick<Sector, "id" | "name" | "color">;
+  esperando?: number;
+}) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {fila.color != null && (
+        <span
+          aria-hidden
+          data-cor-da-fila={fila.id}
+          className="inline-block size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: fila.color }}
+        />
+      )}
+      <span className="truncate">{fila.name}</span>
+      {/* O número é o trabalho que ESPERA naquela fila — o mesmo predicado da
+          aba Fila (`por_fila` na rota counts). Zero não é desenhado: um "0" ao
+          lado de toda fila vazia é ruído. */}
+      {typeof esperando === "number" && esperando > 0 && (
+        <span className="tabular-nums text-text-subtle">{esperando}</span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -114,13 +187,38 @@ export function comAba(value: InboxFiltersValue, tab: InboxTab): InboxFiltersVal
   return { ...value, tab, ...(tab === "mine" ? { assigned_to: undefined } : {}) };
 }
 
+/** Os três estados do vocabulário de etiqueta (#1336) — ver `estadoDoVocabulario`. */
+type EstadoDoVocabularioDeTag = "carregando" | "vazio" | "com-itens";
+
 interface Props {
   value: InboxFiltersValue;
   onChange: (next: InboxFiltersValue) => void;
+  /**
+   * As filas da organização, JÁ filtradas pelo módulo (#3876).
+   *
+   * Vêm de fora, e não de um `useSectors` aqui dentro, por duas razões: a barra
+   * de filtros é montada em 16 arquivos de teste que não têm `QueryClient`
+   * (ela nunca consultou o servidor — as contagens chegam por hook dublado), e
+   * quem sabe se Setores está ligado é a página, que já tem o `activeOrg` e o
+   * provider. Ausente = organização sem Setores: o seletor não existe.
+   */
+  filas?: Pick<Sector, "id" | "name" | "color">[];
+  /**
+   * As abas DESTA PESSOA (#3313): a ordem da faixa e quais ficam no menu "Mais".
+   *
+   * Vêm do SERVIDOR (`app/app/inbox/page.tsx` -> `carregarAbasDaInbox`), pela
+   * mesma razão da lateral (#3008): a preferência mora no metadata da pessoa, e
+   * a faixa não pode nascer na ordem padrão e "pular" para a dela depois da
+   * hidratação. Ausente (os testes que montam a barra, ou quem nunca escolheu)
+   * = o padrão, que é a faixa de hoje.
+   */
+  abasIniciais?: AbaDaPessoa[];
 }
 
-export function InboxFilters({ value, onChange }: Props) {
+export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasIniciais }: Props) {
   const t = useT();
+  const [abasDaPessoa, setAbasDaPessoa] = useState<AbaDaPessoa[]>(() => abasIniciais ?? abasPadrao());
+  const [organizandoAbas, setOrganizandoAbas] = useState(false);
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
@@ -230,16 +328,44 @@ export function InboxFilters({ value, onChange }: Props) {
     tag: etiquetas,
     tagMode: value.tagMode,
     channel_session_id: value.channel_session_id,
+    sector_id: value.sector_id,
   });
+
+  /**
+   * A FILA (#3876) — o seletor que faltava.
+   *
+   * Setores é MÓDULO OPCIONAL da instalação (doc 213), desligado por padrão: com
+   * ele fora, `useSectors` nem pergunta (a rota daria 404) e o seletor não
+   * existe. Sem fila criada é a mesma coisa — um controle que abre uma lista
+   * vazia é ruído na coluna de 280 px.
+   *
+   * A COR vem da fila (migration 9084) e o NÚMERO, de `por_fila`: quantas
+   * conversas esperam gente naquela fila, com o mesmo predicado da aba Fila.
+   * Nome + ponto + contagem é a mesma gramática do seletor de etiqueta logo
+   * abaixo — quem já aprendeu um leu o outro sem explicação.
+   */
+  const filas = filasDaOrganizacao ?? [];
+  const filaForaDaLista =
+    value.sector_id != null && filas.length > 0 && !filas.some((f) => f.id === value.sector_id);
+  const mostrarSeletorDeFila = filas.length > 0 || filaForaDaLista;
 
   // Filtro por ATENDENTE: só para gerente ou acima (a lista de quem atende é da
   // gestão; o atendente comum continua vendo só o escopo dele, que a RLS impõe).
   const podeFiltrarPorAtendente = roleAtLeast(activeOrg?.role, "manager");
   const mostrarSeletorDeAtendente = podeFiltrarPorAtendente && value.tab !== "mine";
 
-  const tabs = activeOrg
+  // O que o PAPEL permite (`visibleInboxTabs`), e só depois a preferência da
+  // pessoa: ela ordena e oculta dentro disso, nunca devolve uma aba que o papel
+  // tirou (#3313).
+  const permitidas = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
     : INBOX_TABS.map((t) => t.value);
+  const { faixa: tabs, ocultas } = faixaDaPessoa(permitidas, abasDaPessoa);
+  const rotuloDaAba = (tab: InboxTab) => t(INBOX_TABS.find((x) => x.value === tab)!.label);
+  // A aba aberta pode ser uma das ocultas (o padrão "Fila", um `?filter=` de
+  // link, ou a escolhida no menu). Ela aparece no botão do menu, marcada como a
+  // aba ativa: a pessoa sempre vê onde está.
+  const ativaOculta = ocultas.includes(value.tab);
   const moveTab = (direction: -1 | 1) => {
     const next = tabs[tabs.indexOf(value.tab) + direction];
     if (next) onChange(comAba(value, next));
@@ -258,7 +384,32 @@ export function InboxFilters({ value, onChange }: Props) {
     all: counts?.all,
     closed: counts?.closed,
     archived: counts?.archived,
+    // A aba "Pessoal" (#4434): badge que conta o que a aba lista — o pessoal
+    // DESTE usuário. Opcional na resposta por causa de cache antigo (ver
+    // `ConversationCounts`), então `undefined` some, não vira zero.
+    pessoal: counts?.pessoal,
   };
+  // O NOME do botão do menu das abas, para o leitor de tela. Sem ocultas, é a
+  // porta do diálogo; com ocultas, "Mais abas" — no celular a barra de baixo já
+  // tem um "Mais" (a navegação), e dois controles com o mesmo nome na mesma tela
+  // é defeito. Com a aba aberta oculta, o nome dela, o contador e o "Mais abas":
+  // explícito, porque o nome calculado do conteúdo cola o rótulo no contador
+  // ("Arquivadas1"). O contador segue a mesma regra do visível (só depois de
+  // montar), para servidor e cliente não divergirem na hidratação.
+  const contadorDaAtiva = countFor[value.tab];
+  const nomeDoMenuDasAbas =
+    ocultas.length === 0
+      ? t("Personalizar abas")
+      : ativaOculta
+        ? [
+            rotuloDaAba(value.tab),
+            depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0
+              ? String(contadorDaAtiva)
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") + ` · ${t("Mais abas")}`
+        : t("Mais abas");
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na
   // tela dizendo que há filtro. O número some do dropdown junto com o canal, e o
@@ -270,25 +421,43 @@ export function InboxFilters({ value, onChange }: Props) {
   // Alternador só aparece com 2+ números — com um só não há o que alternar.
   const showChannelSwitch = (channels?.length ?? 0) >= 2 || filtroForaDaLista;
   /**
-   * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO.
+   * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO — NEM COM O FILTRO
+   * APLICADO (#1336).
    *
-   * A condicional abaixo decide a EXISTÊNCIA do `<Select>`, e ela lê duas
-   * queries em voo — as duas com `orgId` na chave e `enabled: !!orgId`. Um
-   * único render em que o vocabulário volte a indefinido ou vazio (chave nova,
-   * refetch, organização piscando) não escondia só o controle: DESMONTAVA o
-   * Select, e o menu que o operador tinha acabado de abrir fechava sozinho, com
-   * o gatilho de volta em "Todas as tags". Era o filtro fechando na cara de
-   * quem ia escolher, e o `filtro-por-marcador-pela-tela.spec.ts` intermitente.
+   * A condicional abaixo decide a EXISTÊNCIA do controle, e ela lia duas
+   * queries em voo como um booleano só: "tenho vocabulário?". `undefined`
+   * (ainda não sei) e `[]` (sei: esta organização não tem etiqueta) caíam no
+   * mesmo lado, e os dois lados estavam errados:
    *
-   * Por isso o seletor passa a usar o último vocabulário NÃO-VAZIO que esta
-   * tela conheceu: enquanto o de agora oscila, o de antes segura o controle
-   * montado. O quadro nunca teve o defeito pelo mesmo motivo por outro caminho
-   * — `components/kanban/FilterBar.tsx` mantém o gatilho montado e só o desliga
-   * (`disabled`) sem opções. A lembrança faz o mesmo serviço sem estrear um
-   * controle morto para a organização que ainda não tem etiqueta nenhuma: essa
-   * continua sem o seletor, que é o que a condicional sempre quis dizer.
+   *   - um render em que o vocabulário voltasse a indefinido DESMONTAVA o
+   *     controle, e o menu recém-aberto fechava sozinho;
+   *   - na PRIMEIRA renderização com filtro vindo da URL (`?tag=`, o deep-link
+   *     do relatório Por etiqueta, `components/inbox/InboxLayout.tsx:311`) não
+   *     havia vocabulário lembrado nenhum: o seletor não nascia, e a lista
+   *     ficava num subconjunto — às vezes vazio — sem nada na tela para desfazer.
    *
-   * Medido em `tests/unit/inbox-filtro-de-tag-nao-desmonta.test.tsx`.
+   * Por isso o vocabulário passa a ter TRÊS estados, e é `estadoDoVocabulario`
+   * quem decide a visibilidade do gatilho:
+   *
+   *   (a) `carregando` — org nula ou consultas em voo. O gatilho FICA e o menu
+   *       diz que está carregando. Nascer desde o primeiro render é o que
+   *       impede a piscada: o controle não aparece quando o dado chega, ele já
+   *       estava lá.
+   *   (b) `vazio` — sei que a organização não tem etiqueta. Sem filtro,
+   *       continua sem seletor (nada de controle morto); COM filtro, o gatilho
+   *       fica, porque é a única válvula para desfazer.
+   *   (c) `com-itens` — o seletor de sempre.
+   *
+   * O último vocabulário NÃO-VAZIO conhecido continua segurando o controle
+   * quando o de agora oscila — o quadro faz o mesmo por outro caminho, mantendo
+   * o gatilho montado e só o desligando (`components/kanban/FilterBar.tsx`).
+   * Com o menu ABERTO a condição também não pode virar falsa: destruir o
+   * popover debaixo do dedo é o defeito original, e `menuDeEtiquetaAberto`
+   * impede a desmontagem. Ele não força abertura nenhuma — só não destrói o que
+   * já está aberto.
+   *
+   * Medido em `tests/unit/inbox-filtro-de-tag-tres-estados.test.tsx` e
+   * `tests/unit/inbox-filtro-de-tag-nao-desmonta.test.tsx`.
    */
   const [ultimoVocabulario, setUltimoVocabulario] = useState<string[]>([]);
   if (tagVocabulary != null && tagVocabulary.length > 0 && tagVocabulary !== ultimoVocabulario) {
@@ -297,33 +466,39 @@ export function InboxFilters({ value, onChange }: Props) {
     // render deste componente com o valor novo antes de pintar, então o seletor
     // nunca chega à tela com o vocabulário velho. Efeito aqui não serviria —
     // ele roda DEPOIS da pintura, e a janela de um frame é exatamente a que
-    // desmonta o Select.
+    // desmonta o controle.
     setUltimoVocabulario(tagVocabulary);
   }
   const vocabularioDoSeletor =
     tagVocabulary != null && tagVocabulary.length > 0 ? tagVocabulary : ultimoVocabulario;
-  // O MESMO tratamento, agora para a etiqueta. Sem ele, o seletor inteiro some
-  // com o filtro AINDA APLICADO — a lista fica num subconjunto, às vezes vazio,
-  // e nada na tela diz que há filtro nem oferece como tirá-lo.
-  // "Conhecido" e "não-vazio" são coisas diferentes, e é o primeiro que vale
-  // aqui: a organização cuja ÚLTIMA etiqueta acabou de ser apagada responde
-  // vocabulário vazio, e é justamente ela que precisa do seletor de volta para
-  // desfazer o filtro que continua valendo.
-  const vocabularioConhecido = tagVocabulary != null || ultimoVocabulario.length > 0;
-  // ⚠️ A VALIDAÇÃO DO FILTRO ÓRFÃO PASSOU A SER SOBRE A LISTA (#1274). Com uma
-  // etiqueta só, "está no vocabulário" é uma pergunta; com VÁRIAS, é outra: basta
-  // uma das escolhidas ter sumido do vocabulário para o operador precisar da
-  // válvula. O sintoma sem isto seria o pior dos dois: um filtro de duas
-  // etiquetas, uma delas apagada, e a tela sem dizer que há filtro nenhum.
-  // ⚠️ `&&` AQUI DEVOLVERIA `false | string[]`, e `false.length` não existe. A
-  // forma é um ternário que devolve SEMPRE lista: o resto do componente só
-  // precisa do comprimento, e um `false` no meio obrigaria cada uso a checar.
-  const etiquetasForaDoVocabulario =
-    etiquetas.length > 0 && vocabularioConhecido
-      ? etiquetas.filter((tag) => !vocabularioDoSeletor.includes(tag))
-      : [];
+  /**
+   * OS TRÊS ESTADOS (a/b/c), num lugar só.
+   *
+   * `vocabularioDoSeletor` já inclui a lembrança do último não-vazio, então
+   * "tenho itens" cobre tanto o vocabulário de agora quanto o que esta tela já
+   * conheceu. A ordem importa: `vazio` só é dito quando o vocabulário FOI
+   * conhecido e é vazio (`tagVocabulary` é `[]`, não `undefined`); `undefined`
+   * é sempre `carregando` — "ainda não sei" —, e essa é a distinção que faltava.
+   */
+  const estadoDoVocabulario: EstadoDoVocabularioDeTag =
+    vocabularioDoSeletor.length > 0 ? "com-itens" : tagVocabulary != null ? "vazio" : "carregando";
+  /**
+   * A ETIQUETA APLICADA NUNCA DEPENDE DE O VOCABULÁRIO SER CONHECIDO.
+   *
+   * O filtro órfão já era validado sobre a LISTA (#1274), mas só quando o
+   * vocabulário era "conhecido" — e no estado (a) ele não é, então a válvula
+   * morria junto com o seletor. Aqui a pergunta é só "esta etiqueta está na
+   * lista que eu tenho?": se não está, entra como opção e pode ser desmarcada.
+   * Em (a) a lista é vazia, então TODA etiqueta aplicada entra — que é
+   * exatamente o que se precisa para desfazer um filtro que chegou pela URL.
+   *
+   * ⚠️ `filter` devolve SEMPRE lista (o `&&` de antes devolvia `false |
+   * string[]`, e o resto do componente só precisa do comprimento).
+   */
+  const etiquetasForaDoVocabulario = etiquetas.filter((tag) => !vocabularioDoSeletor.includes(tag));
+  const [menuDeEtiquetaAberto, setMenuDeEtiquetaAberto] = useState(false);
   const mostrarSeletorDeTag =
-    vocabularioDoSeletor.length > 0 || etiquetasForaDoVocabulario.length > 0;
+    estadoDoVocabulario !== "vazio" || etiquetas.length > 0 || menuDeEtiquetaAberto;
   // O menu não fecha a cada clique: quem escolhe duas etiquetas não pode ter de
   // reabrir o menu entre a primeira e a segunda, e o `DropdownMenuCheckboxItem`
   // é o item que NÃO fecha (o `Select` de hoje fecha). A regra é do componente,
@@ -347,9 +522,12 @@ export function InboxFilters({ value, onChange }: Props) {
    * mesma tela que mente que esta entrega existe para matar.
    */
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const termoDaEtiqueta = buscaDeEtiqueta.trim().toLocaleLowerCase();
+  // Os DOIS lados pela régua de acento do repo (`termoSemAcento`, #4410):
+  // `toLocaleLowerCase` dobra CAIXA e não ACENTO, então `orcamento` não achava
+  // a etiqueta "Orçamento enviado".
+  const termoDaEtiqueta = termoSemAcento(buscaDeEtiqueta.trim());
   const opcoesVisiveis = termoDaEtiqueta
-    ? opcoesDoSeletor.filter((tag) => tag.toLocaleLowerCase().includes(termoDaEtiqueta))
+    ? opcoesDoSeletor.filter((tag) => termoSemAcento(tag).includes(termoDaEtiqueta))
     : opcoesDoSeletor;
   const alternaEtiqueta = (tag: string) => {
     const escolhida = etiquetas.includes(tag);
@@ -494,9 +672,15 @@ export function InboxFilters({ value, onChange }: Props) {
             )}
 
             {mostrarSeletorDeTag && (
-              <DropdownMenu onOpenChange={(aberto) => {
-                if (!aberto) setBuscaDeEtiqueta("");
-              }}>
+              <DropdownMenu
+                onOpenChange={(aberto) => {
+                  // `menuDeEtiquetaAberto` é o que impede a condição de
+                  // desmontar o popover com ele aberto — ver o comentário de
+                  // `mostrarSeletorDeTag`. Não abre nada à força: só registra.
+                  setMenuDeEtiquetaAberto(aberto);
+                  if (!aberto) setBuscaDeEtiqueta("");
+                }}
+              >
                 {/*
                   ⚠️ POR QUE ISTO DEIXOU DE SER UM `Select` (#1274).
                   O `Select` do Radix é de escolha ÚNICA e — o que mata a
@@ -541,6 +725,14 @@ export function InboxFilters({ value, onChange }: Props) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
                   <DropdownMenuLabel>{t("Todas as tags")}</DropdownMenuLabel>
+                  {/* ESTADO (a): enquanto o vocabulário não chegou, o menu diz
+                      que está carregando em vez de parecer uma lista vazia.
+                      `status`, e não `alert`: não é erro, é espera. */}
+                  {estadoDoVocabulario === "carregando" && (
+                    <p role="status" className="px-2 pb-1 text-xs text-text-subtle">
+                      {t("Carregando etiquetas…")}
+                    </p>
+                  )}
                   {/*
                     A BUSCA (#2498): filtra o vocabulário que já está aqui dentro,
                     sem tocar em `value` — ver o comentário junto de
@@ -549,23 +741,25 @@ export function InboxFilters({ value, onChange }: Props) {
                     alcançáveis mesmo com a lista toda filtrada, que é quando mais
                     se precisa deles.
                   */}
-                  <div className="px-2 pb-1">
-                    <Input
-                      value={buscaDeEtiqueta}
-                      onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
-                      onKeyDown={(e) => {
-                        // O typeahead do Radix lê QUALQUER tecla imprimível que
-                        // suba do conteúdo e salta o foco para o item que começa
-                        // com ela — dentro de um campo de texto isso rouba a
-                        // segunda letra. `stopPropagation` só nas caracteres:
-                        // Escape continua subindo e fecha o menu.
-                        if (e.key.length === 1) e.stopPropagation();
-                      }}
-                      placeholder={t("Buscar etiqueta")}
-                      aria-label={t("Buscar etiqueta")}
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
-                    />
-                  </div>
+                  {opcoesDoSeletor.length > 0 && (
+                    <div className="px-2 pb-1">
+                      <Input
+                        value={buscaDeEtiqueta}
+                        onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
+                        onKeyDown={(e) => {
+                          // O typeahead do Radix lê QUALQUER tecla imprimível que
+                          // suba do conteúdo e salta o foco para o item que começa
+                          // com ela — dentro de um campo de texto isso rouba a
+                          // segunda letra. `stopPropagation` só nas caracteres:
+                          // Escape continua subindo e fecha o menu.
+                          if (e.key.length === 1) e.stopPropagation();
+                        }}
+                        placeholder={t("Buscar etiqueta")}
+                        aria-label={t("Buscar etiqueta")}
+                        className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
+                      />
+                    </div>
+                  )}
                   <DropdownMenuItem
                     onClick={() => onChange({ ...value, tag: undefined, tagMode: undefined })}
                   >
@@ -636,6 +830,50 @@ export function InboxFilters({ value, onChange }: Props) {
                 onChange={(atendente) => onChange({ ...value, assigned_to: atendente })}
               />
             )}
+          </div>
+        )}
+
+        {/* A FILA (#3876) ganha LINHA PRÓPRIA, e não a quarta cápsula da fileira
+            de cima: aquela linha divide 280 px entre número, etiqueta e
+            atendente, e um quarto controle truncaria os quatro. Aqui o seletor
+            tem a largura toda, o que deixa o nome da fila legível — e a cor
+            (migration 9084) aparece no item e no gatilho, porque o `SelectValue`
+            desenha os filhos do item escolhido. Sem cor, nada muda: o ponto só
+            existe quando a fila declarou uma. */}
+        {mostrarSeletorDeFila && (
+          <div className="flex gap-2">
+            <Select
+              value={value.sector_id ?? "todas"}
+              onValueChange={(v) =>
+                onChange({ ...value, sector_id: v === "todas" ? undefined : v })
+              }
+            >
+              <SelectTrigger
+                data-testid="filtro-de-fila"
+                className={cn(
+                  "h-8 min-w-0 flex-1 rounded-full border-transparent bg-surface-elevated px-3 text-xs shadow-none",
+                  value.sector_id != null && "border-accent bg-accent-soft text-accent",
+                )}
+                aria-label={t("Filtrar por fila")}
+              >
+                <SelectValue placeholder={t("Todas as filas")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">{t("Todas as filas")}</SelectItem>
+                {/* Fila apagada com o filtro ainda ligado: sem esta linha o
+                    gatilho mostraria um resumo de filtro que não está mais na
+                    lista, e não haveria como desligá-lo. A mesma válvula do
+                    seletor de número (`Número removido`). */}
+                {filaForaDaLista && value.sector_id != null && (
+                  <SelectItem value={value.sector_id}>{t("Fila removida")}</SelectItem>
+                )}
+                {filas.map((fila) => (
+                  <SelectItem key={fila.id} value={fila.id}>
+                    <OpcaoDaFila fila={fila} esperando={counts?.por_fila?.[fila.id]} />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>
@@ -717,8 +955,83 @@ export function InboxFilters({ value, onChange }: Props) {
           ) : (
             <span className="w-4 shrink-0" aria-hidden />
           )}
+          {/* O MENU DAS ABAS (#3313): as ocultas e a porta para organizar.
+              Fica FORA do `TabsList` — dentro dele seria um item a mais num
+              `tablist`, que o leitor de tela anunciaria como aba.
+
+              Três caras, um botão só:
+                - a aba aberta está oculta → o nome dela, marcado como ativa;
+                - há ocultas → "Mais";
+                - nenhuma oculta → só os três pontos (a porta para organizar). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="menu-das-abas"
+                aria-label={nomeDoMenuDasAbas}
+                title={ocultas.length === 0 ? t("Personalizar abas") : undefined}
+                data-state-aba={ativaOculta ? "active" : undefined}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 self-start rounded-none border-b-2 border-transparent pb-2 pt-1 text-xs font-medium text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                  ativaOculta && "border-accent text-text",
+                )}
+              >
+                {ativaOculta ? (
+                  <>
+                    {rotuloDaAba(value.tab)}
+                    {depoisDeMontar && typeof contadorDaAtiva === "number" && contadorDaAtiva > 0 && (
+                      <span className="text-[11px] tabular-nums text-text-subtle">{contadorDaAtiva}</span>
+                    )}
+                    <CaretDown size={11} aria-hidden />
+                  </>
+                ) : ocultas.length > 0 ? (
+                  <>
+                    {t("Mais")}
+                    <CaretDown size={11} aria-hidden />
+                  </>
+                ) : (
+                  <DotsThree size={14} weight="bold" aria-hidden />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {ocultas.length > 0 && (
+                <>
+                  <DropdownMenuLabel className="text-xs">{t("Abas ocultas")}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={ativaOculta ? value.tab : ""}
+                    onValueChange={(v) => onChange(comAba(value, v as InboxTab))}
+                  >
+                    {ocultas.map((tab) => {
+                      const count = countFor[tab];
+                      return (
+                        <DropdownMenuRadioItem key={tab} value={tab} className="text-xs">
+                          <span className="flex-1">{rotuloDaAba(tab)}</span>
+                          {depoisDeMontar && typeof count === "number" && count > 0 && (
+                            <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                          )}
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem className="text-xs" onSelect={() => setOrganizandoAbas(true)}>
+                {t("Personalizar abas…")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </Tabs>
+      <DialogoDasAbas
+        aberto={organizandoAbas}
+        onAbertoChange={setOrganizandoAbas}
+        abas={abasDaPessoa}
+        permitidas={permitidas}
+        rotuloDe={rotuloDaAba}
+        onSalvas={setAbasDaPessoa}
+      />
     </div>
   );
 }

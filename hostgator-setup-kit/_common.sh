@@ -1144,22 +1144,59 @@ com_prazo() {  # com_prazo <segundos> <comando...>
 #   incompleta    → ALGUMA falta e o registro respondeu = publicação incompleta;
 #   indisponivel  → NENHUMA respondeu = o registro/DNS está fora (ou a tag nem
 #                   existe, o que para o chamador dá no mesmo: não se sabe).
-veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
-  local versao="${1:-}" img total=0 achadas=0
+# Preenchida por veredito_das_imagens_da_release: quais imagens não responderam e
+# por quê (`nome:ausente` ou `nome:indeterminado`). Existe para o agent.sh poder
+# REGISTRAR o motivo de esconder uma release — antes disto, o silêncio da tela não
+# deixava rastro nenhum e o diagnóstico morria em "não apareceu".
+IMAGENS_SEM_RESPOSTA=""
+
+veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão alvo> [versão instalada]
+  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0 com_controle=0
+  # ponytail: o controle pela tag instalada só vale para quem PASSA o 2º
+  # argumento (o agent.sh passa sempre, mesmo vazio). O preflight do update.sh e
+  # o portão do build (build_local_permitido) chamam com UM argumento e leem
+  # `incompleta` como "o registro respondeu": para eles fica a regra de antes
+  # (alguma achada = incompleta; nenhuma = indisponivel). Sem isto, 3 de 4
+  # imagens publicadas viravam `indisponivel`, o preflight culpava a rede e o
+  # portão recusava o build local de recuperação (#1060/#1143).
+  [ "$#" -ge 2 ] && com_controle=1
+  IMAGENS_SEM_RESPOSTA=""
   versao="${versao#v}"
+  instalada="${instalada#v}"
   [ -n "$versao" ] || { printf 'indisponivel'; return 0; }
   for img in "$IMG_APP" "$IMG_WORKER" "$IMG_SCHEDULER" "$IMG_VOICE_AGENT"; do
     total=$((total + 1))
     if com_prazo 20 docker buildx imagetools inspect "${img}:${versao}" >/dev/null 2>&1; then
       achadas=$((achadas + 1))
+      continue
+    fi
+    [ "$com_controle" -eq 1 ] || continue
+    # ⛔ A SONDA DE CONTROLE, pelo mesmo motivo da sonda do app.
+    #
+    # `com_prazo 20` transforma timeout e 429 do registro em "esta imagem não
+    # existe" — e a diferença entre as duas coisas é o que decide se a release é
+    # escondida. A tag INSTALADA é a sonda certa porque ela existe com certeza:
+    # está rodando aqui. Se nem ela responde, o que está fora é o registro, não
+    # a imagem; e aí esconder a atualização seria ligar o silêncio da tela a um
+    # problema de rede que ninguém vê.
+    if [ -n "$instalada" ] && com_prazo 20 docker buildx imagetools inspect "${img}:${instalada}" >/dev/null 2>&1; then
+      ausentes=$((ausentes + 1))
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:ausente"
+    else
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:indeterminado"
     fi
   done
   if [ "$achadas" -eq "$total" ]; then
     printf 'prontas'
-  elif [ "$achadas" -eq 0 ]; then
-    printf 'indisponivel'
-  else
+  elif [ "$com_controle" -eq 0 ] && [ "$achadas" -gt 0 ]; then
     printf 'incompleta'
+  elif [ "$ausentes" -gt 0 ]; then
+    # Há pelo menos uma imagem provadamente ausente: a release não está pronta.
+    # Isso cala o botão — e é o único caso que deve calar.
+    printf 'incompleta'
+  else
+    # Nenhuma ausência provada: só falha de sonda. Anunciar, como sempre foi.
+    printf 'indisponivel'
   fi
 }
 
@@ -1577,6 +1614,11 @@ restaurar_versao_anterior() {  # → 0 sempre (rollback que falha não mata a vo
 # que o sistema voltou atrás sozinho.
 VIGIA_ARQUIVO=".update-vigia"
 VIGIA_FALHAS_ARQUIVO=".update-vigia-falhas"
+# De qual versão a última atualização PARA FRENTE saiu. É o único alvo de volta
+# que o agente aceita do app: o alvo de um pedido de volta chega pela rota, e o
+# host não recua para onde a rota mandar. Voltar para outra versão anterior
+# continua possível, mas só pelo terminal (update.sh --to <versão> --force).
+ORIGEM_DA_ATUALIZACAO_ARQUIVO=".update-de-onde-vim"
 # Janela de 2 horas = 24 ciclos de cron. Folgada de propósito: uma atualização
 # que derruba o app costuma derrubar na largada (primeiros requests, cron que
 # roda pela primeira vez na versão nova), e o rollback só devolve versão — o
@@ -2057,7 +2099,9 @@ relatar_saude_do_app() {
 wait_app_healthy() {
   local tentativas="${1:-20}" intervalo="${2:-3}" saida='' status='' corpo='' i=0
   while [ "$i" -lt "$tentativas" ]; do
-    saida="$(app_health_probe)"
+    # A stalled Docker exec must leave room for the next attempt. Use the
+    # same per-probe deadline as the standalone healthcheck.
+    saida="$(app_health_probe 30)"
     status="$(printf '%s\n' "$saida" | head -1 | tr -d '\r')"
     corpo="$(printf '%s\n' "$saida" | tail -n +2)"
     case "$status" in
@@ -2800,6 +2844,11 @@ gravar_imagens() {
   # acima: é a função que o update.sh antigo chama depois de reler o kit, então
   # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
   completar_par_vapid "$envfile"
+  # A conversão do consentimento de telemetria (#4936) mora aqui pelo mesmo
+  # motivo: a chamada no corpo do update.sh só existe a partir da versão que a
+  # traz, e quem atualiza roda o corpo ANTIGO. Sem esta linha, quem aceitou
+  # perderia a telemetria na atualização que traz a mudança.
+  migrar_consentimento_de_telemetria "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
@@ -2871,6 +2920,80 @@ gerar_par_vapid() {
   priv="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | head -c 39 | tail -c 32 | _b64url)" || return 1
   [ "${#pub}" -eq 87 ] && [ "${#priv}" -eq 43 ] || return 1
   printf '%s %s\n' "$pub" "$priv"
+}
+
+# marcar_consentimento_de_telemetria <arquivo> — a marca de "a conversão do
+# consentimento já passou por aqui". Só é criada quando a decisão ficou tomada:
+# nas saídas em que não dá para escrever, ela não nasce, e a próxima atualização
+# tenta de novo. Falhar ao criá-la não derruba nada (devolve 0).
+marcar_consentimento_de_telemetria() {
+  ( umask 077; printf '%s\n' "# Gerado pelo kit (#4948): a conversão do consentimento de telemetria já rodou nesta instalação. Não apague." > "$1" ) 2>/dev/null || true
+}
+
+# migrar_consentimento_de_telemetria [envfile] — usada pelo update.sh (#4936).
+#
+# Antes desta versão, `SENTRY_DSN` VAZIO significava "aceito o Sentry do
+# projeto": era o que o install.sh gravava quando a pessoa respondia "sim".
+# Agora vazio significa DESLIGADO e o aceite é o token `comunidade`
+# (lib/sentry/dsn.ts). Sem esta conversão, quem já havia aceitado perderia a
+# telemetria em silêncio depois de atualizar — e o remédio seria editar o `.env`
+# à mão, que a doutrina de empacotamento proíbe exigir.
+#
+# Converte SÓ a chave DECLARADA e VAZIA. Três casos ficam intocados:
+#   - chave ausente: quem nunca decidiu; ausência já é "desligado", e gravá-la
+#     seria consentir por alguém;
+#   - `off`/`false`/`0`: escolha escrita de quem não quer telemetria;
+#   - um DSN literal: quem aponta para o próprio Sentry.
+# Sempre devolve 0: telemetria não derruba atualização. Deixa
+# TELEMETRIA_CONVERTIDA=1 quando converter (o `up -d` de lá já recria o app com
+# o `.env` novo, então não há nada a reiniciar por conta disto).
+migrar_consentimento_de_telemetria() {
+  local envfile="${1:-.env}" declarado tmp marca
+  TELEMETRIA_CONVERTIDA=""
+  [ -f "$envfile" ] || return 0
+  # UMA VEZ por instalação (#4948). Depois desta versão, vazio é "desligado": quem
+  # esvazia a chave de propósito, ou o `install.sh --yes` com SENTRY_DSN vazio no
+  # ambiente, não pode ser religado pela atualização seguinte. A marca fica num
+  # arquivo ao lado (o nome casa com `.env*`, como o `.env.cron-drain`, e o
+  # `.gitignore` já o deixa de fora), para não mexer no `.env` de quem nunca
+  # decidiu. O install.sh novo a cria: instalação nova nunca é convertida.
+  marca="$(dirname -- "$envfile")/.env.consentimento-de-telemetria"
+  [ -e "$marca" ] && return 0
+  # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
+  # elas também contam como a chave declarada (mesma régua do `completar_par_vapid`).
+  declarado="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+  if [ -n "$declarado" ]; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" 2>/dev/null; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if [ ! -w "$envfile" ]; then
+    # Montagem somente-leitura ou permissão errada: quem opera precisa saber que
+    # a conversão NÃO aconteceu, senão a telemetria some sem explicação.
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo.")"
+    return 0
+  fi
+
+  # Escrita atômica, como no `set_env_var`: o tmp nasce 600 e o `mv` troca o
+  # arquivo de uma vez, para uma queda no meio não deixar `.env` pela metade.
+  tmp="${envfile}.tmp.$$"
+  if ! ( umask 077
+         { { grep -vE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" || true; } \
+           && printf 'SENTRY_DSN=%s\n' "comunidade"; } > "$tmp" ) \
+     || ! chmod 600 "$tmp" || ! mv "$tmp" "$envfile"; then
+    rm -f "$tmp"
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria no .env; a telemetria segue como estava. Para converter à mão: SENTRY_DSN=comunidade.")"
+    return 0
+  fi
+  # O ambiente também: o `load_env` já exportou o vazio, e é dele que o Compose
+  # lê o que interpola.
+  SENTRY_DSN="comunidade"; export SENTRY_DSN
+  TELEMETRIA_CONVERTIDA=1
+  marcar_consentimento_de_telemetria "$marca"
+  c_grn "$(t "✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)")"
 }
 
 # completar_par_vapid [envfile] — usada pelo install.sh (depois de escrever o
@@ -3093,7 +3216,26 @@ setup_event_log_drain_cron() {
   # que traz este conserto: o `update.sh` faz `source` deste arquivo ANTES do
   # `git checkout` da tag, então no update que o traz quem roda aqui ainda é a
   # versão anterior desta função.
-  local cron_line="* * * * * curl -fsS -H @\"${cabecalho}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  # ── A LINHA DO HOST É VIGIA, NÃO O SEGUNDO DRENO (#2235) ──────────────────
+  #
+  # Até aqui esta linha era `* * * * * curl … event-log-drain`, e o `scheduler`
+  # do compose faz a MESMA chamada no mesmo minuto. Numa instalação do kit os
+  # dois rodavam juntos: a issue #2235 mediu ~62% das chamadas `service_role` ao
+  # PostgREST na `event_log`, com o sistema parado e ninguém usando o produto.
+  #
+  # A redundância tem valor (scheduler caído não pode parar automação, webhook
+  # nem derivação de mídia), então ela não é removida — é rebaixada: de 15 em 15
+  # minutos, e o script só dispara o dreno quando o contêiner `scheduler` desta
+  # instalação NÃO está rodando. Instalação saudável: ~4 chamadas/hora em vez de
+  # 60; scheduler fora do ar: o dreno continua chegando, com atraso de até 15
+  # min (o produto já vive com 1 min de cadência e handlers idempotentes).
+  #
+  # O nome do projeto compose entra como argumento porque o filtro do `docker ps`
+  # é por rótulo: sem ele, duas instalações na mesma VPS (caso previsto em
+  # `cron_tag`) fariam o scheduler de uma calar o vigia da outra.
+  local vigia="${PROJECT_DIR:-$PWD}/hostgator-setup-kit/drain-watchdog.sh"
+  local projeto; projeto="$(nome_do_projeto_atual)"
+  local cron_line="*/15 * * * * \"${vigia}\" \"${url_drain}\" \"${cabecalho}\" \"${projeto}\" ${marcador}"
   # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
   # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
   # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem
@@ -3127,7 +3269,7 @@ setup_event_log_drain_cron() {
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
-  c_grn "$(t "✓ automações ativas (cron do event-log-drain, a cada minuto)")"
+  c_grn "$(t "✓ automações ativas (vigia do event-log-drain; quem drena é o contêiner scheduler)")"
 
   if [ "$first_time" = 1 ]; then
     # 1ª ativação do cron (inclusive numa instalação já existente que nunca

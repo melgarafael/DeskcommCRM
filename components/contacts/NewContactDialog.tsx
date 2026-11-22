@@ -28,6 +28,7 @@ import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaCon
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
+import { ComoCriarCamposDoContato } from "@/components/contacts/ComoCriarCamposDoContato";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
 import {
@@ -58,6 +59,9 @@ interface Props {
    * trocar o termo com o diálogo já montado remonta com `key`.
    */
   nomeInicial?: string;
+  dadosIniciais?: { email?: string; phone_number?: string; tags?: string[] };
+  leadId?: string;
+  referenciaDoCard?: string | null;
   /**
    * Recebe o contato recém-criado. Existe para quem abriu o diálogo NO MEIO de
    * outro fluxo (marcar um horário, por exemplo) poder seguir com ele já
@@ -75,16 +79,24 @@ export function NewContactDialog({
   open,
   onOpenChange,
   nomeInicial,
+  dadosIniciais,
+  leadId,
+  referenciaDoCard,
   onCriado,
   permitirIniciarConversa = true,
 }: Props) {
   const t = useT();
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
-  const create = useCreateContact();
+  const create = useCreateContact(leadId);
   // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
   const pipeline = useDefaultPipeline(open && Boolean(org));
   const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
+  // A dica de onde criar campo (#4744) espera o funil LIDO: enquanto a leitura
+  // corre, `campos` também é `[]`, e a dica piscaria para quem já tem campo.
+  // Só admin: `updatePipelineConfig` recusa os outros papéis.
+  const funilDosCampos = pipeline.data?.pipeline ?? null;
+  const podeCriarCampos = roleAtLeast(org?.role, "admin");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -101,10 +113,7 @@ export function NewContactDialog({
   // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
   // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const buscaNoVocabulario = useContactTagVocabulary(
-    org?.orgId ?? null,
-    buscaDeEtiqueta.trim(),
-  );
+  const buscaNoVocabulario = useContactTagVocabulary(org?.orgId ?? null, buscaDeEtiqueta.trim());
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -150,10 +159,10 @@ export function NewContactDialog({
     mode: "onTouched",
     defaultValues: {
       name: nomeInicial ?? "",
-      email: "",
-      phone_number: "",
+      email: dadosIniciais?.email ?? "",
+      phone_number: dadosIniciais?.phone_number ?? "",
       cpf: "",
-      tags: [],
+      tags: dadosIniciais?.tags ?? [],
       custom_fields: {},
     },
   });
@@ -278,6 +287,12 @@ export function NewContactDialog({
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
+        {referenciaDoCard && (
+          <details className="text-xs text-text-muted">
+            <summary>{t("Dados do negócio para conferência")}</summary>
+            <p className="max-h-36 overflow-auto whitespace-pre-wrap">{referenciaDoCard}</p>
+          </details>
+        )}
         <form
           onSubmit={(event) => {
             // O portal mantém a árvore React: o submit deste subcadastro não
@@ -297,9 +312,7 @@ export function NewContactDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone_number">
-              {perfil.codigo === PAIS_PADRAO
-                ? t("Telefone (DDD + número)")
-                : t("Telefone (E.164)")}
+              {perfil.codigo === PAIS_PADRAO ? t("Telefone (DDD + número)") : t("Telefone (E.164)")}
             </Label>
             <Input
               id="phone_number"
@@ -363,15 +376,13 @@ export function NewContactDialog({
               vocabulario={vocabulario.data}
               disabled={create.isPending}
               onPendente={setEtiquetaPendente}
-              onDefinirCor={
-                podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
-              }
+              onDefinirCor={podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined}
               encontradas={buscaNoVocabulario.data}
               onDigitar={setBuscaDeEtiqueta}
               erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
-          {campos.length > 0 && (
+          {campos.length > 0 ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
               <CustomFieldsEditor
@@ -381,6 +392,9 @@ export function NewContactDialog({
                 onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
               />
             </div>
+          ) : (
+            podeCriarCampos &&
+            funilDosCampos && <ComoCriarCamposDoContato nomeDoFunil={funilDosCampos.name} />
           )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>

@@ -41,16 +41,21 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
-import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
+import { MODULO_SERVICOS, sinaisFixosQueTravamPreco } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -84,14 +89,30 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
   // Preço de venda é escrita de gestão: o mesmo papel do POST unitário.
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "products.import", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
 
   let arquivo: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     arquivo = f;
@@ -128,7 +149,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   if ("erro" in decodificado) {
     return fail("validation_failed", t(decodificado.erro), 422, { requestId });
   }
-  const lido = lerPlanilha(decodificado.texto, t);
+  const supabase = authz.supabase;
+  const lido = lerPlanilha(decodificado.texto, t, {
+    capacidade: (await capacidadesDaOrganizacao(supabase, orgId)).includes("capacidade_do_produto"),
+  });
   // Problema do ARQUIVO (falta a coluna de preço) é 422 com a frase inteira —
   // e não um relatório com 300 erros idênticos.
   if ("erro" in lido) return fail("validation_failed", lido.erro, 422, { requestId });
@@ -156,7 +180,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
+  // Foto por URL só na sessão. Um token pode disparar 500 linhas × 5 links, e cada
+  // link é um download feito pelo servidor: essa conta não entra por token. Recusa
+  // antes de ler o catálogo e antes de baixar qualquer coisa.
+  if (authz.via === "token") {
+    const linhasComFoto = lido.produtos.filter((p) => p.fotos && p.fotos.length > 0).map((p) => p.linha);
+    if (linhasComFoto.length > 0) {
+      return fail(
+        "foto_por_url_so_na_sessao",
+        t(
+          "Foto por link não é aceita pela API. Tire a coluna de foto da planilha ou importe as fotos pela tela de Produtos.",
+        ),
+        422,
+        { requestId, details: { linhas: linhasComFoto } },
+      );
+    }
+  }
 
   // Os códigos já cadastrados na organização servem a duas coisas. Quem já
   // existia com o código IGUAL é atualizado, para o resumo dizer "3 novos, 12
@@ -211,7 +250,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const erros: ErroDaLinha[] = [...lido.erros];
-  const aceitos = lido.produtos.filter((p) => {
+  let aceitos = lido.produtos.filter((p) => {
     if (antigos.has(p.codigo)) return true;
     const outraCaixa = porChave.get(chaveDoCodigo(p.codigo));
     if (!outraCaixa) return true;
@@ -225,6 +264,37 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     return false;
   });
+
+  // A porta do módulo de serviços (doc 212): o item que já existe pode ser
+  // serviço ou variação de um, com sinal FIXO na família. A planilha não baixa o
+  // preço para menos que ele — a linha é recusada com o motivo, as outras
+  // seguem. Com o módulo desligado, nada é consultado; sem conseguir conferir,
+  // nada é gravado (mesma regra da leitura do catálogo acima).
+  if (await moduloLigado(createAdminClient(), MODULO_SERVICOS)) {
+    let sinais: Map<string, number>;
+    try {
+      sinais = await sinaisFixosQueTravamPreco(
+        supabase,
+        orgId,
+        aceitos.flatMap((p) => idPorCodigo.get(p.codigo) ?? []),
+      );
+    } catch {
+      return fail(
+        "internal_error",
+        t("Não consegui conferir o que já está gravado, então nada foi alterado. Tente de novo em instantes."),
+        500,
+        { requestId },
+      );
+    }
+    aceitos = aceitos.filter((p) => {
+      const id = idPorCodigo.get(p.codigo);
+      const sinal = id === undefined ? undefined : sinais.get(id);
+      if (sinal === undefined || p.preco_cents >= sinal) return true;
+      erros.push({ linha: p.linha, motivo: `"${p.codigo}"` + t(": o preço ficaria abaixo do sinal fixo do serviço.") });
+      return false;
+    });
+  }
+
   let gravados = 0;
   /** Os códigos que REALMENTE entraram — a limpeza das fotos antigas depende disso. */
   const gravadosPorCodigo = new Set<string>();
@@ -250,6 +320,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     custo_cents: p.custo_cents,
     marca: p.marca ?? null,
     categoria: p.categoria ?? null,
+    ...(p.capacidade !== undefined ? { capacidade: p.capacidade } : {}),
     controla_estoque: p.controla_estoque,
     quantidade: p.quantidade,
     origem: "planilha",
@@ -376,18 +447,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
-  const atualizados = existentes.length;
+  // Linha recusada pelo banco não conta como atualizada nem desconta um novo
+  // que entrou. O mesmo conjunto já governa a descrição e a troca das fotos.
+  const atualizados = existentes.filter((p) => gravadosPorCodigo.has(p.codigo)).length;
   const criados = Math.max(0, gravados - atualizados);
 
   await audit({
     organizationId: orgId,
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.imported",
     resourceType: "catalog_products",
     resourceId: null,
     requestId,
     metadata: {
-      actor_type: "user",
+      actor_type: authz.actor.type,
       total_linhas: totalLinhas,
       criados,
       atualizados,
@@ -421,10 +495,18 @@ export async function POST(req: NextRequest): Promise<Response> {
  * e a linha voltaria recusada. O formato `link1|link2` é explicado na tela de
  * Produtos, ao lado do link do modelo.
  */
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "products.import", requestId);
+  if (teto) return teto;
 
   const modelo = [
     "codigo,nome,marca,categoria,preco,custo,estoque,descricao,foto",
@@ -432,11 +514,11 @@ export async function GET(): Promise<Response> {
     "PERF-212,212 VIP Men 100ml,Carolina Herrera,Perfume,449.90,280.00,7,,",
   ].join("\n");
 
-  return new Response(`﻿${modelo}\n`, {
+  return comIdDaRequisicao(new Response(`﻿${modelo}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": 'attachment; filename="modelo-catalogo.csv"',
       "x-request-id": requestId,
     },
-  });
+  }), requestId);
 }

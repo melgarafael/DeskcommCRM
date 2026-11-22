@@ -8,7 +8,13 @@
 import type pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 
-import type { RouterMember } from "@/lib/agent-engine/agent/router-config";
+import type { LoadedRouter, RouterMember } from "@/lib/agent-engine/agent/router-config";
+import {
+  avaliarAgentePeloPublico,
+  ErroDeLeituraDoPublico,
+  filtrarMembrosPeloPublico,
+} from "@/lib/agent-engine/agent/publico-no-roteador";
+import type { FatosDoContato, PublicoDoAgente } from "@/lib/agent-engine/agent/publico-do-gatilho";
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
 import {
   consultarJevNoRoteador,
@@ -117,7 +123,8 @@ describe("consultarJevNoRoteador", () => {
       modelo: "jev-1.13.0",
       tokensDeEntrada: 400,
     });
-    const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as {
+    const chamada = fetchImpl.mock.calls[0]!;
+    const corpo = JSON.parse(String(chamada[1]?.body)) as {
       state: string;
       questions: Record<string, unknown>;
     };
@@ -422,5 +429,244 @@ describe("o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
     await jev.escolha;
     const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body));
     expect(corpo.state).toBe("a primeira");
+  });
+});
+
+describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
+  const FATOS = {
+    funis: [{ funil: "Experiência", etapas: ["Pós-viagem"] }],
+    etiquetas: ["cliente", "viagem-fechada"],
+    funisOmitidos: 0,
+    etiquetasOmitidas: 0,
+  };
+
+  it("sem fatos a pergunta é a de antes — nem um caractere de contexto", () => {
+    const semFatos = perguntaDoRoteador(MEMBROS);
+    const vazio = perguntaDoRoteador(MEMBROS, {
+      funis: [],
+      etiquetas: [],
+      funisOmitidos: 0,
+      etiquetasOmitidas: 0,
+    });
+    expect(vazio).toEqual(semFatos);
+    expect(semFatos?.instrucao).not.toContain("Fatos do CRM");
+  });
+
+  it("com fatos, funil, etapa e etiqueta vão para a instrução, DEPOIS do que se pede", () => {
+    const p = perguntaDoRoteador(MEMBROS, FATOS);
+    expect(p?.instrucao).toContain("Fatos do CRM deste contato");
+    expect(p?.instrucao).toContain('Funil "Experiência"');
+    expect(p?.instrucao).toContain('"Pós-viagem"');
+    expect(p?.instrucao).toContain("negócio ABERTO");
+    expect(p?.instrucao).toContain("Etiquetas do contato: cliente, viagem-fechada");
+    // O pedido original continua primeiro: o bloco é contexto, não a tarefa.
+    expect(p?.instrucao?.indexOf("ÚLTIMA mensagem do cliente")).toBeLessThan(
+      p?.instrucao?.indexOf("Fatos do CRM deste contato") ?? -1,
+    );
+    // E a lista de intenções não muda — o contexto não vira critério novo.
+    expect(p?.criterios).toEqual(perguntaDoRoteador(MEMBROS)?.criterios);
+  });
+
+  it("o contexto chega ao Jev pela leitura do TURNO, e só uma vez por decisão", async () => {
+    const fatos = vi.fn(async () => FATOS);
+    // Parâmetros declarados para o `mock.calls` ter forma: o corpo enviado é o
+    // que se lê abaixo, e sem tipo a tupla sai vazia no typecheck do CI.
+    const fetchImpl = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) =>
+      respostaCom("suporte"),
+    );
+    const jev = consultarJevNoRoteador(
+      poolCom(LIGADO).pool,
+      { ...entrada(novaOrg(), "Bom dia! Tudo bem?"), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x", fetchImpl },
+    );
+    const escolha = await jev.escolha;
+
+    expect(escolha?.veredito).toEqual({ intentName: "suporte", confidence: 0.93 });
+    expect(fatos).toHaveBeenCalledTimes(1);
+    const chamada = fetchImpl.mock.calls[0]!;
+    const corpo = JSON.parse(String(chamada[1]?.body)) as {
+      questions: { roteador: { instructions: string; criteria: Record<string, string> } };
+    };
+    expect(corpo.questions.roteador.instructions).toContain("Fatos do CRM deste contato");
+    expect(corpo.questions.roteador.instructions).toContain("Experiência");
+    expect(corpo.questions.roteador.instructions).toContain("viagem-fechada");
+    // O critério de cada intenção continua sendo só a descrição da empresa.
+    expect(corpo.questions.roteador.criteria.suporte).not.toContain("Experiência");
+  });
+
+  it("dado do cliente digitado no nome de etapa ou etiqueta sai mascarado; nome comum sai igual", async () => {
+    const instrucaoEnviada = async (fatos: typeof FATOS): Promise<string> => {
+      const fetchImpl = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) =>
+        respostaCom("suporte"),
+      );
+      const jev = consultarJevNoRoteador(
+        poolCom(LIGADO).pool,
+        { ...entrada(novaOrg(), "oi"), fatosDoCrmDoTurno: async () => fatos },
+        { buscarChave: async () => "tsk_x", fetchImpl },
+      );
+      await jev.escolha;
+      const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)) as {
+        questions: { roteador: { instructions: string } };
+      };
+      return corpo.questions.roteador.instructions;
+    };
+
+    const comDado = await instrucaoEnviada({
+      funis: [{ funil: "Vendas", etapas: ["Ligar 11 98765-4321"] }],
+      etiquetas: ["cpf 123.456.789-09", "ana@exemplo.com"],
+      funisOmitidos: 0,
+      etiquetasOmitidas: 0,
+    });
+    expect(comDado).toContain("Fatos do CRM deste contato");
+    expect(comDado).toContain('Funil "Vendas"');
+    expect(comDado).not.toContain("98765");
+    expect(comDado).not.toContain("123.456.789-09");
+    expect(comDado).not.toContain("ana@exemplo.com");
+    expect(comDado).toContain("[EMAIL]");
+
+    // Controle: sem dado pessoal, o scrub não toca em nada.
+    const comum = await instrucaoEnviada(FATOS);
+    expect(comum).toContain('- Funil "Experiência", etapa "Pós-viagem": negócio ABERTO');
+    expect(comum).toContain("- Etiquetas do contato: cliente, viagem-fechada");
+  });
+
+  it("a tarefa desligada NÃO paga a leitura dos fatos", async () => {
+    const fatos = vi.fn(async () => FATOS);
+    const jev = consultarJevNoRoteador(
+      poolCom({}).pool,
+      { ...entrada(novaOrg(), "oi"), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x" },
+    );
+    expect(await jev.escolha).toBeNull();
+    expect(fatos).not.toHaveBeenCalled();
+  });
+
+  it("a leitura que falha não derruba a pergunta: ela sai como antes", async () => {
+    const fatos = vi.fn(async () => {
+      throw new Error("banco fora");
+    });
+    const jev = consultarJevNoRoteador(
+      poolCom(LIGADO).pool,
+      { ...entrada(novaOrg()), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x", fetchImpl: async () => respostaCom("vendas") },
+    );
+    expect((await jev.escolha)?.veredito.intentName).toBe("vendas");
+    expect(fatos).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * O PÚBLICO NO ROTEADOR (#3722, fatia 2) — a lista que vira a PERGUNTA.
+ *
+ * A pergunta do classificador é montada com `router.members`. Estes casos
+ * medem o filtro que roda antes dela: o membro barrado não chega ao prompt e
+ * não chega ao Jev. Quem prova o turno inteiro (fallback, grudado, silêncio) é
+ * `tests/unit/publico-do-agente-rastro-no-turno.test.ts`.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function publicoVazio(over: Partial<PublicoDoAgente> = {}): PublicoDoAgente {
+  return {
+    incluirEtiquetas: [],
+    excluirEtiquetas: [],
+    incluirFunis: [],
+    excluirFunis: [],
+    incluirOrigens: [],
+    excluirOrigens: [],
+    ...over,
+  };
+}
+
+function routerDeTeste(members: RouterMember[]): LoadedRouter {
+  return {
+    id: "router-1",
+    name: "R",
+    classifierModel: null,
+    classifierProvider: null,
+    sticky: false,
+    minConfidence: 0.6,
+    fallbackAgentId: null,
+    members,
+  };
+}
+
+const CLIENTE: FatosDoContato = { etiquetas: ["cliente ativo"], funisAbertos: [], origem: "whatsapp" };
+
+describe("filtrarMembrosPeloPublico — o membro barrado não vira pergunta (#3722)", () => {
+  it("sem público declarado: o MESMO router volta e os fatos do contato NÃO são lidos", async () => {
+    const router = routerDeTeste(MEMBROS);
+    const lerFatos = vi.fn(async () => CLIENTE);
+
+    const filtro = await filtrarMembrosPeloPublico(router, lerFatos);
+
+    expect(filtro.router).toBe(router);
+    expect(filtro.avaliado).toBe(false);
+    expect(filtro.rastro).toBeNull();
+    expect(lerFatos, "quem não configura público não paga consulta").not.toHaveBeenCalled();
+  });
+
+  it("remove o membro barrado, mantém o elegível e o rastro diz quantos e por qual regra", async () => {
+    const router = routerDeTeste([
+      { ...MEMBROS[0]!, publico: publicoVazio({ excluirEtiquetas: ["cliente ativo"] }) },
+      { ...MEMBROS[1]!, agentName: "Suporte", publico: null },
+    ]);
+
+    const filtro = await filtrarMembrosPeloPublico(router, async () => CLIENTE);
+
+    expect(filtro.router.members.map((m) => m.agentId)).toEqual(["agente-suporte"]);
+    expect(filtro.elegiveis).toBe(1);
+    expect(filtro.barrados).toBe(1);
+    expect(filtro.rastro).toMatchObject({
+      origem: "roteador",
+      contatoAvaliado: true,
+      barrados: 1,
+      escolhidoAgentId: null,
+    });
+    expect(filtro.rastro?.candidatos.map((c) => [c.agentId, c.semPublico, c.decisao?.regra])).toEqual([
+      ["agente-vendas", false, "barrado_por_etiqueta_excluida"],
+      ["agente-suporte", true, undefined],
+    ]);
+    // A pergunta que sai para o classificador (e para o Jev) não oferece o
+    // barrado — é o defeito da issue, com nome.
+    const pergunta = perguntaDoRoteador(filtro.router.members);
+    expect(Object.keys(pergunta?.tipo === "choice" ? pergunta.criterios : {})).toEqual(["suporte", "none"]);
+  });
+
+  it("erro ao ler os fatos sobe tipado — o turno não decide no escuro", async () => {
+    const router = routerDeTeste([
+      { ...MEMBROS[0]!, publico: publicoVazio({ excluirEtiquetas: ["cliente ativo"] }) },
+    ]);
+    const lerFatos = vi.fn(async () => {
+      throw new Error("banco fora");
+    });
+
+    await expect(filtrarMembrosPeloPublico(router, lerFatos)).rejects.toBeInstanceOf(
+      ErroDeLeituraDoPublico,
+    );
+  });
+});
+
+describe("avaliarAgentePeloPublico — o fallback do roteador também tem público (#3722)", () => {
+  it("sem público declarado não lê os fatos e não gera candidato", async () => {
+    const lerFatos = vi.fn(async () => CLIENTE);
+    const candidato = await avaliarAgentePeloPublico("fb", "Fallback", null, lerFatos, 2);
+    expect(candidato).toBeNull();
+    expect(lerFatos).not.toHaveBeenCalled();
+  });
+
+  it("com público, devolve o candidato com a decisão para o rastro", async () => {
+    const candidato = await avaliarAgentePeloPublico(
+      "fb",
+      "Fallback",
+      publicoVazio({ excluirEtiquetas: ["cliente ativo"] }),
+      async () => CLIENTE,
+      2,
+    );
+    expect(candidato).toMatchObject({
+      agentId: "fb",
+      agentName: "Fallback",
+      posicao: 2,
+      semPublico: false,
+      decisao: { passa: false, regra: "barrado_por_etiqueta_excluida", valor: "cliente ativo" },
+    });
   });
 });

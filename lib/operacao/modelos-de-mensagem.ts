@@ -346,7 +346,12 @@ function lacunasDe(template: string, contexto: Record<string, unknown>): string[
     if (m[2] !== undefined) continue;
     // Comparar o render de UMA marcação isolada é o que garante a mesma régua
     // do texto final: alias, caminho aninhado e ausência passam pelo mesmo código.
-    if (renderTemplate(`{{${marcacao}}}`, contexto) === "") vazias.add(marcacao);
+    // Voltar INTACTA também é lacuna: desde o resolvedor único (#3687)
+    // `{{saudacao}}` sem instante do envio fica literal em vez de vazia, e o
+    // integrador precisa saber que ela não foi preenchida.
+    const sozinha = `{{${marcacao}}}`;
+    const renderizada = renderTemplate(sozinha, contexto);
+    if (renderizada === "" || renderizada === sozinha) vazias.add(marcacao);
   }
   return [...vazias];
 }

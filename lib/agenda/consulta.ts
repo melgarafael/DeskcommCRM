@@ -1,6 +1,8 @@
 import { googleRpc } from "./google/sync-store";
 import { consultarServico, lerServico, type DisponibilidadeDoServico } from "./servicos/consulta";
 import { lerCorposDoLembrete } from "./lembretes";
+import { RECUSA_DE_TIPO_EXTERNO } from "./autoridade";
+import { agendaAuthority, AMIGO_CONTEXT_REQUIRED, providerContext } from "@/lib/amigo/agenda";
 /**
  * OS HORÁRIOS LIVRES DE UMA ORGANIZAÇÃO — a coleta, num lugar só.
  *
@@ -90,8 +92,10 @@ export const MAXIMO_DE_DIAS = 62;
 export type CodigoDeRecusaDaConsulta =
   | "tipo_desconhecido"
   | "tipo_desativado"
+  | "tipo_de_sistema_externo"
   | "sem_responsavel"
   | "jornada_mal_configurada"
+  | "amigo_context_required"
   | "erro_interno";
 
 export interface ParametrosDaConsulta {
@@ -174,6 +178,9 @@ export type ResultadoDaConsulta =
       motivoParaOperador: string;
       /** Sem nome de campo, e diz o que fazer. Plateia: o modelo, e por tabela o cliente. */
       motivoParaCliente: string;
+      /** Módulo `amigo`: a agenda da organização é o Amigo, e a vaga vem de lá. */
+      provider?: "amigo";
+      provider_context?: ReturnType<typeof providerContext>["provider_context"];
     };
 
 /**
@@ -202,10 +209,47 @@ export async function horariosLivresDaOrg(
   organizationId: string,
   params: ParametrosDaConsulta,
 ): Promise<ResultadoDaConsulta> {
+  // Módulo `amigo` com a conexão ativa: a agenda da organização é o Amigo, e a
+  // grade local não é oferecida — a vaga real vem das ferramentas do Amigo. A
+  // exceção é remarcar um compromisso LOCAL do histórico, que segue a régua daqui.
+  try {
+    const autoridade = await agendaAuthority(supabase, organizationId);
+    if (autoridade.provider === "amigo") {
+      let compromissoLocal = false;
+      if (params.ignorarAgendamentoId) {
+        const { data, error } = await supabase
+          .from("calendar_appointments")
+          .select("authority")
+          .eq("organization_id", organizationId)
+          .eq("id", params.ignorarAgendamentoId)
+          .maybeSingle();
+        if (error) throw error;
+        compromissoLocal = data?.authority === "local";
+      }
+      if (!compromissoLocal) {
+        return {
+          ok: false,
+          codigo: "amigo_context_required",
+          motivoParaOperador: AMIGO_CONTEXT_REQUIRED,
+          motivoParaCliente:
+            "Esta agenda é a do sistema da clínica. Consulte as vagas pelas ferramentas do Amigo, com o paciente escolhido; não ofereça horários da agenda local.",
+          provider: "amigo",
+          provider_context: providerContext(autoridade).provider_context,
+        };
+      }
+    }
+  } catch {
+    return {
+      ok: false,
+      codigo: "erro_interno",
+      motivoParaOperador: "Não foi possível verificar quem manda na agenda. Tente de novo.",
+      motivoParaCliente: NAO_OFERECA,
+    };
+  }
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, service_enabled",
+      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, service_enabled, external_provider",
     )
     .eq("organization_id", organizationId)
     .eq(params.eventTypeSlug ? "slug" : "id", params.eventTypeSlug ?? params.eventTypeId ?? "")
@@ -229,6 +273,16 @@ export async function horariosLivresDaOrg(
       motivoParaCliente:
         `Não existe atendimento chamado "${params.eventTypeSlug ?? params.eventTypeId ?? ""}". ` +
         "Pergunte à pessoa que tipo de atendimento ela quer e use um dos tipos que a organização oferece.",
+    };
+  }
+  // Tipo que veio de um sistema externo (migration 9392) não tem horário local:
+  // a vaga é do sistema que manda, e oferecer a grade daqui seria inventar.
+  if (tipo.external_provider) {
+    return {
+      ok: false,
+      codigo: "tipo_de_sistema_externo",
+      motivoParaOperador: RECUSA_DE_TIPO_EXTERNO,
+      motivoParaCliente: `"${tipo.name}" é marcado pela equipe em outro sistema. ${NAO_OFERECA}`,
     };
   }
   if (!tipo.is_active) {
@@ -543,6 +597,10 @@ export async function coletaOQueOcupa(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AgendamentoListado {
+  /** `local` ou o provedor externo (9392); o estado lá vem em `external_status`. */
+  authority?: string;
+  external_status?: string | null;
+  external_connection_id?: string | null;
   meetingState?: string;
   meetingUrl?: string | null;
   revision?:number;
@@ -562,7 +620,7 @@ export interface AgendamentoListado {
    * marcado antes do cadastro do tipo. Inventar um aqui faria um calendário
    * externo mostrar "Consulta" para um bloco que ninguém marcou. (issue #1744)
    */
-  tipo?: { slug: string; nome: string } | null;
+  tipo?: { id: string; slug: string; nome: string } | null;
   /**
    * COMO e ONDE se atende — o mesmo par `location_kind`/`location_details` que
    * `lib/agenda/locais.ts` rotula na tela. Entrego os VALORES, não o rótulo:
@@ -578,7 +636,14 @@ export interface AgendamentoListado {
    * vínculo e não paga o preço de quem publica. (issue #1744)
    */
   leadIds?: string[];
-  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string };
+  /**
+   * Pessoas da equipe convidadas além do responsável (#4006).
+   *
+   * É o que deixa a tela mostrar quem mais está no compromisso — e o que
+   * explica por que ele aparece na agenda de quem não é o dono.
+   */
+  convidadosDaEquipe?: string[];
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number };
 }
 
 export interface ParametrosDaLista {
@@ -738,7 +803,7 @@ async function fusoDaOrganizacao(
  * `null` quando o fuso é inexistente (`instanteDe` lança `RangeError`) — quem
  * chama cai no corte em UTC.
  */
-function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
+export function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia);
   if (!m) return null;
   const [ano, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -897,7 +962,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
+      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -912,7 +977,23 @@ export async function listaAgendamentos(
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
   if (params.somenteColetivas) q = q.in("service_booking_mode", ["collective_limited", "collective_unlimited"]);
-  if (params.ownerUserId) q = q.eq("owner_user_id", params.ownerUserId);
+  if (params.ownerUserId) {
+    /**
+     * A AGENDA DE QUEM FOI CONVIDADO TAMBÉM É DELE (#4006).
+     *
+     * O recorte por dono existia porque o compromisso tinha um responsável e só
+     * ele participava. Com convidados da equipe, "minha agenda" precisa mostrar
+     * o que eu vou ATENDER (sou o dono) e o que eu fui CHAMADO a participar —
+     * sem isso, a SDR marca com o closer, o closer abre a própria agenda e não
+     * vê nada, que é metade do relato da issue.
+     *
+     * `cs` é "contém" de array no PostgREST, e o id é uuid validado a montante:
+     * não há vírgula nem chave para escapar na expressão `or`.
+     */
+    q = q.or(
+      `owner_user_id.eq.${params.ownerUserId},team_guest_user_ids.cs.{${params.ownerUserId}}`,
+    );
+  }
   if (params.situacao) q = q.eq("status", params.situacao);
   if (params.depoisDe) {
     const cursor = decodificarCursorDaLista(params.depoisDe);
@@ -1025,10 +1106,13 @@ export async function listaAgendamentos(
       // aviso de `contatoDoEmbed`, aqui de novo porque é o MESMO embed.
       const tipo = (Array.isArray(l.calendar_event_types)
         ? (l.calendar_event_types[0] ?? null)
-        : (l.calendar_event_types ?? null)) as { name?: unknown; slug?: unknown } | null;
+        : (l.calendar_event_types ?? null)) as { id?: unknown; name?: unknown; slug?: unknown } | null;
       const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
       return {
         id: String(l.id),
+        authority: l.authority ?? "local",
+        external_status: l.external_status ?? null,
+        external_connection_id: l.external_connection_id ?? null,
         titulo: String(l.title),
         meetingState: l.meeting_state,
         meetingUrl: l.meeting_state === "ready" ? l.meeting_url : null,
@@ -1045,11 +1129,15 @@ export async function listaAgendamentos(
         // produto lê, e a MESMA decisão de nome — `lib/contacts/rotulo-do-contato.ts`,
         // não um precedente copiado de outro arquivo.
         contatoNome: contatoDoEmbed(l.contacts),
-        tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
+        tipo: tipo ? { id: String(tipo.id), slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
         local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
+        convidadosDaEquipe: Array.isArray(l.team_guest_user_ids)
+          ? (l.team_guest_user_ids as unknown[]).map(String)
+          : [],
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
+          pessoas: Number(l.service_party_size ?? 1),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
             : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;
@@ -1104,6 +1192,10 @@ export async function idDoTipoPorSlug(
  * `tipo_desativado`. Por isso o default é SÓ ATIVOS — quem quer o outro pede.
  */
 export interface TipoDeAtendimento {
+  /** Tipo que veio de um sistema externo (9392): marca-se lá, não aqui. */
+  external_provider?: string | null;
+  external_id?: string | null;
+  external_connection_id?: string | null;
   /** Chave de lista e alvo de PATCH/DELETE na TELA. Nunca vai ao modelo (ver a tool). */
   id: string;
   nome: string;
@@ -1141,6 +1233,8 @@ export interface TipoDeAtendimento {
    * controle decorativo, invertido.
    */
   lembreteLigado: boolean;
+  /** true = a descrição do evento no Google leva o bloco do negócio (migration 9209). Desligado de fábrica. */
+  levarDadosDoNegocio: boolean;
   lembreteCanalId?: string | null;
   /** Modelo aprovado para quando a janela de 24 h do cliente fechou (`lib/agenda/lembrete-por-modelo.ts`). */
   lembreteModeloId?: string | null;
@@ -1157,13 +1251,21 @@ export interface TipoDeAtendimento {
 }
 
 export type ResultadoDosTipos =
-  | { ok: true; tipos: TipoDeAtendimento[] }
+  | ({ ok: true; tipos: TipoDeAtendimento[] } & Partial<ReturnType<typeof providerContext>>)
   | {
       ok: false;
       codigo: "erro_interno";
       motivoParaOperador: string;
       motivoParaCliente: string;
     };
+
+/**
+ * As colunas do tipo de agendamento, numa lista só: a da tela de configuração e a
+ * da rota. Eram duas, e a coluna que entrou em uma e não na outra fazia o
+ * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
+ */
+export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
 
 /**
  * Os tipos de atendimento da organização.
@@ -1179,12 +1281,21 @@ export async function listaTiposDeAtendimento(
   opcoes?: { incluirInativos?: boolean },
 ): Promise<ResultadoDosTipos> {
   const incluirInativos = opcoes?.incluirInativos ?? false;
+  let autoridade: Awaited<ReturnType<typeof agendaAuthority>>;
+  try {
+    autoridade = await agendaAuthority(supabase, organizationId);
+  } catch {
+    return {
+      ok: false,
+      codigo: "erro_interno",
+      motivoParaOperador: "Não foi possível verificar quem manda na agenda.",
+      motivoParaCliente: `Não consegui ver o que a agenda oferece agora. ${NAO_OFERECA}`,
+    };
+  }
 
   let q = supabase
     .from("calendar_event_types")
-    .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
-    )
+    .select(COLUNAS_DO_TIPO_DE_AGENDAMENTO)
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
     .eq("organization_id", organizationId);
@@ -1203,7 +1314,11 @@ export async function listaTiposDeAtendimento(
 
   return {
     ok: true,
+    ...providerContext(autoridade),
     tipos: (data ?? []).map((t) => ({
+      external_provider: t.external_provider ?? null,
+      external_id: t.external_id ?? null,
+      external_connection_id: t.external_connection_id ?? null,
       id: String(t.id),
       nome: String(t.name),
       slug: String(t.slug),
@@ -1220,6 +1335,7 @@ export async function listaTiposDeAtendimento(
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),
       janelaDeAgendamentoDias: Number(t.booking_window_days),
       lembreteLigado: Boolean(t.reminder_enabled),
+      levarDadosDoNegocio: t.levar_dados_do_negocio === true,
       lembreteCanalId: t.reminder_channel_session_id ?? null,
       lembreteModeloId: t.reminder_meta_template_id ?? null,
       lembreteAntecedenciaMin: Number(t.reminder_minutes_before),

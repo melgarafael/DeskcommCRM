@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -47,18 +48,31 @@ const criarSchema = z
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "honorarios_contratos" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_contratos",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_contratos_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const leadId = url.searchParams.get("lead_id");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+  // #4845 — a lista é da EMPRESA ATIVA, e o `lead_id` NÃO substitui isto: o id do
+  // negócio de outra empresa passava pela RLS (a pessoa é membro das duas) e
+  // devolvia o contrato dela. Com o filtro, um `lead_id` de fora devolve lista
+  // vazia em vez do contrato alheio.
   let q = supabase
     .from("honorarios_contratos")
     .select(
       "id, lead_id, modelo, valor_fixo_cents, percentual_exito, repasse_advogado_pct, created_at",
     )
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (leadId) q = q.eq("lead_id", leadId);
@@ -135,6 +149,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "honorarios.contrato_criado",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "honorarios_contrato",
     resourceId: data.id,
     requestId,

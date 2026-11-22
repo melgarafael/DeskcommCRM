@@ -67,15 +67,95 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const org = authz.org.orgId;
 
+  // ─── #4845 — o lote não atravessa a fronteira da empresa ────────────────────
+  //
+  // A leitura era `.in("id", appointment_ids)` sem empresa. A RLS de
+  // `calendar_appointments` libera TODAS as empresas de que a pessoa é membro
+  // (e todas, para o admin da plataforma), então um id da empresa B voltava
+  // daqui e era gravado na A: comanda, item, comissão e lançamento PAGO no
+  // caixa da A, de um serviço prestado na B — e o atendimento da B continuava
+  // pendente lá, pronto para ser cobrado de novo.
+  //
+  // O filtro por `organization_id` resolve a leitura. O que sobra é o que fazer
+  // com um id do corpo que não volta: aqui o lote é RECUSADO INTEIRO, antes de
+  // qualquer escrita. Faturar metade e recusar a outra metade deixaria a pessoa
+  // com um lote pela metade e sem saber qual — e a atomicidade é o que torna a
+  // recusa verificável (nenhuma linha em `sales`, `sale_items`, `commissions`
+  // ou `financial_entries`).
+  //
+  // A recusa diz QUANTOS ids ficaram de fora e nada mais: nem nome, nem valor,
+  // nem de qual empresa são. Um id que não existe em empresa nenhuma recebe a
+  // mesma resposta de um id de outra empresa — assim a rota também não serve de
+  // sonda para descobrir quais ids existem no vizinho.
+  const pedidos = [...new Set(lido.data.appointment_ids)];
+
   const { data: agendamentos, error } = await supabase
     .from("calendar_appointments")
     .select(
       "id, title, contact_id, event_type_id, owner_user_id, status, calendar_event_types(name, default_price_cents)",
     )
-    .in("id", lido.data.appointment_ids)
-    .in("status", ["confirmed", "completed"]);
+    .eq("organization_id", org)
+    .in("id", pedidos);
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
+
+  const daEmpresa = new Set((agendamentos ?? []).map((ag) => ag.id));
+  const deFora = pedidos.filter((id) => !daEmpresa.has(id));
+
+  if (deFora.length > 0) {
+    return fail(
+      "financeiro_agendamento_fora_da_empresa",
+      `${deFora.length} atendimento(s) do lote não pertencem a esta empresa. Nada foi faturado.`,
+      422,
+      { requestId, details: { fora_da_empresa: deFora.length } },
+    );
+  }
+
+  // O STATUS passou a ser filtrado aqui, e não na consulta: a leitura precisa
+  // ver o agendamento da empresa em QUALQUER status para saber que ele existe
+  // (senão um cancelado da própria empresa seria contado como "de fora" e
+  // derrubaria o lote). O que se fatura continua sendo só confirmado/concluído,
+  // como antes.
+  const faturáveis = (agendamentos ?? []).filter(
+    (ag) => ag.status === "confirmed" || ag.status === "completed",
+  );
+
+  // ─── o CONTATO também tem empresa ──────────────────────────────────────────
+  //
+  // O agendamento é da empresa, mas o `contact_id` dele pode apontar para um
+  // contato de fora (dado corrompido por outro caminho, ou por escrita direta).
+  // A venda nasceria na A carregando o cliente da B, e a ficha da B passaria a
+  // mostrar uma comanda que não é dela. Mesma decisão da leitura acima: confere
+  // antes de gravar e recusa o lote inteiro.
+  const contatosDoLote = [
+    ...new Set(
+      faturáveis
+        .map((ag) => ag.contact_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+
+  if (contatosDoLote.length > 0) {
+    const { data: contatos, error: erroContatos } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", org)
+      .in("id", contatosDoLote);
+
+    if (erroContatos) return fail("internal_error", erroContatos.message, 500, { requestId });
+
+    const contatosDaEmpresa = new Set((contatos ?? []).map((c) => c.id));
+    const contatosDeFora = contatosDoLote.filter((id) => !contatosDaEmpresa.has(id));
+
+    if (contatosDeFora.length > 0) {
+      return fail(
+        "financeiro_contato_fora_da_empresa",
+        `${contatosDeFora.length} cliente(s) do lote não pertencem a esta empresa. Nada foi faturado.`,
+        422,
+        { requestId, details: { fora_da_empresa: contatosDeFora.length } },
+      );
+    }
+  }
 
   let faturados = 0;
   const pulados: Record<string, number> = {};
@@ -91,7 +171,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // do relatório (#2160). O corpo nem declara `currency`: o Zod descarta.
   const moeda = await moedaDaOrganizacao(supabase, org);
 
-  for (const ag of agendamentos ?? []) {
+  for (const ag of faturáveis) {
     const tipo = Array.isArray(ag.calendar_event_types)
       ? ag.calendar_event_types[0]
       : ag.calendar_event_types;
@@ -101,6 +181,22 @@ export async function POST(req: NextRequest): Promise<Response> {
       // O tipo não diz quanto custa. Inventar um número aqui é o pior desfecho
       // possível: ninguém confere o que já foi cobrado.
       pular("sem_preco");
+      continue;
+    }
+
+    // Resolve the rate before opening the sale: a failed lookup must leave
+    // the appointment available for a later batch, without an empty sale.
+    const comissao = await percentualDoItem(supabase, org, {
+      attendantUserId: ag.owner_user_id,
+      eventTypeId: ag.event_type_id,
+    });
+    if (!comissao.ok) {
+      pular("erro_no_item");
+      logger.error("[faturar-lote] commission lookup failed", {
+        appointment_id: ag.id,
+        error: comissao.error,
+        requestId,
+      });
       continue;
     }
 
@@ -147,10 +243,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       unit_price_cents: preco,
       total_cents: preco,
       attendant_user_id: ag.owner_user_id,
-      commission_percent: await percentualDoItem(supabase, org, {
-        attendantUserId: ag.owner_user_id,
-        eventTypeId: ag.event_type_id,
-      }),
+      commission_percent: comissao.percent,
     });
 
     if (erroItem) {
@@ -198,6 +291,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (faturados > 0) {
     await audit({
       action: "comanda.faturada_em_lote",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
       resourceType: "sale",
       requestId,
       metadata: {

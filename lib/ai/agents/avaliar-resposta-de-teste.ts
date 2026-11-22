@@ -58,6 +58,11 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
   { gate: "lgpd", porque: "depende da base legal registrada para o contato" },
   { gate: "pacing", porque: "depende de quantas mensagens o número já enviou hoje e do horário do envio" },
   { gate: "messaging_window", porque: "depende de quando o contato falou com você pela última vez" },
+  {
+    gate: "teto_de_respostas",
+    porque:
+      "depende de quantas respostas esta conversa já recebeu na janela — e o teste do agente não conta como resposta enviada",
+  },
   { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
   {
@@ -110,7 +115,7 @@ export function avaliarRespostaDeTeste(
   // silêncio-que-parece-aprovação que este módulo existe para corrigir.
   const corpo = texto ?? "";
   const avaliado = corpo.trim() !== "";
-  const achado = detectarVazamentoInterno(corpo);
+  const achado = detectarVazamentoInterno(corpo, { linkDoCliente: true });
   // #2490: texto limpo NÃO é aprovação quando a foto que a resposta promete
   // não passou pela mesma preparação do envio real — aí o teste é VERMELHO.
   const midiaPendente = midia.some((m) => m.falha !== undefined);

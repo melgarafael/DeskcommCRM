@@ -1,0 +1,51 @@
+-- manifest: **A nota apagada some da tela de quem não apagou (#1863, F1).** `conversation_notes` está na publicação `supabase_realtime` desde a 0478, mas com `replica identity` de fábrica o payload de um DELETE carrega só a chave primária — e o canal de `hooks/inbox/useConversationNotes.ts:43` assina com `filter: conversation_id=eq.<id>`, então o Realtime descarta o evento antes de entregar e os outros atendentes seguem vendo a nota que já não existe até recarregar. `alter table public.conversation_notes replica identity full` faz o registro antigo carregar a linha inteira, o filtro casa e o hook invalida a query sem F5. Cláusula declarativa (idempotente por natureza, sem `if not exists` inventado), sem coluna nova e sem backfill; custo em WAL de uma linha por DELETE/UPDATE numa tabela com poucas notas por conversa — o mesmo motivo que o bloco da 0183 declarou para NÃO ligar na agenda, onde não havia assinante. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova: `tests/unit/notas-internas-realtime-do-delete.test.ts`, `tests/unit/notas-internas-aplicam-sem-recarregar.test.tsx` e `tests/invariants/notas-internas-publicam-no-realtime.test.ts`.
+--
+-- ─── O que já estava consertado, para não ser "consertado" duas vezes ───────
+--
+-- A metade barulhenta da #1863 F1 saiu na 0478: `conversation_notes` não estava
+-- na publicação, o canal subia, respondia `SUBSCRIBED` e nenhum evento chegava —
+-- a nota de um atendente só aparecia para os outros depois de recarregar. A
+-- 0478 a pôs na publicação (`alter publication supabase_realtime add table`,
+-- guarded por `pg_publication_tables`) e o espelho dela vive no apêndice do
+-- baseline, no bloco "notas internas: realtime + visibilidade herdada da
+-- conversa". Aquela metade NÃO se repete aqui: repetir o `add table` seria DDL
+-- redundante com guarda, e o gate `tests/unit/realtime-assinatura-tem-publicacao.test.ts`
+-- já cobra que toda tabela assinada esteja publicada.
+--
+-- O que sobrou é o outro lado do MESMO silêncio, e é o que esta migration fecha.
+--
+-- ─── Por que o DELETE ficava de fora ──────────────────────────────────────
+--
+-- `postgres_changes` aplica o `filter` sobre o registro que o Realtime recebe.
+-- Num INSERT/UPDATE o registro novo carrega todas as colunas, então o filtro
+-- funciona. Num DELETE só existe o registro ANTIGO, e o que ele carrega é
+-- ditado pela `replica identity` da tabela: no padrão (`default`), a chave
+-- primária e nada mais. Sem `conversation_id`, `conversation_id=eq.<id>` não
+-- casa, o evento é descartado e o `onChange` do hook nunca roda.
+--
+-- Efeito medido no produto: `hooks/inbox/useDeleteNote.ts` invalida a query de
+-- quem apagou (a nota some na tela dele), mas quem tem a conversa aberta em
+-- outra aba — ou em outra máquina — continua vendo a nota até o F5. É o sintoma
+-- da #1863 invertido: em vez de "só aparece quando recarrega", "só some quando
+-- recarrega".
+--
+-- ─── Por que `full` e não tirar o filtro do hook ──────────────────────────
+--
+-- O filtro é o que impede o canal de uma conversa de acordar por nota de outra.
+-- Tirá-lo trocaria um silêncio por ruído em toda a organização, e o canal
+-- passaria a invalidar a query de toda conversa aberta a cada nota escrita.
+--
+-- `full` é a condição que o próprio schema já nomeia para a agenda
+-- (`supabase/baseline.sql`, bloco da 0183): "o DELETE só traz o id, então um
+-- canal com filter por owner_user_id não o recebe". Ali ficou declarado e não
+-- ligado porque NÃO havia assinante; aqui há — `useConversationNotes` assina
+-- `event: "*"` — e a tabela é pequena (poucas notas por conversa, uma escrita
+-- por nota), então o custo em WAL é o de uma linha por DELETE/UPDATE.
+--
+-- ─── Idempotência ────────────────────────────────────────────────────────
+--
+-- `replica identity` não tem forma `if not exists`, e inventar uma exigiria ler
+-- `pg_class.relreplident` num `do $$` — cerimônia para um comando que já é
+-- declarativo: reaplicar o mesmo valor é no-op e nunca erra. O `update.sh` roda
+-- o mesmo apêndice duas vezes (install e update) e não há o que guardar.
+alter table public.conversation_notes replica identity full;

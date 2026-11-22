@@ -7,20 +7,25 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * pro catálogo da org (Task 4, `importSkillPackage`): versão nova + assets no storage +
  * ponteiro movido.
  *
- * organization_id vem SEMPRE de requireRole — NUNCA do form (pacote adulterado não
- * consegue apontar pra outro tenant).
+ * Aceita sessão de navegador OU Bearer `dsk_…` (`config:write`, papel admin via `tokenRole`).
+ * organization_id vem SEMPRE do portão (sessão ou linha do token) — NUNCA do form (pacote
+ * adulterado não consegue apontar pra outro tenant). O storage leva o prefixo da
+ * organização (`<org>/<skill>/<versão>/…`, em `importSkillPackage`). No token não há
+ * pessoa: `createdBy` é null.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { parseSkillPackage } from "@/lib/ai/skills/package";
 import { importSkillPackage } from "@/lib/ai/skills/install";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -30,23 +35,34 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
-  // Guard against large uploads before buffering into memory. `parseSkillPackage`'s
-  // ≤5MB check is authoritative (defense in depth); this header check cheaply rejects
-  // the obvious large-body case before `req.formData()` materializes it in RAM.
+  // `parseSkillPackage`'s ≤5MB check is authoritative (defense in depth); this
+  // keeps the body itself under the multipart envelope, with or without Content-Length.
   const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6MB: teto do envelope multipart (5MB skill + overhead)
-  const contentLength = Number(req.headers.get("content-length") ?? "0");
-  if (contentLength > MAX_UPLOAD_BYTES) {
-    return fail("skill_upload_too_large", t("O arquivo enviado é grande demais (máx. 5 MB por skill)."), 413, { requestId });
-  }
+  const corpo = await lerCorpoComTeto(req, MAX_UPLOAD_BYTES, {
+    requestId,
+    idioma: authz.idioma,
+    codigo: "skill_upload_too_large",
+    acimaDoTeto: t("O arquivo enviado é grande demais (máx. 5 MB por skill)."),
+  });
+  if (!corpo.ok) return corpo.response;
 
   let formData: FormData;
   try {
-    formData = await req.formData();
+    formData = await corpo.corpo.formData();
   } catch {
     return fail("invalid_request", t("Falha ao processar multipart/form-data."), 400, { requestId });
   }
@@ -69,7 +85,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     result = await importSkillPackage(
       { db, admin },
-      { organizationId: org.orgId, pkg: parsed.pkg, createdBy: authUser.id },
+      { organizationId: orgId, pkg: parsed.pkg, createdBy: actorUserId },
     );
   } catch (err) {
     console.error("[skills-import] importSkillPackage falhou:", err);
@@ -78,8 +94,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "ai.skill_imported",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: orgId,
     resourceType: "skill_versions",
     resourceId: result.versionId,
     requestId,

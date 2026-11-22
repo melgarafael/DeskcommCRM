@@ -56,6 +56,16 @@ vi.mock("@/hooks/agenda/useHorariosLivres", () => ({
   }),
 }));
 
+// O quadro por profissional (#4186) pergunta os horários de cada linha por um
+// hook próprio, chamado em toda renderização da `AgendaInterativa` (hook não
+// pode ser condicional). Ele usa `useQueries`, que exige um QueryClient — e
+// este arquivo monta o componente sem provedor, pelo mesmo motivo que já
+// substitui `useHorariosLivres` acima. Aqui a visão é "dia": o quadro não é
+// desenhado e o hook não devolve nada.
+vi.mock("@/hooks/agenda/useHorariosLivresPorPessoa", () => ({
+  useHorariosLivresPorPessoa: () => ({}),
+}));
+
 vi.mock("@/hooks/i18n/useT", () => ({
   useT: () => (chave: string) => chave,
 }));

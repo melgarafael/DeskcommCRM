@@ -32,9 +32,11 @@ DUMP="${1:-}"
 # um .tgz cortado só no `tar xzf` já teria apagado as sessões/anexos anteriores;
 # e, com o banco restaurado, a guarda de banco vazio impediria repetir o script.
 # `gzip -t` percorre também o CRC: listar nomes no tar não basta para isso.
-WAHA_TAR="${DUMP/db-/waha-}"
-WAHA_TAR="${WAHA_TAR%.sql.gz}.tgz"
-STORAGE_TAR="$(dirname "$DUMP")/storage-$(basename "$DUMP" .sql.gz | sed 's/^db-//').tgz"
+pasta_do_dump="$(dirname "$DUMP")"
+nome_do_dump="$(basename "$DUMP" .sql.gz)"
+# Troque o prefixo no arquivo: o caminho da pasta pode conter "db-".
+WAHA_TAR="$pasta_do_dump/${nome_do_dump/db-/waha-}.tgz"
+STORAGE_TAR="$pasta_do_dump/storage-${nome_do_dump#db-}.tgz"
 
 conferir_snapshot() {
   [ -f "$1" ] || return 0

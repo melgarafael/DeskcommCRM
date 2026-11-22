@@ -24,15 +24,19 @@ import { z } from 'zod';
 
 import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { chamarComRetryUnicoEm401 } from '@/lib/ai/pontos/renovacao-da-assinatura';
-import { sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
-import { renovarAssinaturaNoTurno } from '@/lib/ai/credenciais/login-codex';
+import { avisarIaFora, fecharAvisoDaIaForaPelaChamada, sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
+import { renovarAssinaturaNoTurno, lerLoginCodex } from '@/lib/ai/credenciais/login-codex';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
+import { traduzir } from '@/lib/i18n/dicionario';
+import { preencher } from '@/lib/i18n/idioma-do-aviso';
+import { IDIOMA_PADRAO, type Idioma } from '@/lib/i18n/idiomas';
+import { fatosDaOrganizacao } from '../../agent/fatos-da-organizacao';
 // O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
 // importam daqui — não cada um a sua (issue #2377).
 import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
-import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
+import { decidirQuedaDoProvedor, decidirQuedaDoModeloDeReserva } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
 import { identificarConteudoBloqueado } from './conteudo-bloqueado';
 
@@ -48,23 +52,24 @@ import {
   type OrigemDaChaveLlm,
 } from './credentials';
 import {
-  AVISO_CORPO,
-  AVISO_TITULO,
-  BLOQUEIO_TITULO,
-  CORPO_TETO_DO_PLANO,
+  corpoDoAvisoDeGasto,
   corpoDoBloqueio,
+  corpoDoTetoDoPlano,
   decidirOrcamento,
   decidirTetoDoPlano,
   lerTetoDoPlano,
   MOTIVO_TETO_DO_PLANO,
-  TITULO_TETO_DO_PLANO,
+  tituloDoAvisoDeGasto,
+  tituloDoBloqueio,
+  tituloDoTetoDoPlano,
   normalizarModoDeOrcamento,
   LIMIAR_PADRAO_PCT,
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
+import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoPorPassosComFaixaLonga, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
+import { decidirCustoDaChamada, haUsoMedido } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
 import { createDefaultRegistry, ehOpenRouterOficial, type ProviderRegistry } from './providers';
@@ -167,6 +172,41 @@ export const TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA =
 export const TITULO_ENDERECO_SEM_CHAVE_PRAZO =
   `A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em ${prazoLegivel()}`;
 
+/**
+ * Os dois títulos no idioma da ORGANIZAÇÃO — a Central mostra o item como foi
+ * gravado. `pt-BR` devolve as constantes acima, byte a byte; a dedup por título
+ * continua estável porque o idioma de uma organização não muda entre chamadas.
+ */
+function tituloDoEnderecoSemChave(degrau: 'avisa' | 'recusa', idioma: Idioma): string {
+  return degrau === 'recusa'
+    ? traduzir('A IA recusou usar o endereço próprio desta empresa sem a chave dela', idioma)
+    : preencher(traduzir('A IA vai deixar de usar o endereço próprio desta empresa sem a chave dela em {data}', idioma), {
+        data: prazoLegivel(),
+      });
+}
+
+/**
+ * O idioma da organização para os itens que o gate grava, com memo curto: o
+ * statement do orçamento recebe título e corpo do aviso por parâmetro em TODA
+ * chamada com orçamento ligado, e uma leitura a mais por chamada de IA seria
+ * custo sem motivo. Nunca lança (`fatosDaOrganizacao` cai em `pt-BR`).
+ */
+const MEMO_DO_IDIOMA_MS = 60_000;
+const memoDoIdioma = new Map<string, { idioma: Idioma; ate: number }>();
+async function idiomaDoGate(db: pg.Pool, organizationId: string): Promise<Idioma> {
+  const agora = Date.now();
+  const guardado = memoDoIdioma.get(organizationId);
+  if (guardado && guardado.ate > agora) return guardado.idioma;
+  let idioma: Idioma = IDIOMA_PADRAO;
+  try {
+    idioma = (await fatosDaOrganizacao(db, organizationId)).idioma;
+  } catch {
+    idioma = IDIOMA_PADRAO;
+  }
+  memoDoIdioma.set(organizationId, { idioma, ate: agora + MEMO_DO_IDIOMA_MS });
+  return idioma;
+}
+
 /** O corpo do aviso — só o HOST do endereço, nunca a URL inteira. */
 export function corpoDoAvisoDeEnderecoSemChave(d: {
   purpose: string;
@@ -174,30 +214,45 @@ export function corpoDoAvisoDeEnderecoSemChave(d: {
   baseUrl: string;
   /** `avisa` antes do prazo (a chamada seguiu), `recusa` depois dele. */
   degrau: 'avisa' | 'recusa';
+  /** O idioma da organização; `pt-BR` (o padrão) é o texto de antes, byte a byte. */
+  idioma?: Idioma;
 }): string {
+  const idioma = d.idioma ?? IDIOMA_PADRAO;
   const ponto = PONTO_POR_ID.get(d.purpose)?.rotulo ?? d.purpose;
   // Só o host: uma URL pode carregar usuário e senha (`https://u:s@host`) ou um
   // token na query, e este corpo é lido por qualquer pessoa da equipe.
-  let destino = 'um endereço próprio';
+  let destino = traduzir('um endereço próprio', idioma);
   try {
-    destino = `um endereço próprio (${new URL(d.baseUrl).host})`;
+    destino = preencher(traduzir('um endereço próprio ({host})', idioma), { host: new URL(d.baseUrl).host });
   } catch {
     // Endereço que nem é URL: o aviso segue sem o host, que é detalhe.
   }
   return (
-    `O ponto "${ponto}" está configurado em Agente de IA › Provedores para ${destino}, ` +
-    `mas esta empresa não tem chave de ${d.provider} cadastrada e validada. ` +
-    `A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — ` +
-    `não é enviada a um endereço escolhido por uma empresa. ` +
+    preencher(
+      traduzir(
+        'O ponto "{ponto}" está configurado em Agente de IA › Provedores para {destino}, mas esta empresa não tem chave de {provedor} cadastrada e validada. A chave de IA da instalação — a que paga a conta de todas as empresas deste servidor — não é enviada a um endereço escolhido por uma empresa.',
+        idioma,
+      ),
+      { ponto, destino, provedor: d.provider },
+    ) +
+    ' ' +
     (d.degrau === 'recusa'
-      ? `A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto ` +
-        `continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos ` +
-        `clientes desta empresa. `
-      : `A chamada SEGUIU desta vez, mas isso tem prazo: a partir de ${prazoLegivel()} ela passa a ser ` +
-        `recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes ` +
-        `desta empresa. Corrija antes dessa data. `) +
-    `Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ` +
-    `ou tire o endereço próprio para voltar ao provedor padrão da instalação.`
+      ? traduzir(
+          'A chamada foi recusada antes de sair. Enquanto isso não for corrigido, as chamadas desse ponto continuam recusadas; quando o ponto faz parte do atendimento, o agente deixa de responder aos clientes desta empresa.',
+          idioma,
+        )
+      : preencher(
+          traduzir(
+            'A chamada SEGUIU desta vez, mas isso tem prazo: a partir de {data} ela passa a ser recusada, e quando o ponto faz parte do atendimento o agente deixa de responder aos clientes desta empresa. Corrija antes dessa data.',
+            idioma,
+          ),
+          { data: prazoLegivel() },
+        )) +
+    ' ' +
+    traduzir(
+      'Para resolver: cadastre a chave da empresa em Agente de IA › Provedores, ou tire o endereço próprio para voltar ao provedor padrão da instalação.',
+      idioma,
+    )
   );
 }
 
@@ -256,6 +311,17 @@ export interface RunModelCallInput {
    * (classificador, compaction, flywheel) e não pertence a um agente.
    */
   agentId?: string | null;
+  /**
+   * O run de PRÉVIA (`ai_agent_runs.id`) que causou esta chamada (#4426).
+   *
+   * Nulo em toda execução real — o turno de verdade é chaveado por `job_id`. Na
+   * prévia é o único elo entre a linha de `llm_calls` (custo, tokens, latência,
+   * o que a aba "Execuções" lê) e o `ai_agent_runs` que guarda a pergunta e a
+   * resposta do teste. Sem ele, a aba teria de adivinhar por horário qual run
+   * gerou qual chamada — e dois testes simultâneos do mesmo agente trocariam o
+   * texto entre si.
+   */
+  previewRunId?: string | null;
   /** atribuição de custo: 'agent_turn' (default) | 'classifier' | 'compaction' | 'connection_test' */
   purpose?: string;
   system?: string;
@@ -287,6 +353,20 @@ export interface RunModelCallInput {
   pararQuando?: StopCondition<ToolSet>;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
+  /**
+   * Amostragem pedida NESTA chamada — vence `settings.llm.params.temperature`
+   * da organização, e só para baixo da decisão dela no que importa aqui: quem
+   * pede 0 quer o MESMO veredito para a MESMA entrada.
+   *
+   * Existe por causa do classificador de promessa (#4665): a temperatura da
+   * org é knob de redação e vale para o turno; uma classificação binária que
+   * varia entre duas execuções do mesmo texto veta numa e aprova na outra, e o
+   * agente não tem como saber o que mudou. Ausente = padrão da org, como antes.
+   *
+   * O provedor que não aceita amostragem continua descartando o campo (quem
+   * tira é o registry, por modelo) — aqui ele só deixa de ser sempre o da org.
+   */
+  temperature?: number;
   /**
    * Raciocínio pedido NESTA chamada, na opção portátil do AI SDK (`reasoning`).
    * Cada provedor traduz para o seu campo — a Anthropic desliga o `thinking` (ou
@@ -346,6 +426,12 @@ export interface RunModelCallDeps {
    * surpresa em produção.
    */
   agora?: Date;
+  /**
+   * A espera entre as espiadas da renovação EM CURSO (#4361). Injetável pelo
+   * mesmo motivo do `agora`: sem isto, o teste do `em_curso` custaria segundos
+   * reais por espiada. O default é o timer; o teste entrega um no-op.
+   */
+  dormir?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -388,7 +474,10 @@ export function usosCrusDosPassos(result: { usage: { raw?: unknown }; steps?: Re
  */
 
 /** Só o que a linha de recusa em `llm_calls` grava — quem chama de fora do seam não tem mensagens. */
-export type RastroDaChamada = Pick<RunModelCallInput, 'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId'>;
+export type RastroDaChamada = Pick<
+  RunModelCallInput,
+  'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId' | 'previewRunId'
+>;
 
 /** O que o statement do gate devolve — uma ida ao banco, um snapshot. */
 interface LinhaDoOrcamento {
@@ -488,10 +577,11 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
         chave: d.chave,
       }).acao === 'bloquear'
     ) {
+      const idioma = await idiomaDoGate(d.db, d.organizationId);
       await recusarPorTeto(d, {
         refKind: 'plano',
-        titulo: TITULO_TETO_DO_PLANO,
-        corpo: CORPO_TETO_DO_PLANO,
+        titulo: tituloDoTetoDoPlano(idioma),
+        corpo: corpoDoTetoDoPlano(idioma),
         erro: new LlmBudgetExceededError(MOTIVO_TETO_DO_PLANO),
         gastoCents: plano.gastoUsdCents,
         tetoCents: plano.tetoUsdCents ?? 0,
@@ -512,12 +602,15 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
     return;
   }
 
+  // O aviso nasce DENTRO do statement (CTE `avisa`), então o texto vai pronto,
+  // no idioma da organização: a Central mostra o item como foi gravado.
+  const idioma = await idiomaDoGate(d.db, d.organizationId);
   let linha: LinhaDoOrcamento | undefined;
   try {
     const { rows } = await d.db.query<LinhaDoOrcamento>(SQL_ORCAMENTO, [
       d.organizationId,
-      AVISO_TITULO,
-      AVISO_CORPO,
+      tituloDoAvisoDeGasto(idioma),
+      corpoDoAvisoDeGasto(idioma),
     ]);
     linha = rows[0];
   } catch (err) {
@@ -565,8 +658,8 @@ export async function aplicarOrcamento(d: EntradaDoGate): Promise<void> {
 
   await recusarPorTeto(d, {
     refKind: 'ai_budget',
-    titulo: BLOQUEIO_TITULO,
-    corpo: corpoDoBloqueio(gastoCents, tetoCents),
+    titulo: tituloDoBloqueio(idioma),
+    corpo: corpoDoBloqueio(gastoCents, tetoCents, idioma),
     erro: new LlmBudgetExceededError(),
     gastoCents,
     tetoCents,
@@ -686,6 +779,7 @@ async function registrarRecusaDeEnderecoSemChave(d: {
   };
 
   try {
+    const idioma = await idiomaDoGate(d.db, d.input.tenantId);
     await d.db.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body)
        select $1, 'other', 'critical', $2, $3
@@ -695,12 +789,13 @@ async function registrarRecusaDeEnderecoSemChave(d: {
        )`,
       [
         d.input.tenantId,
-        d.degrau === 'recusa' ? TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA : TITULO_ENDERECO_SEM_CHAVE_PRAZO,
+        tituloDoEnderecoSemChave(d.degrau, idioma),
         corpoDoAvisoDeEnderecoSemChave({
           purpose: d.purpose,
           provider: d.provider,
           baseUrl: d.baseUrl,
           degrau: d.degrau,
+          idioma,
         }),
       ],
     );
@@ -780,6 +875,19 @@ export function corpoDaOpenRouterNoResultado(
 ): { include?: { responseBody: true } } {
   return provider === 'openrouter' && ehOpenRouterOficial(baseUrl) ? { include: { responseBody: true } } : {};
 }
+
+/**
+ * As organizações em que ESTE processo abriu o aviso de "a IA inteira está fora"
+ * (#4610) e ainda não viu uma chamada passar.
+ *
+ * Existe para o fechamento custar uma query RARA em vez de uma por chamada:
+ * `runModelCall` é o caminho quente de todo turno, classificação e compaction, e
+ * um `update` na Central em cada sucesso seria pagar por um aviso que quase
+ * nunca está aberto. O preço do memo é de processo: quem reiniciar com um item
+ * aberto só o fecha no próximo sucesso que ele mesmo presenciar — e o item
+ * continua verdadeiro nesse intervalo.
+ */
+const organizacoesComAvisoDeIaFora = new Set<string>();
 
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   // O knob do raciocínio da DeepSeek entra pela fábrica: `deepseekThinking` só é
@@ -977,7 +1085,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // do operador cadastrado como `openrouter` poderia devolver `usage.cost` 0 e
   // furar o teto mensal e a cota do plano.
   let baseUrlDaChamadaEfetiva: string | undefined;
-  const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+  const chamarCom = async (
+    cfgUsada: OrgLlmConfig,
+    fabrica: (typeof factory),
+    opcoes: { soOEnderecoDaCredencial?: boolean } = {},
+  ) => {
     // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
     // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
     // ignoram o terceiro argumento e vão ao endpoint intrínseco.
@@ -986,7 +1098,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
     // A MESMA constante decide o cache na fábrica, o corpo da resposta abaixo e
     // o custo informado: as decisões sobre "é a OpenRouter oficial?" não podem divergir.
-    const baseUrlDaChamada = decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined;
+    // A reserva de modelo fala com o endereço do PRÓPRIO provedor: o endereço
+    // do ponto pertence ao principal, e é dele que a reserva está fugindo.
+    const baseUrlDaChamada = opcoes.soOEnderecoDaCredencial
+      ? (cfgUsada.baseUrl ?? undefined)
+      : (decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined);
     baseUrlDaChamadaEfetiva = baseUrlDaChamada;
     const opcoesBase = {
       // O 4º argumento só é lido pela fábrica `openrouter`, com o knob ligado. A
@@ -1078,7 +1194,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
     return generateText({
       ...opcoesBase,
-      temperature,
+      // A chamada pode fixar a amostragem (`input.temperature`); sem ela vale o
+      // knob da organização, como sempre foi.
+      temperature: input.temperature ?? temperature,
       topP,
       topK,
       maxOutputTokens: tetoDeSaida(maxOutputTokens, input.maxOutputTokens),
@@ -1116,6 +1234,54 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // Objeto e não `let`: o valor é escrito dentro do callback da renovação e lido
   // depois, no catch — e é a leitura DEPOIS que decide o aviso da Central.
   const renovacaoDoTurno: { recusa: string | null } = { recusa: null };
+
+  // A espera do `em_curso`: a trava de banco vale `JANELA_DA_TRAVA_MS` (30 s) e
+  // UMA troca de refresh_token leva poucos segundos. Espiar a credencial a cada
+  // segundo, até 20 espiadas, cobre a rotação do vencedor sem amarrar o turno
+  // por uma janela inteira. #4361.
+  const PASSO_DA_ESPERA_EM_CURSO_MS = 1_000;
+  const ESPIADAS_DA_ESPERA_EM_CURSO = 20;
+  const dormir = deps.dormir ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  /**
+   * RELER a credencial depois da renovação (#4361), e dizer ao retry se vale
+   * a pena repetir: só com um `access_token` DIFERENTE do que acabou de dar
+   * 401. Sem isto, a 2ª tentativa saía com o MESMO `cfgUsada` — o token velho
+   * no Authorization de novo, e `em_curso` nem esperava o dono da trava.
+   *
+   * Devolve `{ repetir: true }` quando a releitura achou o par novo (e grava a
+   * config da 2ª tentativa em `releitura.cfg`), ou `{ repetir: false, motivo }`
+   * quando não — aí o primeiro erro volta com o motivo e NENHUM segundo POST é
+   * gasto contra um token que o provedor acaba de recusar.
+   */
+  const relerEConfigurarDaRenovacao = async (
+    cfgUsada: OrgLlmConfig,
+    situacao: 'renovacao_bem_sucedida' | 'em_curso',
+    releitura: { cfg: OrgLlmConfig | null },
+  ): Promise<unknown> => {
+    // A renovação de sucesso se prova em UMA leitura; `em_curso` precisa de
+    // tentativas porque o vencedor pode estar no meio do POST agora.
+    const maxEspiadas = situacao === 'em_curso' ? ESPIADAS_DA_ESPERA_EM_CURSO : 1;
+    for (let espiada = 0; espiada < maxEspiadas; espiada += 1) {
+      if (espiada > 0) await dormir(PASSO_DA_ESPERA_EM_CURSO_MS);
+      let access_token: string | null = null;
+      try {
+        const tokens = await lerLoginCodex({ admin: createAdminClient(), orgId: input.tenantId });
+        access_token = tokens?.access_token ?? null;
+      } catch {
+        // Banco mudo na releitura: o token em uso é tudo o que temos, e insistir
+        // com ele seria o POST certo de 401 que o issue manda não fazer.
+        access_token = null;
+      }
+      if (access_token !== null && access_token !== cfgUsada.apiKey) {
+        releitura.cfg = { ...cfgUsada, apiKey: access_token };
+        return { repetir: true };
+      }
+    }
+    return {
+      repetir: false as const,
+      motivo: situacao === 'em_curso' ? 'em_curso_sem_token_novo' : 'releitura_sem_token_novo',
+    };
+  };
   // O par tentativa/resposta do seam. Anotado porque o genérico de
   // `chamarComRetryUnicoEm401` inferiria só o ramo de SUCESSO e recusaria o de
   // erro — o tipo é o mesmo objeto, o retry único é que é o contrato.
@@ -1126,12 +1292,18 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cfgUsada: OrgLlmConfig,
     fabrica: typeof factory,
   ): Promise<Awaited<ReturnType<typeof generateText>>> => {
-    const { corpo, tentativas } = await chamarComRetryUnicoEm401<TentativaDaAssinatura>({
+    const releitura: { cfg: OrgLlmConfig | null } = { cfg: null };
+    const { corpo, tentativas, motivoDaRenovacao } = await chamarComRetryUnicoEm401<TentativaDaAssinatura>({
       tentar: async () => {
+        // A cada tentativa entra o PAR mais recente: a primeira usa o que o
+        // resolvedor carregou; a segunda usa o que a releitura pós-renovação
+        // achou no banco. Repetir com o `cfgUsada` de antes era o #4361 — o
+        // token que acabou de dar 401 voltava no Authorization seguinte.
+        const cfgDaVez = releitura.cfg ?? cfgUsada;
         try {
           return {
             status: 200,
-            corpo: { ok: true as const, resultado: await chamarCom(cfgUsada, fabrica) },
+            corpo: { ok: true as const, resultado: await chamarCom(cfgDaVez, fabrica) },
           };
         } catch (erro) {
           // O status do provedor, e não uma classe de erro: é o 401 que decide.
@@ -1150,7 +1322,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
             provider: cfgUsada.provider,
             model,
           });
-          return;
+          // A RENOVAÇÃO GRAVOU no banco e o `cfgUsada` deste turno é o snapshot
+          // ANTERIOR a ela. Sem reler, a 2ª tentativa sairia com o token que
+          // acabou de dar 401 (#4361).
+          return await relerEConfigurarDaRenovacao(cfgUsada, 'renovacao_bem_sucedida', releitura);
         }
         const motivo = r.motivoDetalhe ? `${r.motivo}:${r.motivoDetalhe}` : r.motivo;
         // Só recusa de LOGIN vira aviso de conta desconectada. `em_curso` (outro
@@ -1166,8 +1341,30 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
           model,
           motivo,
         });
+        if (r.motivo === 'em_curso') {
+          // Quem tem a trava de 30 s ESTÁ renovando agora: a repetição na hora
+          // achava o token velho e gastava o retry num 401 certo (#4361). Espia
+          // a credencial até o vencedor da trava gravar o par novo.
+          return await relerEConfigurarDaRenovacao(cfgUsada, 'em_curso', releitura);
+        }
+        // `falha`, `nao_encontrada`, `modulo_desligado`: a renovação não mudou
+        // nada no banco e não vai mudar. Repetir com o token que o provedor
+        // ACABA de recusar é o POST desperdiçado que o issue manda não fazer —
+        // devolve o primeiro erro com o motivo.
+        return { repetir: false as const, motivo: 'renovacao_recusada' };
       },
     });
+    // A desistência SEM segundo POST tem de ter nome no log do turno — o
+    // silêncio da recusa foi exatamente a marca do incidente Obralivre.
+    if (motivoDaRenovacao !== undefined) {
+      deps.log?.warn('llm: 401 sem repetição — a renovação não entregou token novo', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: cfgUsada.provider,
+        model,
+        motivo: motivoDaRenovacao,
+      });
+    }
     if (corpo.ok) {
       if (tentativas > 1) {
         deps.log?.warn('llm: a chamada seguiu depois de renovar o login da assinatura', {
@@ -1220,6 +1417,135 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     }
   };
 
+  /**
+   * A RESERVA DE MODELO CONFIGURADA (#4600) — o degrau que não depende de qual é
+   * o provedor principal.
+   *
+   * A reserva da assinatura acima só existe para UM provedor. Com provedor
+   * personalizado, OpenRouter, DeepSeek e afins, cota estourada (429), 5xx ou
+   * tempo esgotado derrubavam o turno e o cliente ficava sem resposta até a cota
+   * voltar. Aqui a reserva é o par (provedor, modelo) que a versão publicada do
+   * agente aponta — de qualquer provedor já cadastrado na instalação.
+   *
+   * Três freios, e todos antes de gastar a segunda chamada:
+   *  - desligado por padrão (sem configuração, `decidir…` devolve `null`);
+   *  - só cota, servidor e tempo esgotado — erro de pedido (400/422) e credencial
+   *    recusada (401/403) NÃO caem, porque o mesmo corpo seria recusado de novo;
+   *  - UMA tentativa: chamada daqui só existe no catch da chamada principal, e a
+   *    política recusa a segunda por construção (`jaCaiuParaAReserva`).
+   *
+   * Falhou a reserva também? O erro ORIGINAL é o que sobe — e a linha de
+   * `llm_calls` grava o provedor/modelo que falhou por último com origem
+   * `reserva_do_modelo`, que é o que explica a troca na aba Execuções.
+   */
+  const chamarNaReservaDoModelo = async (
+    falha: unknown,
+  ): Promise<Awaited<ReturnType<typeof generateText>>> => {
+    // Abort não é indisponibilidade: a pessoa cancelou, ou o worker parou.
+    if (input.abortSignal?.aborted) throw falha;
+    const { http_status: status, error_message: detalhe } = normalizarErro(falha);
+    const decisaoDaReserva = decidirQuedaDoModeloDeReserva({
+      reserva: input.llmOverride?.reservaDeModelo ?? null,
+      status,
+      detalhe,
+      // Esta função é chamada UMA vez, no catch da chamada principal: não há
+      // laço, e a política recusa a segunda tentativa se alguém a chamar de novo.
+      jaCaiuParaAReserva: false,
+    });
+    if (decisaoDaReserva === null) throw falha;
+    const fabricaDaReservaDoModelo = registry[decisaoDaReserva.provedorDeReserva];
+    // Sem fábrica para a reserva (registry de teste, provedor removido): o erro
+    // original é o que interessa, e ele não muda de mão.
+    if (fabricaDaReservaDoModelo === undefined) throw falha;
+    const parDaReserva = validarParProvedorModelo(
+      decisaoDaReserva.provedorDeReserva,
+      decisaoDaReserva.modeloDeReserva,
+    );
+    if (!parDaReserva.valido) throw falha;
+    let configDaReserva: OrgLlmConfig;
+    try {
+      configDaReserva = await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: decisaoDaReserva.provedorDeReserva,
+        credentialId: null,
+      });
+    } catch {
+      // O provedor da reserva existe na configuração e não tem chave (revogou no
+      // meio do turno). Errar com o erro ORIGINAL é dizer a verdade ao operador.
+      throw falha;
+    }
+    // A mesma conferência que o principal passou: modelo fora da lista que a
+    // empresa liberou não é chamado, nem como reserva.
+    if (
+      configDaReserva.enabledModels.length > 0 &&
+      !configDaReserva.enabledModels.includes(decisaoDaReserva.modeloDeReserva)
+    ) {
+      throw falha;
+    }
+    // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+    // `llm_calls` grava o provedor/modelo que de fato falhou por último.
+    config = configDaReserva;
+    model = decisaoDaReserva.modeloDeReserva;
+    origem = 'reserva_do_modelo';
+    await gateDeOrcamento(configDaReserva);
+    deps.log?.warn('llm: modelo principal indisponível — chamada caiu na reserva de modelo', {
+      organization_id: input.tenantId,
+      purpose,
+      provider: configDaReserva.provider,
+      modelo_principal: modeloDecidido,
+      modelo_de_reserva: decisaoDaReserva.modeloDeReserva,
+      motivo: decisaoDaReserva.motivo,
+      origem_da_escolha: origem,
+    });
+    startedAt = Date.now();
+    return chamarCom(configDaReserva, fabricaDaReservaDoModelo, { soOEnderecoDaCredencial: true });
+  };
+
+  /**
+   * O ERRO ORIGINAL DA ASSINATURA, preservado para o registro (#4610).
+   *
+   * A queda troca `config` pela reserva e a falha que sobe é a DELA. Sem
+   * guardar o erro da assinatura, a linha de `llm_calls` e o log contam só a
+   * última metade da história: o incidente de 06/11 leu "chave de API
+   * inválida" (a reserva) e trocou a chave errada, com a IA muda por seis
+   * horas. Passe pelo `normalizarErro` UMA vez, aqui: ele já redige e trunca,
+   * e é o mesmo caminho da linha gravada.
+   */
+  let erroDaAssinatura: ReturnType<typeof normalizarErro> | null = null;
+
+  /**
+   * QUEM caiu (#4610). `config` é trocada pela reserva logo abaixo, e a partir
+   * dali `config.provider` é o provedor que assumiu — sem esta variável o aviso
+   * diria que a reserva recusou duas vezes.
+   */
+  let provedorQueCaiu: string | null = null;
+
+  /**
+   * O erro da assinatura, lido por uma FUNÇÃO (#4610).
+   *
+   * O `let` acima é atribuído dentro do `catch` aninhado, e o TypeScript não
+   * propaga essa atribuição para o `catch` de fora: lá ele estreita o valor para
+   * `null` e qualquer `!== null` vira `never`. A leitura por closure devolve o
+   * tipo DECLARADO — a união — e é o único jeito de usar os campos dos dois
+   * lados sem um cast que mentiria.
+   */
+  const erroDaAssinaturaQueCaiu = (): ReturnType<typeof normalizarErro> | null => erroDaAssinatura;
+
+  /**
+   * Os campos do erro da assinatura para o log — o MESMO trio no aviso da queda
+   * e no log da falha final. É função, e não expressão no call site, porque o
+   * `catch` do `try` de dentro não estreita o tipo deste `let` lá fora (o TS lê
+   * `never` no ramo positivo); e porque um nome só descreve o que foi perdido.
+   */
+  const camposDaAssinaturaQueCaiu = (): Record<string, unknown> => {
+    const erro = erroDaAssinaturaQueCaiu();
+    if (erro === null) return {};
+    return {
+      http_status_da_assinatura: erro.http_status,
+      codigo_da_assinatura: erro.error_code,
+      erro_da_assinatura: erro.error_message,
+    };
+  };
+
   try {
     input.abortSignal?.throwIfAborted();
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
@@ -1229,26 +1555,41 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         config.provider === PROVEDOR_POR_ASSINATURA
           ? await chamarComRenovacaoNo401(config, factory)
           : await chamarCom(config, factory);
-    } catch (falhaDaAssinatura) {
-      const reserva = await reservaParaAFalha(falhaDaAssinatura);
-      if (reserva === null) throw falhaDaAssinatura;
-      const fabricaDaReserva = registry[reserva.provider];
+    } catch (falhaDoPrincipal) {
+      const reserva = await reservaParaAFalha(falhaDoPrincipal);
+      const fabricaDaReserva = reserva === null ? undefined : registry[reserva.provider];
       // Sem fábrica para a reserva (registry de teste, provedor removido):
-      // o erro original é o que interessa, e ele não muda de mão.
-      if (fabricaDaReserva === undefined) throw falhaDaAssinatura;
-      // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
-      // `llm_calls` grava o provedor que de fato falhou por último, e não o que
-      // a chamada começou a falar.
-      config = reserva;
-      await gateDeOrcamento(reserva);
-      deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
-        organization_id: input.tenantId,
-        purpose,
-        provider: reserva.provider,
-        model,
-        origem_da_escolha: decisao.origem,
-      });
-      result = await chamarCom(reserva, fabricaDaReserva);
+      // o erro original é o que interessa, e ele não muda de mão. Nesse caso a
+      // reserva CONFIGURADA ainda pode atender — mas nunca as duas.
+      if (reserva !== null && fabricaDaReserva !== undefined) {
+        // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+        // `llm_calls` grava o provedor que de fato falhou por último, e não o que
+        // a chamada começou a falar.
+        // #4610: guardar QUEM caiu também — o aviso da Central é escrito depois da
+        // troca, e sem isto diria que a reserva recusou duas vezes.
+        provedorQueCaiu = config.provider;
+        config = reserva;
+        await gateDeOrcamento(reserva);
+        // #4610: a queda troca `config` pela reserva e a falha que sobe é a DELA;
+        // o erro ORIGINAL da assinatura fica guardado para o registro.
+        erroDaAssinatura = normalizarErro(falhaDoPrincipal);
+        deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
+          organization_id: input.tenantId,
+          purpose,
+          provider: reserva.provider,
+          model,
+          origem_da_escolha: decisao.origem,
+          // Os dois lados do aviso: QUEM caiu, com status e mensagem (redigida),
+          // e QUEM assumiu. Só o segundo existia — e é por isso que o aviso
+          // apontava para o lugar errado.
+          ...camposDaAssinaturaQueCaiu(),
+        });
+        result = await chamarCom(reserva, fabricaDaReserva);
+      } else {
+        // #4600: a assinatura não tem para onde cair, ou não é ela quem falhou.
+        // A reserva configurada é o único degrau — e é UMA tentativa.
+        result = await chamarNaReservaDoModelo(falhaDoPrincipal);
+      }
     }
   } catch (err) {
     err = identificarConteudoBloqueado(err) ?? err;
@@ -1270,7 +1611,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // também cair. O fechamento tem reserva de formato própria, em
     // `agent/abertura/checkpoint.ts` (`fecharOTurno`).
     const reservaDoModelo = decisao.reserva;
-    const { error_code: codigoDaFalha, http_status: statusDaFalha } = normalizarErro(err);
+    const falhaDaReserva = normalizarErro(err);
+    const { error_code: codigoDaFalha, http_status: statusDaFalha } = falhaDaReserva;
     const fabricaAtual = registry[config.provider];
     const vaiParaAReservaDoModelo =
       reservaDoModelo !== undefined &&
@@ -1288,6 +1630,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       origem: origemDaFalha,
       latencyMs: Date.now() - startedAt,
       erro: err,
+      // A assinatura caiu antes desta falha: a linha conta as DUAS, senão o
+      // operador troca a chave que não era a causa (#4610).
+      erroDaAssinatura,
     }).catch(() => {
       // O log da falha não pode causar uma segunda falha.
     });
@@ -1310,6 +1655,51 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         recusa: renovacaoDoTurno.recusa,
       }).catch(() => 'falhou');
     }
+    // ─── A IA INTEIRA FORA VIRA AVISO NA CENTRAL (#4610) ──────────────────────
+    //
+    // `erroDaAssinatura !== null` é a marca de que a queda aconteceu: a
+    // assinatura recusou, a chamada foi para a reserva e a reserva também
+    // recusou. Não sobrou provedor nenhum para esta organização — o cliente
+    // escreve e fica sem resposta.
+    //
+    // O aviso do #3598 só abria com 401 de LOGIN. No incidente de 06/11 o login
+    // estava "ok" e a assinatura recusava chamadas: seis horas de agentes mudos
+    // com a Central mostrando só um `job_dead` genérico. Aqui o aviso abre pelo
+    // fato que importa — as duas credenciais recusaram —, com o erro ORIGINAL de
+    // cada lado (já redigido e truncado por `normalizarErro`).
+    const assinaturaQueCaiu = erroDaAssinaturaQueCaiu();
+    if (assinaturaQueCaiu !== null) {
+      const desfecho = await avisarIaFora(createAdminClient(), {
+        organizationId: input.tenantId,
+        assinatura: {
+          provider: provedorQueCaiu ?? PROVEDOR_POR_ASSINATURA,
+          http_status: assinaturaQueCaiu.http_status,
+          error_code: assinaturaQueCaiu.error_code,
+          error_message: assinaturaQueCaiu.error_message,
+        },
+        reserva: {
+          provider: config.provider,
+          http_status: falhaDaReserva.http_status,
+          error_code: falhaDaReserva.error_code,
+          error_message: falhaDaReserva.error_message,
+        },
+      }).catch(() => 'falhou' as const);
+      // O memo é o que permite fechar o aviso quando uma chamada voltar a
+      // passar sem pagar uma query por chamada bem-sucedida (ver
+      // `organizacoesComAvisoDeIaFora`).
+      if (desfecho !== 'falhou') organizacoesComAvisoDeIaFora.add(input.tenantId);
+      deps.log?.error('llm: a assinatura E a reserva falharam — a IA desta empresa está fora', {
+        organization_id: input.tenantId,
+        purpose,
+        provedor_da_assinatura: provedorQueCaiu ?? PROVEDOR_POR_ASSINATURA,
+        provedor_da_reserva: config.provider,
+        http_status_da_assinatura: assinaturaQueCaiu.http_status,
+        erro_da_assinatura: assinaturaQueCaiu.error_message,
+        http_status_da_reserva: falhaDaReserva.http_status,
+        erro_da_reserva: falhaDaReserva.error_message,
+        aviso_na_central: desfecho,
+      });
+    }
     const camposDaFalha = {
       organization_id: input.tenantId,
       purpose,
@@ -1317,6 +1707,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       model,
       origem_da_escolha: origemDaFalha,
       ...normalizarErro(err),
+      // Os dois lados no log da falha final: o erro da assinatura vai em campo
+      // próprio (nome legível), sem depender de ler o texto do outro lado.
+      ...camposDaAssinaturaQueCaiu(),
     };
     if (!vaiParaAReservaDoModelo || reservaDoModelo === undefined || fabricaAtual === undefined) {
       deps.log?.error('llm: chamada falhou', camposDaFalha);
@@ -1361,6 +1754,28 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   }
   const latencyMs = Date.now() - startedAt;
 
+  // ─── UMA CHAMADA PASSOU: O EPISÓDIO "IA FORA" ACABOU (#4610) ────────────────
+  //
+  // Aviso que só fecha no clique de alguém vira lista que ninguém lê — mesma
+  // doutrina do `canal-pausado` (#2389) e do próprio aviso da assinatura. Aqui o
+  // sinal de volta é o único honesto: uma chamada de IA respondeu.
+  //
+  // A query é condicionada ao memo de processo (`organizacoesComAvisoDeIaFora`):
+  // sem ele, TODO sucesso pagaria um `update` na Central para fechar um aviso
+  // que quase nunca está aberto, no caminho quente de cada turno.
+  if (organizacoesComAvisoDeIaFora.has(input.tenantId)) {
+    const desfecho = await fecharAvisoDaIaForaPelaChamada(createAdminClient(), input.tenantId).catch(
+      () => 'falhou' as const,
+    );
+    // `falhou` mantém o memo: a próxima chamada que passar tenta de novo.
+    if (desfecho !== 'falhou') organizacoesComAvisoDeIaFora.delete(input.tenantId);
+    deps.log?.info('llm: uma chamada voltou a passar — aviso da IA fora sincronizado', {
+      organization_id: input.tenantId,
+      purpose,
+      desfecho,
+    });
+  }
+
   const cacheWriteTokens = result.usage.inputTokenDetails.cacheWriteTokens ?? 0;
   const cacheWrite1hTokens = gravacaoDeUmaHora(usosCrusDosPassos(result), cacheWriteTokens);
   const usage = {
@@ -1381,9 +1796,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // preço da linha sai do catálogo da INSTALAÇÃO (`ai_models`/`ai_pricing`, as
   // mesmas tabelas que `lib/ai/cost.ts` e `lib/ai/runtime/cost.ts` já consultam).
   // Sem preço em nenhum dos dois o custo continua `null` — mas com aviso no log,
-  // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
-  // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
-  // primeiro, e só o `null` dele chega aqui.
+  // nunca calado, e nunca um 0 inventado. Modelos com faixa longa usam a
+  // mesma tabela por passo, pois a soma do turno não determina o preço.
   //
   // Na OpenRouter oficial, o número que vale é o que ELA cobrou (`usage.cost` de
   // cada passo, com a regra de BYOK em `custoInformadoPeloOpenRouter`): ela só
@@ -1392,22 +1806,43 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // número (campo ausente), vale a tabela, como antes. `config` já é a reserva
   // quando a assinatura cai nela. Gateway do operador NUNCA informa o próprio
   // custo: o critério é o endereço da chamada que de fato rodou.
+  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): os
+  // valores abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
+  // marca é decidido num lugar só. Antes, três `??` encadeados aqui decidiam
+  // em silêncio, e o mesmo modelo saía com custo numas linhas e nulo noutras
+  // sem ninguém conseguir apontar a regra.
+  //
+  // O catálogo só é consultado quando a tabela não conhece o modelo: é o
+  // caminho do provedor PERSONALIZADO e do modelo de catálogo (#3013), e não
+  // pode virar uma ida ao banco em toda chamada.
   const informado =
     config.provider === 'openrouter' && ehOpenRouterOficial(baseUrlDaChamadaEfetiva)
       ? custoInformadoPeloOpenRouter(result)
       : undefined;
-  let cost = informado ?? custoTerraPorPassos(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h');
-  let origemDoCusto: 'catalogo_da_instalacao' | 'informado_pelo_provedor' | undefined =
-    informado !== undefined ? 'informado_pelo_provedor' : undefined;
-  if (cost === null) {
-    cost = await custoDoModeloForaDoMotor(db, {
-      model,
-      provider: config.provider,
-      usage,
-      log: deps.log,
-    });
-    if (cost !== null) origemDoCusto = 'catalogo_da_instalacao';
-  }
+  const daTabelaDoMotor =
+    informado === undefined
+      ? (custoPorPassosComFaixaLonga(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h'))
+      : null;
+  const doCatalogoDaInstalacao =
+    daTabelaDoMotor === null && informado === undefined
+      ? await custoDoModeloForaDoMotor(db, {
+          model,
+          provider: config.provider,
+          usage,
+          log: deps.log,
+        })
+      : null;
+  const decidido = decidirCustoDaChamada({
+    provider: config.provider,
+    // O corte de DADO (issue #4697): resposta sem `usage` não vira `0`
+    // (preço × 0 token) — vira nulo com motivo `sem_uso`.
+    temUso: haUsoMedido(usage),
+    informadoPeloProvedor: informado,
+    daTabelaDoMotor,
+    doCatalogoDaInstalacao,
+  });
+  const cost = decidido.costCents;
+
   // O mesmo leitor do custo: o corpo pode chegar como objeto ou como texto JSON.
   const provedorDeOrigem = (corpoComoObjeto(result.response?.body) as { provider?: unknown } | undefined)?.provider;
 
@@ -1438,9 +1873,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
         status, origem_da_escolha, agent_id,
         passos, entrada_do_primeiro_passo, chars_sistema, chars_ferramentas, chars_mensagens,
-        partes_de_midia, prefixo_hash)
+        partes_de_midia, prefixo_hash, preview_run_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15,
-        $16, $17, $18, $19, $20, $21, $22)
+        $16, $17, $18, $19, $20, $21, $22, $23)
      returning id`,
     [
       input.tenantId,
@@ -1465,6 +1900,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       composicao?.charsMensagens ?? null,
       composicao?.partesDeMidia ?? null,
       composicao?.prefixoHash ?? null,
+      // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+      input.previewRunId ?? null,
     ],
   );
 
@@ -1482,9 +1919,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cost_cents: cost,
     // Só quando o preço NÃO veio da tabela estática do motor: diz de qual caminho
     // saiu o número gravado, e é o que um operador procura quando pergunta "de
-    // onde saiu este custo?". Modelo sem preço em lugar nenhum não traz o campo —
-    // o `cost_cents: null` acima somado ao aviso de sem-preço é a marca.
-    ...(origemDoCusto !== undefined ? { custo_origem: origemDoCusto } : {}),
+    // onde saiu este custo?". Modelo sem preço em lugar nenhum sai com
+    // `sem_preco` — o motivo DECLARADO que a #4697 pede no lugar do nulo calado.
+    ...(decidido.origem !== undefined ? { custo_origem: decidido.origem } : {}),
     // Quem atendeu de fato na OpenRouter (Anthropic, Bedrock, Vertex…): é como se
     // mede a fixação de sessão sem coluna nova. Só existe com o corpo da resposta.
     ...(typeof provedorDeOrigem === 'string' ? { provedor_de_origem: provedorDeOrigem } : {}),
@@ -1531,6 +1968,35 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
  * "por que o funcionário não responde" teria uma classificação própria, e as
  * duas telas dariam nomes diferentes ao mesmo erro do provedor.
  */
+/**
+ * O status HTTP de uma falha do provedor, inclusive quando ela chega EMBRULHADA.
+ *
+ * O `generateText` tenta de novo sozinho (`maxRetries`, padrão 2) as falhas
+ * retentáveis — justamente 429 e 5xx — e, ao desistir, lança um `RetryError`
+ * SEM `statusCode`: o status mora em `lastError` (e em `errors[]`). Ler só o
+ * topo devolvia `null` para cota e provedor fora, e com isso a reserva de
+ * modelo configurada nunca assumia nesses dois casos (prova de tela do #4617)
+ * e a tela de Execuções mostrava 503 como "erro desconhecido".
+ */
+function statusHttpDoErro(err: unknown, profundidade = 0): number | null {
+  if (!err || typeof err !== 'object' || profundidade > 3) return null;
+  const e = err as {
+    statusCode?: unknown;
+    status?: unknown;
+    lastError?: unknown;
+    errors?: unknown;
+    cause?: unknown;
+  };
+  if (typeof e.statusCode === 'number') return e.statusCode;
+  if (typeof e.status === 'number') return e.status;
+  if (e.lastError) return statusHttpDoErro(e.lastError, profundidade + 1);
+  if (Array.isArray(e.errors) && e.errors.length > 0) {
+    return statusHttpDoErro(e.errors[e.errors.length - 1], profundidade + 1);
+  }
+  if (e.cause) return statusHttpDoErro(e.cause, profundidade + 1);
+  return null;
+}
+
 export function normalizarErro(err: unknown): {
   error_code: string;
   error_message: string;
@@ -1539,10 +2005,7 @@ export function normalizarErro(err: unknown): {
   const bloqueio = identificarConteudoBloqueado(err);
   if (bloqueio) return { error_code: 'conteudo_bloqueado', error_message: bloqueio.message, http_status: bloqueio.statusCode ?? null };
   const bruto = err instanceof Error ? err.message : String(err);
-  const status =
-    (err as { statusCode?: number; status?: number })?.statusCode ??
-    (err as { statusCode?: number; status?: number })?.status ??
-    null;
+  const status = statusHttpDoErro(err);
 
   // O único erro deste seam que NÃO vem do provedor: a recusa é NOSSA, e é
   // deliberada. Casada pela CLASSE e não por regex, porque aqui não há três
@@ -1619,6 +2082,19 @@ export function redigirMensagemDoProvedor(bruto: string): string {
 }
 
 /**
+ * Um lado da falha em uma linha: `assinatura: credencial_recusada (HTTP 401):
+ * <mensagem>`. A mensagem já vem redigida e truncada pelo `normalizarErro`;
+ * aqui só se dá NOME ao lado que falhou — sem o nome, a linha de `llm_calls`
+ * lê-se como uma falha só, e aponta o lugar errado (#4610).
+ */
+function rotuloDaFalha(
+  lado: 'assinatura' | 'reserva',
+  erro: { error_code: string; error_message: string; http_status: number | null },
+): string {
+  return `${lado}: ${erro.error_code} (HTTP ${erro.http_status ?? 'sem status'}): ${erro.error_message}`;
+}
+
+/**
  * Grava a chamada que FALHOU, na MESMA tabela do sucesso.
  *
  * Mesma tabela de propósito: a tela de execuções conta a história de um ponto em
@@ -1638,15 +2114,30 @@ async function registrarFalha(
     origem: string;
     latencyMs: number;
     erro: unknown;
+    /**
+     * A falha da ASSINATURA que abriu a queda, quando houve queda e a reserva
+     * também falhou (#4610). `llm_calls` tem UM campo de erro — e é o texto
+     * dele que a tela de Execuções mostra —, então as duas falhas entram nele
+     * com o lado nomeado: `error_message` aceita os dois sem coluna nova, e o
+     * `erro` da reserva continua sendo o código/status da linha (a chamada que
+     * de fato encerrou o turno, com o provedor que a linha carrega).
+     */
+    erroDaAssinatura?: ReturnType<typeof normalizarErro> | null;
   },
 ): Promise<void> {
   const { error_code, error_message, http_status } = normalizarErro(d.erro);
+  const erroDaAssinatura = d.erroDaAssinatura ?? null;
+  const mensagemDaLinha =
+    erroDaAssinatura === null
+      ? error_message
+      : `${rotuloDaFalha('assinatura', erroDaAssinatura)} | ${rotuloDaFalha('reserva', { error_code, error_message, http_status })}`;
   await db.query(
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, error_code, error_message, http_status, origem_da_escolha, agent_id)
-     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13)`,
+        status, error_code, error_message, http_status, origem_da_escolha, agent_id,
+        preview_run_id)
+     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13, $14)`,
     [
       d.input.tenantId,
       d.input.leadId ?? null,
@@ -1657,10 +2148,14 @@ async function registrarFalha(
       d.model,
       d.latencyMs,
       error_code,
-      error_message,
+      mensagemDaLinha,
       http_status,
       d.origem,
       d.input.agentId ?? null,
+      // #4426: a linha de RECUSA também aponta para o run de prévia. Sem isso o
+      // teste que falhou (o caso em que mais se quer reler a pergunta) apareceria
+      // na aba sem texto nenhum.
+      d.input.previewRunId ?? null,
     ],
   );
 }

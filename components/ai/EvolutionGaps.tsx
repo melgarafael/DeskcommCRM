@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useT } from "@/hooks/i18n/useT";
 
 import { Card } from "@/components/ui/card";
 import { CheckCircle, Warning } from "@/lib/ui/icons";
@@ -189,14 +190,34 @@ export function EvolutionGaps({
   gaps,
   buscas,
   decisoes,
+  incompleto = false,
 }: {
   gaps: EvolutionPayload["gaps"];
   /** Consultas à base no período — evidência da 1ª afirmação de `boaNoticia`. */
   buscas: number;
   /** Decisões de encaminhamento no período — evidência da 2ª afirmação. */
   decisoes: number;
+  /**
+   * Alguma fonte das lacunas veio cortada ou falhou (#5016). Lista vazia, aí,
+   * não é evidência de nada: a boa notícia seria elogio sobre dado que faltou.
+   */
+  incompleto?: boolean;
 }) {
+  const t = useT();
   const lacunas = montaLacunas(gaps);
+
+  if (lacunas.length === 0 && incompleto) {
+    return (
+      <Card className="flex items-start gap-3 p-5" data-testid="gaps-incompleto">
+        <Warning size={20} className="mt-0.5 shrink-0 text-warning-fg" aria-hidden />
+        <p className="text-sm leading-relaxed">
+          {t(
+            "Não dá para dizer que nada está travando: parte dos dados deste período não pôde ser lida (veja o aviso no topo da página).",
+          )}
+        </p>
+      </Card>
+    );
+  }
 
   if (lacunas.length === 0) {
     return (

@@ -58,6 +58,9 @@ const vapidPronto = vi.hoisted(() => vi.fn<() => boolean>());
 vi.mock("@/app/app/settings/notifications/_sons", () => ({ SonsDosAvisos: () => null }));
 // A seção da tela bloqueada lê a organização no servidor; tem teste próprio.
 vi.mock("@/app/app/settings/notifications/_tela-bloqueada", () => ({ ConteudoNaTelaBloqueada: () => null }));
+// Seção de Server Component (#4094): montada de verdade só em produção; aqui
+// ela suspenderia (mesmo motivo da vizinha).
+vi.mock("@/app/app/settings/notifications/_cor-por-canal", () => ({ CorPorCanalNoAviso: () => null }));
 vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto }));
 vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/app/app/settings/notifications/_client", () => ({

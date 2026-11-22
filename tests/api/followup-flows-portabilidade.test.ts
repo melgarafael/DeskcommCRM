@@ -8,6 +8,7 @@
  * a recusa de arquivo inválido COM a lista de problemas.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 
@@ -150,7 +151,7 @@ function session(role: Role, db: ReturnType<typeof makeDb>) {
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const getReq = () => new NextRequest("http://localhost/api/v1/ai/followup-flows/x/export");
 const postReq = (body: unknown) =>
-  new NextRequest("http://localhost/api/v1/ai/followup-flows/import", {
+  pedidoComTamanho("http://localhost/api/v1/ai/followup-flows/import", {
     method: "POST",
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
@@ -257,7 +258,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
     const db = makeDb({});
     session("agent", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    expect((await POST(postReq({ file: arquivo(ETAPA_OUTRA) }))).status).toBe(403);
+    expect((await POST(await postReq({ file: arquivo(ETAPA_OUTRA) }))).status).toBe(403);
     expect(db.tables.followup_flow_pointers!).toHaveLength(0);
   });
 
@@ -288,7 +289,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
     session("manager", db);
     const deFora = randomUUID();
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const res = await POST(postReq({ file: arquivo(deFora) }));
+    const res = await POST(await postReq({ file: arquivo(deFora) }));
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { flow: Row; pendencias: Row[] } };
 
@@ -321,11 +322,11 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
     });
     session("manager", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const r1 = await POST(postReq({ file: arquivo(randomUUID()) }));
+    const r1 = await POST(await postReq({ file: arquivo(randomUUID()) }));
     expect(((await r1.json()) as { data: { flow: Row } }).data.flow.name).toBe(
       "Mover para proposta (importado)",
     );
-    const r2 = await POST(postReq({ file: arquivo(randomUUID()), name: "Clínica B" }));
+    const r2 = await POST(await postReq({ file: arquivo(randomUUID()), name: "Clínica B" }));
     expect(((await r2.json()) as { data: { flow: Row } }).data.flow.name).toBe("Clínica B");
   });
 
@@ -341,7 +342,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
       condition: { type: "always" },
     });
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const res = await POST(postReq({ file: ruim }));
+    const res = await POST(await postReq({ file: ruim }));
     expect(res.status).toBe(422);
     const body = (await res.json()) as {
       error: { code: string; details: { problemas: string[] } };
@@ -354,7 +355,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
   it("JSON quebrado → 400", async () => {
     session("manager", makeDb({}));
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    expect((await POST(postReq("{ não é json"))).status).toBe(400);
+    expect((await POST(await postReq("{ não é json"))).status).toBe(400);
   });
 
   it("roteiro de atendimento com o módulo desligado → 422 module_disabled", async () => {
@@ -364,7 +365,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
     const roteiro = arquivo(randomUUID());
     (roteiro.flow as Row).surface = "atendimento";
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const res = await POST(postReq({ file: roteiro }));
+    const res = await POST(await postReq({ file: roteiro }));
     expect(res.status).toBe(422);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("module_disabled");
     expect(db.tables.followup_flow_pointers!).toHaveLength(0);
@@ -411,7 +412,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
       condition: { type: "always" },
     });
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const res = await POST(postReq({ file: comTarefa }));
+    const res = await POST(await postReq({ file: comTarefa }));
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { pendencias: Row[] } };
     expect(body.data.pendencias.map((p) => p.codigo)).not.toContain("responsavel_trocado");
@@ -454,7 +455,7 @@ describe("POST /api/v1/ai/followup-flows/import", () => {
     const exportado = ((await (await GET(getReq(), ctx(id))).json()) as { data: { file: unknown } })
       .data.file;
     const { POST } = await import("@/app/api/v1/ai/followup-flows/import/route");
-    const res = await POST(postReq({ file: JSON.parse(JSON.stringify(exportado)) }));
+    const res = await POST(await postReq({ file: JSON.parse(JSON.stringify(exportado)) }));
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { flow: Row; pendencias: Row[] } };
     expect(body.data.pendencias).toEqual([]);

@@ -71,6 +71,8 @@ export interface CaseEvent {
   body: string | null;
   /** `metadata.source` do evento: "whatsapp" quando a equipe respondeu pelo número de avisos. */
   source: string | null;
+  /** `metadata.fora_da_fronteira`: "true" quando a resposta do cliente chegou fora do atendimento atual. */
+  fora_da_fronteira?: string | null;
   created_at: string;
 }
 

@@ -63,7 +63,10 @@ import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { sendEmail } from "@/lib/email/roteador";
 import { buildAvisoDeTrocaDeEmail } from "@/lib/email/templates/aviso-de-troca-de-email";
-import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { preencher } from "@/lib/i18n/idioma-do-aviso";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -76,9 +79,9 @@ const bodySchema = z.object({
 type AvisoAoEnderecoAntigo = "enviado" | "sem_envio_configurado" | "sem_endereco_anterior" | "falhou";
 
 /** O nome que vai para a Central. Nunca um endereço — nem quando o nome é um. */
-function nomeParaOAviso(metadata: Record<string, unknown> | undefined): string {
+function nomeParaOAviso(metadata: Record<string, unknown> | undefined, idioma: Idioma): string {
   const nome = typeof metadata?.full_name === "string" ? metadata.full_name.trim() : "";
-  return nome && !nome.includes("@") ? nome : "uma pessoa da equipe";
+  return nome && !nome.includes("@") ? nome : traduzir("uma pessoa da equipe", idioma);
 }
 
 function dataNoFuso(idioma: string, fuso: string | null | undefined): string {
@@ -168,7 +171,7 @@ export async function PATCH(
   // O fuso de cada empresa a avisar (a data do aviso é a do relógio dela).
   const { data: fusos, error: fusosErr } = await admin
     .from("organizations")
-    .select("id, timezone")
+    .select("id, timezone, locale")
     .in("id", orgIds);
   if (fusosErr) {
     logger.error("[admin.members.email] leitura dos fusos falhou; e-mail NÃO trocado", {
@@ -181,11 +184,18 @@ export async function PATCH(
   const fusoDe = new Map<string, string | null>(
     (fusos ?? []).map((o: { id: string; timezone: string | null }) => [o.id, o.timezone]),
   );
-  const vinculos = orgIds.map((orgId) => ({ orgId, fuso: fusoDe.get(orgId) ?? null }));
+  // A Central mostra o texto como foi gravado: cada aviso nasce no idioma da SUA organização.
+  const idiomaDe = new Map<string, Idioma>(
+    (fusos ?? []).map((o: { id: string; locale?: string | null }) => [o.id, normalizarIdioma(o.locale ?? null)]),
+  );
+  const vinculos = orgIds.map((orgId) => ({
+    orgId,
+    fuso: fusoDe.get(orgId) ?? null,
+    idioma: idiomaDe.get(orgId) ?? normalizarIdioma(null),
+  }));
 
   // (a) A Central ANTES do GoTrue: troca invisível para a empresa não acontece.
   const fusoDaOrg = fusoDe.get(id) ?? null;
-  const nome = nomeParaOAviso(atual.user.user_metadata);
   const { data: itens, error: centralErr } = await admin
     .from("agent_inbox_items")
     .insert(
@@ -193,8 +203,11 @@ export async function PATCH(
         organization_id: v.orgId,
         kind: "email_de_login_trocado",
         severity: "warn",
-        title: "E-mail de login trocado pelo administrador da plataforma",
-        body: `O e-mail de login de ${nome} foi trocado pelo administrador da plataforma em ${dataNoFuso("pt-BR", v.fuso)}.`,
+        title: traduzir("E-mail de login trocado pelo administrador da plataforma", v.idioma),
+        body: preencher(
+          traduzir("O e-mail de login de {nome} foi trocado pelo administrador da plataforma em {data}.", v.idioma),
+          { nome: nomeParaOAviso(atual.user.user_metadata, v.idioma), data: dataNoFuso(tagDeIdioma(v.idioma), v.fuso) },
+        ),
       })),
     )
     .select("id");

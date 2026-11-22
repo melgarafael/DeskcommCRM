@@ -25,6 +25,10 @@ export const installRequestSchema = z
 export const installationChangeRequestSchema = z
   .object({ expected_installation_revision: installationRevision })
   .strict();
+/** Corpo do interruptor do módulo `connected`: a revisão que a tela viu e o sentido (true = desligar). */
+export const switchRequestSchema = z
+  .object({ expected_installation_revision: installationRevision, disabled: z.boolean() })
+  .strict();
 export const configureRequestSchema = z
   .object({
     expected_revision: z.number().int().min(0).max(2_147_483_646),

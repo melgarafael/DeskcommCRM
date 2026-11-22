@@ -64,14 +64,36 @@ beforeEach(() => {
   estado.upsert.mockClear();
 });
 
-function inscricao(endpoint: string) {
+function inscricao(endpoint: string, extra: Record<string, unknown> = {}) {
   return new NextRequest("http://localhost/api/v1/notifications/push", {
     method: "PUT",
-    body: JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" } }),
+    body: JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" }, ...extra }),
   });
 }
 
+const gravado = () => (estado.upsert.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0];
+
 describe("PUT da inscrição de push", () => {
+  it("grava os tipos que o aparelho calou, sem repetição", async () => {
+    const res = await PUT(
+      inscricao("https://web.push.apple.com/abc", { tipos_calados: ["message", "handoff", "message"] }),
+    );
+    expect(res.status).toBe(200);
+    expect(gravado().tipos_calados).toEqual(["message", "handoff"]);
+    expect(gravado().organization_id).toBe(ORG);
+  });
+
+  it("navegador de antes desta versão (sem o campo) grava vazio: recebe todos", async () => {
+    await PUT(inscricao("https://fcm.googleapis.com/fcm/send/abc"));
+    expect(gravado().tipos_calados).toEqual([]);
+  });
+
+  it("tipo fora do vocabulário é 422 e não grava", async () => {
+    const res = await PUT(inscricao("https://fcm.googleapis.com/fcm/send/abc", { tipos_calados: ["tudo"] }));
+    expect(res.status).toBe(422);
+    expect(estado.upsert).not.toHaveBeenCalled();
+  });
+
   it("serviço conhecido é gravado", async () => {
     const res = await PUT(inscricao("https://fcm.googleapis.com/fcm/send/abc"));
     expect(res.status).toBe(200);

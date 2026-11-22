@@ -6,7 +6,8 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { apiClient } from "@/lib/api/client";
 import { GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import { GATILHO_ETAPA_PARADA, GATILHO_SILENCIO } from "@/lib/automation/gatilhos-de-tempo";
-import { OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
+import { OPERADORES_SEM_VALOR, rotuloDoCampoAlterado } from "@/lib/automation/conditions";
+import { CAMPOS_DE_ETIQUETA_GOOGLE_ADS, ROTULOS_DE_ETIQUETA_GOOGLE_ADS } from "@/lib/automation/etiquetas-google-ads";
 import type { DadosDaCaixa, ExtrasDaTela, TipoDeCaixa } from "@/lib/automation/desenho-da-regra";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { cn } from "@/lib/utils";
@@ -142,6 +143,18 @@ function DescricaoDoSetor({ config }: { config: Record<string, unknown> }) {
   return <>{setor ? setor.name : t("Escolha o setor")}</>;
 }
 
+/** A configuração automática também fica legível na caixa da ação salva. */
+export function DescricaoDasEtiquetas({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
+  const t = useT();
+  const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
+  const campos = tipo === "add_tag" && Array.isArray(config.google_ads_fields)
+    ? CAMPOS_DE_ETIQUETA_GOOGLE_ADS.filter((campo) => (config.google_ads_fields as unknown[]).includes(campo))
+    : [];
+  const partes = [...tags];
+  if (campos.length) partes.push(`Google Ads: ${campos.map((campo) => t(ROTULOS_DE_ETIQUETA_GOOGLE_ADS[campo])).join(", ")}`);
+  return <>{partes.length ? partes.join(", ") : t("Escreva pelo menos uma tag")}</>;
+}
+
 function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
   const t = useT();
   switch (tipo as ActionType) {
@@ -167,10 +180,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
     case "notify_team":
       return <>{t("WhatsApp da equipe")}</>;
-    case "add_tag": {
-      const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
-      return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
-    }
+    case "add_tag":
+    case "remove_tag":
+      return <DescricaoDasEtiquetas tipo={tipo} config={config} />;
     case "call_webhook":
       return <>{cfg(config, "url").trim() || t("Informe o endereço")}</>;
     case "create_task": {
@@ -237,7 +249,9 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
       ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value)
       : campo?.kind === "sim_nao"
         ? valorDaCondicaoNaTela(primeira.value, t)
-        : primeira.value;
+        : primeira.op === "campo_alterado"
+          ? t(rotuloDoCampoAlterado(primeira.value))
+          : primeira.value;
   // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
   // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
   const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;

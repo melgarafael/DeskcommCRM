@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { cadastroExigeEscolhaDePlano, lerPlanosDoCadastro } from "@/lib/cobranca/cadastro";
+import { criarIntencaoDeContratacao } from "@/lib/cobranca/intencao-assinada";
 import {
   signupSchema,
   signupComConviteSchema,
@@ -77,6 +78,7 @@ export type SignUpResult =
         | "validation_error"
         | "rate_limited"
         | "signup_failed"
+        | "password_too_long"
         | "somente_convite"
         | "conta_ja_existe"
         | "email_indisponivel";
@@ -166,6 +168,7 @@ export async function signUp(
   }
 
   const planoEscolhido = !convite && "cobranca_plan_id" in parsed.data ? parsed.data.cobranca_plan_id : undefined;
+  let planoDaContratacao: string | null = null;
   if (!convite) {
     const admin = createAdminClient();
     if (await moduloLigado(admin, "cobranca")) {
@@ -181,6 +184,10 @@ export async function signUp(
         }
       } else if (!planos || cadastroExigeEscolhaDePlano(planos)) {
         return { ok: false, error: "validation_error", details: { cobranca_plan_id: ["plano_obrigatorio"] } };
+      }
+      if ("continuar_pagamento" in parsed.data && parsed.data.continuar_pagamento === true && planoEscolhido) {
+        const oferecido = planos?.oferecidos.find((p) => p.id === planoEscolhido);
+        if (oferecido?.trial_dias === 0) planoDaContratacao = oferecido.id;
       }
     }
   }
@@ -304,6 +311,27 @@ export async function signUp(
       return { ok: false, error: "conta_ja_existe" };
     }
 
+    // ── A SENHA LONGA DEMAIS TAMBÉM TEM CAUSA PRÓPRIA ─────────────────────
+    //
+    // O schema já recusa acima de 72 bytes (#4313), mas a régua daqui e a do
+    // GoTrue podem divergir numa versão futura — e aí a tela voltaria a dizer
+    // "Não foi possível criar a conta. Tente novamente.", que não diz o que
+    // corrigir. Causa conhecida tem código próprio: `password_too_long`, a
+    // mesma frase de campo que a tela de nova senha mostra.
+    if (/cannot be longer than 72 characters/i.test(error.message)) {
+      await audit({
+        action: "auth.signup_failed",
+        metadata: {
+          email_hash: hashEmail(parsed.data.email),
+          reason: "senha_longa_demais",
+        },
+        requestId,
+        ip,
+        userAgent,
+      });
+      return { ok: false, error: "password_too_long" };
+    }
+
     await audit({
       action: "auth.signup_failed",
       metadata: {
@@ -325,7 +353,14 @@ export async function signUp(
   await audit({
     action: "auth.signup_requested",
     actorUserId: data.user?.id ?? null,
-    metadata: { email_hash: hashEmail(parsed.data.email) },
+    metadata: {
+      email_hash: hashEmail(parsed.data.email),
+      // identities=[] é resposta ofuscada de conta existente, sem autorização
+      // para registrar intenção em nome daquela pessoa.
+      ...(planoDaContratacao && (data.user?.identities?.length ?? 0) > 0
+        ? { contratacao: criarIntencaoDeContratacao(data.user!.id, planoDaContratacao) }
+        : {}),
+    },
     requestId,
     ip,
     userAgent,

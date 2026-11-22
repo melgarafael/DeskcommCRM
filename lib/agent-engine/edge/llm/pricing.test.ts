@@ -86,10 +86,10 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     // 0.05× só no gpt-6.1-sol e no gpt-6.1-terra.
     ["gpt-6-astra", 1000, 5000, 100, 1250, 1250],
     ["gpt-6.1-sol", 200, 1000, 10, 250, 250],
-    // Terra: helpers usam 1M de entrada (>272k), logo entrada/cache estão na faixa longa.
+    // Os helpers de entrada/cache usam 1M de entrada (>272k), logo ativam a faixa longa.
     ["gpt-6.1-terra", 200, 500, 10, 250, 250],
-    ["gpt-6-luna", 10, 50, 1, 12.5, 12.5],
-    ["gpt-5.6-terra", 200, 1200, 20, 250, 250],
+    ["gpt-6-luna", 20, 50, 2, 25, 25],
+    ["gpt-5.6-terra", 400, 1200, 40, 500, 500],
     ["gpt-5.6-sol", 400, 2000, 40, 500, 500],
     ["gpt-5.6-luna", 20, 120, 2, 25, 25],
     ["gpt-5.5", 500, 3000, 50, 500, 500],
@@ -99,9 +99,8 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-5.4-nano", 20, 125, 2, 20, 20],
     ["gpt-5.4-pro", 3000, 18000, 3000, 3000, 3000],
     // Google — leitura de cache a 0.1× a entrada (2.0 Flash não tem cache implícito, ver pricing.ts).
-    // 3.6/3.7/3.8 Flash têm virada em 2027-01-01T00:00:00Z; os casos datados ficam no describe abaixo.
+    // 3.5/3.6/3.7/3.8 Flash têm virada em 2027-01-01T00:00:00Z; os casos datados ficam no describe abaixo.
     ["gemini-3.1-flash-lite", 25, 150, 2.5, 25, 25],
-    ["gemini-3.5-flash", 150, 900, 15, 150, 150],
     ["gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
     ["gemini-3.1-pro-preview", 200, 1200, 20, 200, 200],
     ["gemini-2.5-pro", 125, 1000, 12.5, 125, 125],
@@ -117,12 +116,17 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
   });
 });
 
-describe("Gemini 3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", () => {
+describe("Gemini 3.5/3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", () => {
   // Página ai.google.dev/gemini-api/docs/pricing, lida em 2026-10-12 (Standard):
   // até 31/12/2026 entrada 0,75 / saída 3,75 / leitura de cache 0,075;
   // a partir de 01/01/2027, 1,50 / 7,50 / 0,15. Gravação segue a entrada
   // (o motor não usa cache explícito; a linha existe para não ficar stale).
-  const MODELOS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"] as const;
+  //
+  // O 3.5 Flash entra na mesma lista desde 18/11/2026: a página de preços não tem
+  // mais seção dele, o endpoint está aposentado (19/05/2026) e roteia ao 3.6 Flash,
+  // que é quem o Google fatura (aistudio.google.com/docs/deprecations). Antes
+  // desta correção a tabela dizia 1,50/9,00 — entrada 2× e saída 2,4× o faturado.
+  const MODELOS = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"] as const;
 
   it.each(MODELOS)("%s cobra a promo no instante anterior à virada", (model) => {
     expect(entrada(model, ANTES_DA_VIRADA)).toBeCloseTo(75, 6);
@@ -150,8 +154,10 @@ describe("Gemini 3.6/3.7/3.8 Flash — a promo acaba em 2027-01-01T00:00:00Z", (
   });
 
   it("um Gemini sem promoção não muda de preço na virada", () => {
-    expect(entrada("gemini-3.5-flash", ANTES_DA_VIRADA)).toBeCloseTo(150, 6);
-    expect(entrada("gemini-3.5-flash", VIRADA_2027)).toBeCloseTo(150, 6);
+    // O 3.5 Flash-Lite é o vizinho de tarifa fixa: 0,30/2,50 (Standard de
+    // aistudio.google.com/docs/pricing, 18/11/2026) em qualquer instante.
+    expect(entrada("gemini-3.5-flash-lite", ANTES_DA_VIRADA)).toBeCloseTo(30, 6);
+    expect(entrada("gemini-3.5-flash-lite", VIRADA_2027)).toBeCloseTo(30, 6);
     expect(entrada("gemini-3.1-flash-lite", VIRADA_2027)).toBeCloseTo(25, 6);
   });
 });
@@ -258,7 +264,7 @@ describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
     ["anthropic/claude-haiku-4-5", 100, 500, 10, 125, 200],
     ["anthropic/claude-opus-5", 500, 2500, 50, 625, 1000],
     ["anthropic/claude-haiku-5-5", 10, 50, 1, 12.5, 20],
-    ["openai/gpt-6-luna", 10, 50, 1, 12.5, 12.5],
+    ["openai/gpt-6-luna", 20, 50, 2, 25, 25],
     ["google/gemini-3.5-flash-lite", 30, 250, 3, 30, 30],
   ])("%s custa como o id sem prefixo", (model, cIn, cOut, cLeitura, cGrav5m, cGrav1h) => {
     expect(entrada(model)).toBeCloseTo(cIn, 6);
@@ -289,6 +295,48 @@ describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
     expect(custo).not.toBeNull();
     expect(custo).toBeGreaterThan(22);
     expect(custo).toBeLessThan(24);
+  });
+});
+
+describe("costCents — id com PONTO no lugar do hífen (formato atual do OpenRouter)", () => {
+  // Issue #1931: o relator mediu 48 de 60 execuções de `anthropic/claude-haiku-5.5`
+  // com `cost_cents` nulo, enquanto `anthropic/claude-haiku-4-5` precificava. O
+  // recorte do prefixo (issue #1880) sozinho não bastava: a tabela indexa
+  // `claude-haiku-5-5` (hífen) e o OpenRouter publica a versão com ponto. Sem isso o
+  // custo só não ficava nulo quando o próprio OpenRouter informava `usage.cost`.
+  const USO: TokenUsage = {
+    inputTokens: 359_369,
+    outputTokens: 4_070,
+    cacheReadTokens: 294_128,
+    cacheWriteTokens: 0,
+  };
+
+  it("o id com ponto custa o MESMO que o id canônico com hífen", () => {
+    const canonico = costCents("claude-haiku-5-5", USO, "1h");
+    const comPonto = costCents("anthropic/claude-haiku-5.5", USO, "1h");
+    expect(canonico).not.toBeNull();
+    expect(comPonto).not.toBeNull();
+    expect(comPonto).toBeCloseTo(canonico as number, 10);
+  });
+
+  it.each([
+    // id com PONTO, id canônico com hífen
+    ["anthropic/claude-haiku-5.5", "claude-haiku-5-5"],
+    ["anthropic/claude-haiku-4.5", "claude-haiku-4-5"],
+    ["anthropic/claude-sonnet-5.5", "claude-sonnet-5-5"],
+    ["anthropic/claude-opus-5.5", "claude-opus-5-5"],
+  ])("%s precifica como %s em todas as tarifas", (comPonto, canonico) => {
+    expect(entrada(comPonto)).toBeCloseTo(entrada(canonico) as number, 6);
+    expect(saida(comPonto)).toBeCloseTo(saida(canonico) as number, 6);
+    expect(leituraDeCache(comPonto)).toBeCloseTo(leituraDeCache(canonico) as number, 6);
+    expect(gravacaoDeCache(comPonto, "1h")).toBeCloseTo(
+      gravacaoDeCache(canonico, "1h") as number,
+      6,
+    );
+  });
+
+  it("ponto + sufixo de data do vendor casa a linha sem data", () => {
+    expect(entrada("anthropic/claude-haiku-4.5-20251001")).toBeCloseTo(100, 6);
   });
 });
 
