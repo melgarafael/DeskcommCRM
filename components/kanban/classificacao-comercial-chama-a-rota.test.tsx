@@ -49,6 +49,11 @@ vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
   useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
 }));
 vi.mock("./ContatoDoNegocio", () => ({ ContatoDoNegocio: () => <div data-peca="contato" /> }));
+// A main trouxe o bloco de vendas para a ficha; ele chama `useQuery`, que este
+// teste não monta (o dublê de react-query só tem `useQueryClient`). O que se
+// mede aqui é a classificação comercial, então o bloco de vendas é dublado como
+// as outras peças da ficha.
+vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => null }));
 vi.mock("./LeadFieldsForm", () => ({ LeadFieldsForm: () => <div data-peca="campos" /> }));
 vi.mock("./RevisaoDoDocumento", () => ({ RevisaoDoDocumento: () => null }));
 vi.mock("./TarefasDoNegocio", () => ({ TarefasDoNegocio: () => <div data-peca="tarefas" /> }));
