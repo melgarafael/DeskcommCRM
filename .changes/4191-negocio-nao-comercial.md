@@ -23,3 +23,12 @@ replay de mensagens nem de cadências vencidas. Cada classificação e cada
 reversão deixam uma linha na timeline do negócio e um registro no audit.
 Repetir a operação não escreve de novo; classificar com motivo diferente do já
 gravado é recusado em vez de sobrescrever a decisão de outra pessoa.
+
+O negócio classificado também deixa de receber os passos de follow-up: a
+conferência acontece na hora do disparo, e o outro negócio aberto do mesmo
+contato segue recebendo normalmente. Inscrição feita antes desta atualização e
+sem vínculo com um negócio segue como antes. Ao anonimizar o contato, o motivo
+e a autoria da classificação são apagados; a data fica, para o negócio não
+voltar ao comercial.
+
+Contribuição de @webtecnica (#4195), a partir da issue #4191 de @leonciojunior.

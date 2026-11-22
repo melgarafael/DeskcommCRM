@@ -1403,9 +1403,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (!revisions.has(enrollment.id) && enrollment.revision !== undefined) revisions.set(enrollment.id, enrollment.revision);
       await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null);
       // #4191, item 2: o negócio classificado como não comercial não é cobrado.
-      // A guarda vive AQUI porque este é o ponto único por onde todo envio passa
-      // (o mesmo de `assertServiceBoundarySupabase`), e porque ela precisa valer
-      // no disparo — o card pode ter sido classificado dias depois da inscrição.
+      // A guarda vive AQUI, ao lado de `assertServiceBoundarySupabase`, porque
+      // precisa valer no disparo — o card pode ter sido classificado dias depois
+      // da inscrição. Vale no tick do motor; o passo já enfileirado (turn-bridge,
+      // enviar-texto-fixo) não passa por aqui.
       // A unidade é o NEGÓCIO da inscrição (`lead_id`), nunca o contato: o outro
       // negócio aberto da mesma pessoa continua sendo cobrado.
       await exigirFollowupComercial(admin, {
