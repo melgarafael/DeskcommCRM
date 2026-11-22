@@ -14,6 +14,7 @@
 // chega montado à mão sem o campo (#4063) — sem isso o teto seria `undefined`
 // e a comparação deixaria passar tudo.
 import { PACING_DEFAULTS, type PacingKnobs, type WarmupStep } from './defaults';
+import { instantFromWall, wallClock, type Wall } from './relogio-de-parede';
 
 export interface PacingState {
   /** Último envio deste número (qualquer dia) — base do throttle. */
@@ -299,56 +300,8 @@ function addMs(d: Date, ms: number): Date {
 }
 
 // ---------------------------------------------------------------------------
-// Relógio de parede na tz do tenant — Intl puro, sem dependência nova.
-
-interface Wall {
-  y: number;
-  mo: number;
-  d: number;
-  h: number;
-  mi: number;
-  s: number;
-  weekday: string; // 'Sun'..'Sat'
-}
-
-function wallClock(instant: Date, timezone: string): Wall {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    weekday: 'short',
-  }).formatToParts(instant);
-  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
-  return {
-    y: Number(get('year')),
-    mo: Number(get('month')),
-    d: Number(get('day')),
-    h: Number(get('hour')) % 24, // algumas ICU rendem '24' à meia-noite
-    mi: Number(get('minute')),
-    s: Number(get('second')),
-    weekday: get('weekday'),
-  };
-}
-
-/**
- * Instante UTC cuja hora de parede na tz é (y, mo, d, h):00 — técnica clássica
- * de duas passadas pelo offset (correta inclusive sob DST).
- */
-function instantFromWall(y: number, mo: number, d: number, h: number, timezone: string): Date {
-  const targetAsUtc = Date.UTC(y, mo - 1, d, h);
-  let guess = targetAsUtc;
-  for (let i = 0; i < 2; i += 1) {
-    const w = wallClock(new Date(guess), timezone);
-    const guessAsUtc = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s);
-    guess += targetAsUtc - guessAsUtc;
-  }
-  return new Date(guess);
-}
+// Relógio de parede na tz do tenant — `relogio-de-parede.ts`, compartilhado com
+// a janela da CAMPANHA de prospecção (#4830).
 
 /** Meia-noite LOCAL do tenant contendo `instant` — o corte do "hoje" dos caps diários. */
 export function dayStartInTz(instant: Date, timezone: string): Date {
