@@ -65,7 +65,7 @@ const TITULO_DIREITA = "O que ele nunca faz";
  */
 const PADRAO_DE_INSTALACAO_NOVA = padraoDasCamadasNoAmbiente({ PROMISE_SEMANTIC_ENABLED: "" });
 
-/** As quatro conferências que dependem de um interruptor — as outras treze rodam sempre. */
+/** As quatro conferências que dependem de um interruptor — as outras rodam sempre. */
 const DEPENDEM_DE_INTERRUPTOR = [
   "semantic_promise",
   "factual_claim",
@@ -167,11 +167,11 @@ describe("onboarding de novo tenant: a coluna diz o estado REAL de cada camada (
     for (const nome of DEPENDEM_DE_INTERRUPTOR) {
       expect(porNome.get(nome)?.estado, `${nome} aparece ativo numa organização nova`).toBe("desligada");
     }
-    // As outras treze não são escolha de ninguém: rodam sempre, sem selo.
+    // As outras não são escolha de ninguém: rodam sempre, sem selo.
     const sempreLigadas = CONFERENCIAS_DE_SAIDA.map((c) => c.nome).filter(
       (nome) => !(DEPENDEM_DE_INTERRUPTOR as readonly string[]).includes(nome),
     );
-    expect(sempreLigadas).toHaveLength(13);
+    expect(sempreLigadas).toHaveLength(CONFERENCIAS_DE_SAIDA.length - 4);
     for (const nome of sempreLigadas) {
       expect(porNome.get(nome)?.estado, `${nome} ganhou interruptor que não existe`).toBeNull();
     }
@@ -204,7 +204,7 @@ describe("onboarding de novo tenant: a coluna diz o estado REAL de cada camada (
     expect(itemDaColuna(NUNCA_FAZ.commercial_restriction).textContent).toMatch(/Confere antes de enviar/);
     expect(itemDaColuna(NUNCA_FAZ.factual_claim).textContent).toMatch(/cartão do Jev/);
 
-    // As treze que rodam sempre não ganham selo de "desligada" nem caminho.
+    // As que rodam sempre não ganham selo de "desligada" nem caminho.
     for (const nome of ["stop", "lgpd", "pacing", "disclosure"]) {
       const li = itemDaColuna(NUNCA_FAZ[nome]);
       expect(li.getAttribute("data-estado")).toBe("sempre");

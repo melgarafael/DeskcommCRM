@@ -321,6 +321,7 @@ export const NUNCA_FAZ: Readonly<Record<string, string>> = {
   lgpd: "Escrever para contato apagado ou sem base legal",
   pacing: "Disparar mensagens sem espaçar o envio",
   messaging_window: "Furar a janela de 24 horas do WhatsApp",
+  teto_de_respostas: "Responder sem parar a conversa que virou pingue-pongue",
   spinning: "Repetir o texto idêntico para todo mundo",
   promise: "Prometer preço ou prazo por conta própria",
   concessao_sem_lastro: "Confirmar condição que só o cliente citou",
@@ -353,7 +354,7 @@ export const NUNCA_FAZ: Readonly<Record<string, string>> = {
  *     nasce com aceite (`estadoEfetivoDaTarefa`).
  *
  * A coluna dizia "nunca faz" para as quatro, do mesmo jeito que dizia para as
- * treze que rodam sempre. Quem lia não tinha como saber que metade da proteção
+ * que rodam sempre. Quem lia não tinha como saber que parte da proteção
  * prometida não estava no ar — e a nota ainda mandava "configuração do agente",
  * lugar onde a conferência de fato nem mora.
  *
@@ -363,7 +364,7 @@ export const NUNCA_FAZ: Readonly<Record<string, string>> = {
  * para ligar; (b) dar um interruptor a cada item prometido. A (b) ligaria guarda
  * por padrão ou criaria quatro botões novos numa tela de boas-vindas — as duas
  * coisas mexem em comportamento sem pedido do mantenedor. Ficou a (a): nenhum
- * item some (as treze seguem listadas), e as quatro que dependem de interruptor
+ * item some (as que rodam sempre seguem listadas), e as quatro que dependem de interruptor
  * dizem, ao lado, o estado DESTA organização e onde ligá-lo.
  *
  * ─── Por que o estado entra por parâmetro ──────────────────────────────────

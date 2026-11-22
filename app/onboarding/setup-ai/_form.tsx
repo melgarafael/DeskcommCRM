@@ -56,7 +56,7 @@ interface Props {
 /**
  * O SELO DO ITEM — o estado REAL da camada nesta organização (#1041).
  *
- * A coluna nasceu prometendo as dezessete conferências do mesmo jeito, e quatro
+ * A coluna nasceu prometendo todas as conferências do mesmo jeito, e quatro
  * delas dependem de um interruptor que uma organização nova não ligou:
  * `clinical_claim` e `commercial_restriction` nascem desligadas, a promessa
  * semântica só liga com `PROMISE_SEMANTIC_ENABLED=true`, e a conferência de
@@ -69,26 +69,26 @@ interface Props {
  * "configuração do agente", que não é onde a quarta está.
  *
  * `data-estado` carrega o estado para o teste e para quem lê a tela pelo DOM;
- * o selo visível existe só onde há o que dizer ("sempre" é o silêncio das treze
- * que rodam sem escolha de ninguém).
+ * o selo visível existe só onde há o que dizer ("sempre" é o silêncio das que
+ * rodam sem escolha de ninguém).
  */
 function SeloDoItem({ estado, ondeLigar }: { estado: EstadoDoItem | null; ondeLigar: OndeLigar | null }) {
   const t = useT();
   if (estado === null) return null;
   if (estado === "so_anota") {
     return (
-      <span className="ml-1 text-muted-foreground/80">
+      <span className="ml-1">
         — {t("ligada, mas só anota: ainda não barra nenhuma mensagem")}
       </span>
     );
   }
   if (estado === "ligada") {
-    return <span className="ml-1 text-muted-foreground/80">— {t("ligada nesta organização")}</span>;
+    return <span className="ml-1">— {t("ligada nesta organização")}</span>;
   }
   const caminho =
     ondeLigar === "jev" ? t("IA › Provedores de IA › cartão do Jev") : t("IA › Agentes › Confere antes de enviar");
   return (
-    <span className="ml-1 text-muted-foreground/80">
+    <span className="ml-1">
       — {t("desligada nesta organização — ligue em")}{" "}
       <span className="font-medium">{caminho}</span>
     </span>
