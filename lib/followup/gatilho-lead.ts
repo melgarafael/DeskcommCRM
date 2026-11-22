@@ -72,6 +72,14 @@ export interface GatilhoLeadDb {
     pointer_id: string;
     version_id: string;
     contact_id: string;
+    /**
+     * #4191: o negócio que originou a inscrição. Opcional porque as chamadas
+     * que não conhecem negócio (follow-up de contato) continuam válidas — e
+     * `null` significa "não sei", que a guarda de cobrança trata como legado.
+     * A implementação Supabase repassa `...values` para o INSERT, então o campo
+     * chega à coluna sem código extra.
+     */
+    lead_id?: string | null;
     current_node_id: string;
     next_eval_at?: string;
     agent_id: string | null;
@@ -217,6 +225,10 @@ export async function aplicaGatilhoDeLead(
       pointer_id: pointer.id,
       version_id: pointer.active_version_id,
       contact_id: contatoId,
+      // #4191: o negócio que nasceu (`negocioId` é o `lead_id` do evento). Sem
+      // ele a inscrição seria do CONTATO, e a guarda de cobrança não teria como
+      // distinguir este card do outro negócio aberto da mesma pessoa.
+      lead_id: negocioId,
       current_node_id: noDeGatilho.id,
       agent_id: agentId,
     });
