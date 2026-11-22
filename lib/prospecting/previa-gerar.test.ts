@@ -102,8 +102,8 @@ describe("gerarPreviaDoCandidato", () => {
     expect(r.previa.texto).toBe(r.texto);
     expect(r.previa.baseada_em).toBe(`site-ok@${SITE_OK.verificado_em}`);
     expect(r.previa.agente_id).toBe(AGENTE);
-    expect(r.estrategia.cenario).toBeTruthy();
-    expect(r.score.valor).toBeGreaterThan(0);
+    expect(r.estrategia?.cenario).toBeTruthy();
+    expect(r.score?.valor).toBeGreaterThan(0);
     const chamada = mocks.generate.mock.calls[0]![2] as { tenantId: string; agentId: string };
     expect(chamada.tenantId).toBe(ORG);
     expect(chamada.agentId).toBe(AGENTE);

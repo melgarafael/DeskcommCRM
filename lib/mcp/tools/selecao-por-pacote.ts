@@ -12,6 +12,7 @@
  * por pacote** (`entraPorPacote`). Ligar "Atender e responder" não pode, num
  * clique, dar ao agente o direito de mandar WhatsApp para o cliente de verdade.
  */
+import { IDS_DO_ADMINISTRADOR } from "./ferramentas-do-administrador";
 import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
 
 /**
@@ -80,7 +81,7 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
  *
- * ═══ O documento do negócio foi para o `reter`, não para o default ═══════════
+ * ═══ Continua 27: o documento do negócio foi para o `reter`, não para o default ═
  *
  * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
  * `crm_get_lead_attachment`, #4544 item 2) nasceram com `pacotes: ["vender"]`,
@@ -89,50 +90,15 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * — subia de 27 para 29 e NENHUM segundo pacote cabia no teto 27. Era o beco do
  * D3 de novo, e o passo "natural" seria 29.
  *
+ * Não se subiu o teto. O `vender` é o default que TODO agente novo paga, e o
+ * mesmo número está sendo movido pelo #4534 (aberto, nosso, leva a 31): duas
+ * mudanças do mesmo teto em PRs diferentes são conflito e disputa de produto.
  * A saída foi de PACOTE, não de constante: as duas foram para o `reter`, ao lado
  * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
  * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
  * ao valor que 27 atende), reter 34.
- *
- * ═══ 27 → 32: a decisão do dono do produto, com a medição de 2026-11-19 ═══════
- *
- * O 27 era o MENOR passo que resolvia enquanto o catálogo era o de então. Com as
- * duas fatias que estavam em PR ao mesmo tempo — a integração de TAREFAS por
- * token (#4523/#4516) e a ficha editável por token (#4534/#4517) — a medição com
- * `vagasExigidasPeloPacote([], TOOL_CATALOG, pacote)` (automáticas + críticas),
- * já com a main mesclada em cada uma, passou a dar:
- *
- *   pacote       main (teto 27)   #4523   #4534
- *   atender              20        27      31
- *   escalar              13        14      18
- *   evoluir               5         5       5
- *   organizar            22        32      27
- *   reter                10        27      27
- *   vender               24        25      26
- *
- * Três jornadas chegam a 27 ou passam dele — `organizar` 32 sem cortar a família
- * de tarefas (que são CINCO ferramentas: listar, criar, editar, concluir e
- * excluir) e `atender` 31. Subir o teto e cortar o catálogo seriam a mesma conta
- * feita por dois lados; a decisão do dono do produto foi o número: **32, uma vez,
- * num lugar só**.
- *
- * A regra que importa continua verdadeira: nenhum pacote sozinho estoura o teto
- * (32 cabe em 32, 31 cabe em 32). É ela que sustenta reservar a vaga da crítica —
- * com o pacote acima do teto, "reservar" vira escolher qual pacote nunca liga.
- * E os dois PRs deixam de disputar o mesmo número: o #4534 abandonou o 31 que
- * tinha subido sozinho e herda este.
- *
- * O QUE NÃO SE FEZ: não se moveu ferramenta de pacote para maquiar a conta; não
- * se apagou a família de tarefas do catálogo; não se afrouxou asserção de
- * `tests/unit/pacote-reserva-vaga-da-critica.test.ts`; e `TETO_TOTAL` (o teto de
- * CONTEXTO, em tokens) só se moveu depois de medido em
- * `tests/unit/peso-das-ferramentas.test.ts` — são dois tetos diferentes.
- *
- * ⚠️ Continua valendo o que o bloco acima diz: não há instrumento para observar a
- * degradação que a heurística prevê. 32 é o menor número que atende as duas
- * fatias medidas; quem for subir de novo mede antes.
  */
-export const TETO_TOOLS_POR_AGENTE = 32;
+export const TETO_TOOLS_POR_AGENTE = 27;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {
@@ -158,7 +124,11 @@ function doPacote(
   catalogo: ReadonlyArray<CapacidadeSelecionavel>,
   pacote: ToolBundle,
 ): CapacidadeSelecionavel[] {
-  return catalogo.filter((c) => c.pacotes.includes(pacote) && c.marcavel !== false);
+  // As de editar assistentes são só do administrador (`ferramentas-do-administrador.ts`):
+  // o turno não as monta, então o pacote não as oferece nem reserva vaga para elas.
+  return catalogo.filter(
+    (c) => c.pacotes.includes(pacote) && c.marcavel !== false && !IDS_DO_ADMINISTRADOR.has(c.name),
+  );
 }
 
 /** As que o toggle do pacote liga sozinho — tudo que não é `critico`. */

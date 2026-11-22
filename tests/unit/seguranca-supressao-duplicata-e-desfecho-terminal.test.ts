@@ -50,7 +50,7 @@ describe("follow-up fixo não tem gate near-dup (decisão mantida e documentada)
   it("o desfecho `duplicate_suppressed` deixou de existir no tipo e no consumo", () => {
     expect(followup).not.toContain("duplicate_suppressed");
     expect(followup).toMatch(
-      /type EnvioFixoDesfecho =\s*\| \{ kind: "sent" \}\s*\| \{ kind: "deferred"; until: Date; reason: string \}\s*\| \{ kind: "skipped" \};/,
+      /type EnvioFixoDesfecho =\s*\| \{ kind: "sent" \}\s*\| \{ kind: "deferred"; until: Date; reason: string; janelaRegulatoria: boolean \}\s*\| \{ kind: "skipped" \};/,
     );
   });
 

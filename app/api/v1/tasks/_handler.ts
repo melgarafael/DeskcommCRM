@@ -38,8 +38,15 @@ import {
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
 } from "@/lib/tarefas/negocio-da-tarefa";
-import { normalizarRegra, proximaOcorrencia, regraParaGravar } from "@/lib/tarefas/recorrencia";
+import {
+  criarProximaSemDerrubar,
+  normalizarRegra,
+  proximaOcorrencia,
+  regraParaGravar,
+} from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
+import { setorDaTarefa, tarefaNoSetor, type FontesDoSetor } from "@/lib/tarefas/setor-da-tarefa";
+import { lerFontesDoSetor } from "@/lib/tarefas/setores-da-tarefa";
 import {
   SITUACOES_ABERTAS_DA_TAREFA,
   type PrioridadeDaTarefa,
@@ -54,7 +61,7 @@ export const LIMITE_MAXIMO_DA_LISTA = 500;
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at, lead:crm_leads(id, title)";
 
 /**
  * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela
@@ -81,8 +88,14 @@ export interface FiltrosDaLista {
   /** `?assigned_to=ninguem` — tarefa sem responsável. */
   sem_responsavel?: boolean;
   pipeline_id?: string;
-  /** Só as tarefas de quem é membro deste setor (#4630). */
+  /**
+   * Só as tarefas que EXIBEM este setor (#4883). Não é mais "de quem é do
+   * setor": o selo da tarefa vem da conversa (ou do negócio), e o filtro casa
+   * com o selo — ver `lib/tarefas/setor-da-tarefa.ts`.
+   */
   sector_id?: string;
+  /** Anexa a cada tarefa o setor do selo (#4883). */
+  com_setor?: boolean;
   limite?: number;
 }
 
@@ -162,7 +175,7 @@ export async function listarTarefasHandler(
 ): Promise<{ tasks: Tarefa[] }> {
   // `user` = sessão de navegador; qualquer outro ator (token de integração, agente
   // nativo pela tool MCP) cai na service role, onde a RLS não está no caminho.
-  const doToken = ctx.actor.type !== "user";
+  const doToken = ctx.via !== undefined ? ctx.via === "token" : ctx.actor.type !== "user";
 
   // O filtro de funil depende do embed `lead:crm_leads!inner`, e é o embed que a
   // service role transforma em vazamento: com ela o título do negócio de OUTRA
@@ -202,43 +215,81 @@ export async function listarTarefasHandler(
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
-  if (filtros.sector_id) {
-    // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
-    // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
-    // instalação não mostra.
-    if (!(await moduloLigado(createAdminClient(), "setores"))) {
-      throw new ApiError(404, "not_found", undefined, ctx.requestId, "Not found.");
-    }
-    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
-      .from("attendant_sector_members")
-      .select("user_id")
-      .eq("sector_id", filtros.sector_id)
-      .eq("organization_id", ctx.organization_id);
-    if (erroDoSetor) {
-      throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
-    }
-    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
-    // Setor sem ninguém: nenhuma tarefa é dele.
-    if (ids.length === 0) return { tasks: [] };
-    query = query.in("assigned_to", ids);
-  }
-
   const { data, error } = await query;
   if (error) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
   }
 
-  const tarefas = (data ?? []) as unknown as Tarefa[];
+  let lista = (data ?? []) as unknown as Tarefa[];
   // Pela sessão o embed já trouxe o negócio (e a RLS de `crm_leads` decidiu o que
   // podia aparecer). Pelo token a lista veio SEM embed: o negócio é juntado aqui,
-  // em consulta própria filtrada pela organização.
-  if (!doToken) return { tasks: tarefas };
+  // em consulta própria filtrada pela organização. A derivação do setor, logo
+  // abaixo, roda sobre as MESMAS linhas — o selo não pode depender de por onde a
+  // pessoa entrou.
+  if (doToken) {
+    const comNegocio = await anexarNegocioDaTarefa(supabase, ctx.organization_id, lista);
+    if (!comNegocio) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
+    }
+    lista = comNegocio;
+  }
 
-  const comNegocio = await anexarNegocioDaTarefa(supabase, ctx.organization_id, tarefas);
-  if (!comNegocio) {
+  // ═══ O SETOR VEM DA CONVERSA (OU DO NEGÓCIO), NÃO DO RESPONSÁVEL (#4883) ═══
+  //
+  // O setor da tarefa não é coluna: é DERIVADO — conversa → negócio →
+  // responsável, nesta ordem (`lib/tarefas/setor-da-tarefa.ts`). Quando a tela
+  // pede `com_setor=true` ou filtra por `sector_id`, lemos as três fontes para
+  // as linhas desta página e ANEXAMOS `setor` a cada tarefa. O chip desenha esse
+  // campo e o filtro usa `tarefaNoSetor`: a MESMA função, uma decisão só.
+  //
+  // O filtro roda AQUI, e não no PostgREST, porque conversa e card não são
+  // embutíveis em `crm_tasks` (não há FK de `crm_tasks` para `conversations`).
+  // O corte continua sendo o de sempre (500), e com o filtro ligado ele acontece
+  // ANTES de filtrar — a 501ª tarefa de um setor pode ficar de fora. É o preço
+  // de não ter view/RPC, e está declarado no PR.
+  //
+  // Antes do #4883 este filtro casava com `attendant_sector_members` por
+  // `assigned_to`: o setor de QUEM TEM a tarefa. O selo agora mostra o setor de
+  // onde ela NASCEU, e o filtro tem de casar com o selo.
+  const querSetor = filtros.com_setor === true || Boolean(filtros.sector_id);
+  if (!querSetor) return { tasks: lista };
+
+  // Setores é módulo opcional (doc 213): desligado, o filtro não existe — a
+  // mesma resposta das rotas de setor. O selo, sozinho, não vira 404: sem
+  // setores não há o que desenhar, e derrubar a lista inteira seria pior.
+  // A EMPRESA entra porque aqui ela já está na mão (`ctx.organization_id`, da
+  // sessão ou do token), #3868/F2 da #4871: com o setor desligado só para ela,
+  // o filtro responde o mesmo 404 das rotas de setor e o selo some da lista.
+  const desligado = !(await moduloLigado(
+    createAdminClient(),
+    "setores",
+    ctx.organization_id,
+  ));
+  if (desligado) {
+    if (filtros.sector_id) {
+      throw new ApiError(404, "not_found", undefined, ctx.requestId, "Not found.");
+    }
+    return { tasks: lista };
+  }
+
+  let fontes: Map<string, FontesDoSetor>;
+  try {
+    // A organização vai EXPLÍCITA: no ramo do token o client é a service role e
+    // a RLS não recorta estas consultas.
+    fontes = await lerFontesDoSetor(supabase, ctx.organization_id, lista);
+  } catch {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao listar as tarefas.");
   }
-  return { tasks: comNegocio };
+
+  const comSetor = lista.map((tarefa) => ({
+    ...tarefa,
+    setor: setorDaTarefa(fontes.get(tarefa.id) ?? {}),
+  }));
+  const visiveis = filtros.sector_id
+    ? comSetor.filter((tarefa) => tarefaNoSetor(fontes.get(tarefa.id) ?? {}, filtros.sector_id))
+    : comSetor;
+
+  return { tasks: visiveis };
 }
 
 /**
@@ -334,7 +385,7 @@ export async function criarTarefaHandler(
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
 
-  const doToken = ctx.actor.type !== "user";
+  const doToken = ctx.via !== undefined ? ctx.via === "token" : ctx.actor.type !== "user";
 
   const executar = async (): Promise<{ task: Tarefa }> => {
     await confereVinculos(supabase, ctx, input);
@@ -476,7 +527,7 @@ export async function editarTarefaHandler(
   input: EdicaoDaTarefa,
 ): Promise<{ task: Tarefa }> {
   const { id, ...campos } = input;
-  const doToken = ctx.actor.type !== "user";
+  const doToken = ctx.via !== undefined ? ctx.via === "token" : ctx.actor.type !== "user";
   await confereVinculos(supabase, ctx, campos);
 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
@@ -491,7 +542,7 @@ export async function editarTarefaHandler(
   // ponto.
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status")
+    .select("status, recurrence_source_id, due_date")
     .eq("id", id)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
@@ -586,6 +637,31 @@ export async function editarTarefaHandler(
       tarefa,
       tipo: "task_completed",
       actor: ctx.actor,
+    });
+
+    // ═══ A PRÓXIMA OCORRÊNCIA (#4595) ═══
+    //
+    // Um dos dois gatilhos — o outro é o agendador (`cron/task-recurrence`), e
+    // os dois caem no mesmo índice único. Só entra quando a tarefa FECHOU AGORA:
+    // marcar "concluída" numa tarefa que já estava concluída não pode gerar uma
+    // segunda ocorrência, e é o `fechouAgora` que separa as duas coisas (a mesma
+    // régua que impede duas linhas na timeline do negócio).
+    //
+    // O prazo pode ter sido editado NESTE PATCH: vale o que ficou gravado, com o
+    // de antes como reserva. A criação não derruba a resposta — a conclusão já
+    // está gravada, e o que se perde, quando falha, é só a próxima.
+    //
+    // ⚠️ `tarefa` é a linha que o UPDATE devolveu: `recurrence_source_id` e
+    // `due_date` do que ficou gravado, com o de antes como reserva.
+    await criarProximaSemDerrubar(portaDaAplicacao(), {
+      id: tarefa.id,
+      organization_id: ctx.organization_id,
+      recurrence_source_id:
+        tarefa.recurrence_source_id ??
+        (antes as { recurrence_source_id?: string | null } | null)?.recurrence_source_id ??
+        null,
+      due_date:
+        tarefa.due_date ?? (antes as { due_date?: string | null } | null)?.due_date ?? null,
     });
   }
 

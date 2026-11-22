@@ -91,9 +91,38 @@ export type Actor =
    * algo que a IA fez no modo assistido, e o que ela escreve leva a mesma marca
    * (`marcaHerdadaDoEvento` em `lib/automation/parada-no-assistido.ts`).
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" }
+  /**
+   * MÓDULO CONECTADO (spec 33, F2) — o token curto que um módulo `connected` busca com o segredo da
+   * instalação. Não é pessoa, nem agente, nem integração do cliente: é o módulo.
+   *
+   * `id` é o id do TOKEN (`api_tokens.id`) e `slug` é `<publisher>/<name>` da instalação. O `id` NUNCA
+   * pode ir para coluna de pessoa (`…_by_user_id`, `owner_user_id`): o audit grava o token em
+   * `actor_api_token_id` e o módulo em `metadata.module`. Quem decide pessoa compara com `"user"`.
+   */
+  | {
+      type: "module";
+      id: string;
+      slug: string;
+      /**
+       * A pessoa (`auth.users.id`) de quem a tela do módulo agiu, vinda do JWT de contexto (F3). Só
+       * vai para `metadata.person_id` do audit; NUNCA para coluna de pessoa com FK nem para decidir dono.
+       */
+      pessoaId?: string;
+    };
 
 export interface HandlerCtx {
+  /**
+   * POR ONDE a identidade entrou (`resolveAuthDual`): sessão de navegador ou
+   * Bearer. Opcional porque o MCP e os chamadores internos não têm `resolveAuthDual`.
+   *
+   * Existe porque `actor.type` NÃO responde isso sozinho: quando a integração
+   * chama com um ator que o runtime resolve como pessoa, a única diferença que
+   * resta é a PORTA — e é dela que dependem as escolhas de segurança do handler
+   * (o embed de `crm_leads` que a service role transforma em vazamento, por
+   * exemplo). Sem o campo, o handler cai na heurística de sempre.
+   */
+  via?: "session" | "token";
   /** Módulo `amigo`: a escrita vem do turno do agente (contexto do servidor, nunca do corpo). */
   amigoAgentExecution?: boolean;
   amigoAgentToolIds?: readonly string[];

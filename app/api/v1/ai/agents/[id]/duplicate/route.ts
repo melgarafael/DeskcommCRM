@@ -9,16 +9,23 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * não pode tentar o mesmo nome (o índice é `unique (organization_id, name)`).
  *
  * Não copia: published_version_id, archived_at, runs, audit history.
+ *
+ * Sessão OU token de integração (Spec 33, R1): o token precisa de `config:write`
+ * e de papel admin (`tokenRole`), como os irmãos `publish` e `versions`. A
+ * organização sai de `authz.organizationId` (linha do token, nunca do path), e
+ * no ramo do token o cliente é a service role: o filtro de `organization_id`
+ * que `duplicateAgentWithVersion` escreve em cada consulta é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { duplicateAgentWithVersion } from "@/lib/ai/agents/duplicate";
 import { MENSAGEM_PROVEDOR_DESLIGADO } from "@/lib/ai/pontos/provedores-oferecidos";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +34,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -35,19 +42,29 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "admin",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  // Token de integração não é pessoa: `created_by` recebe null, nunca o id do token.
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
   const admin = createAdminClient();
 
   // Implementação compartilhada com o botão "Duplicar" da lista
   // (`duplicateAgentAction`), que fazia cópia rasa e devolvia agente em branco.
   const result = await duplicateAgentWithVersion(admin, {
-    orgId: activeOrg.orgId,
+    orgId: organizationId,
     agentId: id,
-    actorUserId: authUser.id,
+    actorUserId,
     requireVersion: true,
   });
 
@@ -71,8 +88,9 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   void audit({
     action: "ai_agent.duplicated",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "ai_agent",
     resourceId: (result.agent as { id: string }).id,
     requestId,

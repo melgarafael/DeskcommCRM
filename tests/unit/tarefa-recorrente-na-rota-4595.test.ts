@@ -54,6 +54,18 @@ vi.mock("@/lib/tarefas/negocio-da-tarefa", () => ({
   anexarNegocioDaTarefa: vi.fn(async (_db: unknown, _org: string, tarefas: unknown[]) => tarefas),
   conferirNegocioEContato: vi.fn(async () => "aceitos"),
 }));
+/**
+ * `criarProximaSemDerrubar` ESPIONADA (#4595).
+ *
+ * É a asserção do porte: a main criava a próxima ocorrência DENTRO do PATCH da
+ * rota; o #4516 tirou a regra de lá, então o gatilho tem de estar em
+ * `editarTarefaHandler`. Sem este espião, um merge que apagasse a chamada
+ * deixaria a suíte verde — a série simplesmente pararia de se repetir.
+ */
+vi.mock("@/lib/tarefas/recorrencia", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tarefas/recorrencia")>()),
+  criarProximaSemDerrubar: vi.fn(async () => ({ criada: true, tarefa_id: "x", quando: "" })),
+}));
 vi.mock("@/lib/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/db")>()),
   portaDaAplicacao: vi.fn(),
@@ -108,7 +120,7 @@ const LINHA = {
  *
  * É o que importa aqui: o que a série grava, não o que a resposta devolve.
  */
-function duplo() {
+function duplo(statusAntes: string = "pending") {
   const registro: { inserts: Payload[]; updates: Payload[] } = { inserts: [], updates: [] };
   let operacao: "select" | "insert" | "update" | "delete" = "select";
   let corpo: Payload | undefined;
@@ -117,8 +129,12 @@ function duplo() {
     if (operacao === "insert" || operacao === "update") {
       return { data: { ...LINHA, ...corpo }, error: null };
     }
-    // A leitura do "antes" no PATCH (#4028): só a coluna `status` é pedida.
-    return { data: { status: "pending" }, error: null };
+    // A leitura do "antes" no PATCH: `status`, `recurrence_source_id` e
+    // `due_date` desde o porte do #4595 (a próxima nasce com o prazo gravado).
+    return {
+      data: { status: statusAntes, recurrence_source_id: null, due_date: null },
+      error: null,
+    };
   };
 
   const from = () => {
@@ -151,8 +167,8 @@ function duplo() {
   return { client: { from }, registro };
 }
 
-function montar() {
-  const d = duplo();
+function montar(statusAntes?: string) {
+  const d = duplo(statusAntes);
   vi.mocked(createClient).mockResolvedValue(d.client as never);
   return d;
 }
@@ -203,7 +219,15 @@ describe("POST /api/v1/tasks com `recurrence` — a série criada pela rota (#45
     const inserido = d.registro.inserts[0]!;
 
     // `ativa` explícita: a tela não deve adivinhar o padrão do banco.
-    expect(inserido.recurrence).toEqual({ dias: [1], hora: 9, ativa: true });
+    // `tipo`/`dia_do_mes` entraram com o #4737 da main: a série agora declara a
+    // periodicidade em vez de inferi-la, e o campo que não se usa vai nulo.
+    expect(inserido.recurrence).toEqual({
+      tipo: "semanal",
+      dias: [1],
+      dia_do_mes: null,
+      hora: 9,
+      ativa: true,
+    });
 
     // A hora é de PAREDE no fuso da organização — em UTC cru seriam 9h UTC,
     // que é 6h em São Paulo.
@@ -258,6 +282,51 @@ describe("PATCH /api/v1/tasks/[id] com `recurrence` — a série editada pela ro
     const res = await PATCH(patch({ recurrence: { dias: [3, 1, 3], hora: 7 } }), ctx);
 
     expect(res.status).toBe(200);
-    expect(d.registro.updates[0]!.recurrence).toEqual({ dias: [1, 3], hora: 7, ativa: true });
+    // `tipo`/`dia_do_mes` são o formato gravado desde o #4737 da main.
+    expect(d.registro.updates[0]!.recurrence).toEqual({
+      tipo: "semanal",
+      dias: [1, 3],
+      dia_do_mes: null,
+      hora: 7,
+      ativa: true,
+    });
+  });
+});
+
+/**
+ * ═══ A PRÓXIMA OCORRÊNCIA PELA ROTA FINA (#4595) ═══
+ *
+ * O porte que destrava o #4523: a main criava a próxima DENTRO do `PATCH` de
+ * `app/api/v1/tasks/[id]/route.ts`; o #4516 tirou a regra da rota, e o gatilho
+ * passou a morar em `editarTarefaHandler`. Estes dois casos são a régua de que
+ * ele continua lá — e de que só dispara quando a tarefa FECHOU AGORA.
+ */
+describe("PATCH /api/v1/tasks/[id] — a conclusão gera a próxima (#4595)", () => {
+  it("⭐ concluir a tarefa cria a próxima ocorrência pelo handler", async () => {
+    const d = montar();
+    const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
+    const { criarProximaSemDerrubar } = await import("@/lib/tarefas/recorrencia");
+
+    const res = await PATCH(patch({ status: "done" }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(d.registro.updates).toHaveLength(1);
+    expect(vi.mocked(criarProximaSemDerrubar)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(criarProximaSemDerrubar).mock.calls[0]?.[1]).toMatchObject({
+      id: TAREFA,
+      organization_id: ORG,
+    });
+  });
+
+  it("marcar concluída uma tarefa que JÁ estava concluída não gera segunda ocorrência", async () => {
+    const d = montar("done");
+    const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
+    const { criarProximaSemDerrubar } = await import("@/lib/tarefas/recorrencia");
+
+    const res = await PATCH(patch({ status: "done" }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(d.registro.updates).toHaveLength(1);
+    expect(vi.mocked(criarProximaSemDerrubar)).not.toHaveBeenCalled();
   });
 });

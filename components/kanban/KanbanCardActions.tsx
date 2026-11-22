@@ -30,6 +30,8 @@ import { usePropostaEnviadaDoLead } from "@/hooks/kanban/usePropostaEnviadaDoLea
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
 import { usePermission } from "@/hooks/auth/AuthProvider";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { MoveToOtherPipelineDialog } from "./MoveToOtherPipelineDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
@@ -67,6 +69,9 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
   const { data: members } = useAssignableMembers(canAssign);
   // A rota já devolve só agente ativo e não arquivado — é o picker.
   const { data: agents } = useAssignableAgents(canAssign);
+  // Registrar venda: o piso do `POST /api/v1/vendas` (`requireRole("agent")`).
+  // Abaixo dele o "+" levava a um diálogo que só terminava em 403.
+  const podeRegistrarVenda = usePermission("vendas.registrar");
   /**
    * «Mover para…» — as MESMAS colunas do quadro, na MESMA ordem (#3874).
    *
@@ -114,6 +119,13 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
       positivo de que clicar no CARD continua abrindo o dossiê.
     */
     <span className="contents" onClick={(e) => e.stopPropagation()}>
+      {podeRegistrarVenda && (
+        <BotaoRegistrarVenda
+          leadId={lead.id}
+          titulo={lead.title}
+          moeda={(lead.currency ?? MOEDA_PADRAO).toUpperCase()}
+        />
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

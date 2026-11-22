@@ -92,7 +92,12 @@ function banco(opcoes: { falhaNaLeitura: boolean; status?: string }) {
       if (tabela !== "crm_tasks") throw new Error(`tabela inesperada: ${tabela}`);
       return {
         select: (colunas?: string) => {
-          if (colunas !== "status") throw new Error(`select inesperado: ${colunas}`);
+          // A leitura anterior passou a trazer também `recurrence_source_id` e
+          // `due_date` (#4595, para criar a próxima ocorrência com o prazo que
+          // ficou gravado) — o dublê devolve as três, como o PostgREST.
+          if (colunas !== "status, recurrence_source_id, due_date") {
+            throw new Error(`select inesperado: ${colunas}`);
+          }
           const filtros: [string, unknown][] = [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cadeia: any = {};
@@ -108,7 +113,17 @@ function banco(opcoes: { falhaNaLeitura: boolean; status?: string }) {
             const achada = linhas.find(
               (l) => l.organization_id === ORG && filtros.every(([c, v]) => l[c] === v),
             );
-            return { data: achada === undefined ? null : { status: achada.status }, error: null };
+            return {
+              data:
+                achada === undefined
+                  ? null
+                  : {
+                      status: achada.status,
+                      recurrence_source_id: achada.recurrence_source_id ?? null,
+                      due_date: achada.due_date ?? null,
+                    },
+              error: null,
+            };
           };
           return cadeia;
         },

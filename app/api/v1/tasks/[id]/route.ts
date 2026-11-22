@@ -109,6 +109,8 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
         organization_id: authz.organizationId,
         actor: authz.actor as Actor,
         requestId,
+        // A PORTA, para o handler não inferir o caminho do token pelo ator.
+        via: authz.via,
         ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },
       { id, ...parsed.data },
@@ -151,6 +153,8 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
         organization_id: authz.organizationId,
         actor: authz.actor as Actor,
         requestId,
+        // A PORTA, para o handler não inferir o caminho do token pelo ator.
+        via: authz.via,
         ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },
       { id },

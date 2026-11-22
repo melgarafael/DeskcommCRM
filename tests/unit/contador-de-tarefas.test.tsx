@@ -34,7 +34,7 @@ const ANA = "11111111-1111-4111-8111-111111111111";
 
 /** O que o componente pede ao hook — o instrumento do escopo por usuário. */
 let pedido: { filtros?: unknown; opcoes?: unknown } = {};
-let tarefas: Array<Pick<Tarefa, "id" | "status">> = [];
+let tarefas: Array<Pick<Tarefa, "id" | "status" | "due_date">> = [];
 
 vi.mock("@/hooks/tasks/useTasks", () => ({
   useTasks: (filtros: unknown, opcoes: unknown) => {
@@ -51,9 +51,15 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 import { ContadorDeTarefas } from "@/components/shell/ContadorDeTarefas";
 import { sidebarGroups } from "@/lib/navigation/registry";
 
-function comStatus(...situacoes: Array<Tarefa["status"]>): Array<Pick<Tarefa, "id" | "status">> {
-  return situacoes.map((status, i) => ({ id: `t${i}`, status }));
+function comStatus(
+  ...situacoes: Array<Tarefa["status"]>
+): Array<Pick<Tarefa, "id" | "status" | "due_date">> {
+  return situacoes.map((status, i) => ({ id: `t${i}`, status, due_date: null }));
 }
+
+/** Prazo fixo: o de uma tarefa já vencida e o de uma que ainda não venceu. */
+const VENCIDA = "2020-01-01T12:00:00-03:00";
+const FUTURA = "2099-01-01T12:00:00-03:00";
 
 describe("contador de tarefas no menu", () => {
   it("conta as em aberto do usuário logado: pending + in_progress", () => {
@@ -114,6 +120,72 @@ describe("contador de tarefas no menu", () => {
   it("Tarefas está no menu com o contador declarado", () => {
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.find((i) => i.href === "/app/tasks")?.contador).toBe("tarefas");
+  });
+});
+
+// ─── Vencida: o destaque que o número sozinho não dava (#3938) ───────────────
+
+describe("contador de tarefas: a vencida no menu", () => {
+  it("com atraso, o selo ganha ícone de aviso e '· N atrasada' no rótulo, sem trocar o vermelho", () => {
+    tarefas = [
+      { id: "t0", status: "pending", due_date: VENCIDA },
+      { id: "t1", status: "in_progress", due_date: FUTURA },
+      { id: "t2", status: "pending", due_date: null },
+    ];
+    render(<ContadorDeTarefas compacto={false} />);
+    const contador = screen.getByTestId("contador-de-tarefas");
+
+    // O número continua sendo o de ABERTAS — atrasada é um recorte dele.
+    expect(contador.textContent).toBe("3");
+    expect(contador.getAttribute("data-atrasadas")).toBe("1");
+    // A mesma frase do selo do card (`TarefasNoCard`), com a mesma régua.
+    expect(contador.getAttribute("aria-label")).toBe("3 tarefas em aberto · 1 atrasada");
+    expect(contador.className).toContain("bg-red-600");
+    // O aviso é desenhado, não só falado: quem olha a barra vê o ícone.
+    expect(contador.querySelector("svg")).not.toBeNull();
+  });
+
+  it("sem atraso, nada muda: selo normal, sem ícone e com data-atrasadas 0", () => {
+    tarefas = [
+      { id: "t0", status: "pending", due_date: FUTURA },
+      { id: "t1", status: "pending", due_date: null },
+    ];
+    render(<ContadorDeTarefas compacto={false} />);
+    const contador = screen.getByTestId("contador-de-tarefas");
+
+    expect(contador.textContent).toBe("2");
+    expect(contador.getAttribute("data-atrasadas")).toBe("0");
+    expect(contador.getAttribute("aria-label")).toBe("2 tarefas em aberto");
+    expect(contador.className).toContain("bg-red-600");
+    expect(contador.querySelector("svg")).toBeNull();
+  });
+
+  it("prazo estourado de tarefa CONCLUÍDA não vira atraso — a regra é a da lista", () => {
+    tarefas = [
+      { id: "t0", status: "done", due_date: VENCIDA },
+      { id: "t1", status: "cancelled", due_date: VENCIDA },
+      { id: "t2", status: "in_progress", due_date: VENCIDA },
+    ];
+    render(<ContadorDeTarefas compacto={false} />);
+    const contador = screen.getByTestId("contador-de-tarefas");
+
+    expect(contador.textContent).toBe("1");
+    expect(contador.getAttribute("data-atrasadas")).toBe("1");
+    expect(contador.getAttribute("aria-label")).toBe("1 tarefa em aberto · 1 atrasada");
+  });
+
+  it("no ponto recolhido o atraso continua no rótulo, mesmo sem espaço para o ícone", () => {
+    tarefas = [
+      { id: "t0", status: "pending", due_date: VENCIDA },
+      { id: "t1", status: "pending", due_date: VENCIDA },
+    ];
+    render(<ContadorDeTarefas compacto />);
+    const contador = screen.getByTestId("contador-de-tarefas");
+
+    expect(contador.textContent).toBe("");
+    expect(contador.getAttribute("data-atrasadas")).toBe("2");
+    expect(contador.getAttribute("aria-label")).toBe("2 tarefas em aberto · 2 atrasadas");
+    expect(contador.querySelector("svg")).toBeNull();
   });
 });
 
@@ -178,4 +250,80 @@ describe("GET /api/v1/tasks — a consulta que o contador faz", () => {
     expect(status).not.toContain("done");
     expect(status).not.toContain("cancelled");
   });
+});
+
+/**
+ * SONDA — o que a rota DEVOLVE, não só o que ela pede.
+ *
+ * Os testes acima leem o filtro; este aplica os filtros a uma lista de linhas e
+ * confere a lista que sai. É a diferença entre "mandou `assigned_to = ana`" e
+ * "a Ana recebe só as dela" — e é o que prova, para os três papéis, o limite
+ * duro do #3938: gerente e administrador também veem apenas as próprias no
+ * contador; a visão da equipe é a tela, não o menu.
+ */
+function fazerSupabaseSobre(linhas: Array<Record<string, unknown>>) {
+  const filtros: Array<[string, string, unknown]> = [];
+  const ordens: Array<{ coluna: string; ascendente: boolean }> = [];
+  let teto = Number.POSITIVE_INFINITY;
+  const elo: Record<string, unknown> = {};
+  for (const metodo of ["select", "gte", "lte"]) elo[metodo] = () => elo;
+  elo.eq = (coluna: string, valor: unknown) => (filtros.push(["eq", coluna, valor]), elo);
+  elo.is = (coluna: string, valor: unknown) => (filtros.push(["is", coluna, valor]), elo);
+  elo.in = (coluna: string, valores: unknown) => (filtros.push(["in", coluna, valores]), elo);
+  elo.order = (coluna: string, opcoes?: { ascending?: boolean }) => (
+    ordens.push({ coluna, ascendente: opcoes?.ascending ?? true }), elo
+  );
+  elo.limit = (n: number) => ((teto = n), elo);
+  elo.then = (res: (v: unknown) => unknown) => {
+    let saida = linhas.filter((linha) =>
+      filtros.every(([operacao, coluna, valor]) => {
+        if (operacao === "eq") return linha[coluna] === valor;
+        if (operacao === "is") return (linha[coluna] ?? null) === valor;
+        return (valor as unknown[]).includes(linha[coluna]);
+      }),
+    );
+    // A ordem do PostgREST é a última declarada primeiro; aqui basta o desempate
+    // por prazo (nulo por último), que é o que o menu herda.
+    for (const { coluna, ascendente } of [...ordens].reverse()) {
+      saida = [...saida].sort((a, b) => {
+        const va = a[coluna] as string | null;
+        const vb = b[coluna] as string | null;
+        if (va === vb) return 0;
+        if (va === null) return ascendente ? 1 : -1;
+        if (vb === null) return ascendente ? -1 : 1;
+        return (va < vb ? -1 : 1) * (ascendente ? 1 : -1);
+      });
+    }
+    return Promise.resolve({ data: saida.slice(0, teto), error: null }).then(res);
+  };
+  vi.mocked(createClient).mockResolvedValue({ from: () => elo } as never);
+}
+
+describe("sonda do contador no menu — caso x esperado x obtido", () => {
+  const OUTRO = "44444444-4444-4444-8444-444444444444";
+  const LINHAS = [
+    { id: "minha-pendente", status: "pending", assigned_to: ANA, organization_id: ORG },
+    { id: "minha-em-andamento", status: "in_progress", assigned_to: ANA, organization_id: ORG },
+    { id: "minha-concluida", status: "done", assigned_to: ANA, organization_id: ORG },
+    { id: "do-colega", status: "pending", assigned_to: OUTRO, organization_id: ORG },
+    { id: "de-outra-organizacao", status: "pending", assigned_to: ANA, organization_id: OUTRA_ORG },
+  ];
+
+  it.each(["agent", "manager", "admin"] as const)(
+    "papel %s: devolve as 2 próprias em aberto — não a concluída, não a do colega, não a de outra org",
+    async (papel) => {
+      sessao(papel);
+      fazerSupabaseSobre(LINHAS);
+      const { GET } = await import("@/app/api/v1/tasks/route");
+
+      const res = await GET(new NextRequest("http://x/api/v1/tasks?aberto=true&assigned_to=me"));
+
+      expect(res.status).toBe(200);
+      const corpo = (await res.json()) as { data: { tasks: Array<{ id: string }> } };
+      expect(corpo.data.tasks.map((t) => t.id).sort()).toEqual([
+        "minha-em-andamento",
+        "minha-pendente",
+      ]);
+    },
+  );
 });

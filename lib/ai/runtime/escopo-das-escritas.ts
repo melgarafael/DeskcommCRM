@@ -40,14 +40,17 @@ export type DonoDoCampo =
   | "compromisso"
   /** `cron_jobs.contact_id` (retorno: `kind='at'`, `job_kind='followup_turn'`). */
   | "retorno"
+  /** `demandas.contact_id`. */
+  | "demanda"
+  /**
+   * `crm_tasks.contact_id` OU, quando ela só tem negócio, o contato do
+   * `lead_id` — tarefa presa ao negócio é caso real (#4595).
+   */
+  | "tarefa"
   /** `agent_cases.conversation_id` → `conversations.contact_id`. */
   | "chamado"
   /** `target_id` cujo dono depende de `target_kind` (conversation|contact|lead). */
   | "alvo_de_tag"
-  /** `crm_tasks.contact_id` OU, quando ela só tem negócio, o contato do `lead_id`. */
-  | "tarefa"
-  /** `demandas.contact_id` — a demanda é sempre de um solicitante. */
-  | "demanda"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
   /** Vínculos externos: número positivo e conexão ativa da organização. */
@@ -139,17 +142,26 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_cancel_followup: { followup_id: "retorno" },
   crm_enroll_followup_flow: { contact_id: "contato", flow_id: "configuracao" },
 
-  // ---- tarefas (#4516) ----
-  // Criar tarefa aceita negócio, contato e demanda; os três são conferidos, e
-  // o `lead_id` ainda passa por `negocioDaEscritaDoTurno` em `tools.ts`.
-  crm_create_task: { lead_id: "negocio", contact_id: "contato", demanda_id: "demanda" },
-  // Editar/concluir/apagar recebem `task_id`: o dono é a própria tarefa, que
-  // pode estar presa ao contato OU só ao negócio dele (ver `case "tarefa"`).
+  // ---- tarefas ----
+  // #4838 (a main) + #4516 (nossa porta por token) dizem a MESMA coisa com
+  // palavras diferentes, e a união é a mais estrita: criar aceita contato,
+  // negócio e demanda, e o `assigned_to` é CONFIGURAÇÃO (não é registro de
+  // cliente). O `lead_id` ainda passa por `negocioDaEscritaDoTurno` em
+  // `tools.ts`. Editar/concluir/apagar recebem `task_id`: o dono é a própria
+  // tarefa, que pode estar presa ao contato OU só ao negócio dele (ver
+  // `case "tarefa"`).
+  crm_create_task: {
+    contact_id: "contato",
+    lead_id: "negocio",
+    demanda_id: "demanda",
+    assigned_to: "configuracao",
+  },
   crm_update_task: {
     task_id: "tarefa",
-    lead_id: "negocio",
     contact_id: "contato",
+    lead_id: "negocio",
     demanda_id: "demanda",
+    assigned_to: "configuracao",
   },
   crm_complete_task: { task_id: "tarefa" },
   crm_delete_task: { task_id: "tarefa" },
@@ -216,6 +228,8 @@ async function campoEhDoContato(
       return existeDoContato(supabase, "conversations", organizationId, contato, id);
     case "compromisso":
       return existeDoContato(supabase, "calendar_appointments", organizationId, contato, id);
+    case "demanda":
+      return existeDoContato(supabase, "demandas", organizationId, contato, id);
     case "retorno":
       return existeDoContato(supabase, "cron_jobs", organizationId, contato, id, {
         kind: "at",
@@ -252,10 +266,6 @@ async function campoEhDoContato(
         default:
           return false;
       }
-    case "demanda":
-      // `demandas.contact_id` é NOT NULL (migration 0136): a demanda tem
-      // solicitante, e é ele quem manda.
-      return existeDoContato(supabase, "demandas", organizationId, contato, id);
     case "tarefa": {
       // `crm_tasks.contact_id` é NULO quando a tarefa nasceu presa só a um
       // negócio (ou avulsa). Ler as duas colunas e decidir em memória evita a

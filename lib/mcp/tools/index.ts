@@ -92,11 +92,9 @@ import {
   crmSetAppointmentOutcome,
 } from "./agendamento";
 import {
-  crmListTasks,
   crmCreateTask,
+  crmListTasks,
   crmUpdateTask,
-  crmCompleteTask,
-  crmDeleteTask,
 } from "./tarefas";
 import {
   crmScheduleFollowup,
@@ -108,7 +106,20 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import {
+  crmGetAiAgentTurn,
+  crmGetAiAgentVersion,
+  crmListAiAgents,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+} from "./agentes";
 import { crmSaveLeadDiagnosis } from "./diagnostico";
+// As DUAS ferramentas de tarefa que a main não tem (#4516). `./tarefas` é o
+// arquivo da main, intocado; a conclusão e a exclusão moram separadas para não
+// registrar o mesmo nome de wire duas vezes.
+import { crmCompleteTask, crmDeleteTask } from "./tarefas-escrita";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -154,6 +165,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmConsultarReceita,
   crmListPrivacyRequests,
   crmGetProspectingSiteAudit,
+  crmListTasks,
   // read — organizar a operação (W4)
   crmListStages,
   crmListTags,
@@ -169,6 +181,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListAvailableAttendants,
   crmListHumanCases,
   crmGetHumanCase,
+  // read — editar os assistentes de IA (só admin; ver `./agentes.ts`)
+  crmListAiAgents,
+  crmGetAiAgentVersion,
+  crmGetAiAgentTurn,
   // write
   // A que consulta E marca numa chamada só vem primeiro: quando o cliente já deu
   // dia e hora, é o caminho curto, e é o que evita o turno morrer no meio (#831).
@@ -178,14 +194,6 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCancelAppointment,
   crmConfirmAppointment,
   crmSetAppointmentOutcome,
-  // tarefas (#4516) — o CRUD que a integração por token pediu. Ficam juntas e
-  // depois da agenda de propósito: quem cria tarefa quase sempre vem de um
-  // compromisso ("ligar de volta amanhã").
-  crmListTasks,
-  crmCreateTask,
-  crmUpdateTask,
-  crmCompleteTask,
-  crmDeleteTask,
   crmCreateLead,
   crmUpdateLead,
   crmMoveLeadStage,
@@ -223,6 +231,16 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCloseHumanCase,
   crmResumeAiAttendance,
   crmDraftProposal,
+  // write — editar os assistentes de IA: rascunho, teste, publicar, reverter
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmCreateTask,
+  crmUpdateTask,
+  // Concluir e apagar (#4516): as duas que o arquivo da main não traz.
+  crmCompleteTask,
+  crmDeleteTask,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

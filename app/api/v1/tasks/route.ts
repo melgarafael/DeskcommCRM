@@ -124,6 +124,13 @@ const listaSchema = z.object({
    */
   sector_id: z.string().uuid().optional(),
   /**
+   * "true" = anexa a cada tarefa o setor que o SELO mostra (`setor: { id,
+   * nome }`), derivado da conversa → negócio → responsável (#4883). A forma é
+   * validada aqui; a derivação é decidida em `_handler.ts`, a mesma função que a
+   * tool chama — o selo não pode depender de por onde a pessoa entrou.
+   */
+  com_setor: z.enum(["true", "false"]).optional(),
+  /**
    * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
    * todas as colunas de uma vez e pediria a base inteira: ela manda um número
    * menor que o teto da lista. O máximo é DAQUI, não do navegador — um cliente
@@ -201,11 +208,16 @@ export async function GET(req: NextRequest): Promise<Response> {
         organization_id: authz.organizationId,
         actor: authz.actor as Actor,
         requestId,
+        // A PORTA, para o handler não inferir o caminho do token pelo ator.
+        via: authz.via,
         ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },
       {
         ...filtros,
         aberto: filtros.aberto === "true",
+        // `com_setor` chega como texto da query e vira booleano aqui, igual a
+        // `aberto`: quem decide o que é "setor" é o handler (#4883).
+        com_setor: filtros.com_setor === "true",
         sem_responsavel: filtros.assigned_to === "ninguem",
         ...(filtros.assigned_to === "ninguem" ? { assigned_to: undefined } : {}),
         ...(filtros.assigned_to === "me" && authz.actor.type === "user"
@@ -268,6 +280,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         organization_id: authz.organizationId,
         actor: authz.actor as Actor,
         requestId,
+        // A PORTA, para o handler não inferir o caminho do token pelo ator.
+        via: authz.via,
         ...(idempotencyKey !== null ? { idempotencyKey } : {}),
         ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },

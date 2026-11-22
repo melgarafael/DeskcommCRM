@@ -407,13 +407,13 @@ export function ScheduleDialog({
                     )
                   }
                 >
-                  <SelectTrigger className="w-[90px]" aria-label="Dia da semana">
+                  <SelectTrigger className="w-[90px]" aria-label={t("Dia da semana")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DOW_LABELS.map((d, idx) => (
+                    {DOW_LABELS.map((_, idx) => (
                       <SelectItem key={idx} value={String(idx)}>
-                        {d}
+                        {t(DOW_LABELS[idx] ?? "")}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -434,7 +434,7 @@ export function ScheduleDialog({
                   type="time"
                   className="min-w-0 max-md:px-2"
                   value={w.end}
-                  aria-label="Fim"
+                  aria-label={t("Fim")}
                   onChange={(e) =>
                     setWindows((ws) =>
                       ws.map((x, j) => (j === i ? { ...x, end: e.target.value } : x)),

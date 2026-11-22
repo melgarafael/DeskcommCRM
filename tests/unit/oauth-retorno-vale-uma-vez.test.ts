@@ -25,6 +25,10 @@ vi.mock("@/lib/env", () => ({
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+// A marca da ponte vem do banco; aqui é fixa, porque o caso é do retorno.
+vi.mock("@/lib/branding/saida", () => ({
+  marcaDaSaida: async () => ({ nome: "Central de Teste" }),
+}));
 vi.mock("@/lib/impersonate/support", () => ({ supportCallbackWriteAllowed: async () => true }));
 vi.mock("@/lib/webhooks/secrets", () => ({ encryptWebhookSecret: async () => "cifrado" }));
 vi.mock("@/lib/plataformas-de-anuncio/google/config", () => ({
@@ -74,6 +78,26 @@ beforeEach(() => {
   fake.trocasNuvemshop = 0;
 });
 
+/**
+ * O destino da volta — lido do `Location` OU do CORPO da ponte.
+ *
+ * ⚠️ A VOLTA DEIXOU DE SER UM 302 (issue #4335). Os dois callbacks daqui saem
+ * de um consentimento no site do PROVEDOR: a cadeia de navegação começou fora,
+ * e o cookie de sessão é `sameSite: "strict"`. Um 302 para `/app/...` continua
+ * essa cadeia, o cookie não viaja e a pessoa é jogada em `/login` com a conexão
+ * já gravada. A entrega agora é um documento same-origin com 200 que navega por
+ * `location.replace`. Quem separa ponte de redirect é o `status`/`Location`,
+ * afirmados caso a caso.
+ */
+async function destinoDaVolta(res: Response): Promise<URL> {
+  const location = res.headers.get("location");
+  if (location) return new URL(location);
+  const corpo = await res.clone().text();
+  const m = /window\.location\.replace\((".*?")\);/.exec(corpo);
+  expect(m, "a volta não trouxe nem `Location` nem a ponte").not.toBeNull();
+  return new URL(JSON.parse(m![1]!) as string, "http://localhost:3000");
+}
+
 describe("o retorno do OAuth vale uma vez", () => {
   it("Google Ads: o mesmo state na segunda volta é recusado sem trocar código", async () => {
     const { emitirEstado } = await import("@/lib/plataformas-de-anuncio/google/estado");
@@ -91,10 +115,13 @@ describe("o retorno do OAuth vale uma vez", () => {
       });
 
     const primeira = await GET(pedido());
-    expect(new URL(primeira.headers.get("location")!).searchParams.get("ok")).toBe("1");
+    // Sucesso = ponte: 200, sem `Location`, e o destino dentro do documento.
+    expect(primeira.headers.get("location")).toBeNull();
+    expect(primeira.status).toBe(200);
+    expect((await destinoDaVolta(primeira)).searchParams.get("ok")).toBe("1");
 
     const segunda = await GET(pedido());
-    expect(new URL(segunda.headers.get("location")!).searchParams.get("erro")).toBe("estado_invalido");
+    expect((await destinoDaVolta(segunda)).searchParams.get("erro")).toBe("estado_invalido");
     expect(fake.trocasAds, "a segunda volta não pode chegar à troca do código").toBe(1);
   });
 
@@ -106,10 +133,12 @@ describe("o retorno do OAuth vale uma vez", () => {
       new NextRequest(`http://localhost/api/v1/integrations/nuvemshop/callback?code=c&state=${encodeURIComponent(state)}`);
 
     const primeira = await GET(pedido());
-    expect(primeira.headers.get("location")).not.toContain("error=");
+    expect(primeira.status).toBe(200);
+    expect(primeira.headers.get("location")).toBeNull();
+    expect(await primeira.clone().text()).not.toContain("error=");
 
     const segunda = await GET(pedido());
-    expect(segunda.headers.get("location")).toContain("error=invalid_state");
+    expect((await destinoDaVolta(segunda)).search).toContain("error=invalid_state");
     expect(fake.trocasNuvemshop, "a segunda volta não pode chegar à troca do código").toBe(1);
   });
 });

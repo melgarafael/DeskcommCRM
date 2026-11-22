@@ -1,250 +1,388 @@
 /**
- * AS TAREFAS POR MCP (#4516).
+ * Ferramentas MCP para o domínio de Tarefas (`crm_tasks`).
  *
- * ⚠️ CADA TOOL AQUI CHAMA O MESMO `_handler` DA ROTA
- * (`app/api/v1/tasks/_handler.ts`). Não há segunda regra de negócio: a
- * conferência de responsável/demanda, o `organization_id` explícito, o audit e
- * a idempotência são os de lá. Foi por isso que a regra saiu da rota.
- *
- * ⚠️ O ESCOPO PRÓPRIO (`tasks:read`/`tasks:write`) NÃO cabe em `requiresScope`:
- * essa união só conhece `mcp:read`/`mcp:write` (`lib/mcp/types.ts`), e o runtime
- * do agente nativo monta `ctx` SEM `tokenScopes`. A checagem é
- * `exigeEscopoDoTokenDeIntegracao`, que vale só para token de fora — o agente da
- * casa continua operando como sempre, e o token sem `tasks:write` fecha em 403
- * mesmo tendo `mcp:write`. Ver `lib/mcp/escopo-do-token.ts`.
- *
- * ⚠️ `created_by` é FK para `auth.users`: o handler grava `null` para ator que
- * não é pessoa. Sem isso o INSERT morre em 23503 e a integração não cria nada.
+ * Implementa:
+ *  - `crm_create_task` (write): Criação com validação de responsável e fechamento de laço no Sistema Vivo.
+ *  - `crm_list_tasks` (read): Consulta filtrada e paginada respeitando isolamento multi-tenant.
+ *  - `crm_update_task` (write): Atualização de status (ex: done), prazo, prioridade e responsáveis.
  */
 import { z } from "zod";
 
+import { audit } from "@/lib/audit";
+import { portaDaAplicacao } from "@/lib/db";
+import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
+import { conferirDemanda } from "@/lib/tarefas/demanda";
+import { criarProximaSemDerrubar } from "@/lib/tarefas/recorrencia";
+import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import {
-  criarTarefaHandler,
-  editarTarefaHandler,
-  excluirTarefaHandler,
-  listarTarefasHandler,
-  LIMITE_MAXIMO_DA_LISTA,
-} from "@/app/api/v1/tasks/_handler";
-import {
-  ESCOPO_TAREFAS_ESCRITA,
-  ESCOPO_TAREFAS_LEITURA,
-} from "@/lib/api/escopos-do-token";
-import { ApiError } from "@/lib/api/types";
-import { exigeEscopoDoTokenDeIntegracao } from "@/lib/mcp/escopo-do-token";
-import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
-import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA } from "@/lib/tarefas/tipos";
+  PRIORIDADES_DA_TAREFA,
+  SITUACOES_DA_TAREFA,
+  type Tarefa,
+} from "@/lib/tarefas/tipos";
+import type { McpToolDefinition } from "../types";
 
-/** O ensinamento por código de recusa — o mesmo tom das tools de agenda. */
-const ENSINO_POR_CODIGO: Record<string, string> = {
-  not_found: "não achei essa tarefa nesta organização. Confira o id com `crm_list_tasks`.",
-  validation_failed:
-    "os dados não fecharam (responsável fora da equipe, demanda encerrada ou vínculo inexistente). Confira antes de repetir.",
-  state_conflict: "a demanda vinculada já foi encerrada. Crie a tarefa numa demanda em andamento.",
-  idempotency_conflict:
-    "essa chave de idempotência já foi usada com outro conteúdo. Use uma chave nova para uma tarefa nova.",
-  idempotency_in_progress:
-    "a mesma requisição ainda está em curso. Espere alguns instantes e repita com a MESMA chave.",
-};
+const VINCULO_INEXISTENTE = "O negócio, o contato ou a demanda vinculada não existe.";
 
 /**
- * Recusa de negócio vira RESPOSTA, não exceção: o cliente precisa do `motivo`
- * para decidir (repetir? pedir correção?), e uma string de erro crua perde o
- * código. Infra quebra continua subindo — não é limite de negócio.
+ * `ctx.supabase` é service role, e a chave estrangeira não passa pela RLS: sem
+ * esta conferência, um `lead_id`/`contact_id` de outra organização gravaria sem
+ * erro. A régua é a de `criarTarefaInterna` (`lib/tarefas/criar-tarefa.ts`):
+ * SQL na porta, com a organização no filtro. Id inexistente e id de outra
+ * organização recebem a MESMA recusa — a do 23503 abaixo.
  */
-async function comRecusa<T>(
-  chave: string,
-  fn: () => Promise<T>,
-): Promise<T | { [k: string]: unknown; motivo: string; mensagem: string }> {
-  try {
-    return await fn();
-  } catch (e) {
-    if (!(e instanceof ApiError)) throw e;
-    return {
-      [chave]: false,
-      motivo: e.code,
-      mensagem: ENSINO_POR_CODIGO[e.code] ?? "não consegui completar agora.",
-    };
+async function conferirVinculos(
+  organizationId: string,
+  vinculos: { lead_id?: string | null; contact_id?: string | null },
+): Promise<void> {
+  const conferencias = [
+    ["crm_leads", vinculos.lead_id],
+    ["contacts", vinculos.contact_id],
+  ] as const;
+  for (const [tabela, id] of conferencias) {
+    if (!id) continue;
+    let linha: { id: string } | null;
+    try {
+      linha = await portaDaAplicacao().queryOne<{ id: string }>(
+        `select id from ${tabela} where id = $1 and organization_id = $2 limit 1`,
+        [id, organizationId],
+      );
+    } catch {
+      throw new Error("Erro interno ao validar os vínculos da tarefa.");
+    }
+    if (!linha) throw new Error(VINCULO_INEXISTENTE);
   }
 }
 
-/** O contexto que o handler compartilha com a rota — mesma forma, mesmas regras. */
-function ctxDoHandler(ctx: McpContext): Parameters<typeof listarTarefasHandler>[1] {
-  return {
-    organization_id: ctx.organizationId,
-    actor: ctx.actor,
-    requestId: ctx.requestId,
-    ...(ctx.apiTokenId ? { apiTokenId: ctx.apiTokenId } : {}),
-  };
-}
+const createInputShape = {
+  title: z
+    .string()
+    .trim()
+    .min(1, "Título é obrigatório")
+    .max(255, "Título deve ter no máximo 255 caracteres"),
+  description: z.string().max(5000, "Descrição deve ter no máximo 5000 caracteres").optional(),
+  due_date: z.string().datetime({ offset: true }).optional(),
+  priority: z.enum(PRIORIDADES_DA_TAREFA).default("medium"),
+  contact_id: z.string().uuid("contact_id deve ser UUID válido").optional(),
+  lead_id: z.string().uuid("lead_id deve ser UUID válido").optional(),
+  demanda_id: z.string().uuid("demanda_id deve ser UUID válido").optional(),
+  assigned_to: z.string().uuid("assigned_to deve ser UUID válido").optional(),
+};
 
-const camposDaTarefa = {
-  title: z.string().trim().min(1).max(255).optional(),
+export const crmCreateTask: McpToolDefinition<typeof createInputShape> = {
+  name: "crm_create_task",
+  description:
+    "Cria uma nova tarefa ou retorno interno vinculado a um cliente, atendimento ou negócio, com prazo e responsável.",
+  inputSchema: createInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    // 1. Validar pertencimento do responsável à organização se informado
+    if (input.assigned_to) {
+      const vereditoResp = await conferirResponsavel(
+        portaDaAplicacao(),
+        ctx.organizationId,
+        input.assigned_to,
+      );
+      if (vereditoResp === "falha_na_consulta") {
+        throw new Error("Erro interno ao validar o responsável da tarefa.");
+      }
+      if (vereditoResp === "fora_da_equipe") {
+        throw new Error("O responsável informado não faz parte da equipe desta organização.");
+      }
+    }
+
+    // 2. Validar demanda ativa se informada
+    if (input.demanda_id) {
+      const vereditoDemanda = await conferirDemanda(
+        portaDaAplicacao(),
+        ctx.organizationId,
+        input.demanda_id,
+      );
+      if (vereditoDemanda === "falha_na_consulta") {
+        throw new Error("Erro interno ao validar a demanda vinculada.");
+      }
+      if (vereditoDemanda === "fora_da_organizacao") {
+        throw new Error("A demanda informada não pertence a esta organização ou não existe.");
+      }
+      if (vereditoDemanda === "encerrada") {
+        throw new Error("A demanda informada já foi encerrada. Crie a tarefa em uma demanda ativa.");
+      }
+    }
+
+    await conferirVinculos(ctx.organizationId, input);
+
+    // 3. Inserir em public.crm_tasks
+    const { data, error } = await ctx.supabase
+      .from("crm_tasks")
+      .insert({
+        title: input.title,
+        description: input.description ?? null,
+        due_date: input.due_date ?? null,
+        priority: input.priority,
+        contact_id: input.contact_id ?? null,
+        lead_id: input.lead_id ?? null,
+        demanda_id: input.demanda_id ?? null,
+        assigned_to: input.assigned_to ?? null,
+        organization_id: ctx.organizationId,
+        created_by: ctx.actor.type === "user" ? ctx.actor.id : null,
+      })
+      .select(
+        "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at",
+      )
+      .single();
+
+    if (error) {
+      if (error.code === "23503") {
+        throw new Error(VINCULO_INEXISTENTE);
+      }
+      throw new Error(`Erro ao salvar a tarefa: ${error.message}`);
+    }
+
+    // 4. Registro de auditoria
+    await audit({
+      action: "crm_task.created",
+      actorUserId: ctx.actor.type === "user" ? (ctx.actor.id as string) : null,
+      organizationId: ctx.organizationId,
+      resourceType: "crm_tasks",
+      resourceId: data.id,
+      requestId: ctx.requestId,
+      metadata: { due_date: data.due_date, priority: data.priority },
+    });
+
+    // 5. Linha do tempo do negócio (Sistema Vivo) se houver lead_id
+    if (data.lead_id) {
+      await registraAtividadeDaTarefa(portaDaAplicacao(), {
+        organizationId: ctx.organizationId,
+        tarefa: data as Tarefa,
+        tipo: "task_created",
+        actor: ctx.actor,
+      });
+    }
+
+    return { task: data };
+  },
+};
+
+const listInputShape = {
+  status: z.enum(SITUACOES_DA_TAREFA).optional(),
+  assigned_to: z.union([z.literal("me"), z.literal("ninguem"), z.string().uuid()]).optional(),
+  contact_id: z.string().uuid("contact_id deve ser UUID válido").optional(),
+  lead_id: z.string().uuid("lead_id deve ser UUID válido").optional(),
+  demanda_id: z.string().uuid("demanda_id deve ser UUID válido").optional(),
+  due_from: z.string().datetime().optional(),
+  due_to: z.string().datetime().optional(),
+  limite: z.number().int().min(1).max(100).default(50),
+};
+
+export const crmListTasks: McpToolDefinition<typeof listInputShape> = {
+  name: "crm_list_tasks",
+  description:
+    "Lista tarefas pendentes ou filtradas da organização por responsável, contato, demanda ou período de vencimento.",
+  inputSchema: listInputShape,
+  category: "read",
+  requiresRole: "viewer",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) => {
+    let query = ctx.supabase
+      .from("crm_tasks")
+      .select(
+        "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)",
+      )
+      .eq("organization_id", ctx.organizationId);
+
+    if (input.status) {
+      query = query.eq("status", input.status);
+    }
+    if (input.assigned_to) {
+      if (input.assigned_to === "me") {
+        if (ctx.actor.type === "user") {
+          query = query.eq("assigned_to", ctx.actor.id);
+        } else {
+          return { tasks: [] };
+        }
+      } else if (input.assigned_to === "ninguem") {
+        query = query.is("assigned_to", null);
+      } else {
+        query = query.eq("assigned_to", input.assigned_to);
+      }
+    }
+    // No turno de atendimento, a lista é a do cliente da conversa: o título de
+    // tarefa da equipe nomeia OUTROS clientes. Mesmo recorte das leituras de
+    // `leads.ts` (#2158) — escopa quem a resposta alcança, não muda a pergunta.
+    const contatoDoFiltro = ctx.contatoDoTurno ?? input.contact_id;
+    if (contatoDoFiltro) {
+      query = query.eq("contact_id", contatoDoFiltro);
+    }
+    if (input.lead_id) {
+      query = query.eq("lead_id", input.lead_id);
+    }
+    if (input.demanda_id) {
+      query = query.eq("demanda_id", input.demanda_id);
+    }
+    if (input.due_from) {
+      query = query.gte("due_date", input.due_from);
+    }
+    if (input.due_to) {
+      query = query.lte("due_date", input.due_to);
+    }
+
+    query = query
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(input.limite ?? 50);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(`Erro ao listar tarefas: ${error.message}`);
+    }
+
+    return { tasks: data ?? [] };
+  },
+};
+
+const updateInputShape = {
+  task_id: z.string().uuid("task_id deve ser UUID válido"),
+  title: z.string().trim().min(1, "Título não pode ser vazio").max(255).optional(),
   description: z.string().max(5000).nullable().optional(),
   due_date: z.string().datetime({ offset: true }).nullable().optional(),
   priority: z.enum(PRIORIDADES_DA_TAREFA).optional(),
   status: z.enum(SITUACOES_DA_TAREFA).optional(),
-  lead_id: z.string().uuid().nullable().optional(),
-  contact_id: z.string().uuid().nullable().optional(),
-  demanda_id: z.string().uuid().nullable().optional(),
-  assigned_to: z.string().uuid().nullable().optional(),
+  assigned_to: z.string().uuid("assigned_to deve ser UUID válido").nullable().optional(),
+  contact_id: z.string().uuid("contact_id deve ser UUID válido").nullable().optional(),
+  lead_id: z.string().uuid("lead_id deve ser UUID válido").nullable().optional(),
+  demanda_id: z.string().uuid("demanda_id deve ser UUID válido").nullable().optional(),
 };
 
-const listaShape = {
-  status: z.enum(SITUACOES_DA_TAREFA).optional(),
-  priority: z.enum(PRIORIDADES_DA_TAREFA).optional(),
-  lead_id: z.string().uuid().optional().describe("as tarefas deste negócio"),
-  demanda_id: z.string().uuid().optional().describe("as tarefas desta demanda"),
-  aberto: z
-    .boolean()
-    .optional()
-    .describe("só o que ainda pede ação (pendente ou em andamento) — é o que a tela mostra por padrão"),
-  assigned_to: z.string().uuid().optional().describe("as tarefas desta pessoa"),
-  sem_responsavel: z.boolean().optional().describe("só as tarefas sem ninguém designado"),
-  due_from: z.string().datetime({ offset: true }).optional(),
-  due_to: z.string().datetime({ offset: true }).optional(),
-  limite: z.number().int().min(1).max(LIMITE_MAXIMO_DA_LISTA).optional(),
-};
-
-export const crmListTasks: McpToolDefinition<typeof listaShape> = {
-  name: "crm_list_tasks",
-  description:
-    "Lista as tarefas da organização em ordem de prazo, com o negócio de cada uma. " +
-    "Use `aberto: true` para o que ainda pede ação e `assigned_to` para as de uma pessoa. " +
-    "A lista corta em 500 linhas: se voltar cheia, estreite por responsável ou por data.",
-  inputSchema: listaShape,
-  category: "read",
-  requiresRole: "ai_operator",
-  requiresScope: "mcp:read",
-  handler: async (input, ctx) =>
-    comRecusa("listed", async () => {
-      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_TAREFAS_LEITURA);
-      const r = await listarTarefasHandler(ctx.supabase, ctxDoHandler(ctx), {
-        ...input,
-        ...(input.sem_responsavel === true ? { sem_responsavel: true } : {}),
-      });
-      return { listed: true, total: r.tasks.length, tarefas: r.tasks };
-    }),
-};
-
-const criacaoShape = {
-  title: z.string().trim().min(1).max(255),
-  description: z.string().max(5000).optional(),
-  due_date: z.string().datetime({ offset: true }).optional().describe("quando vence, com fuso"),
-  priority: z.enum(PRIORIDADES_DA_TAREFA).optional(),
-  status: z.enum(SITUACOES_DA_TAREFA).optional(),
-  lead_id: z.string().uuid().optional(),
-  contact_id: z.string().uuid().optional(),
-  demanda_id: z.string().uuid().optional(),
-  assigned_to: z.string().uuid().optional().describe("id de um membro da equipe; sem isto a tarefa fica sem dono"),
-  /**
-   * A CHAVE DA CRIAÇÃO (#4516). Repetir a chamada com a MESMA chave devolve a
-   * mesma tarefa em vez de criar outra — é o que salva a integração que retenta
-   * por timeout. Sem chave, cada chamada cria uma tarefa nova.
-   */
-  idempotency_key: z
-    .string()
-    .uuid()
-    .optional()
-    .describe("repita com a MESMA chave se a chamada falhar por rede; repetir com a mesma chave NÃO duplica a tarefa"),
-};
-
-export const crmCreateTask: McpToolDefinition<typeof criacaoShape> = {
-  name: "crm_create_task",
-  description:
-    "Cria uma tarefa para a equipe, opcionalmente presa a um negócio, contato ou demanda. " +
-    "Sem `assigned_to` a tarefa fica sem dono. " +
-    "Se você já tentou criar e não sabe se passou, repita com o mesmo `idempotency_key`: a segunda chamada devolve a mesma tarefa em vez de duplicar.",
-  inputSchema: criacaoShape,
-  category: "write",
-  requiresRole: "ai_operator",
-  requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    comRecusa("created", async () => {
-      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_TAREFAS_ESCRITA);
-      const { idempotency_key, ...campos } = input;
-      const r = await criarTarefaHandler(
-        ctx.supabase,
-        { ...ctxDoHandler(ctx), ...(idempotency_key ? { idempotencyKey: idempotency_key } : {}) },
-        { priority: "medium", status: "pending", ...campos },
-      );
-      return { created: true, tarefa: r.task };
-    }),
-};
-
-const edicaoShape = {
-  task_id: z.string().uuid(),
-  ...camposDaTarefa,
-};
-
-export const crmUpdateTask: McpToolDefinition<typeof edicaoShape> = {
+export const crmUpdateTask: McpToolDefinition<typeof updateInputShape> = {
   name: "crm_update_task",
   description:
-    "Edita uma tarefa: título, prazo, prioridade, situação, responsável e vínculos. " +
-    "Para marcar como concluída prefira `crm_complete_task`. " +
-    "Tarefa de outra organização não é encontrada — o id sozinho não atravessa organização.",
-  inputSchema: edicaoShape,
+    "Atualiza uma tarefa existente, permitindo alterar status (ex: done, in_progress), prazo, prioridade, responsável ou vínculos.",
+  inputSchema: updateInputShape,
   category: "write",
-  requiresRole: "ai_operator",
+  requiresRole: "agent",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    comRecusa("updated", async () => {
-      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_TAREFAS_ESCRITA);
-      const { task_id, ...campos } = input;
-      const r = await editarTarefaHandler(ctx.supabase, ctxDoHandler(ctx), {
-        id: task_id,
-        ...campos,
+  handler: async (input, ctx) => {
+    const { task_id, ...updates } = input;
+
+    const camposParaAtualizar = Object.entries(updates).filter(
+      ([_, v]) => v !== undefined,
+    );
+    if (camposParaAtualizar.length === 0) {
+      throw new Error("Nenhum campo informado para atualização.");
+    }
+
+    // 1. Validar assigned_to se informado
+    if (updates.assigned_to) {
+      const vereditoResp = await conferirResponsavel(
+        portaDaAplicacao(),
+        ctx.organizationId,
+        updates.assigned_to,
+      );
+      if (vereditoResp === "falha_na_consulta") {
+        throw new Error("Erro interno ao validar o novo responsável da tarefa.");
+      }
+      if (vereditoResp === "fora_da_equipe") {
+        throw new Error("O responsável informado não faz parte da equipe desta organização.");
+      }
+    }
+
+    // 2. Validar demanda_id se informada
+    if (updates.demanda_id) {
+      const vereditoDemanda = await conferirDemanda(
+        portaDaAplicacao(),
+        ctx.organizationId,
+        updates.demanda_id,
+      );
+      if (vereditoDemanda === "falha_na_consulta") {
+        throw new Error("Erro interno ao validar a demanda vinculada.");
+      }
+      if (vereditoDemanda === "fora_da_organizacao") {
+        throw new Error("A demanda informada não pertence a esta organização ou não existe.");
+      }
+      if (vereditoDemanda === "encerrada") {
+        throw new Error("A demanda informada já foi encerrada.");
+      }
+    }
+
+    await conferirVinculos(ctx.organizationId, updates);
+
+    // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou
+    // (mesma régua da PATCH /api/v1/tasks/[id]): sem ler antes, concluir duas
+    // vezes gravaria duas linhas `task_completed` na timeline do negócio.
+    const { data: antes, error: erroDaLeitura } = await ctx.supabase
+      .from("crm_tasks")
+      .select("status, due_date")
+      .eq("id", task_id)
+      .eq("organization_id", ctx.organizationId)
+      .maybeSingle();
+    if (erroDaLeitura) {
+      throw new Error(`Erro ao ler a tarefa: ${erroDaLeitura.message}`);
+    }
+    if (!antes) {
+      throw new Error("Tarefa não encontrada nesta organização.");
+    }
+    const statusAntes = antes.status;
+
+    // 3. Executar o UPDATE com filtro de isolamento por organization_id.
+    // `updated_at` fica com o trigger `trg_crm_tasks_updated_at`.
+    const dadosUpdate = Object.fromEntries(camposParaAtualizar);
+
+    const { data, error } = await ctx.supabase
+      .from("crm_tasks")
+      .update(dadosUpdate)
+      .eq("id", task_id)
+      .eq("organization_id", ctx.organizationId)
+      .select(
+        "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, recurrence_source_id",
+      )
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === "23503") {
+        throw new Error(VINCULO_INEXISTENTE);
+      }
+      throw new Error(`Erro ao atualizar a tarefa: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error("Tarefa não encontrada nesta organização.");
+    }
+    const { recurrence_source_id, ...tarefa } = data;
+
+    // 4. Auditoria
+    await audit({
+      action: "crm_task.updated",
+      actorUserId: ctx.actor.type === "user" ? (ctx.actor.id as string) : null,
+      organizationId: ctx.organizationId,
+      resourceType: "crm_tasks",
+      resourceId: tarefa.id,
+      requestId: ctx.requestId,
+      // A transição só entra quando `status` veio: editar o título não grava
+      // um `de: "pending", para: "pending"` que não existiu.
+      metadata: {
+        campos: camposParaAtualizar.map(([k]) => k),
+        ...(updates.status !== undefined ? { de: statusAntes, para: tarefa.status } : {}),
+      },
+    });
+
+    // Record completion and continue the series on the transition to done.
+    if (tarefa.status === "done" && statusAntes !== "done") {
+      const db = portaDaAplicacao();
+      await registraAtividadeDaTarefa(db, {
+        organizationId: ctx.organizationId,
+        tarefa: tarefa as Tarefa,
+        tipo: "task_completed",
+        actor: ctx.actor,
       });
-      return { updated: true, tarefa: r.task };
-    }),
-};
-
-const conclusaoShape = {
-  task_id: z.string().uuid(),
-  desfecho: z
-    .enum(["concluida", "reaberta"])
-    .optional()
-    .describe("`concluida` (padrão) fecha a tarefa; `reaberta` devolve para pendente"),
-};
-
-export const crmCompleteTask: McpToolDefinition<typeof conclusaoShape> = {
-  name: "crm_complete_task",
-  description:
-    "Fecha uma tarefa como concluída — ou reabre, com `desfecho: \"reaberta\"`. " +
-    "A linha do tempo do negócio registra o fechamento UMA vez; repetir não duplica o registro. " +
-    "Concluir não apaga: a tarefa continua na lista com a situação `done`.",
-  inputSchema: conclusaoShape,
-  category: "write",
-  requiresRole: "ai_operator",
-  requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    comRecusa("completed", async () => {
-      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_TAREFAS_ESCRITA);
-      const r = await editarTarefaHandler(ctx.supabase, ctxDoHandler(ctx), {
-        id: input.task_id,
-        status: input.desfecho === "reaberta" ? "pending" : "done",
+      await criarProximaSemDerrubar(db, {
+        id: tarefa.id,
+        organization_id: ctx.organizationId,
+        recurrence_source_id: recurrence_source_id ?? null,
+        due_date: tarefa.due_date ?? antes.due_date ?? null,
       });
-      return { completed: r.task.status === "done", tarefa: r.task };
-    }),
-};
+    }
 
-const exclusaoShape = {
-  task_id: z.string().uuid(),
-};
-
-export const crmDeleteTask: McpToolDefinition<typeof exclusaoShape> = {
-  name: "crm_delete_task",
-  description:
-    "APAGA uma tarefa de vez. Não há como desfazer. " +
-    "Se a intenção é só encerrar o trabalho, use `crm_complete_task` — apagar tira o registro de que a tarefa existiu. " +
-    "Tarefa de outra organização não é encontrada.",
-  inputSchema: exclusaoShape,
-  category: "write",
-  requiresRole: "ai_operator",
-  requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    comRecusa("deleted", async () => {
-      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_TAREFAS_ESCRITA);
-      const r = await excluirTarefaHandler(ctx.supabase, ctxDoHandler(ctx), { id: input.task_id });
-      return { deleted: r.deleted };
-    }),
+    return { task: tarefa };
+  },
 };

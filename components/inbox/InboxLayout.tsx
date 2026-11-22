@@ -35,6 +35,7 @@ import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import type { ModuloDaLateral } from "@/lib/inbox/modulos-da-lateral";
+import type { AbaDaPessoa } from "@/lib/inbox/abas-da-inbox";
 import type { Message as ConversationMensagem } from "@/lib/types/messaging";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 
@@ -297,6 +298,11 @@ interface InboxLayoutProps {
    * faria a lateral nascer completa e "pular" para a escolhida.
    */
   modulosDaLateral?: ModuloDaLateral[];
+  /**
+   * A ordem das abas e as que ficam no menu "Mais" (#3313). Vem do SERVIDOR
+   * (`carregarAbasDaInbox`), pela mesma razão dos módulos acima.
+   */
+  abasDaInbox?: AbaDaPessoa[];
 }
 
 export function InboxLayout({
@@ -304,6 +310,7 @@ export function InboxLayout({
   rascunho = null,
   painelRecolhidoInicial = false,
   modulosDaLateral,
+  abasDaInbox,
 }: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
@@ -1004,6 +1011,7 @@ export function InboxLayout({
           value={filterValue}
           onChange={setFilterValue}
           filas={filasDaOrganizacao?.data ?? []}
+          abasIniciais={abasDaInbox}
         />
         {podeAgirEmLote && (
           <BarraDeAcoesEmLote
