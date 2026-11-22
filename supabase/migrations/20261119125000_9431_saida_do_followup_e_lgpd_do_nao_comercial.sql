@@ -1,4 +1,5 @@
 -- 20261119125000_9431 — o negócio sai do follow-up SEM calar o contato, e o
+-- manifest: O negócio marcado como não comercial sai do follow-up sem calar o contato — a inscrição passa a carregar `lead_id` e o motor consulta ESSE negócio no disparo (`lib/followup/elegibilidade-do-negocio.ts`) — e o motivo do "não comercial" entra na anonimização pelo gatilho `trg_lgpd_redigir_classificacao_comercial`, mantendo `nao_comercial_em`.
 -- motivo do "não comercial" entra na anonimização.
 --
 -- Pai: #4195 (o espelho da classificação está na 9414). Esta migration fecha os
