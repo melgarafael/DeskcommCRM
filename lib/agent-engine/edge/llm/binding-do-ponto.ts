@@ -27,6 +27,7 @@ import {
   type LinhaDeBinding,
   type ModeloDoCatalogoEconomico,
 } from '../../../ai/pontos/resolver';
+import { modeloAposentadoNoProvedor } from './modelos-aposentados';
 import { temPrecoNoMotor } from './pricing';
 
 /**
@@ -199,7 +200,11 @@ export async function decidirParaOSeam(
               provider,
               modeloAtual,
               entrada.modelosHabilitados ?? [],
+              // Dois eixos, dois parâmetros: o motor tem de saber COBRAR (#3013)
+              // e o provedor tem de ainda SERVIR o id (#4925) — preço sozinho
+              // deixava o tier econômico cair num Gemini aposentado.
               temPrecoNoMotor,
+              modeloAposentadoNoProvedor,
             );
             return escolhido !== null &&
               economicoEstaDeCastigo(entrada.organizationId, provider, escolhido, Date.now())

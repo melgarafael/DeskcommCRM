@@ -18,6 +18,12 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({ useUser: () => ({ id: "u-eu" }) })
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ isSuccess: true, data: [] }),
 }));
+// A preferência é gravada num Server Action: aqui o dublê só confirma que a
+// tela TENTA guardar a escolha — o mecanismo de verdade é testado no unitário
+// da preferência (#4737).
+vi.mock("@/app/actions/settings/definirFiltroDasTarefas", () => ({
+  definirFiltroDasTarefas: vi.fn(async (filtro: string) => ({ ok: true, filtro })),
+}));
 
 const fetchEspiao = vi.fn(
   async (_url: string, _init?: RequestInit) =>
@@ -48,11 +54,11 @@ const FUNIS = [
   { id: "f-posvenda", name: "Pós-venda" },
 ];
 
-function renderTela(minhasDeInicio: boolean, funis?: Array<{ id: string; name: string }>) {
+function renderTela(filtroInicial: "eu" | "todos", funis?: Array<{ id: string; name: string }>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <TarefasClient podeEditar minhasDeInicio={minhasDeInicio} funis={funis} />
+      <TarefasClient podeEditar filtroInicial={filtroInicial} funis={funis} />
     </QueryClientProvider>,
   );
 }
@@ -65,7 +71,7 @@ const corposDosPosts = () =>
 
 describe("TarefasClient — seletor Responsável", () => {
   it("⭐ aberta pelo lembrete, a busca leva assigned_to=me e o seletor mostra 'Minhas'", async () => {
-    renderTela(true);
+    renderTela("eu");
 
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     expect(urls()[0]).toContain("assigned_to=me");
@@ -73,7 +79,7 @@ describe("TarefasClient — seletor Responsável", () => {
   });
 
   it("escolher 'Todos' faz a próxima busca sair sem o filtro", async () => {
-    renderTela(true);
+    renderTela("eu");
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
 
     await userEvent.click(screen.getByRole("combobox", { name: "Responsável" }));
@@ -84,7 +90,7 @@ describe("TarefasClient — seletor Responsável", () => {
   });
 
   it("aberta pelo menu, mostra todas", async () => {
-    renderTela(false);
+    renderTela("todos");
 
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     expect(urls()[0]).not.toContain("assigned_to");
@@ -93,7 +99,7 @@ describe("TarefasClient — seletor Responsável", () => {
 
 describe("TarefasClient — seletor Funil", () => {
   it("⭐ escolher um funil faz a busca sair com pipeline_id; 'Todos os funis' tira o filtro", async () => {
-    renderTela(false, FUNIS);
+    renderTela("todos", FUNIS);
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     expect(urls()[0]).not.toContain("pipeline_id");
 
@@ -114,7 +120,7 @@ describe("TarefasClient — seletor Funil", () => {
   });
 
   it("combina com o responsável: 'Minhas' + funil saem na mesma busca", async () => {
-    renderTela(true, FUNIS);
+    renderTela("eu", FUNIS);
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
 
     await userEvent.click(screen.getByRole("combobox", { name: "Funil" }));
@@ -124,12 +130,12 @@ describe("TarefasClient — seletor Funil", () => {
   });
 
   it("com um funil só (ou nenhum) o seletor não aparece — não há o que escolher", async () => {
-    const { unmount } = renderTela(false, [FUNIS[0]!]);
+    const { unmount } = renderTela("todos", [FUNIS[0]!]);
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     expect(screen.queryByRole("combobox", { name: "Funil" })).toBeNull();
     unmount();
 
-    renderTela(false);
+    renderTela("todos");
     expect(screen.queryByRole("combobox", { name: "Funil" })).toBeNull();
   });
 });
@@ -145,19 +151,19 @@ describe("TarefasClient — criar a partir de 'Minhas'", () => {
   }
 
   it("⭐ com 'Minhas' ligado, a tarefa nova nasce minha — senão some da lista que a pessoa vê", async () => {
-    renderTela(true);
+    renderTela("eu");
     expect(await criaSemTocarNoResponsavel()).toMatchObject({ assigned_to: "u-eu" });
   });
 
   it("com 'Todos', a tarefa nova segue nascendo sem responsável", async () => {
-    renderTela(false);
+    renderTela("todos");
     expect(await criaSemTocarNoResponsavel()).toMatchObject({ assigned_to: null });
   });
 });
 
 describe("TarefasClient — o calendário não prende o celular", () => {
   it("no modo calendário, a lista continua montada para abaixo de md e o calendário só vale de md para cima", async () => {
-    renderTela(false);
+    renderTela("todos");
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     await userEvent.click(screen.getByRole("button", { name: "Calendário" }));
 
@@ -181,7 +187,7 @@ describe("TarefasClient — o quadro também não prende o celular", () => {
    * saem juntos.
    */
   it("no modo quadro, a lista continua montada para abaixo de md e o quadro só vale de md para cima", async () => {
-    renderTela(false);
+    renderTela("todos");
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
 
@@ -193,7 +199,7 @@ describe("TarefasClient — o quadro também não prende o celular", () => {
   });
 
   it("o quadro faz a SUA consulta, com teto próprio — não a lista de 500 linhas", async () => {
-    renderTela(false);
+    renderTela("todos");
     await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
     await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
 

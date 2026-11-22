@@ -11,6 +11,9 @@
  */
 import type pg from 'pg';
 import type { Queryable } from '../../queue/queue';
+// Valor (não tipo): a régua de "de qual número é este job" mora num lugar só —
+// o claim, o watchdog e esta consulta perguntam do mesmo jeito (#4063).
+import { CANAL_DO_JOB_SQL } from '../../queue/queue';
 
 /** Modo do gate quando a 1ª mensagem sai sem disclosure (knob, DISCLOSURE_MODE). */
 export type DisclosureMode = 'inject' | 'veto';
@@ -85,19 +88,49 @@ export async function loadDisclosureTemplate(db: Queryable, tenantId: string): P
  * contam: um 'queued'/'failed' não alcançou o lead, então a próxima tentativa ainda é a
  * primeira e leva o disclosure. organization_id/contact_id de fonte confiável (row do job — regra dura nº 1).
  *
+ * ─── #4063: o teto por abordagem pergunta pelo NÚMERO ───────────────────────
+ *
+ * Com `channelSessionId`, a conta fecha no canal do job — `CANAL_DO_JOB_SQL`, a
+ * MESMA régua que o claim e o watchdog usam para dizer de qual número é um job
+ * (payload direto ou a conversa do atendimento). Só o `abordagem` do teto (#3851,
+ * canal com `tetoSoAbordagem` ligado) passa o número: ali, quem o número A já
+ * abordou continua sendo pessoa nova para o B.
+ *
+ * Sem o parâmetro, a conta é da organização, como sempre foi: o disclosure (F4-05)
+ * e o gate LGPD (F4-09) perguntam assim, porque a base legal é da empresa
+ * (controladora), e a prévia do agente (`agent/preview.ts`) monta o contexto sem
+ * número.
+ *
  * Devolve 0 ou 1, nunca o total: os chamadores só comparam com 0, e um `count(*)` por
  * envio contava todas as linhas casadas para responder "existe?"; o `exists` para na
  * primeira. ponytail: o nome
  * ficou `count` para não abrir conflito em `before-send.ts`; vira `hasPriorAcceptedSend`
  * quando aquela região estiver livre.
  */
-export async function countPriorAcceptedSends(db: Queryable, tenantId: string, leadId: string): Promise<number> {
+export async function countPriorAcceptedSends(
+  db: Queryable,
+  tenantId: string,
+  leadId: string,
+  channelSessionId?: string,
+): Promise<number> {
+  if (channelSessionId === undefined) {
+    const { rows } = await db.query<{ existe: boolean }>(
+      `select exists(
+         select 1 from send_ledger
+         where organization_id = $1 and contact_id = $2 and status = 'accepted'
+       ) as existe`,
+      [tenantId, leadId],
+    );
+    return rows[0]?.existe ? 1 : 0;
+  }
   const { rows } = await db.query<{ existe: boolean }>(
     `select exists(
-       select 1 from send_ledger
-       where organization_id = $1 and contact_id = $2 and status = 'accepted'
+       select 1 from send_ledger l
+       join job_queue j on j.id = l.job_id
+       where l.organization_id = $1 and l.contact_id = $2 and l.status = 'accepted'
+         and ${CANAL_DO_JOB_SQL} = $3
      ) as existe`,
-    [tenantId, leadId],
+    [tenantId, leadId, channelSessionId],
   );
   return rows[0]?.existe ? 1 : 0;
 }

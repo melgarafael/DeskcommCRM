@@ -417,6 +417,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.",
   },
   {
+    modulo: "menu_de_atendimento",
+    id: "modulo-menu-de-atendimento",
+    rotulo: "Menu de atendimento sem IA",
+    descricao:
+      "Ligado, a primeira mensagem de uma conversa sem dono recebe um menu com opções numeradas, escrito pela empresa, e o cliente escolhe por número: a conversa vai para a fila, para uma pessoa, ou recebe um arquivo que já existe. Enquanto o menu espera a escolha, nenhuma resposta é gerada por IA — não há token gasto. Desligado, a entrada continua sendo da IA ou de quem atende, como hoje. A empresa ainda precisa ligar o menu em settings.menu_de_atendimento.ativa.",
+    foraDoMenu: "Não cria porta no menu do CRM: nesta fatia o menu é escrito em settings.menu_de_atendimento e a tela de edição ainda não existe.",
+  },
+  {
     modulo: "agencias",
     id: "modulo-agencias",
     rotulo: "Agências administram clientes",

@@ -60,6 +60,11 @@ export interface ProvedorDeServico {
    * `desconhecido`/`operador`, que não têm documento a citar.
    */
   fonteDoPais: { url: string; consultadoEm: string } | null;
+  /**
+   * POR QUE não há `paisDeclarado` (#4518) — a mesma regra do catálogo irmão:
+   * `null` se e somente se a declaração existe.
+   */
+  motivoDaRegiaoNaoDeclarada: string | null;
 }
 
 export const PROVEDORES_DE_SERVICO = [
@@ -75,6 +80,9 @@ export const PROVEDORES_DE_SERVICO = [
     // diz o que se sabe — que não se sabe (#4588).
     sede: null,
     paisDeclarado: null,
+    // A ElevenLabs não publica, em fonte que este repo possa citar com data, o
+    // país de onde processa o áudio.
+    motivoDaRegiaoNaoDeclarada: "não publica, em fonte citável, o país de onde processa o áudio",
     quandoUsar:
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",

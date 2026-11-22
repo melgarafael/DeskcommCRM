@@ -98,6 +98,17 @@ export const configDoJevSchema = z
      */
     origem: z.enum(ORIGENS_DO_JEV).default(ORIGEM_PADRAO),
     /**
+     * O MODELO do decisor (`./modelo`), escolhido pelo administrador. Ausente é
+     * o Jev — quem nunca abriu a tela não muda de comportamento.
+     *
+     * Só vale com a origem `openrouter`: os outros modelos de decisão são
+     * servidos por ela, e a chave da TypeSafe não serve para eles
+     * (`modeloDaChamada`). Um valor ilegível é DESCARTADO, e não a config
+     * inteira: um id torto não pode desligar o Jev de quem já o tinha ligado —
+     * ao contrário do `origem`, que é enum fechado e escolhe a credencial.
+     */
+    modelo: z.string().trim().min(1).max(120).optional().catch(undefined),
+    /**
      * Quem aceitou mandar a mensagem ao fornecedor estrangeiro, e quando.
      * `alcance` ausente é o aceite da onda 1: cada mensagem, sozinha. Aceite
      * ilegível é aceite nenhum — a config inteira cai no desligado.
@@ -149,6 +160,8 @@ export type ResultadoDeGravarConfig =
   | { ok: false; motivo: "leitura_falhou" | "config_invalida" | "escrita_recusada" };
 
 export type MudancaDaConfig = Partial<Pick<ConfigDoJev, "ligado" | "modo" | "modo_roteador" | "origem" | "aceite">> & {
+  /** `null` volta ao padrão (o Jev); `undefined` não mexe. */
+  modelo?: string | null;
   /** Só as tarefas que mudam; as outras ficam como estão. */
   tarefas?: Partial<Record<IdDaTarefa, EstadoDaTarefa>>;
 };
@@ -182,7 +195,7 @@ export function mesclar(
   mudanca: MudancaDaConfig,
   carimbo: { em: string; por: string },
 ): unknown {
-  const { tarefas: tarefasPedidas, ...resto } = mudanca;
+  const { tarefas: tarefasPedidas, modelo: modeloPedido, ...resto } = mudanca;
   const pedidas: Partial<Record<IdDaTarefa, EstadoDaTarefa>> = { ...tarefasPedidas };
   if (pedidas.clima === undefined && mudanca.modo !== undefined) pedidas.clima = ESTADO_DO_MODO[mudanca.modo];
   const clima = pedidas.clima;
@@ -193,7 +206,7 @@ export function mesclar(
     if (estado !== undefined) tarefas[id] = { estado, alterado_em: carimbo.em, alterado_por: carimbo.por };
   }
 
-  return {
+  const proxima: Record<string, unknown> = {
     ...atual,
     ...resto,
     ...(clima !== undefined && clima !== "desligada" ? { modo: MODO_DO_ESTADO[clima] } : {}),
@@ -201,6 +214,12 @@ export function mesclar(
     alterado_em: carimbo.em,
     alterado_por: carimbo.por,
   };
+  // `modelo: null` é "voltar ao padrão", e o padrão é a AUSÊNCIA do campo —
+  // gravar `null` faria o `safeParse` da próxima leitura recusar a config
+  // inteira. `undefined` não mexe no que está gravado.
+  if (modeloPedido === null) delete proxima.modelo;
+  else if (modeloPedido !== undefined) proxima.modelo = modeloPedido;
+  return proxima;
 }
 
 /**

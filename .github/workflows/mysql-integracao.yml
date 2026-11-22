@@ -64,5 +64,11 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           SENTRY_DSN: "off"
+          # Mesmo teto de heap dos passos irmãos (`perf.yml`, `publish-image.yml`):
+          # o type check dentro do `next build` encosta em ~4,0 GB e o padrão do
+          # Node no runner é ~4,1 GB — sem isto este job cai com "JavaScript heap
+          # out of memory" sem relação com o PR (#4785, run 44083643155). O runner
+          # tem 16 GB e 6 GB deixa folga sem esconder crescimento.
+          NODE_OPTIONS: --max-old-space-size=6144
       - name: O standalone leva o mysql2 completo?
         run: node scripts/verificar-standalone-mysql.mjs

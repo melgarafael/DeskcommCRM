@@ -5,8 +5,9 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { MODELOS_BASE } from "@/lib/propostas/modelos/catalogo-base";
 import { ROTULO_DO_MODELO } from "@/lib/propostas/modelos/rotulos";
@@ -46,17 +47,19 @@ async function copiaAtiva(admin: ReturnType<typeof createAdminClient>, orgId: st
   return (data as LinhaDoModelo | null) ?? null;
 }
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "proposal_templates" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "proposal_templates", role: "viewer", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposal-templates.slug", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { slug } = await ctx.params;
   const admin = createAdminClient();
 
-  const copia = await copiaAtiva(admin, authz.org.orgId, slug);
+  const copia = await copiaAtiva(admin, authz.organizationId, slug);
   if (copia) {
     return ok(
       {
@@ -85,11 +88,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "proposal_templates" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "proposal_templates", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposal-templates.slug", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { slug } = await ctx.params;
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -103,11 +108,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (erros.length > 0) return fail("validation_failed", t("O modelo tem problemas."), 422, { requestId, details: { erros } });
 
   const admin = createAdminClient();
-  const copia = await copiaAtiva(admin, authz.org.orgId, slug);
+  const copia = await copiaAtiva(admin, authz.organizationId, slug);
   if (!copia) {
     return fail("state_conflict", t("Personalize o modelo da plataforma antes de editá-lo."), 409, { requestId });
   }
-  const version = await proximaVersao(admin, authz.org.orgId, slug);
+  const version = await proximaVersao(admin, authz.organizationId, slug);
   const { error } = await admin
     .from("proposal_templates")
     .update({
@@ -118,14 +123,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
       version,
       updated_at: new Date().toISOString(),
     })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", copia.id);
   if (error) return fail("internal_error", t("Falha ao salvar o modelo."), 500, { requestId });
 
   void audit({
     action: "proposal_template.saved",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "proposal_templates",
     resourceId: copia.id,
     requestId,
@@ -134,31 +140,34 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   return ok({ slug, version }, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "proposal_templates" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "proposal_templates", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposal-templates.slug", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { slug } = await ctx.params;
   const admin = createAdminClient();
 
-  const copia = await copiaAtiva(admin, authz.org.orgId, slug);
+  const copia = await copiaAtiva(admin, authz.organizationId, slug);
   if (!copia) return fail("not_found", t("Não há cópia da empresa para este modelo."), 404, { requestId });
   const { error } = await admin
     .from("proposal_templates")
     .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", copia.id);
   if (error) return fail("internal_error", t("Falha ao desativar o modelo."), 500, { requestId });
 
   void audit({
     action: "proposal_template.deactivated",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "proposal_templates",
     resourceId: copia.id,
     requestId,

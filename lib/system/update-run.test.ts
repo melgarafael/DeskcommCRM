@@ -46,6 +46,21 @@ describe("isRunStale", () => {
   it("data inválida conta como velho — o que não dá para afirmar, não se afirma", () => {
     expect(isRunStale("isso não é data", new Date())).toBe(true);
   });
+
+  // #4334: o pedido que espera a janela de manutenção não é "perdi contato".
+  it("agendado para depois: o prazo conta da hora agendada, não do clique", () => {
+    const agendado = new Date(Date.parse(dispatched) + 14 * 60 * 60 * 1000).toISOString();
+    const tardeDoMesmoDia = new Date(Date.parse(dispatched) + 3 * 60 * 60 * 1000);
+    expect(isRunStale(dispatched, tardeDoMesmoDia, agendado)).toBe(false);
+    const depoisDaJanela = new Date(Date.parse(agendado) + RUN_STALE_AFTER_MS + 1000);
+    expect(isRunStale(dispatched, depoisDaJanela, agendado)).toBe(true);
+  });
+
+  it("sem agendamento (nulo ou inválido) vale a régua de sempre", () => {
+    const now = new Date(Date.parse(dispatched) + RUN_STALE_AFTER_MS + 1000);
+    expect(isRunStale(dispatched, now, null)).toBe(true);
+    expect(isRunStale(dispatched, now, "nada")).toBe(true);
+  });
 });
 
 describe("rollbackFoiSuperado", () => {

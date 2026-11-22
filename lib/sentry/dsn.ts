@@ -1,13 +1,27 @@
 /**
- * DSN do Sentry com opt-out em runtime — modelo "telemetria de comunidade".
+ * DSN do Sentry — telemetria com opt-in EXPLÍCITO (issue #4936).
  *
- * Por padrão, erros vão pro Sentry do projeto (DEFAULT_SENTRY_DSN): num open source
- * self-host, é o que dá visibilidade pra corrigir bugs que afetam todo mundo. Quem
- * hospeda controla isso pelo `.env`, SEM rebuild da imagem:
+ * `SENTRY_DSN` ausente ou VAZIO significa telemetria DESLIGADA: o Sentry não
+ * manda nada, e ninguém recebe relatório de erro sem ter pedido. Quem hospeda
+ * escolhe pelo `.env`, sem rebuild da imagem:
  *
- *   SENTRY_DSN=off           → desliga toda a telemetria (nada é enviado)
+ *   SENTRY_DSN=  (vazio)     → DESLIGADA (mesmo que a chave não exista)
+ *   SENTRY_DSN=off           → desligada, escrito com todas as letras
+ *   SENTRY_DSN=comunidade    → Sentry do projeto, só erro (opt-in do install.sh)
  *   SENTRY_DSN=<seu-dsn>     → manda os erros pro SEU Sentry
- *   SENTRY_DSN=  (vazio)     → usa o Sentry da comunidade (padrão)
+ *
+ * O token `comunidade` existe porque a chave do DSN do projeto não é publicada
+ * no `.env` de quem instala: o instalador precisa registrar, em nome do que a
+ * pessoa consentiu, uma escolha que não é um DSN. Sem ele o `install.sh`
+ * gravaria vazio — que aqui significa DESLIGADO — e o "sim" do consentimento
+ * viraria silêncio.
+ *
+ * Antes desta função o vazio caía no DSN da comunidade, isto é: toda instalação
+ * mandava relatório de erro sem ninguém ter decidido, e não havia como
+ * distinguir "não configurou" de "aceitou". Quem já havia aceitado (o `.env`
+ * com a chave vazia) é convertido para `comunidade` pelo `update.sh`, sem
+ * edição manual de arquivo (ver `migrar_consentimento_de_telemetria` em
+ * `hostgator-setup-kit/_common.sh`).
  *
  * Vale para servidor (process.env) e navegador (window.__PUBLIC_ENV__.SENTRY_DSN,
  * injetado em runtime pelo <PublicEnvScript/>). O DSN não é segredo — DSNs do Sentry
@@ -16,10 +30,19 @@
 export const DEFAULT_SENTRY_DSN =
   "https://58fabf8ad54504863d404a3647ef3714@o4509908078559232.ingest.us.sentry.io/4509908083212288";
 
+/** O que o `install.sh` grava quando a pessoa aceita o Sentry da comunidade. */
+export const DSN_DA_COMUNIDADE = "comunidade";
+
 export function resolveSentryDsn(value: string | undefined | null): string | undefined {
-  const v = (value ?? "").trim().toLowerCase() === "off" ? "off" : (value ?? "").trim();
-  if (v === "off" || v === "false" || v === "0") return undefined;
-  return v.length > 0 ? v : DEFAULT_SENTRY_DSN;
+  const v = (value ?? "").trim();
+  const emMinusculas = v.toLowerCase();
+  // Token de consentimento: só ele chega ao DSN do projeto. Um DSN literal
+  // (alguém apontando para o Sentry da comunidade à mão) continua valendo, mas
+  // então é escolha escrita, não default.
+  if (emMinusculas === DSN_DA_COMUNIDADE) return DEFAULT_SENTRY_DSN;
+  if (emMinusculas === "off" || emMinusculas === "false" || emMinusculas === "0") return undefined;
+  // Vazio = desligado. É a linha que impede a telemetria silenciosa.
+  return v.length > 0 ? v : undefined;
 }
 
 /**
@@ -99,4 +122,62 @@ export function integracoesDoCliente<T extends { name: string }>(
   return padraoDoSdk.filter(
     (i) => i.name !== INTEGRACAO_DE_SESSAO && i.name !== INTEGRACAO_DE_TRACING,
   );
+}
+
+/**
+ * A integração do Sentry que instrumenta o Vercel AI SDK, e que NÃO pode ser
+ * instalada no processo que serve a assinatura do ChatGPT (#4798).
+ *
+ * O nome é o `name` que a integração declara (`@sentry/server-utils`, build
+ * `integrations/vercel-ai/index.js`, `name: "VercelAI"`).
+ */
+export const INTEGRACAO_DO_SDK_DO_AI = "VercelAI";
+
+/**
+ * Integrações de SERVIDOR (app, edge e worker): todas, menos a do AI SDK.
+ *
+ * ## O que ela faz, e por que quebra só a assinatura
+ *
+ * Com a integração instalada, o Sentry assina o canal de diagnóstico
+ * `ai:telemetry` do próprio AI SDK e, no `asyncEnd` de cada chamada de modelo,
+ * TROCA `result.stream` por um stream "espiado" (`deferStreamedModelCallEnd` →
+ * `tapModelCallStream`, `@sentry/server-utils/.../vercel-ai/vercel-ai-dc-subscriber.ts`,
+ * ~linha 339). O `tapped` é obtido com `stream.pipeThrough(...)`, o que TRAVA o
+ * `ReadableStream` original.
+ *
+ * A partir do `ai` 7.0.168 o AI SDK publica no canal `redactTelemetryCredentials(result)`:
+ * quando há corpo de requisição para redigir isso é uma CÓPIA, e a cópia compartilha
+ * o MESMO `ReadableStream` do original. O Sentry trava o stream da cópia e
+ * substitui o campo só na cópia; o SDK segue com o original e chama
+ * `languageModelStream.pipeThrough(...)` num stream já travado →
+ * `TypeError: Invalid state: The ReadableStream is locked`. Só acontece com
+ * TOOLS, porque é o laço de ferramentas que faz o SDK voltar ao stream depois do
+ * `asyncEnd` (getsentry/sentry-javascript#26403, vercel/ai#24970).
+ *
+ * É exatamente o formato do nosso ramo da assinatura: `streamText` com tools em
+ * `lib/agent-engine/edge/llm/run-model-call.ts:1131` (o SIWC exige streaming).
+ * Os outros provedores vão por `generateText` (mesmo arquivo, linha 1182) e não
+ * passam pelo caminho que trava — por isso "só a assinatura" caía.
+ *
+ * Consertado no `ai` 7.0.174 (vercel/ai#25135, `replaceProperties` faz a cópia
+ * encaminhar `stream` ao resultado real). Enquanto a versão não sobe, a
+ * integração fica de fora: é a única alavanca desta casa, porque o defeito é do
+ * pareamento `ai` >= 7.0.168 + integração, e nenhum dos dois é nosso.
+ *
+ * ## O tradeoff, declarado
+ *
+ * Quem apontou `SENTRY_DSN` para o próprio Sentry perde os SPANS de IA (chamada
+ * de modelo, tokens, custo por span) — não perde a captura de ERRO, que é a
+ * função desta telemetria e continua inteira (`captureException`,
+ * `captureRequestError`, o scrub e a coleta restrita seguem nos inits). A troca
+ * é: span de IA em troca do agente responder o cliente. E a alternativa
+ * "não iniciar Sentry no processo que serve a assinatura" foi descartada por
+ * medição: o worker é o MESMO processo para todos os provedores e para os
+ * crons/follow-ups, então desligá-lo ali apagaria a captura de erro de tudo,
+ * não só do ramo da assinatura.
+ */
+export function integracoesDoServidor<T extends { name: string }>(
+  padraoDoSdk: readonly T[],
+): T[] {
+  return padraoDoSdk.filter((i) => i.name !== INTEGRACAO_DO_SDK_DO_AI);
 }
