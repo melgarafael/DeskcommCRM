@@ -154,6 +154,31 @@ beforeAll(() => {
  * arquivo tem de EXISTIR: exceção que aponta para teste que sumiu não prova nada.
  */
 const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao: string }> = {
+  amigo_connections: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Duas organizações semeadas: a sessão da gestão de A lê exatamente a conexão de A (contagem 1), o atendente lê zero e a sessão não escreve.",
+  },
+  amigo_credentials: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Sem grant nenhum para a sessão: authenticated e anon recebem permission denied ao ler o ciphertext, de qualquer organização.",
+  },
+  amigo_patient_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Vínculo semeado em A e em B: a gestão de A não lê o de B, e a FK composta recusa vincular contato ou conexão de outra organização.",
+  },
+  amigo_appointment_links: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Espelho semeado em A e em B: a gestão de A lê só o de A (contagem 1), o atendente lê zero; a FK composta recusa compromisso de outra organização.",
+  },
+  amigo_operations: {
+    arquivo: "tests/invariants/amigo-modulo.test.ts",
+    razao:
+      "Recibo semeado em A e em B: a gestão de A lê exatamente o de A (contagem 1) e zero quando filtra pela organização B.",
+  },
   email_cadences: {
     arquivo: "tests/invariants/cadencias-consentimento-isolamento.test.ts",
     razao:
@@ -203,6 +228,13 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "Mesmo arquivo: `writeCountAs` com JWT para viewer/agent/manager nas quatro operações, " +
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
+  },
+  catalog_service_details: {
+    arquivo: "tests/invariants/catalogo-servicos.test.ts",
+    razao:
+      "JWT real: a organização lê só os próprios detalhes, a sessão não grava nem chama a função " +
+      "de escrita (42501), e o gatilho de vínculos recusa item e principal de outra organização " +
+      "mesmo na escrita do servidor.",
   },
   calendar_waitlist: {
     arquivo: "tests/invariants/lista-de-espera-encaixe.test.ts",

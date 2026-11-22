@@ -34,13 +34,21 @@ export function agenteAtende(a: FatosDoAgente): boolean {
 export function elegivelParaWorkerLegado(_a: FatosDoAgente): boolean {
   return false;
 }
+type FatosDoAgenteComCanal = FatosDoAgente & { channel: string };
+
 /** This is eligibility for recovery/zero-model triage, never permission to send. */
-export function precisaRecuperarLegado(a: FatosDoAgente): boolean {
+export function precisaRecuperarLegado(a: FatosDoAgenteComCanal): boolean {
   return (
+    a.channel !== "voice" &&
     a.kind === "rag_bot" &&
     a.is_active === true &&
     !a.published_version_id &&
     !a.archived_at &&
     !a.paused_at
   );
+}
+
+/** A telefonia configura e ativa o agente no cadastro, fora da conversa de mensagens. */
+export function agenteElegivelParaConversa(a: FatosDoAgenteComCanal): boolean {
+  return a.channel !== "voice" && (agenteAtende(a) || precisaRecuperarLegado(a));
 }

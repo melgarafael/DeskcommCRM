@@ -12,6 +12,7 @@ import { fusoDoNavegador } from "@/lib/tempo/fuso-do-navegador";
 import {
   signupSchema,
   signupComConviteSchema,
+  SENHA_LONGA_DEMAIS,
   type SignupInput,
   type SignupComConviteInput,
 } from "@/lib/auth/schemas";
@@ -23,6 +24,7 @@ import { Eye, EyeSlash } from "@/lib/ui/icons";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
 import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 import type { PlanoDoCadastro } from "@/lib/cobranca/cadastro";
+import { formatCents } from "@/lib/money";
 
 /**
  * Convite em curso: a conta está sendo criada para ACEITAR um convite, não para
@@ -146,6 +148,11 @@ export function SignupForm({
         // não na tela inicial (que, para quem foi revogado, é a tela de acesso
         // revogado, com um botão Sair e mais nada).
         setContaExistente(true);
+      } else if (res.error === "password_too_long") {
+        // O GoTrue recusou por tamanho depois do schema (defesa em
+        // profundidade): a frase é a mesma do erro de campo, em vez do
+        // "Tente novamente" que nunca ia funcionar.
+        setServerError(t(SENHA_LONGA_DEMAIS));
       } else if (res.error === "somente_convite") {
         // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
         // de novo nunca vai funcionar — é política, não falha transitória.
@@ -246,7 +253,7 @@ export function SignupForm({
           <select id="cobranca_plan_id" className="h-10 w-full rounded-md border bg-background px-3 text-sm" {...register("cobranca_plan_id")}>
             {planos.map((plano) => (
               <option key={plano.id} value={plano.id}>
-                {plano.nome} — {new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(plano.preco_cents / 100)} / {plano.intervalo === "ano" ? t("ano") : t("mês")}
+                {plano.nome} — {formatCents(plano.preco_cents, plano.moeda)} / {plano.intervalo === "ano" ? t("ano") : t("mês")}
                 {plano.trial_dias > 0 ? ` · ${plano.trial_dias} ${t("dias de teste")}` : ` · ${t("sem período de teste")}`}
               </option>
             ))}
@@ -256,7 +263,7 @@ export function SignupForm({
               <p className="text-xs text-muted-foreground">{t("Plano selecionado")}</p>
               <p className="mt-1 font-semibold">{planoSelecionado.nome}</p>
               <p className="mt-1 text-muted-foreground">
-                {new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(planoSelecionado.preco_cents / 100)}
+                {formatCents(planoSelecionado.preco_cents, planoSelecionado.moeda)}
                 {planoSelecionado.intervalo === "ano" ? " / " + t("ano") + " · " + t("pagamento anual de uma vez") : " / " + t("mês")}
               </p>
             </div>

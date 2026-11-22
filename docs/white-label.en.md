@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@b4c1c13cdced -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -26,6 +26,8 @@ On the same **Installation Brand** page, the installation administrator can add 
 
 For safety, this is not an unrestricted CSS editor: it accepts class selectors and visual color, border, shadow, and typography properties. It rejects global or ID selectors, `@` rules, URLs and remote loading, functions other than `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comments, escapes, scripts, `!important`, and layout or positioning properties. The limit is 16 KB. If a saved stylesheet no longer passes validation, it is not applied and the Brand page shows the reason. Because this setting belongs to the installation, every organization it serves is affected; review the screens after saving.
 
+The editor has **two fields**. The first applies to both themes; the second, **Dark theme CSS**, applies only while the dark theme is active — it is emitted scoped to the theme, so a rule written there never shows up in the light theme. That is how to pick a color that works in the dark without ruining the light one. Both stylesheets are validated together: if either has an invalid rule, neither is applied and the Brand page says which field to fix.
+
 Example:
 
 ```css
@@ -38,7 +40,33 @@ Example:
 }
 ```
 
-**If the CSS makes the screens unreadable.** A valid stylesheet can still hide text (transparent color, zero font size) or cover the screen with a shadow — including the login and the Brand page itself. To get out, open the page with `?sem_css=1` in the address: it loads without the custom CSS, only for you. Sign in through `/login?sem_css=1`, then open `/admin/marca?sem_css=1` by typing the address, clear the field and save. Without access to the screen, from the server: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — the CSS stops applying within 30 seconds. Step by step in [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (in Portuguese).
+**Color per section of the side menu.** The menu has stable classes meant for this CSS. Every group has `nav-grupo`, and each one also has its own: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` and `nav-grupo-organizacao` (the footer, with Settings and Help), plus `nav-grupo-modulos` on the Modules group, which only shows up when the organization has an active connected module. Each destination has its own too: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (the "See all in CRM" link), and so on. The item of the open screen — and only it — also carries `nav-item-ativo`. These classes are part of the screen contract and do not change between releases; the Tailwind utility classes do.
+
+`nav-item-ativo` is what solves the contrast of the open item: it is the only one that already has a background in the accent color, and a rule that paints the whole menu (`.nav-grupo-crm .rounded-md:hover`) reaches it too. Since the validator accepts neither attribute selectors nor `:not()`, use the class: give the open item its own color, or repeat the menu's neutral background on it.
+
+```css
+.nav-grupo .rounded-md { background-color: #f4f1ea; }
+.nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
+```
+
+Start the open item's selector with `.nav-grupo`, as in the group rule: with equal weight, the later rule wins; `.nav-item-ativo` alone loses to `.nav-grupo .rounded-md`, and the open item ends up with white text on the neutral background.
+
+**Color per section of the content.** Every screen's content container carries `tela-secao` and, when the route is in the navigation registry, the section's class too: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` and `tela-secao-organizacao` — with it, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` applies only on CRM screens. A route outside the registry keeps only `tela-secao`.
+
+To color the menu text, target `text-muted-foreground` inside the group, not `rounded-md`. The group title and the links have both, but the item of the open screen only has `rounded-md`: it already has a background in the accent color, and a text color chosen for the menu background can disappear on top of it. Since `text-muted-foreground` comes from Tailwind, check the menu after updating. The color in the example is for the light theme; for the dark one, repeat the rule in the **Dark theme CSS** field with a light color.
+
+```css
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
+}
+
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
+}
+```
+
+**If the CSS makes the screens unreadable.** A valid stylesheet can still hide text (transparent color, zero font size) or cover the screen with a shadow — including the login and the Brand page itself. To get out, open the page with `?sem_css=1` in the address: it loads without the custom CSS, only for you. Sign in through `/login?sem_css=1`, then open `/admin/marca?sem_css=1` by typing the address, clear **both** fields (light and dark theme) and save. Without access to the screen, from the server: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"` — both stylesheets stop applying within 30 seconds. Deleting only the light key keeps the dark one active whenever the dark theme is on. Step by step in [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md) (in Portuguese).
 
 The file is accepted **by its bytes, not by its extension**. Renaming an `.svg` to `.png` fools nothing: the system reads the content, refuses it and says why. This is not fussiness — SVG is XML and can carry script, which would run if someone opened the image directly by its address, in a bucket that is public by necessity.
 

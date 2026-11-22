@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { blocoDoModoDePrevia } from "@/lib/agent-engine/agent/inbound-turn";
+import { blocoDoModoDePrevia, blocosDoSistemaDoTurno } from "@/lib/agent-engine/agent/inbound-turn";
 
 /**
  * DE QUEM É A VOZ DO RASCUNHO (#3757).
@@ -95,7 +95,20 @@ describe("o call site do turno entrega o bloco do TIPO da prévia", () => {
   const fonte = fs.readFileSync(INBOUND, "utf8");
 
   it("o `system` recebe `blocoDoModoDePrevia(preview.kind)`, não um literal fixo", () => {
-    expect(fonte).toContain("if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));");
+    // Comportamental: o bloco do TIPO entra na montagem, e no fim (por-turno);
+    // depois dele só vem a diretiva de idioma, que fecha o `system`.
+    const blocos = blocosDoSistemaDoTurno({
+      promptDoAgente: "playbook do dono",
+      casosLigados: false,
+      toolIds: [],
+      previewKind: "assisted",
+      idioma: "pt-BR",
+      blocoDaVoz: null,
+    });
+    expect(blocos[blocos.length - 2]).toBe(blocoDoModoDePrevia("assisted"));
+    expect(blocos).not.toContain(blocoDoModoDePrevia("sandbox"));
+    // E o call site passa `preview.kind` — nunca um literal.
+    expect(fonte).toContain("previewKind: preview?.kind ?? null");
   });
 
   it("o literal de MODO PRÉVIA existe UMA vez — dentro do mapa, e não no call site", () => {

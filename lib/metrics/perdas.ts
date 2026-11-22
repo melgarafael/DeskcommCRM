@@ -20,7 +20,15 @@
  */
 
 import { MOTIVO_DA_TRANSFERENCIA } from "@/lib/leads/motivo-da-perda";
-import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { SEM_CATEGORIA, categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+
+/**
+ * O rótulo de "motivo sem categoria" VEM da régua do funil (#4437): é o mesmo
+ * texto que o filtro do quadro usa como opção, e reexportá-lo daqui mantém os
+ * consumidores antigos (`PerdasPanel`, testes) sem uma segunda cópia do literal.
+ * Duas cópias do mesmo rótulo divergem no primeiro ajuste de tradução.
+ */
+export { SEM_CATEGORIA };
 
 export interface PerdaLinha {
   lost_reason: string | null;
@@ -66,7 +74,6 @@ export interface ContextoDaAgregacao {
 }
 
 export const SEM_MOTIVO = "Sem motivo registrado";
-export const SEM_CATEGORIA = "Sem categoria";
 export const SEM_MOEDA = "sem moeda";
 export const SEM_ETAPA = "Etapa desconhecida";
 

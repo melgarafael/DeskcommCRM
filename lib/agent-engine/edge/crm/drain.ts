@@ -384,9 +384,15 @@ async function processEvent(
   // `not null default now()` hoje, mas o padrão do repo, ver migration 0027, não
   // confia nisso) com desempate por `created_at` (ordem de INGESTÃO, uma
   // mensagem por webhook) dá recência determinística.
+  //
+  // #2797: a REAÇÃO (👍) é linha inbound, mas não emite
+  // `ai_agent.dispatch_requested` (`lib/channels/reacao.ts`) — não tem turno
+  // próprio. Contada aqui, ela tornava "superado" o texto que ela segue, e
+  // ninguém respondia. Mesmo filtro de `loadLastInboundBody` (follow-up).
   const { rows: ultimaInbound } = await pool.query<{ id: string }>(
     `select id from messages
      where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+       and type <> 'reaction'
      order by coalesce(sent_at, created_at) desc, created_at desc, id desc
      limit 1`,
     [event.organization_id, p.conversation_id],

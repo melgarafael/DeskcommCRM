@@ -23,8 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple, CalendarCheck, IdentificationCard } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { NovaTarefaDaConversa } from "@/components/inbox/NovaTarefaDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import {
@@ -70,6 +71,17 @@ interface Props {
   botaoBuscaRef?: RefObject<HTMLButtonElement | null>;
   /** Seleciona outra conversa no Inbox — a aba Número do Transferir abre a do outro número. */
   onAbrirConversa?: (id: string) => void;
+  /**
+   * ABRE A FICHA DO CONTATO NA GAVETA (#4822).
+   *
+   * Opcional de propósito: o dono da gaveta é o `InboxLayout` (o estado e o
+   * `CRMSidePanel` moram lá) e este cabeçalho só desenha a porta. Sem a prop o
+   * botão não nasce — é o que mantém intactas as telas e os testes que montam o
+   * cabeçalho sem ficha. Recebe o botão que abriu, para o foco voltar a ele.
+   */
+  onAbrirFicha?: (porta: HTMLElement) => void;
+  /** Se a gaveta está aberta — vira o `aria-expanded` da porta. */
+  fichaAberta?: boolean;
 }
 
 /**
@@ -104,6 +116,8 @@ export function ConversationHeader({
   onBuscar,
   buscaAberta,
   botaoBuscaRef,
+  onAbrirFicha,
+  fichaAberta,
 }: Props) {
   const t = useT();
   const { user, activeOrg } = useAuth();
@@ -145,8 +159,13 @@ export function ConversationHeader({
   // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
   // menu, pelo mesmo motivo do convite acima.
   const [filaAberta, setFilaAberta] = useState(false);
+  const [tarefaAberta, setTarefaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
+  const podeCriarTarefa = Boolean(
+    (user?.is_platform_admin && !user?.support) ||
+      (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+  );
   /**
    * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
    * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
@@ -436,7 +455,15 @@ export function ConversationHeader({
             recebida, a resposta vai para o número por onde ela chegou; nos outros
             segue pelo principal, e a linha não aparece. */}
         {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
-          <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
+          // O `truncate` corta o número na largura de 768 px com o menu aberto
+          // (#4242, item 3), e a linha existe justamente para dizer o número
+          // inteiro: o `title` é onde ele continua legível quando o corte
+          // acontece.
+          <p
+            className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden"
+            data-testid="resposta-sai-por"
+            title={`${t("A resposta sai por:")} ${phoneForDisplay(endereco.phone_number)}`}
+          >
             {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
@@ -613,6 +640,37 @@ export function ConversationHeader({
           onClick={() => reopen.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision })}>
           {t("Reabrir")}
         </Button>}
+        {/* ─── A PORTA DA FICHA ENTRE O TABLET E O MONITOR (#4822) ─────────────
+            A terceira coluna do Inbox só nasce no `xl` (1280px), e a decisão está
+            medida em `InboxLayout.tsx` — não se mexe nela aqui. O buraco era a
+            faixa do meio: abaixo de 768px a barra do celular tem a gaveta, e de
+            1280px para cima a coluna aparece sozinha; entre as duas o atendente
+            ficava sem nenhuma porta, e a seção de follow-up só existe dentro da
+            ficha. Este botão é a porta que faltava, e ele NÃO cria painel
+            nenhum: chama a mesma gaveta que o celular já abre.
+
+            `md:` para não aparecer onde a barra do celular já tem o botão (nada
+            muda abaixo de 768px) e `xl:hidden` para não duplicar a ficha onde a
+            coluna está à vista. O invólucro carrega as classes de exibição
+            porque `hidden` e `inline-flex` disputam a mesma propriedade e a
+            ordem no CSS compilado não é a ordem escrita aqui. */}
+        {onAbrirFicha && (
+          <div className="hidden md:block xl:hidden">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 px-2"
+              data-testid="acao-abrir-ficha"
+              title={t("Ficha do contato")}
+              aria-haspopup="dialog"
+              aria-expanded={fichaAberta ?? false}
+              onClick={(e) => onAbrirFicha(e.currentTarget)}
+            >
+              <IdentificationCard size={16} aria-hidden />
+              {t("Ficha")}
+            </Button>
+          </div>
+        )}
         {/* ─── O MENU ⋯ (#3003): o que NÃO é do dia a dia ──────────────────────
             A issue relata a confusão de quem está começando: a barra oferecia
             doze controles ao mesmo tempo e nenhum deles respondia "o que
@@ -670,6 +728,16 @@ export function ConversationHeader({
                 por outro canal. Grupos não representam uma pessoa para ligar. */}
             {!conversation.is_group && c?.id && (
               <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
+            )}
+            {c?.id && podeCriarTarefa && (
+              <DropdownMenuItem
+                data-testid="acao-criar-tarefa"
+                title={t("Cria uma tarefa para este atendimento com prazo e responsável")}
+                onSelect={() => setTarefaAberta(true)}
+              >
+                <CalendarCheck size={16} aria-hidden className="mr-2" />
+                {t("Criar tarefa")}
+              </DropdownMenuItem>
             )}
             {podeReservar && <ItemReservarServico onSelect={() => setReservaAberta(true)} />}
             {/* Vídeo: sem JITSI_SERVER_URL o componente devolve `null` e o item
@@ -1052,6 +1120,14 @@ export function ConversationHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {tarefaAberta && c?.id && (
+        <NovaTarefaDaConversa
+          contactId={c.id}
+          demandaId={conversation.current_demanda_id ?? null}
+          responsavelPadrao={user?.id}
+          aoFechar={() => setTarefaAberta(false)}
+        />
+      )}
     </div>
   );
 }

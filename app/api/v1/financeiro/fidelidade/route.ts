@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -56,18 +57,26 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!(await moduloLigado(createAdminClient(), "financeiro"))) {
     return fail("not_found", "Not found", 404, { requestId });
   }
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do saldo e do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_saldo", requestId);
+  if (teto) return teto;
 
   const contactId = new URL(req.url).searchParams.get("contact_id");
   if (!contactId) {
     return fail("validation_failed", "Informe o contato.", 422, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: saldo, error: erroSaldo } = await supabase.rpc("fn_saldo_de_fidelidade", {
-    p_org: authz.org.orgId,
+    p_org: authz.organizationId,
     p_contact: contactId,
   });
   if (erroSaldo) return fail("internal_error", erroSaldo.message, 500, { requestId });
@@ -75,7 +84,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data: extrato, error } = await supabase
     .from("loyalty_ledger")
     .select("id, points, reason, sale_id, created_at")
+    // #4845 — O EXTRATO É DA MESMA EMPRESA DO SALDO. O saldo vem de
+    // `fn_saldo_de_fidelidade`, que recebe `p_org`; o extrato filtrava só por
+    // `contact_id` e a RLS de `loyalty_ledger` libera todas as empresas de que a
+    // pessoa é membro. Resultado: dois números na mesma resposta falando de
+    // empresas diferentes — o saldo da A ao lado do extrato da B. Com este
+    // filtro, os dois usam a mesma chave, e o extrato explica o saldo.
     .eq("contact_id", contactId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(LIMITE_DO_EXTRATO);
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -104,10 +120,28 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+  const org = authz.org.orgId;
+
+  // #4845 — o contato tem de ser DESTA empresa. A FK só exige que o contato
+  // exista; para quem é membro de duas empresas, um `contact_id` da outra passava
+  // e o ponto entrava no extrato da empresa ativa descrevendo um cliente que ela
+  // não atende — o mesmo desencontro que o GET acima passa a impedir.
+  const { data: contato } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("id", lido.data.contact_id)
+    .eq("organization_id", org)
+    .maybeSingle();
+  if (!contato) {
+    // Mesma mensagem do 23503 abaixo: a recusa diz "contato inválido" sem
+    // distinguir "não existe" de "é de outra empresa" — não revela existência.
+    return fail("validation_failed", "Contato inválido.", 422, { requestId });
+  }
+
   const { data, error } = await supabase
     .from("loyalty_ledger")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: org,
       contact_id: lido.data.contact_id,
       points: lido.data.points,
       reason: lido.data.reason,
@@ -132,6 +166,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,

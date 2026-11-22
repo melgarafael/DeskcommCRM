@@ -21,6 +21,8 @@
  * por um `Record` de objetos deixaria o par cego.
  */
 
+import type { SetorDaTarefa } from "./setor-da-tarefa";
+
 /** Onde o aviso de tarefa leva: quem recebe é sempre o responsável. */
 export const HREF_MINHAS_TAREFAS = "/app/tasks?assigned_to=me";
 
@@ -53,6 +55,58 @@ export function tarefaEstaAberta(status: SituacaoDaTarefa): boolean {
 export interface NegocioDaTarefa {
   id: string;
   title: string;
+  /** O contato do card: é por ele que o setor do NEGÓCIO é achado (#4883). */
+  contact_id?: string | null;
+}
+
+/**
+ * De quanto em quanto tempo a série volta (#4595).
+ *
+ * O `tipo` é GRAVADO, não inferido: "diária" e "semanal em todos os sete dias"
+ * produzem o mesmo conjunto de datas hoje, e sem o tipo guardado a tela de
+ * edição não saberia qual das duas mostrar — a pessoa abriria uma diária e
+ * encontraria os sete dias marcados. Sem ambiguidade aqui é o que permite
+ * trocar de diária para semanal sem apagar e recriar a série.
+ */
+export const PERIODICIDADES_DA_SERIE = ["diaria", "semanal", "mensal"] as const;
+export type PeriodicidadeDaSerie = (typeof PERIODICIDADES_DA_SERIE)[number];
+
+/**
+ * A REGRA da tarefa que se repete (#4595) — o que `crm_tasks.recurrence` guarda.
+ *
+ * `dias` é dia da semana LOCAL da organização, domingo = 0 (a régua de
+ * `diaDaSemanaLocal` e do `dow` da jornada) e só vale para `semanal`;
+ * `dia_do_mes` (1–31) só vale para `mensal`; `hora` é hora de PAREDE da
+ * organização, 0–23, e vale para os três. Nada de instante aqui: quem vira
+ * instante é `proximaOcorrencia` (`lib/tarefas/recorrencia.ts`), com o fuso da
+ * organização.
+ *
+ * Os campos que o tipo não usa ficam VAZIOS (`dias: []`, `dia_do_mes: null`) em
+ * vez de herdarem um valor qualquer: regra gravada com dia de semana numa série
+ * mensal faria a próxima ocorrência depender de qual dos dois o leitor olhasse.
+ *
+ * `ativa` é o interruptor da SÉRIE: desligada, ela para de gerar e não apaga o
+ * que já nasceu — as ocorrências passadas continuam sendo história.
+ */
+export interface RegraDeRecorrencia {
+  tipo: PeriodicidadeDaSerie;
+  dias: number[];
+  dia_do_mes: number | null;
+  hora: number;
+  ativa: boolean;
+}
+
+/**
+ * A periodicidade de uma regra COMO ELA CHEGA DO BANCO. A série gravada antes de
+ * `tipo` existir (1.114 a 1.116: `{"dias":[1],"hora":9,"ativa":true}`) não tem
+ * o campo, e sempre foi semanal. A API devolve `recurrence` cru, então a TELA
+ * precisa do mesmo critério de `normalizarRegra` (servidor). Ela não importa
+ * `lib/tarefas/recorrencia.ts`, porque esse módulo puxa banco e logger.
+ */
+export function periodicidadeDaRegra(
+  regra: Pick<RegraDeRecorrencia, "ativa"> & { tipo?: PeriodicidadeDaSerie },
+): PeriodicidadeDaSerie {
+  return regra.tipo ?? "semanal";
 }
 
 /** Uma linha de `crm_tasks`, como a API a devolve. */
@@ -75,6 +129,18 @@ export interface Tarefa {
   demanda_id: string | null;
   assigned_to: string | null;
   created_by: string | null;
+  /**
+   * A regra da SÉRIE (#4595). Nula = tarefa avulsa ou ocorrência já gerada —
+   * quem repete é a linha que carrega a regra, não cada ocorrência.
+   */
+  recurrence: RegraDeRecorrencia | null;
+  /**
+   * A SÉRIE de que esta linha é ocorrência (#4595). Nulo na própria série e na
+   * tarefa avulsa; preenchido na próxima que nasceu ao concluir. É o que a
+   * lista lê para mostrar "faz parte de uma rotina" sem repetir a regra em cada
+   * linha da série.
+   */
+  recurrence_source_id?: string | null;
   created_at: string;
   updated_at: string;
   /**
@@ -83,6 +149,13 @@ export interface Tarefa {
    * quando a tarefa é avulsa — ou quando o negócio não está mais visível.
    */
   lead?: NegocioDaTarefa | null;
+  /**
+   * DERIVADO (#4883): o setor que o SELO mostra, e de onde ele veio — conversa,
+   * negócio ou (fallback, declarado) responsável. Anexado pela rota quando a
+   * tela pede `?com_setor=true`; a tela não recalcula, só desenha. Ver
+   * `lib/tarefas/setor-da-tarefa.ts`.
+   */
+  setor?: SetorDaTarefa | null;
 }
 
 export interface NovaTarefa {
@@ -96,6 +169,11 @@ export interface NovaTarefa {
   /** A demanda do atendimento a que a tarefa fica presa (#2818). */
   demanda_id?: string | null;
   assigned_to?: string | null;
+  /**
+   * A regra da série (#4595). Presente = a tarefa criada é a SÉRIE e passa a
+   * gerar ocorrências; `null` (ou ausente) = tarefa avulsa, como hoje.
+   */
+  recurrence?: RegraDeRecorrencia | null;
 }
 
 export type EdicaoDaTarefa = Partial<NovaTarefa>;
@@ -139,6 +217,84 @@ export function estaAtrasada(
   if (!tarefa.due_date) return false;
   if (estaEncerrada(tarefa)) return false;
   return new Date(tarefa.due_date).getTime() < agora.getTime();
+}
+
+export type UrgenciaDoPrazo = "normal" | "atencao_48h" | "vence_hoje" | "atrasada";
+
+export interface ConfiguracaoDiasTrabalho {
+  /**
+   * Dias da semana em que a empresa trabalha (0=Domingo, 1=Segunda, ..., 6=Sábado).
+   * Padrão: [1, 2, 3, 4, 5] (Segunda a Sexta).
+   */
+  diasUteis?: readonly number[];
+}
+
+export const DIAS_UTEIS_PADRAO: readonly number[] = [1, 2, 3, 4, 5];
+
+/**
+ * Calcula a diferença em horas úteis entre dois instantes,
+ * desconsiderando dias não úteis (ex: sábados e domingos quando não trabalhados).
+ */
+export function calcularHorasUteisEntre(
+  inicio: Date,
+  fim: Date,
+  diasUteis: readonly number[] = DIAS_UTEIS_PADRAO,
+): number {
+  if (fim.getTime() <= inicio.getTime()) {
+    return (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  }
+
+  // Acima de 14 dias corridos, garantidamente há mais de 48h úteis
+  const diffBrutaHoras = (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  if (diffBrutaHoras > 14 * 24) {
+    return diffBrutaHoras;
+  }
+
+  const setDias = new Set(diasUteis);
+  const msPorHora = 1000 * 60 * 60;
+  let totalHoras = 0;
+
+  let cursor = new Date(inicio.getTime());
+  while (cursor.getTime() < fim.getTime()) {
+    const proximaHora = new Date(cursor.getTime() + msPorHora);
+    const limiteHora = proximaHora.getTime() > fim.getTime() ? fim : proximaHora;
+    const duracaoHoras = (limiteHora.getTime() - cursor.getTime()) / msPorHora;
+
+    if (setDias.has(cursor.getDay())) {
+      totalHoras += duracaoHoras;
+    }
+
+    cursor = limiteHora;
+  }
+
+  return totalHoras;
+}
+
+/**
+ * Classifica a urgência do prazo de uma tarefa com base nas horas úteis restantes:
+ * - "atrasada": prazo já estourou
+ * - "vence_hoje": vence em até 24h úteis (prioridade máxima do dia)
+ * - "atencao_48h": vence em até 48h úteis (alerta preventivo de 2 dias)
+ * - "normal": mais de 48h úteis ou sem prazo
+ */
+export function calcularUrgenciaDoPrazo(
+  tarefa: Pick<Tarefa, "due_date" | "status">,
+  agora: Date = new Date(),
+  config?: ConfiguracaoDiasTrabalho,
+): UrgenciaDoPrazo {
+  if (!tarefa.due_date || estaEncerrada(tarefa)) return "normal";
+
+  const prazo = new Date(tarefa.due_date);
+  if (prazo.getTime() < agora.getTime()) {
+    return "atrasada";
+  }
+
+  const dias = config?.diasUteis ?? DIAS_UTEIS_PADRAO;
+  const horasRestantes = calcularHorasUteisEntre(agora, prazo, dias);
+
+  if (horasRestantes <= 24) return "vence_hoje";
+  if (horasRestantes <= 48) return "atencao_48h";
+  return "normal";
 }
 
 /** O que o selo do card conta: o que ainda pede ação, e quanto disso já venceu. */

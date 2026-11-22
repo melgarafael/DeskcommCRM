@@ -118,6 +118,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
+// A seção de tarefas do painel (#4630) aparece em toda conversa com contato e tem
+// testes próprios (tarefa-da-demanda-no-inbox, tarefas-da-demanda-no-painel).
+vi.mock("@/components/inbox/TarefasDaDemanda", () => ({ TarefasDaDemanda: () => null }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { id: "u-1", role: "admin", support: null, is_platform_admin: false },
@@ -294,7 +297,7 @@ describe("Inbox — recolher o painel do contato (#3004)", () => {
     montar(true);
     await screen.findByTestId("inbox-painel-recolhido");
     await waitFor(() =>
-      expect(grade().style.gridTemplateColumns).toBe("300px minmax(0,1fr) 2.75rem"),
+      expect(grade().style.gridTemplateColumns).toBe("300px minmax(0px, 1fr) 2.75rem"),
     );
   });
 
@@ -306,7 +309,7 @@ describe("Inbox — recolher o painel do contato (#3004)", () => {
     try {
       window.localStorage.setItem("inbox:divisorias:md", JSON.stringify({ lista: 320, ficha: 300 }));
       montar(true);
-      await waitFor(() => expect(grade().style.gridTemplateColumns).toBe("320px minmax(0,1fr)"));
+      await waitFor(() => expect(grade().style.gridTemplateColumns).toBe("320px minmax(0px, 1fr)"));
     } finally {
       window.innerWidth = 1440;
     }

@@ -22,21 +22,43 @@
  *
  * Os baldes viram no fuso da organização (`organizations.timezone`, via
  * `fusoUtilizavel`): em UTC, o ganho das 23h30 de São Paulo cairia no dia seguinte.
+ *
+ * ## O recorte por funil (#4918)
+ *
+ * A conta era o `won` da ORGANIZAÇÃO — e isso mentia num tenant com mais de um
+ * funil: todo funil precisa de uma etapa de ganho, então o funil de suporte usa
+ * «Resolvido» como ganho e o card somava 7 tickets resolvidos com zero vendas,
+ * tudo sob o título «Ganhos por período». O `?pipeline_id=` recorta o MESMO
+ * cálculo para um funil; sem ele, os NÚMEROS são exatamente os de antes — a
+ * resposta só ganha o campo `funil: null` dizendo que o escopo é a organização.
+ *
+ * Filtrar por `pipeline_id` do NEGÓCIO já É «ganhos daquele funil»: o `status`
+ * é do trigger `fn_crm_lead_close_on_stage` (migration 0426), que o deriva do
+ * `is_won` da etapa em que o card está — e a troca de funil só move card
+ * `open` (`recusaTrocaDeFunil`, `lib/leads/transfere-para-o-funil.ts`), então
+ * nenhum `won` sobrevive num funil de onde não saiu. Ler a etapa de ganho e
+ * recortar por `stage_id` daria o mesmo número hoje e mentiria no dia em que o
+ * dono mudasse a etapa de ganho do funil: os ganhos antigos, que ficaram na
+ * etapa anterior, sumiriam da série.
+ *
+ * O nome do parâmetro é o `pipeline_id` que o produto já usa — é a coluna de
+ * `crm_leads`, o campo da resposta de `metrics/metas` e o filtro do quadro
+ * (`useBoard`); nenhuma rota de métrica tinha parâmetro de funil para reusar.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   agregarGanhos,
   totalDeGanhos,
   type FechamentoDeGanho,
   type Granularidade,
 } from "@/lib/metrics/serie-temporal";
-import { createClient } from "@/lib/supabase/server";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
@@ -57,22 +79,35 @@ const querySchema = z.object({
   to: z.string().datetime({ offset: true }).optional(),
   // Granularidade fora da lista é RECUSADA (422) — nunca tratada como "dia".
   granularidade: z.enum(["dia", "semana", "mes"]).optional(),
+  // Recorte por funil (#4918). UUID inválido é 422 na validação, nunca um
+  // filtro que "não achou nada" e devolveria zero com cara de resposta.
+  pipeline_id: z.string().uuid().optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // Piso agent (vê as próprias); a RLS é quem garante o escopo de cada linha.
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    // O token lê a organização inteira; na sessão um agent vê só os negócios dele.
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
     from: url.searchParams.get("from") ?? undefined,
     to: url.searchParams.get("to") ?? undefined,
     granularidade: url.searchParams.get("granularidade") ?? undefined,
+    pipeline_id: url.searchParams.get("pipeline_id") ?? undefined,
   });
   if (!parsed.success) {
     return fail("validation_failed", t("Query inválida."), 422, {
@@ -93,8 +128,28 @@ export async function GET(req: NextRequest): Promise<Response> {
   const de = from.toISOString();
   const ate = to.toISOString();
   const granularidade: Granularidade = parsed.data.granularidade ?? "dia";
+  const funilId = parsed.data.pipeline_id ?? null;
 
-  const supabase = await createClient();
+  // Token: cliente de serviço; o filtro de organização abaixo é a barreira.
+  const supabase = authz.supabase;
+
+  // O funil do recorte é conferido NA ORGANIZAÇÃO do chamador: id de outro
+  // tenant não vira filtro silencioso (daria zero com cara de "funil sem
+  // ganho"), vira 422 com a frase que o produto já usa. `is_archived` NÃO é
+  // filtro — ganho de funil arquivado continua sendo ganho do período.
+  let funil: { id: string; name: string } | null = null;
+  if (funilId) {
+    const { data: encontrado, error: funilErr } = await supabase
+      .from("crm_pipelines")
+      .select("id, name")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", funilId)
+      .maybeSingle();
+    if (funilErr) return fail("internal_error", funilErr.message, 500, { requestId });
+    if (!encontrado) return fail("validation_failed", t("Funil não encontrado."), 422, { requestId });
+    // Só id e nome saem na resposta: o resto da linha do funil não é do card.
+    funil = { id: (encontrado as { id: string }).id, name: (encontrado as { name: string }).name };
+  }
 
   // Falha ABERTA no fuso, como `fusoDaOrganizacao`: leitura que falha ou valor
   // que o `Intl` recusa caem no padrão do produto — um dia de diferença na
@@ -102,7 +157,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data: organizacao } = await supabase
     .from("organizations")
     .select("timezone")
-    .eq("id", activeOrg.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   const fuso = fusoUtilizavel((organizacao as { timezone?: string | null } | null)?.timezone);
 
@@ -114,11 +169,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   let acabou = false;
   for (let pagina = 0; pagina < PAGINAS_MAXIMAS && !acabou; pagina++) {
     const inicio = ganhos.length;
-    const { data, error, count } = await supabase
+    const naOrganizacao = supabase
       .from("crm_leads")
       .select("closed_at", pagina === 0 ? { count: "exact" } : undefined)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("status", "won")
+      .eq("organization_id", authz.organizationId)
+      .eq("status", "won");
+    // O recorte por funil entra AQUI, no mesmo pedido: a janela, a ordem e o
+    // `count` exato valem para o conjunto recortado, então `truncado` continua
+    // dizendo a verdade sobre o que a série mostra.
+    const { data, error, count } = await (funilId
+      ? naOrganizacao.eq("pipeline_id", funilId)
+      : naOrganizacao
+    )
       .gte("closed_at", de)
       .lt("closed_at", ate)
       .order("closed_at", { ascending: false })
@@ -142,6 +204,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       // mostram os dois, então eles não podem divergir.
       total: totalDeGanhos(baldes),
       truncado: !acabou,
+      // O ESCOPO do número (#4918): o funil recortado, com o nome que a tela
+      // mostra no card; `null` = organização inteira, o comportamento de antes.
+      funil,
     },
     { requestId },
   );

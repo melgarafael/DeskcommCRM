@@ -57,7 +57,10 @@ describe("updateCustomBrandingCss", () => {
 
     const resultado = await updateCustomBrandingCss(CSS);
 
-    expect(resultado).toEqual({ ok: false, error: "Esta ação exige acesso completo à instalação." });
+    expect(resultado).toEqual({
+      ok: false,
+      error: "Esta ação exige acesso completo à instalação.",
+    });
     expect(mocks.loadAuthUser).not.toHaveBeenCalled();
     expect(mocks.gravarPelaTela).not.toHaveBeenCalled();
   });
@@ -81,7 +84,7 @@ describe("updateCustomBrandingCss", () => {
   });
 
   it("grava a folha validada e audita apenas metadados, não o CSS", async () => {
-    const resultado = await updateCustomBrandingCss(CSS);
+    const resultado = await updateCustomBrandingCss({ claro: CSS, escuro: "" });
 
     expect(resultado).toEqual({ ok: true });
     expect(mocks.gravarPelaTela).toHaveBeenCalledWith("APP_CUSTOM_CSS", CSS, {
@@ -91,9 +94,45 @@ describe("updateCustomBrandingCss", () => {
     expect(mocks.audit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "platform_branding.updated",
-        metadata: expect.objectContaining({ fields_changed: ["custom_css"], css_rules: 1 }),
+        metadata: expect.objectContaining({
+          fields_changed: ["custom_css", "custom_css_dark"],
+          css_rules: 1,
+        }),
       }),
     );
     expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(CSS);
+  });
+
+  it("grava o tema escuro na chave dele, e as duas folhas no mesmo salvamento", async () => {
+    const ESCURO = ".card { background-color: #10261a; }";
+
+    expect(await updateCustomBrandingCss({ claro: CSS, escuro: ESCURO })).toEqual({ ok: true });
+
+    expect(mocks.gravarPelaTela).toHaveBeenCalledWith("APP_CUSTOM_CSS", CSS, {
+      ehSegredo: false,
+      ator: ADMIN.id,
+    });
+    expect(mocks.gravarPelaTela).toHaveBeenCalledWith("APP_CUSTOM_CSS_DARK", ESCURO, {
+      ehSegredo: false,
+      ator: ADMIN.id,
+    });
+    // O escuro é auditado pelo NÚMERO de regras, nunca pelo texto.
+    expect(mocks.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ css_dark_rules: 1 }),
+      }),
+    );
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(ESCURO);
+  });
+
+  it("escuro inválido recusa o salvamento INTEIRO — o claro também não é gravado", async () => {
+    const resultado = await updateCustomBrandingCss({
+      claro: CSS,
+      escuro: ".card { position: fixed; }",
+    });
+
+    expect(resultado.ok).toBe(false);
+    expect(mocks.gravarPelaTela).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
   });
 });

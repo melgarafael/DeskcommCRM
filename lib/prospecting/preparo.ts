@@ -90,15 +90,25 @@ type CandidatoDoPreparo = {
 
 /** O que o preparo pede de fora — trocável nos testes (a plataforma real não entra lá). */
 export interface DependenciasDoPreparo {
-  /** O módulo `conferir_whatsapp` (`lib/instalacao/modulos.ts`), desligado por padrão. */
-  conferirWhatsapp: (admin: SupabaseClient) => Promise<boolean>;
+  /**
+   * O módulo `conferir_whatsapp` (`lib/instalacao/modulos.ts`), desligado por
+   * padrão — perguntado POR EMPRESA desde o #4871: a organização entra como
+   * segundo argumento, porque quem desliga o módulo na tela de Módulos por
+   * empresa não pode ter o número dos leads conferido em massa.
+   */
+  conferirWhatsapp: (admin: SupabaseClient, organizacaoId: string) => Promise<boolean>;
   consultaWhatsapp: typeof consultaPelaConexao;
   dormir?: (ms: number) => Promise<void>;
 }
-const DEPENDENCIAS_PADRAO: DependenciasDoPreparo = {
-  conferirWhatsapp: (admin) => moduloLigado(admin, "conferir_whatsapp"),
+/**
+ * O padrão do tick da prospecção — exportado para quem já leu os módulos da
+ * rodada e quer só trocar a resposta de `conferirWhatsapp` (#4871).
+ */
+export const DEPENDENCIAS_DO_PREPARO: DependenciasDoPreparo = {
+  conferirWhatsapp: (admin, organizacaoId) => moduloLigado(admin, "conferir_whatsapp", organizacaoId),
   consultaWhatsapp: consultaPelaConexao,
 };
+
 
 /** A chave NÃO é a do `withProspectingLock` (`prospecting:<org>`): bloqueios independentes. */
 const chaveDoBloqueio = (org: string) => `prospecting:${org}:preparo`;
@@ -130,8 +140,11 @@ export async function prepararCandidatos(
   org: string,
   requestId: string,
   deadline: number,
-  deps: DependenciasDoPreparo = DEPENDENCIAS_PADRAO,
+  // Parcial de propósito (#4871): quem já leu os módulos da rodada só troca a
+  // resposta de `conferirWhatsapp`, e o resto continua sendo o padrão.
+  deps: Partial<DependenciasDoPreparo> = {},
 ): Promise<ResumoDoPreparo> {
+  const dependencias: DependenciasDoPreparo = { ...DEPENDENCIAS_DO_PREPARO, ...deps };
   const resumo: ResumoDoPreparo = { whatsapp: 0, sites: 0, previas: 0, pulou: false };
   const db = await pool.connect();
   let locked = false;
@@ -148,7 +161,7 @@ export async function prepararCandidatos(
       resumo.pulou = true;
       return resumo;
     }
-    await trabalhar(db, pool, admin, org, requestId, deadline, resumo, deps);
+    await trabalhar(db, pool, admin, org, requestId, deadline, resumo, dependencias);
   } catch (error) {
     logger.error("[prospecting.preparo] rodada falhou", {
       organization_id: org,
@@ -181,9 +194,13 @@ async function trabalhar(
   deps: DependenciasDoPreparo,
 ): Promise<void> {
   if (Date.now() >= deadline) return;
+  // Campanha ARQUIVADA (#4359) fica fora do preparo automático: ela saiu da lista
+  // porque falhou ou veio zerada, e continuar gastando auditoria de site e prévia de
+  // IA nela seria cobrar por uma campanha que a pessoa não vê mais. `status` cobre o
+  // ENVIO (arquivar campanha rodando a pausa); este filtro cobre o TRABALHO de fundo.
   const campanhas = (
     await db.query<CampanhaDoPreparo>(
-      "select id, config, search from prospecting_campaigns where organization_id=$1 and status in ('draft','running','paused') order by created_at desc",
+      "select id, config, search from prospecting_campaigns where organization_id=$1 and status in ('draft','running','paused') and coalesce(config->>'arquivada_em','') = '' order by created_at desc",
       [org],
     )
   ).rows;
@@ -194,8 +211,11 @@ async function trabalhar(
   // (senão qualquer uma conectada que saiba perguntar); sem ela, o passo não faz nada
   // e o resto segue igual.
   // Só com o módulo `conferir_whatsapp` ligado: quem pergunta é o número do cliente,
-  // e consulta em massa é risco de banimento que ninguém mediu (#3887).
-  const conferir = campanhas.length > 0 && (await deps.conferirWhatsapp(admin));
+  // e consulta em massa é risco de banimento que ninguém mediu (#3887). A pergunta
+  // leva a ORGANIZAÇÃO (#4871): o preparo roda empresa a empresa dentro do tick, e a
+  // linha da empresa em `organization_modules` vale para este trabalho como vale
+  // para a tela.
+  const conferir = campanhas.length > 0 && (await deps.conferirWhatsapp(admin, org));
   let restanteDeWhatsapp = conferir ? TETO_DE_WHATSAPP_POR_RODADA : 0;
   const consultas = new Map<string, ConsultaWhatsapp | null>();
   for (const c of campanhas) {

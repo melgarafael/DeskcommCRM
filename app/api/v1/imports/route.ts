@@ -1,9 +1,11 @@
 import { type NextRequest } from "next/server";
 
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { audit } from "@/lib/audit";
 import { processCompaniesPeopleImport } from "@/lib/crm-b2b/import-process";
+import { previaDaImportacao, totaisDaPrevia, type LinhaClassificada } from "@/lib/crm-b2b/import-previa";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
 import {
   IMPORT_MAX_BYTES,
@@ -20,7 +22,6 @@ import {
   requestIdOf,
   seModuloB2bDesligado,
 } from "@/lib/crm-b2b/route-helpers";
-import { createClient } from "@/lib/supabase/server";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 
 export const dynamic = "force-dynamic";
@@ -29,23 +30,41 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/imports — lista lotes da org.
  * POST /api/v1/imports — upload CSV/XLSX + processa companies/people/contacts.
  *
+ * Sessão OU token de servidor `dsk_…` (Spec 33, R3): `mcp:read` no GET (piso
+ * viewer) e `mcp:write` no POST (piso manager). A organização vem da sessão ou
+ * da LINHA do token, nunca do corpo. Pelo token não há pessoa: as colunas de
+ * autor (`created_by`, `created_by_user_id`) ficam nulas e o audit grava o id do
+ * token em `actor_api_token_id`.
+ *
+ * PRÉVIA (A23, #4888): com `previa=true` nada é gravado — a resposta traz os totais
+ * por veredito e as linhas que ficariam de fora, com o motivo e de quem é o que já
+ * existe. Sem `previa`, o servidor classifica DE NOVO (a base pode ter mudado desde
+ * a prévia) e grava só as linhas `nova`; as demais ficam no lote com o motivo.
+ *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = requestIdOf(req);
   const desligado = await seModuloB2bDesligado(requestId);
   if (desligado) return desligado;
-  const authz = await requireRole("viewer", { requestId, resource: "imports" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "imports",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "imports", requestId);
+  if (teto) return teto;
 
   try {
-    const supabase = await createClient();
+    const supabase = authz.supabase;
     const { data, error } = await supabase
       .from("import_batches")
       .select(
         "id, filename, status, kind, total_rows, processed_rows, successful_rows, failed_rows, conflict_rows, created_by, created_at, completed_at",
       )
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -61,13 +80,22 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (desligado) return desligado;
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
-  const authz = await requireRole("manager", { requestId, resource: "imports" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "imports",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "imports", requestId);
+  if (teto) return teto;
+  // Só pessoa vira autor: o id de um token não existe em `auth.users`.
+  const autorId = authz.actor.type === "user" ? authz.actor.id : null;
 
   // 64 KB de folga para o envelope multipart e o campo `mapping`.
   const corpo = await lerCorpoComTeto(req, IMPORT_MAX_BYTES + 64 * 1024, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: "Arquivo grande demais.",
   });
   if (!corpo.ok) return corpo.response;
@@ -107,17 +135,40 @@ export async function POST(req: NextRequest): Promise<Response> {
       mapping = suggestColumnMapping(parsed.sheet.headers);
     }
 
-    const supabase = await createClient();
+    const supabase = authz.supabase;
+
+    // A23: a classificação vale para a prévia E para a gravação.
+    const classificadas = await previaDaImportacao(supabase, {
+      organizationId: authz.organizationId,
+      sheet: parsed.sheet,
+      mapping,
+    });
+    if (form.get("previa") === "true") {
+      const donos = await nomesDosAtendentes(
+        authz.organizationId,
+        classificadas.map((l) => l.existente?.donoId),
+      );
+      return ok(
+        {
+          previa: totaisDaPrevia(classificadas),
+          headers: parsed.sheet.headers,
+          suggested_mapping: suggestColumnMapping(parsed.sheet.headers),
+          linhas_fora: linhasDeFora(classificadas, parsed.sheet, donos),
+        },
+        { requestId },
+      );
+    }
+
     const { data: batch, error: batchErr } = await supabase
       .from("import_batches")
       .insert({
-        organization_id: authz.org.orgId,
+        organization_id: authz.organizationId,
         kind: "companies_people",
         filename: nome,
         status: "pending",
         total_rows: parsed.sheet.rows.length,
         column_mapping: mapping,
-        created_by: authz.user.id,
+        created_by: autorId,
       })
       .select("id")
       .single();
@@ -129,17 +180,19 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     const summary = await processCompaniesPeopleImport(supabase, {
-      organizationId: authz.org.orgId,
+      organizationId: authz.organizationId,
       batchId: batch.id,
-      userId: authz.user.id,
+      userId: autorId,
       sheet: parsed.sheet,
       mapping,
       enrichCompanies: form.get("enrich") !== "false",
+      classificacao: new Map(classificadas.map((l) => [l.rowNumber, l])),
     });
 
     await audit({
-      organizationId: authz.org.orgId,
-      actorUserId: authz.user.id,
+      organizationId: authz.organizationId,
+      actorUserId: autorId,
+      actorApiTokenId: authz.apiTokenId ?? null,
       action: "imports.companies_people",
       resourceType: "import_batches",
       resourceId: batch.id,
@@ -159,4 +212,35 @@ export async function POST(req: NextRequest): Promise<Response> {
   } catch (e) {
     return handleRouteError(e, requestId);
   }
+}
+
+/** O que o CSV de "ficaram de fora" precisa: a linha original, o veredito e de quem é o que já existe. */
+function linhasDeFora(
+  classificadas: readonly LinhaClassificada[],
+  sheet: { headers: string[]; rows: string[][]; rowNumbers?: number[] },
+  donos: ReadonlyMap<string, string | null>,
+) {
+  const porNumero = new Map(classificadas.map((l) => [l.rowNumber, l]));
+  const fora: Array<{
+    linha: number;
+    status: string;
+    motivo: string | null;
+    existente_nome: string | null;
+    de_quem: string | null;
+    valores: string[];
+  }> = [];
+  sheet.rows.forEach((valores, i) => {
+    const numero = sheet.rowNumbers?.[i] ?? i + 2;
+    const v = porNumero.get(numero);
+    if (!v || v.status === "nova" || v.status === "anexada") return;
+    fora.push({
+      linha: numero,
+      status: v.status,
+      motivo: v.motivo,
+      existente_nome: v.existente?.nome ?? null,
+      de_quem: v.existente?.donoId ? (donos.get(v.existente.donoId) ?? null) : null,
+      valores,
+    });
+  });
+  return fora;
 }

@@ -12,6 +12,7 @@
  * por pacote** (`entraPorPacote`). Ligar "Atender e responder" não pode, num
  * clique, dar ao agente o direito de mandar WhatsApp para o cliente de verdade.
  */
+import { IDS_DO_ADMINISTRADOR } from "./ferramentas-do-administrador";
 import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
 
 /**
@@ -79,6 +80,23 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * argumento (a heurística de degradação) que ninguém mediu, que é exatamente o
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
+ *
+ * ═══ Continua 27: o documento do negócio foi para o `reter`, não para o default ═
+ *
+ * As duas capacidades de leitura do anexo do card (`crm_list_lead_attachments` e
+ * `crm_get_lead_attachment`, #4544 item 2) nasceram com `pacotes: ["vender"]`,
+ * que é o default do onboarding, e a medição a partir do agente que nasce
+ * mostrou o que este comentário já previa: o `evoluir` — o menor segundo pacote
+ * — subia de 27 para 29 e NENHUM segundo pacote cabia no teto 27. Era o beco do
+ * D3 de novo, e o passo "natural" seria 29.
+ *
+ * Não se subiu o teto. O `vender` é o default que TODO agente novo paga, e o
+ * mesmo número está sendo movido pelo #4534 (aberto, nosso, leva a 31): duas
+ * mudanças do mesmo teto em PRs diferentes são conflito e disputa de produto.
+ * A saída foi de PACOTE, não de constante: as duas foram para o `reter`, ao lado
+ * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
+ * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
+ * ao valor que 27 atende), reter 34.
  */
 export const TETO_TOOLS_POR_AGENTE = 27;
 
@@ -106,7 +124,11 @@ function doPacote(
   catalogo: ReadonlyArray<CapacidadeSelecionavel>,
   pacote: ToolBundle,
 ): CapacidadeSelecionavel[] {
-  return catalogo.filter((c) => c.pacotes.includes(pacote) && c.marcavel !== false);
+  // As de editar assistentes são só do administrador (`ferramentas-do-administrador.ts`):
+  // o turno não as monta, então o pacote não as oferece nem reserva vaga para elas.
+  return catalogo.filter(
+    (c) => c.pacotes.includes(pacote) && c.marcavel !== false && !IDS_DO_ADMINISTRADOR.has(c.name),
+  );
 }
 
 /** As que o toggle do pacote liga sozinho — tudo que não é `critico`. */

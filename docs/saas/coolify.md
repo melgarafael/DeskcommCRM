@@ -319,8 +319,7 @@ O instalador não faz perguntas: o domínio já vai no comando.
 
 Credenciais iniciais (arquivo protegido com permissao 600):
   usuario: admin@crm.SEUDOMINIO.com.br
-  senha:   (uma senha longa, gerada agora)
-  arquivo: /root/deskcommcrm/.runtime/admin-credentials
+  arquivo: /root/deskcommcrm/.runtime/admin-credentials (OWNER_PASSWORD)
 ```
 
 As chaves do banco **não aparecem na tela**: o instalador as guarda em
@@ -335,9 +334,9 @@ SMTP (o servidor que envia e-mails), "esqueci a senha" não envia e-mail: dá pa
 Na VPS medida, a instalação levou **2 min 44 s na primeira vez** (baixando as imagens) e
 **1 min 23 s numa reinstalação** (com as imagens já baixadas).
 
-**No fim aparecem o usuário e a senha do admin do CRM: anote num gerenciador de senhas.
-Não tire print nem grave a tela.** Eles também ficam guardados em
-`~/deskcommcrm/.runtime/admin-credentials`.
+**No fim aparecem o usuário do admin do CRM e o caminho até a senha inicial.**
+Abra `~/deskcommcrm/.runtime/admin-credentials` na VPS, procure `OWNER_PASSWORD` e
+guarde a senha em um gerenciador de senhas. Evite compartilhar esse arquivo.
 
 **Se der errado:**
 

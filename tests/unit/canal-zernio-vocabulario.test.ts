@@ -43,6 +43,10 @@ describe("capabilities do canal intermediado", () => {
       // Status é do APP do WhatsApp: a API oficial não tem o endpoint, então
       // nem o canal intermediado (que espelha a Meta) publica Status (#3397).
       statusUpdates: false,
+      // A ponte da venda pela conversa é deste provedor (#4552): `reportConversion` no adapter.
+      reportaConversao: true,
+      // O visto por id de mensagem é do canal por QR (#5015).
+      marcaLidasPorMensagem: false,
     });
   });
 

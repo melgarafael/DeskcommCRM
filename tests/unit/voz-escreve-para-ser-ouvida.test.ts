@@ -58,6 +58,9 @@ describe("no turno, a voz é resolvida antes do `system` — e o bloco entra nel
   });
 
   it("o bloco vai para os blocos do `system`, não só é calculado", () => {
-    expect(fonte).toMatch(/const blocoDaVoz = blocoDaRespostaFalada\(vozParaEsteTurno\);\s*if \(blocoDaVoz\) blocosResidentes\.push\(blocoDaVoz\);/);
+    // #4668: a montagem passou a receber `blocoDaVoz` — ele é o último bloco
+    // antes da diretiva de idioma, que fecha o `system`.
+    expect(fonte).toMatch(/const blocoDaVoz = blocoDaRespostaFalada\(vozParaEsteTurno\);/);
+    expect(fonte).toMatch(/const blocosResidentes = blocosDoSistemaDoTurno\(\{[\s\S]*?blocoDaVoz,/);
   });
 });

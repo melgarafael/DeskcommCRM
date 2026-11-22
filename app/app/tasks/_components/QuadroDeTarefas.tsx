@@ -9,6 +9,7 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import type { Sector } from "@/hooks/team/useSectors";
 import { useTasks, type FiltrosDeTarefa } from "@/hooks/tasks/useTasks";
 import {
   cargaAtingiuOLimite,
@@ -18,7 +19,7 @@ import {
   type ColunaDoQuadro,
 } from "@/lib/tarefas/quadro";
 import {
-  estaAtrasada,
+  calcularUrgenciaDoPrazo,
   estaEncerrada,
   type PrioridadeDaTarefa,
   type SituacaoDaTarefa,
@@ -27,7 +28,10 @@ import {
 import { Kanban, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
-import { COR_DA_PRIORIDADE, COR_DA_SITUACAO } from "./estilo-da-prioridade";
+import { COR_DA_PRIORIDADE, COR_DA_SITUACAO, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
+import { SeloDeSetor } from "./SeloDeSetor";
+
+const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
 /**
  * O QUADRO DE TAREFAS (#4028) — as quatro situações como colunas.
@@ -63,8 +67,17 @@ export function QuadroDeTarefas({
   podeEditar,
   filtros,
   aoEditar,
+  setores = SEM_SETOR,
 }: {
   podeEditar: boolean;
+  /**
+   * Os setores por id, para dar NOME ao que o servidor decidiu (#4883): a
+   * tarefa chega com `setor: { id, origem }`, e é aqui que o id vira chip.
+   * Quem monta é a tela de Tarefas, que já busca setores e equipe — e só com o
+   * módulo opcional ligado (doc 213). Ausente = sem chip: a lista do painel do
+   * inbox e a do dossiê não pedem setores a ninguém.
+   */
+  setores?: ReadonlyMap<string, Sector>;
   /** Os filtros da tela (responsável e funil). A situação NÃO entra: as colunas são as situações. */
   filtros: FiltrosDeTarefa;
   aoEditar: (tarefa: Tarefa) => void;
@@ -78,6 +91,7 @@ export function QuadroDeTarefas({
   });
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
+
 
   /**
    * O CARTÃO JÁ MUDOU DE COLUNA, mesmo antes de o servidor responder.
@@ -236,7 +250,10 @@ export function QuadroDeTarefas({
                       snapshot.isDraggingOver && "bg-primary/5",
                     )}
                   >
-                    {daColuna.map((tarefa, indice) => (
+                    {daColuna.map((tarefa, indice) => {
+                      const urgencia = calcularUrgenciaDoPrazo(tarefa);
+                      const estiloUrgencia = ESTILO_DA_URGENCIA[urgencia];
+                      return (
                       <Draggable
                         key={tarefa.id}
                         draggableId={tarefa.id}
@@ -250,7 +267,9 @@ export function QuadroDeTarefas({
                             {...arraste.dragHandleProps}
                             data-testid={`tarefa-no-quadro-${tarefa.id}`}
                             className={cn(
-                              "rounded-lg border bg-card p-2.5 shadow-sm transition-shadow",
+                              "rounded-lg border p-2.5 shadow-sm transition-shadow",
+                              estiloUrgencia.bordaCartao,
+                              estiloUrgencia.fundoCartao,
                               estado.isDragging && "shadow-md ring-2 ring-primary/40",
                               estaEncerrada(tarefa) && "opacity-70",
                             )}
@@ -262,8 +281,8 @@ export function QuadroDeTarefas({
                             >
                               <span
                                 className={cn(
-                                  "block text-sm font-medium",
-                                  estaEncerrada(tarefa) && "text-muted-foreground line-through",
+                                   "block text-sm font-medium",
+                                   estaEncerrada(tarefa) && "text-muted-foreground line-through",
                                 )}
                               >
                                 {tarefa.title}
@@ -281,10 +300,13 @@ export function QuadroDeTarefas({
                               </span>
                               <span
                                 className={cn(
-                                  "text-muted-foreground",
-                                  estaAtrasada(tarefa) && "font-semibold text-destructive",
+                                  "flex items-center gap-1",
+                                  estiloUrgencia.textoPrazo,
                                 )}
                               >
+                                {estiloUrgencia.icone ? (
+                                  <span aria-hidden>{estiloUrgencia.icone}</span>
+                                ) : null}
                                 {tarefa.due_date
                                   ? new Date(tarefa.due_date).toLocaleString(tag, {
                                       day: "2-digit",
@@ -300,6 +322,7 @@ export function QuadroDeTarefas({
                                   {nomeDoResponsavel(tarefa)}
                                 </span>
                               ) : null}
+                              <SeloDeSetor setor={tarefa.setor} setores={setores} />
                               {tarefa.lead ? (
                                 <Link
                                   href={`/app/leads/${tarefa.lead.id}`}
@@ -314,7 +337,8 @@ export function QuadroDeTarefas({
                           </div>
                         )}
                       </Draggable>
-                    ))}
+                    );
+                    })}
                     {provided.placeholder}
                     {daColuna.length === 0 && !snapshot.isDraggingOver && (
                       <div className="flex h-16 items-center justify-center text-[11px] text-muted-foreground">

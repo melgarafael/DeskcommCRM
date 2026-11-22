@@ -81,3 +81,43 @@ describe("abrir o material pelo cartão (#3059)", () => {
     expect(screen.getByText("Política de troca")).toBeTruthy();
   });
 });
+
+describe("editar o texto de um documento colado (#4596)", () => {
+  function montarCom(parcial: Partial<SourceRow>) {
+    return render(
+      <IdiomaProvider locale="pt-BR">
+        <KnowledgeSourceCard
+          source={{ ...MATERIAL, ...parcial }}
+          usadoPor={[]}
+          onReindex={vi.fn()}
+          onArquivar={vi.fn()}
+          onMudou={vi.fn()}
+        />
+      </IdiomaProvider>,
+    );
+  }
+  const COLADO = { blob_path: "22222222-2222-4222-8222-222222222222/a.md", ext: "md", origem: "texto_colado" };
+
+  it("documento criado colando texto: oferece \"Editar texto\"", () => {
+    montarCom({ source_metadata: COLADO });
+    expect(screen.getByTestId(`material-editar-texto-${FONTE}`).textContent).toContain("Editar texto");
+  });
+
+  it("arquivo enviado (PDF): sem a ação", () => {
+    montarCom({
+      source_metadata: { blob_path: "22222222-2222-4222-8222-222222222222/a.pdf", ext: "pdf", filename: "m.pdf" },
+    });
+    expect(screen.queryByTestId(`material-editar-texto-${FONTE}`)).toBeNull();
+  });
+
+  it("FAQ: continua com o editor de pares, sem \"Editar texto\"", () => {
+    montarCom({ source_type: "faq", source_metadata: {} });
+    expect(screen.queryByTestId(`material-editar-texto-${FONTE}`)).toBeNull();
+    expect(screen.getByTestId(`material-editar-${FONTE}`)).toBeTruthy();
+  });
+
+  it("documento colado ARQUIVADO: sem a ação (o indexador não o prepararia)", () => {
+    montarCom({ source_metadata: COLADO, status: "archived", is_active: false });
+    expect(screen.queryByTestId(`material-editar-texto-${FONTE}`)).toBeNull();
+  });
+});

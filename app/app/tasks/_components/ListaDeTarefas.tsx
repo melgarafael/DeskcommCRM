@@ -8,10 +8,12 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { COR_DA_PRIORIDADE } from "./estilo-da-prioridade";
+import type { Sector } from "@/hooks/team/useSectors";
+import { COR_DA_PRIORIDADE, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
+import { SeloDeSetor } from "./SeloDeSetor";
 import {
   agrupaPorPrazo,
-  estaAtrasada,
+  calcularUrgenciaDoPrazo,
   estaEncerrada,
   type FaixaDePrazo,
   type PrioridadeDaTarefa,
@@ -19,6 +21,8 @@ import {
 } from "@/lib/tarefas/tipos";
 import { Check, Kanban, PencilSimple, Trash, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+
+const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
 interface Props {
   tarefas: Tarefa[];
@@ -32,6 +36,14 @@ interface Props {
    * repetir o nome dele em cada linha só tomaria espaço.
    */
   mostrarNegocio?: boolean;
+  /**
+   * Os setores por id, para dar NOME ao que o servidor decidiu (#4883): a
+   * tarefa chega com `setor: { id, origem }`, e é aqui que o id vira chip.
+   * Quem monta é a tela de Tarefas, que já busca setores e equipe — e só com o
+   * módulo opcional ligado (doc 213). Ausente = sem chip: a lista do painel do
+   * inbox e a do dossiê não pedem setores a ninguém.
+   */
+  setores?: ReadonlyMap<string, Sector>;
 }
 
 function Linha({
@@ -42,6 +54,7 @@ function Linha({
   aoApagar,
   mostrarNegocio,
   nomeDoResponsavel,
+  setores,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
@@ -51,6 +64,7 @@ function Linha({
   mostrarNegocio: boolean;
   /** Já resolvido por quem monta a lista; `null` = sem responsável conhecido. */
   nomeDoResponsavel: string | null;
+  setores: ReadonlyMap<string, Sector>;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
@@ -58,7 +72,8 @@ function Linha({
   const [confirmando, setConfirmando] = useState(false);
 
   const encerrada = estaEncerrada(tarefa);
-  const atrasada = estaAtrasada(tarefa);
+  const urgencia = calcularUrgenciaDoPrazo(tarefa);
+  const estiloUrgencia = ESTILO_DA_URGENCIA[urgencia];
 
   const rotuloDaPrioridade: Record<PrioridadeDaTarefa, string> = {
     low: t("Baixa"),
@@ -123,7 +138,25 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
-          <span className={cn("text-muted-foreground", atrasada && "font-semibold text-destructive")}>
+          {/* A ROTINA (#4595): a série e cada ocorrência que ela gerou levam o
+              mesmo selo, e é por ele que se vê que são a mesma rotina sem abrir
+              uma por uma. A próxima herda `recurrence_source_id`, e a série é a
+              linha que carrega a regra — as duas condições são o mesmo "faz
+              parte de uma rotina", e por isso o mesmo selo. */}
+          {tarefa.recurrence || tarefa.recurrence_source_id ? (
+            <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">
+              {t("Rotina")}
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              "flex items-center gap-1",
+              estiloUrgencia.textoPrazo,
+            )}
+          >
+            {estiloUrgencia.icone ? (
+              <span aria-hidden>{estiloUrgencia.icone}</span>
+            ) : null}
             {tarefa.due_date
               ? new Date(tarefa.due_date).toLocaleString(tag, {
                   day: "2-digit",
@@ -139,6 +172,7 @@ function Linha({
               {nomeDoResponsavel}
             </span>
           ) : null}
+          <SeloDeSetor setor={tarefa.setor} setores={setores} />
           {mostrarNegocio && tarefa.lead ? (
             <Link
               href={`/app/leads/${tarefa.lead.id}`}
@@ -206,6 +240,7 @@ export function ListaDeTarefas({
   aoEditar,
   aoApagar,
   mostrarNegocio = true,
+  setores = SEM_SETOR,
 }: Props) {
   const t = useT();
   const usuario = useUser();
@@ -214,6 +249,7 @@ export function ListaDeTarefas({
   // lê, a consulta nem sai e a linha fica sem o nome — nunca com um id cru.
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
+
 
   function nomeDoResponsavel(tarefa: Tarefa): string | null {
     if (!tarefa.assigned_to) return null;
@@ -264,6 +300,7 @@ export function ListaDeTarefas({
                 aoApagar={aoApagar}
                 mostrarNegocio={mostrarNegocio}
                 nomeDoResponsavel={nomeDoResponsavel(tarefa)}
+                setores={setores}
               />
             ))}
           </div>

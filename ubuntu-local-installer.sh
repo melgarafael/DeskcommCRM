@@ -104,6 +104,33 @@ WAHA_HMAC=$(openssl rand -hex 32)
 WAHA_KEY=$(openssl rand -hex 24)
 WAHA_KEY_HASH=$(echo -n "$WAHA_KEY" | sha512sum | awk '{print $1}')
 
+# ── Telemetria: perguntar, não gravar vazio (#4936) ──────────────────────────
+# Até aqui este instalador gravava `SENTRY_DSN=` VAZIO no .env.local: a chave
+# existia, `load_env` a marcava como definida e ninguém era perguntado. Desde a
+# mudança do padrão, vazio significa DESLIGADO — então gravar vazio é o pior dos
+# dois mundos: parece consentimento e não envia nada. Quem responde "sim" leva o
+# token `comunidade`, que lib/sentry/dsn.ts resolve para o Sentry do projeto;
+# quem diz "não" — ou roda isto sem terminal, num provisionamento automático —
+# leva `off`, escrito com todas as letras.
+SENTRY_ESCOLHIDO="${SENTRY_DSN:-}"
+if [ -z "$SENTRY_ESCOLHIDO" ]; then
+  if [ -t 0 ]; then
+    step "Telemetria de erros (opcional)"
+    paint 36 "Podemos receber os relatórios de ERRO desta instalação (stack trace) para corrigir bugs que afetam todo mundo."
+    paint 36 "CPF, telefone e e-mail são substituídos, cabeçalhos sensíveis removidos e tokens de webhook redigidos da URL."
+    paint 36 "NÃO enviamos rastreamento de performance nem replay de sessão. Seus dados de clientes, conversas e banco NUNCA saem daqui."
+    _tel=""
+    read -r -p "  Enviar relatórios de erro anonimizados? (s/N) " _tel || _tel=""
+    case "$(printf '%s' "$_tel" | tr '[:upper:]' '[:lower:]')" in
+      s|sim|y|yes) SENTRY_ESCOLHIDO="comunidade" ;;
+      *)           SENTRY_ESCOLHIDO="off" ;;
+    esac
+  else
+    # Sem terminal não há consentimento: desligado, e dito por extenso.
+    SENTRY_ESCOLHIDO="off"
+  fi
+fi
+
 step "Configurando .env.local (credenciais locais, não versionadas)..."
 # O .env.local de quem já usa este clone aponta para OUTRO ambiente (a nuvem,
 # um QA), e 93 scripts deste repositório o leem. Sobrescrever sem cópia apaga
@@ -154,7 +181,7 @@ INTERNAL_CRON_SECRET=$INTERNAL_SEC
 LGPD_SIGNING_KEY=$INTERNAL_SEC
 APP_PORT=$APP_PORT
 
-SENTRY_DSN=
+SENTRY_DSN=$SENTRY_ESCOLHIDO
 EOF
 
 step "Subindo os serviços do DeskcommCRM (App, Worker, WAHA, Redis)..."

@@ -13,12 +13,12 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { isLeadAttachmentPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -29,24 +29,29 @@ interface RouteCtx {
   params: Promise<{ id: string; attachmentId: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   // A mídia é a LEITURA do anexo (#3431): o `viewer` que já vê o negócio abre o
   // arquivo. Escrever segue em `agent`, na rota da lista (POST/DELETE).
-  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_media", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
   const { id: leadId, attachmentId } = await ctx.params;
-
-  const supabase = await createClient();
 
   // Garante que o lead existe e pertence à organização da sessão
   const { data: lead, error: leadErr } = await supabase
     .from("crm_leads")
     .select("id")
     .eq("id", leadId)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (leadErr) return fail("internal_error", t("Erro ao buscar negócio."), 500, { requestId });
@@ -58,7 +63,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .select("id, storage_path")
     .eq("id", attachmentId)
     .eq("lead_id", leadId)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (anexoErr) return fail("internal_error", t("Erro ao buscar anexo."), 500, { requestId });
@@ -66,7 +71,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("not_found", t("Anexo não encontrado."), 404, { requestId });
   }
   // O link sai com o cliente admin: só assina o que mora sob o prefixo deste negócio.
-  if (!isLeadAttachmentPathOwnedBy(anexo.storage_path, org.orgId, lead.id)) {
+  if (!isLeadAttachmentPathOwnedBy(anexo.storage_path, organizationId, lead.id)) {
     logger.warn("[leads/attachments] caminho fora do negócio; link não assinado", { attachmentId, requestId });
     return fail("not_found", t("Anexo não encontrado."), 404, { requestId });
   }

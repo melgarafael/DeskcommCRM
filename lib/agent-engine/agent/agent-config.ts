@@ -47,6 +47,17 @@ export interface PublishedAgentConfig {
   provider: string;
   model: string;
   credentialId: string | null;
+  /**
+   * A RESERVA DE MODELO (#4600): provedor e modelo para onde a chamada cai
+   * quando o principal falha por cota (429), servidor (5xx) ou tempo esgotado.
+   * `ai_agent_versions.reserve_provider` / `reserve_model`, NULOS por padrão —
+   * sem configuração não há degrau, e o comportamento é o de antes.
+   *
+   * Opcionais na interface porque nascem depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? null`.
+   */
+  reserveProvider?: string | null;
+  reserveModel?: string | null;
   maxSteps: number;
   historyMessageWindow: number;
   historyTokenWindow: number;
@@ -202,8 +213,8 @@ export interface PublishedAgentConfig {
    * não existe — Fase 7).
    */
   vozEnabled: boolean;
-  /** `'nunca' | 'espelhar' | 'sempre'` — decidido em `voz-do-turno.ts`. */
-  vozQuando: 'nunca' | 'espelhar' | 'sempre';
+  /** `'nunca' | 'espelhar' | 'sempre' | 'quando_pede'` — decidido em `voz-do-turno.ts`. */
+  vozQuando: 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
   /**
    * O PÚBLICO que a versão declara no `trigger_config` (#3722, fatia 2).
    * `null`/ausente = atende todo mundo.
@@ -236,6 +247,8 @@ interface Row {
   provider: string;
   model: string;
   credential_id: string | null;
+  reserve_provider: string | null;
+  reserve_model: string | null;
   max_steps: number;
   history_message_window: number;
   history_token_window: number;
@@ -274,6 +287,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.provider,
             v.model,
             v.credential_id,
+            v.reserve_provider,
+            v.reserve_model,
             v.max_steps,
             v.history_message_window,
             v.history_token_window,
@@ -351,6 +366,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     provider: r.provider,
     model: r.model,
     credentialId: r.credential_id,
+    // Nulos por padrão no banco: sem reserva configurada não há degrau nenhum.
+    reserveProvider: r.reserve_provider ?? null,
+    reserveModel: r.reserve_model ?? null,
     maxSteps: r.max_steps,
     historyMessageWindow: r.history_message_window,
     historyTokenWindow: r.history_token_window,
@@ -414,9 +432,15 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? 'espelhar'` é o default do BANCO, repetido aqui só por simetria com
     // o resto do mapeamento — nunca deveria faltar (coluna NOT NULL), e um
     // valor fora do vocabulário (CHECK do banco impede, mas TS não confia
-    // cegamente num texto livre) cai no mesmo default seguro.
+    // cegamente num texto livre) cai no mesmo default seguro. `quando_pede`
+    // (#4345) entra na lista: sem ele aqui, a versão que pede a leitura do
+    // turno voltaria a espelhar só o canal, em silêncio.
     vozQuando:
-      r.voz_quando === 'nunca' || r.voz_quando === 'sempre' ? r.voz_quando : 'espelhar',
+      r.voz_quando === 'nunca' ||
+      r.voz_quando === 'sempre' ||
+      r.voz_quando === 'quando_pede'
+        ? r.voz_quando
+        : 'espelhar',
     // Mesma leitura defensiva de `janelaDeAtendimento`: lista torta ⇒ `null`
     // (atende todo mundo), nunca uma mordaça acidental.
     publico: lerPublicoDoGatilho(r.trigger_config),
@@ -669,6 +693,29 @@ export async function loadPublishedAgentConfigById(
   const r = rows[0];
   if (r === undefined) return null;
   return mapAgentConfigRow(r);
+}
+
+/**
+ * O override que o turno passa ao seam, montado num lugar só (#4600): provedor,
+ * credencial e — quando CONFIGURADA — a reserva de modelo da versão publicada.
+ *
+ * A reserva só entra no objeto quando os dois campos existem: um provedor sem
+ * modelo (ou o contrário) é configuração pela metade, e meia reserva não é
+ * reserva — o seam recebe o campo ausente e segue com o comportamento de hoje.
+ */
+export function overrideLlmDoAgente(
+  config: PublishedAgentConfig,
+  reservaDeModelo?: { provider: string; model: string },
+): {
+  provider: string;
+  credentialId: string | null;
+  reservaDeModelo?: { provider: string; model: string };
+} {
+  return {
+    provider: config.provider,
+    credentialId: config.credentialId,
+    ...(reservaDeModelo ? { reservaDeModelo } : {}),
+  };
 }
 
 /**

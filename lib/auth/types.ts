@@ -181,9 +181,20 @@ export interface UserOrgMembership {
   org_status?: string | null;
   /** `organizations.suspended_kind` — só significa algo com status 'suspended'. */
   suspended_kind?: string | null;
+  /**
+   * `user_organizations.senha_provisoria` (migration 9380).
+   *
+   * `true` = a senha deste vínculo foi definida por quem administra e precisa
+   * ser trocada no primeiro acesso. Vem junto da lista porque o gate do layout
+   * e o da API decidem com o que a mesma consulta já trouxe — uma segunda
+   * leitura por requisição só para saber isso seria um round-trip em todo
+   * /app e em toda rota /api/v1.
+   */
+  senha_provisoria?: boolean;
 }
 
 export interface AuthUser {
+  agency_org_ids?: string[];
   support?: import("@/lib/impersonate/support").SupportContext | null;
   id: string;
   email: string;
@@ -302,6 +313,12 @@ export interface ActiveOrg {
    * Só o layout de `/app` preenche; ausente vale como nenhuma no menu.
    */
   capacidades_ligadas?: readonly CapacidadeDaOrganizacao[];
+  /**
+   * Módulos CONECTADOS que esta organização pode abrir agora (Spec 33, F4): só slug e título, o
+   * que o menu e o ⌘K precisam. Só o layout de `/app` preenche (`modulosNaTela`, uma vez por
+   * requisição); ausente vale como nenhum e o grupo "Módulos" não aparece.
+   */
+  modulos_conectados?: readonly { slug: string; titulo: string }[];
   /**
    * O que ESTA organização definiu para si — CAMPO A CAMPO, e só o que ela
    * mesma definiu.
