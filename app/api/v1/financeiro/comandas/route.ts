@@ -150,37 +150,41 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const org = authz.org.orgId;
 
-  // ─── O ID VEM DE FORA E É RESOLVIDO DENTRO DA EMPRESA ATIVA (#4845) ────────
-  //
-  // `appointment_id` e `contact_id` chegam no CORPO. Até aqui a rota os repassava
-  // ao insert confiando na RLS — e a RLS de `calendar_appointments` libera TODAS
-  // as empresas de que a pessoa é membro (`fn_can_view_appointment`) e todas para
-  // o admin da plataforma. Quem participa de duas empresas abria, na A, uma
-  // comanda apontando para o atendimento (e o cliente) da B; a comanda nascia na
-  // A e o serviço ficava pendente na B.
-  //
-  // A recusa é 404 e não 403: a mensagem é a MESMA de um id inexistente, então a
-  // resposta não confirma que o registro existe em outra empresa.
-  if (lido.data.appointment_id) {
-    const { data: atendimento, error: erroAtendimento } = await supabase
-      .from("calendar_appointments")
-      .select("id")
-      .eq("organization_id", org)
-      .eq("id", lido.data.appointment_id)
-      .maybeSingle();
-    if (erroAtendimento) return fail("internal_error", erroAtendimento.message, 500, { requestId });
-    if (!atendimento) return fail("not_found", "Atendimento não encontrado.", 404, { requestId });
-  }
-
+  // O VÍNCULO É DA EMPRESA ATIVA. A RLS de `sales` confere a empresa da própria
+  // comanda, não a do cliente nem a do atendimento que ela carrega — e a RLS de
+  // `contacts`/`calendar_appointments` libera toda empresa de que a pessoa é
+  // membro. Mesma regra e mesmos códigos do faturamento em lote (#4845): confere
+  // antes de gravar, e a recusa não distingue "não existe" de "é de outra empresa".
   if (lido.data.contact_id) {
     const { data: contato, error: erroContato } = await supabase
       .from("contacts")
       .select("id")
-      .eq("organization_id", org)
       .eq("id", lido.data.contact_id)
+      .eq("organization_id", org)
       .maybeSingle();
     if (erroContato) return fail("internal_error", erroContato.message, 500, { requestId });
-    if (!contato) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+    if (!contato) {
+      return fail("financeiro_contato_fora_da_empresa", "O cliente informado não pertence a esta empresa.", 422, {
+        requestId,
+      });
+    }
+  }
+  if (lido.data.appointment_id) {
+    const { data: agendamento, error: erroAgendamento } = await supabase
+      .from("calendar_appointments")
+      .select("id")
+      .eq("id", lido.data.appointment_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (erroAgendamento) return fail("internal_error", erroAgendamento.message, 500, { requestId });
+    if (!agendamento) {
+      return fail(
+        "financeiro_agendamento_fora_da_empresa",
+        "O atendimento informado não pertence a esta empresa.",
+        422,
+        { requestId },
+      );
+    }
   }
 
   // IDEMPOTÊNCIA POR AGENDAMENTO, antes de qualquer escrita.
@@ -238,6 +242,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "comanda.aberta",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: data.id,
     requestId,

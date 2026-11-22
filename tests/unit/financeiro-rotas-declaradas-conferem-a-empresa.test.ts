@@ -1,16 +1,16 @@
 /**
- * AS DUAS ROTAS QUE AINDA ACEITAVAM ID DE OUTRA EMPRESA (#4845).
- *
- * As metades grandes da issue já estão na `main` (#4858, gravação em lote;
- * #4859, listas e edições por id). Ficaram de fora, declarados na própria issue,
- * dois pontos que recebem um id de FORA e não o resolvem dentro da empresa ativa:
+ * AS DUAS ROTAS QUE RECEBEM ID DE FORA E O RESOLVEM NA EMPRESA ATIVA (#4845).
  *
  *  1. `POST /api/v1/financeiro/comandas` — `appointment_id` e `contact_id` vêm
  *     do CORPO e iam direto ao insert. A comanda nascia na empresa A apontando
- *     para o atendimento (e o cliente) da B.
+ *     para o atendimento (e o cliente) da B. A recusa é a do faturamento em lote:
+ *     422 com `financeiro_agendamento_fora_da_empresa` /
+ *     `financeiro_contato_fora_da_empresa` — um código só para toda a família,
+ *     que é o que o cliente já trata.
  *  2. `GET /api/v1/honorarios/contratos/[id]/parcelas` — lia
  *     `honorarios_parcelas` só por `contrato_id`, então o id de um contrato da B
- *     abria o calendário de pagamento dela.
+ *     abria o calendário de pagamento dela. Aqui a recusa é 404 `not_found`, o
+ *     mesmo de um contrato inexistente.
  *
  * ─── Por que o dublê APLICA os filtros ──────────────────────────────────────
  *
@@ -130,24 +130,26 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/financeiro/comandas — o atendimento é resolvido na empresa ativa", () => {
-  it("atendimento da OUTRA empresa: 404 e nenhuma linha em sales", async () => {
+  it("atendimento da OUTRA empresa: 422 do faturamento em lote e nenhuma linha em sales", async () => {
     const antes = mundo.contar("sales");
 
     const { POST } = await import("@/app/api/v1/financeiro/comandas/route");
     const res = await POST(pedidoPost(COMANDAS, { appointment_id: ATENDIMENTO_B }));
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("financeiro_agendamento_fora_da_empresa");
     expect(mundo.contar("sales")).toBe(antes);
     expect(mundo.escritas()).toHaveLength(0);
   });
 
-  it("contato da OUTRA empresa: 404 e nenhuma linha em sales", async () => {
+  it("contato da OUTRA empresa: 422 do faturamento em lote e nenhuma linha em sales", async () => {
     const antes = mundo.contar("sales");
 
     const { POST } = await import("@/app/api/v1/financeiro/comandas/route");
     const res = await POST(pedidoPost(COMANDAS, { contact_id: CONTATO_B }));
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("financeiro_contato_fora_da_empresa");
     expect(mundo.contar("sales")).toBe(antes);
     expect(mundo.escritas()).toHaveLength(0);
   });
@@ -193,7 +195,8 @@ describe("POST /api/v1/financeiro/comandas — o atendimento é resolvido na emp
     const daA = await POST(pedidoPost(COMANDAS, { appointment_id: ATENDIMENTO_A }));
 
     expect(daB.status).toBe(200);
-    expect(daA.status).toBe(404);
+    expect(daA.status).toBe(422);
+    expect((await daA.json()).error.code).toBe("financeiro_agendamento_fora_da_empresa");
     expect(mundo.linhas("sales").map((s) => s.organization_id)).toEqual([B]);
   });
 });

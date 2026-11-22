@@ -169,6 +169,7 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "canal_bot",
       "campanha_por_email",
       "revisao_por_km",
+      "menu_de_atendimento",
       "agencias",
       "catalogo_por_feed",
     ]);

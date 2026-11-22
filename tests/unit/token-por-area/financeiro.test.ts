@@ -313,12 +313,11 @@ const CASOS: readonly Caso[] = [
     params: { id: CONTRATO_A },
     linhas: {
       ...ORGS,
-      // O contrato é RESOLVIDO antes das parcelas (#4845): a rota confere que o
-      // id da URL é de um contrato da empresa ativa. Sem estas linhas o
-      // `maybeSingle` devolve null e a leitura legítima cai em 404.
+      // A rota confere o CONTRATO contra a empresa antes de ler as parcelas:
+      // sem o contrato da A aqui, nem o token da própria A o alcançaria.
       honorarios_contratos: [
-        { id: CONTRATO_A, organization_id: ORG_A },
-        { id: CONTRATO_B, organization_id: ORG_B },
+        { id: CONTRATO_A, organization_id: ORG_A, lead_id: null, modelo: "fixo", valor_fixo_cents: 100, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
+        { id: CONTRATO_B, organization_id: ORG_B, lead_id: null, modelo: "fixo", valor_fixo_cents: 200, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
       ],
       honorarios_parcelas: [
         { id: PARCELA_A, organization_id: ORG_A, contrato_id: CONTRATO_A, numero: 1, vencimento: "2026-12-01", valor_cents: 100, currency: "BRL", financial_entry_id: null, status: "pendente" },
@@ -330,8 +329,8 @@ const CASOS: readonly Caso[] = [
     recurso: "honorarios_parcelas",
     recursoDoTeto: "honorarios_parcelas_listar",
     status: 200,
-    // B pede as parcelas do CONTRATO_A: o contrato não é da empresa dele, então
-    // a resposta é 404 (a mesma de um id inexistente), e não uma lista vazia.
+    // Contrato de outra empresa responde o MESMO 404 do inexistente (a regra
+    // do #4859), em vez de 200 com lista vazia: o 404 não confirma que o id existe.
     paraB: "404",
     colecao: { daA: PARCELA_A, daB: PARCELA_B },
   },

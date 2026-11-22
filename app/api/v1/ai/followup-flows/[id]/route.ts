@@ -12,10 +12,10 @@ import { rascunhoDoFluxo } from "@/lib/followup/rascunho";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { patchFollowupFlowSchema } from "@/lib/followup/api-schemas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -28,24 +28,31 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("viewer", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("followup_flow_pointers")
     .select(DETAIL_COLUMNS)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!data) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -58,7 +65,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: versionRows, error: versionsErr } = await supabase
     .from("followup_flow_versions")
     .select("id, created_at")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("pointer_id", id)
     .order("created_at", { ascending: false });
   if (versionsErr) return fail("internal_error", versionsErr.message, 500, { requestId });
@@ -69,7 +76,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const draft_graph = await rascunhoDoFluxo(
     supabase,
     data as unknown as { draft_graph: unknown; active_version_id: string | null },
-    activeOrg.orgId,
+    authz.organizationId,
   );
 
   return ok(
@@ -93,10 +100,17 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   let raw: unknown;
   try {
@@ -113,12 +127,12 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("followup_flow_pointers")
     .select("id")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -129,7 +143,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
       .from("followup_flow_pointers")
       .select(DETAIL_COLUMNS)
       .eq("id", id)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .single();
     if (reloadErr || !unchanged) {
       return fail("internal_error", reloadErr?.message ?? "reload_failed", 500, { requestId });
@@ -143,7 +157,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("followup_flow_pointers")
     .update(update)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .select(DETAIL_COLUMNS)
     .single();
 
@@ -168,8 +182,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   void audit({
     action: "followup_flow.updated",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: id,
     requestId,
@@ -179,7 +194,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   return ok(updated, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -189,17 +204,24 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("followup_flow_pointers")
     .select("id")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -210,34 +232,35 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .from("followup_enrollments")
     .delete()
     .eq("pointer_id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", authz.organizationId);
   if (enrErr) return fail("internal_error", enrErr.message, 500, { requestId });
 
   const { error: unpinErr } = await supabase
     .from("followup_flow_pointers")
     .update({ active_version_id: null, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", authz.organizationId);
   if (unpinErr) return fail("internal_error", unpinErr.message, 500, { requestId });
 
   const { error: verErr } = await supabase
     .from("followup_flow_versions")
     .delete()
     .eq("pointer_id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", authz.organizationId);
   if (verErr) return fail("internal_error", verErr.message, 500, { requestId });
 
   const { error: delErr } = await supabase
     .from("followup_flow_pointers")
     .delete()
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", authz.organizationId);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });
 
   void audit({
     action: "followup_flow.deleted",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: id,
     requestId,

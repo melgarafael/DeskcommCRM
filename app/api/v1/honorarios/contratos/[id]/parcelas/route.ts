@@ -54,25 +54,17 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id: contratoId } = await ctx.params;
 
   const supabase = authz.supabase;
+  const org = authz.organizationId;
 
-  // ─── O CONTRATO VEM DA URL E É RESOLVIDO DENTRO DA EMPRESA ATIVA (#4845) ───
-  //
-  // A lista de parcelas era lida só por `contrato_id`, confiando na RLS — que
-  // libera as parcelas de TODAS as empresas de que a pessoa é membro. O id de um
-  // contrato da outra empresa (que a lista de contratos mostrava até o #4859)
-  // abria o calendário de pagamento dela.
-  //
-  // Filtrar só as parcelas pela empresa devolveria `[]`, indistinguível de um
-  // contrato da própria empresa ainda sem parcela. Por isso o contrato é
-  // resolvido primeiro e a ausência é 404 — a mesma resposta de um id que não
-  // existe, que não confirma a existência do contrato em outra empresa.
+  // O contrato tem de ser da EMPRESA ATIVA antes de qualquer parcela sair. A RLS
+  // libera toda empresa de que a pessoa é membro, então o filtro é explícito; o
+  // contrato de outra empresa responde o mesmo 404 do inexistente (padrão #4845).
   const { data: contrato, error: erroContrato } = await supabase
     .from("honorarios_contratos")
     .select("id")
-    .eq("organization_id", authz.organizationId)
     .eq("id", contratoId)
+    .eq("organization_id", org)
     .maybeSingle();
-
   if (erroContrato) {
     if (moduloNaoInstalado(erroContrato)) {
       return fail("module_not_installed", MODULO_NAO_INSTALADO, 409, { requestId });
@@ -85,7 +77,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("honorarios_parcelas")
     .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")
     .eq("contrato_id", contratoId)
-    .eq("organization_id", authz.organizationId)
+    .eq("organization_id", org)
     .order("numero", { ascending: true });
 
   if (error) {
@@ -160,6 +152,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "honorarios.parcela_criada",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "honorarios_parcela",
     resourceId: data.id,
     requestId,

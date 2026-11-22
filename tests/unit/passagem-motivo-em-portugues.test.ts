@@ -75,6 +75,12 @@ function separadorPosix(relativo: string): string {
  */
 const USO_COMO_CHAVE: Array<{ arquivo: string; codigo: string; razao: string }> = [
   {
+    arquivo: "app/app/imports/_client.tsx",
+    codigo: "sem_telefone",
+    razao:
+      "chave do contador da prévia de importação (`previa.previa.sem_telefone`, vem de lib/crm-b2b/import-previa.ts) — o número vai para a tela, o código não: o texto é t(\"sem telefone\")",
+  },
+  {
     arquivo: "components/connections/ChannelAiAccess.tsx",
     codigo: "pre_go_live",
     razao:

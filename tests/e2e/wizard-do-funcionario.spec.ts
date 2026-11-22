@@ -219,8 +219,15 @@ test.describe("o wizard monta um funcionário", () => {
 
     await expect(page.getByRole("heading", { name: /treine seu funcionário/i })).toBeVisible();
     // As duas listas que não pedem configuração nenhuma.
-    await expect(page.getByText(/ele já vem sabendo/i)).toBeVisible();
-    await expect(page.getByText(/e nunca vai fazer/i)).toBeVisible();
+    // Os DOIS títulos mudaram nesta fatia (#4526), não só um: "Ele já vem
+    // sabendo" virou "O que ele já sabe fazer" e "E nunca vai fazer" virou
+    // "O que ele nunca faz" — o segundo porque a coluna, lida como estava,
+    // prometia o contrário do que a conferência faz ("nunca vai fazer —
+    // respeitar quem pediu para parar"). A asserção segue o texto que a tela
+    // mostra; o que ela guarda (as duas listas aparecerem sem configuração
+    // nenhuma) não mudou.
+    await expect(page.getByText(/o que ele já sabe fazer/i)).toBeVisible();
+    await expect(page.getByText(/o que ele nunca faz/i)).toBeVisible();
 
     await page.locator("#name").fill("Bia");
     await page.locator("#regras_da_casa").fill("Horário: 8h às 18h. Nunca prometa desconto.");

@@ -45,6 +45,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { temPrecoNoMotor } from "@/lib/agent-engine/edge/llm/pricing";
+import { modeloAposentadoNoProvedor } from "@/lib/agent-engine/edge/llm/modelos-aposentados";
 
 export const dynamic = "force-dynamic";
 
@@ -249,6 +250,7 @@ export async function GET(): Promise<Response> {
             ? llm.enabled_models.filter((m): m is string => typeof m === "string")
             : [],
           temPrecoNoMotor,
+          modeloAposentadoNoProvedor,
         ),
       // A escada só muda a resposta do ponto que ela governa; o resolvedor a
       // lê apenas em `fixo.escada`.

@@ -19,16 +19,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import type {
-  NovaTarefa,
-  PrioridadeDaTarefa,
-  SituacaoDaTarefa,
-  Tarefa,
+import {
+  periodicidadeDaRegra,
+  type NovaTarefa,
+  type PeriodicidadeDaSerie,
+  type PrioridadeDaTarefa,
+  type SituacaoDaTarefa,
+  type Tarefa,
 } from "@/lib/tarefas/tipos";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
@@ -58,6 +59,16 @@ interface Props {
 
 /** O valor do "ninguém" no Select — o Radix não aceita item com valor vazio. */
 const NINGUEM = "__ninguem__";
+
+/**
+ * O valor do "não repete" na régua da repetição (#4595).
+ *
+ * Não é `PeriodicidadeDaSerie`: "não repete" não é uma periodicidade, é a
+ * AUSÊNCIA de série. Misturar as duas faria a tela gravar `recurrence` com um
+ * tipo que o banco não conhece.
+ */
+const NAO_REPETE = "nenhuma";
+type EscolhaDaRepeticao = PeriodicidadeDaSerie | typeof NAO_REPETE;
 
 /**
  * Um dia da semana no seletor da série (#4595).
@@ -147,8 +158,11 @@ export function FormularioDeTarefa({
   // a HORA da série é o campo "Horário" acima: a pessoa já escolheu a hora da
   // tarefa, e pedir a mesma hora outra vez seria um campo a mais para errar.
   const regraDaTarefa = tarefa?.recurrence ?? null;
-  const [repetir, setRepetir] = useState(Boolean(regraDaTarefa?.ativa));
+  const [repeticao, setRepeticao] = useState<EscolhaDaRepeticao>(
+    regraDaTarefa?.ativa ? periodicidadeDaRegra(regraDaTarefa) : NAO_REPETE,
+  );
   const [diasDaSerie, setDiasDaSerie] = useState<number[]>(regraDaTarefa?.dias ?? []);
+  const [diaDoMes, setDiaDoMes] = useState<number>(regraDaTarefa?.dia_do_mes ?? 1);
 
   function alternarDia(dia: number) {
     setDiasDaSerie((atuais) =>
@@ -169,8 +183,12 @@ export function FormularioDeTarefa({
 
     // Série sem dia escolhido não gera nada — recusar aqui é melhor que gravar
     // uma tarefa que a pessoa acredita que vai voltar na semana que vem.
-    if (repetir && diasDaSerie.length === 0) {
+    if (repeticao === "semanal" && diasDaSerie.length === 0) {
       setErro(t("Escolha ao menos um dia da semana para a tarefa se repetir."));
+      return;
+    }
+    if (repeticao === "mensal" && (diaDoMes < 1 || diaDoMes > 31)) {
+      setErro(t("Escolha um dia do mês entre 1 e 31."));
       return;
     }
 
@@ -186,8 +204,18 @@ export function FormularioDeTarefa({
         // `null` DESLIGA a série: a tarefa que repetia para de gerar e as
         // ocorrências que já nasceram continuam na lista. Na criação, sem
         // repetição o campo nem viaja — tarefa avulsa é o caso de hoje.
-        ...(repetir
-          ? { recurrence: { dias: diasDaSerie, hora: Number((hora || "09:00").slice(0, 2)), ativa: true } }
+        ...(repeticao !== NAO_REPETE
+          ? {
+              recurrence: {
+                tipo: repeticao,
+                // Só o campo do tipo escolhido viaja; o outro vai VAZIO para a
+                // regra não ficar ambígua entre "toda semana" e "todo dia 1".
+                dias: repeticao === "semanal" ? diasDaSerie : [],
+                dia_do_mes: repeticao === "mensal" ? diaDoMes : null,
+                hora: Number((hora || "09:00").slice(0, 2)),
+                ativa: true,
+              },
+            }
           : editando && regraDaTarefa
             ? { recurrence: null }
             : {}),
@@ -272,13 +300,35 @@ export function FormularioDeTarefa({
               segunda às 9h" já digitou as 9h ali, e um segundo campo de hora
               seria mais um lugar para divergir. Os dias são os do relógio da
               EMPRESA (o servidor converte com o fuso da organização), e nenhum
-              dia marcado é recusado no envio, não silenciado aqui. */}
+              dia marcado é recusado no envio, não silenciado aqui.
+
+              O TIPO vai gravado, não inferido: "diária" e "semanal com os sete
+              dias" produzem as mesmas datas, e sem o tipo a edição não saberia
+              qual mostrar. */}
           <div className="space-y-2 rounded-md border border-border p-3">
-            <div className="flex items-center gap-2">
-              <Switch id="tarefa-repetir" checked={repetir} onCheckedChange={setRepetir} />
-              <Label htmlFor="tarefa-repetir">{t("Repetir toda semana")}</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="tarefa-repetir">{t("Repetir")}</Label>
+              <Select
+                value={repeticao}
+                onValueChange={(v) => setRepeticao(v as EscolhaDaRepeticao)}
+              >
+                <SelectTrigger id="tarefa-repetir">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NAO_REPETE}>{t("Não repete")}</SelectItem>
+                  <SelectItem value="diaria">{t("Diária")}</SelectItem>
+                  <SelectItem value="semanal">{t("Semanal")}</SelectItem>
+                  <SelectItem value="mensal">{t("Mensal")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            {repetir ? (
+            {repeticao === "diaria" ? (
+              <p className="text-xs text-muted-foreground">
+                {t("A tarefa volta todo dia, no horário acima, no fuso da empresa.")}
+              </p>
+            ) : null}
+            {repeticao === "semanal" ? (
               <>
                 <p className="text-xs text-muted-foreground">
                   {t("A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.")}
@@ -292,6 +342,24 @@ export function FormularioDeTarefa({
                   <BotaoDeDia rotulo={t("Sex")} marcado={diasDaSerie.includes(5)} aoClicar={() => alternarDia(5)} />
                   <BotaoDeDia rotulo={t("Sáb")} marcado={diasDaSerie.includes(6)} aoClicar={() => alternarDia(6)} />
                 </div>
+              </>
+            ) : null}
+            {repeticao === "mensal" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tarefa-dia-do-mes">{t("Dia do mês")}</Label>
+                  <Input
+                    id="tarefa-dia-do-mes"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={String(diaDoMes)}
+                    onChange={(e) => setDiaDoMes(Number(e.target.value))}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("A tarefa volta todo mês nesse dia, no horário acima, no fuso da empresa.")}
+                </p>
               </>
             ) : null}
           </div>
