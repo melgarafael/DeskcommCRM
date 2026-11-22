@@ -97,7 +97,9 @@ function colunaDoNunca(): HTMLElement {
 }
 
 /** O `<li>` do item, pelo começo da frase. */
-function itemDaColuna(frase: string): HTMLElement {
+function itemDaColuna(frase: string | undefined): HTMLElement {
+  // NUNCA_FAZ é Record<string, string>: a chave ausente chega aqui como undefined.
+  if (frase === undefined) throw new Error("NUNCA_FAZ não tem frase para esta conferência");
   const achado = within(colunaDoNunca())
     .getAllByRole("listitem")
     .find((li) => (li.textContent ?? "").includes(frase));
