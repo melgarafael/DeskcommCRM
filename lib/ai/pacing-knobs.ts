@@ -32,6 +32,16 @@ function isValidTimezone(tz: string): boolean {
 export const DAILY_LIMIT_BOUNDS = { min: 1, max: 10_000 } as const;
 
 /**
+ * Sanidade de UI do teto PRÓPRIO do follow-up (#4063). O banco só exige `> 0`
+ * (`channel_knobs_followup_daily_cap_check`); o máximo é defensivo, no mesmo
+ * patamar do teto diário — o valor é uma proteção contra banimento, não uma
+ * alavanca para mandar 1 milhão de mensagens. `NULL` continua sendo "nunca
+ * mexi": quem não tem a coluna (ou a limpa) herda `PACING_DEFAULTS.followupDailyCap`
+ * (200/dia) e nada muda no motor.
+ */
+export const FOLLOWUP_DAILY_CAP_BOUNDS = { min: 1, max: 10_000 } as const;
+
+/**
  * O fuso mais adiantado que existe é UTC+14 (Kiritimati). Logo, o maior DIA de
  * calendário em vigor em algum lugar do planeta é o dia UTC de `agora + 14h`.
  */
@@ -133,6 +143,20 @@ export const pacingKnobsUpdateSchema = z
      * que a tela grava quando o Switch está no default — ver `valorDeOverride`.
      */
     teto_so_abordagem: z.boolean().nullable().optional(),
+    /**
+     * Teto PRÓPRIO do follow-up (#4063), em envios/dia. É o veto `followup_cap`
+     * de `decidePacing`: só arma com `teto_so_abordagem` ligado e para quem não
+     * é abordagem nem resposta. `null` = default do motor (200), a mesma
+     * semântica dos outros knobs — a coluna é `integer` nullable justamente
+     * porque NULL significa "o canal não escolheu".
+     */
+    followup_daily_cap: z
+      .number()
+      .int()
+      .min(FOLLOWUP_DAILY_CAP_BOUNDS.min)
+      .max(FOLLOWUP_DAILY_CAP_BOUNDS.max)
+      .nullable()
+      .optional(),
     /**
      * Dias da prospecção (0642, 0=dom … 6=sáb). Omitido = mantém o que está
      * gravado (linha nova nasce no default do banco: todos os dias). Sem
@@ -312,7 +336,11 @@ export function knobsView(
     effective: efetivo,
     overrides: row,
     defaults: PACING_DEFAULTS,
-    bounds: { ...KNOB_BOUNDS, daily_limit: DAILY_LIMIT_BOUNDS },
+    bounds: {
+      ...KNOB_BOUNDS,
+      daily_limit: DAILY_LIMIT_BOUNDS,
+      followup_daily_cap: FOLLOWUP_DAILY_CAP_BOUNDS,
+    },
     warmup: {
       number_activated_at: row?.number_activated_at ?? null,
       age_days: dias,

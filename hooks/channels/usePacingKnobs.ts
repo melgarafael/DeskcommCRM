@@ -35,6 +35,8 @@ export interface PacingKnobsItem {
     hourLastStart: number;
     hourEnd: number;
     daily_limit: { min: number; max: number };
+    /** Teto próprio do follow-up (#4063): 1..10000; null = default 200. */
+    followup_daily_cap: { min: number; max: number };
   };
 }
 

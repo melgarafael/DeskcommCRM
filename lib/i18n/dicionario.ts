@@ -8380,6 +8380,11 @@ export const DICIONARIO: Traducoes = {
   },
   "Enviar aos domingos": { es: "Enviar los domingos" },
   "Teto do dia só na abordagem": { es: "Tope del día solo en el primer contacto" },
+  "Teto diário do follow-up": { es: "Tope diario de seguimiento" },
+  "Teto diário de follow-ups": { es: "Tope diario de seguimientos" },
+  "Máximo de mensagens que retomam conversa (follow-up) por dia, quando o teto do dia conta só a abordagem. Campo vazio usa o padrão de 200. Com o teto do dia contando tudo, o follow-up continua entrando no teto diário acima e este valor não se aplica.": {
+    es: "Máximo de mensajes que retoman una conversación (seguimiento) por día, cuando el tope del día cuenta solo el primer contacto. El campo vacío usa el valor por defecto de 200. Con el tope del día contando todo, el seguimiento sigue entrando en el tope diario de arriba y este valor no se aplica.",
+  },
   "Ligado: o teto diário conta apenas a primeira mensagem a uma pessoa nova. Responder quem escreveu e retomar quem já foi abordado continua respeitando o intervalo e a janela, mas não gasta nem espera o teto.": {
     es: "Activado: el tope diario cuenta solo el primer mensaje a una persona nueva. Responder a quien escribió y retomar a quien ya fue contactado sigue respetando el intervalo y la ventana, pero no gasta ni espera el tope.",
   },

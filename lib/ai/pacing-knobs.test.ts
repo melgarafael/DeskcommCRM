@@ -6,6 +6,7 @@ import {
   pacingKnobsUpdateSchema,
   windowIsValid,
   knobsView,
+  type ChannelKnobsRow,
 } from "./pacing-knobs";
 
 const SESSION = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -156,5 +157,77 @@ describe("pacing-knobs — validação com KNOB_BOUNDS (números nunca nascem aq
     expect(view.bounds.intervalMaxMs).toBe(KNOB_BOUNDS.intervalMaxMs);
     expect(view.bounds.daily_limit.min).toBe(1);
     expect(view.overrides).toBeNull();
+  });
+});
+
+/**
+ * O teto do follow-up (#4063) é um knob como os outros: a ficha e a rota
+ * gravam `channel_knobs.followup_daily_cap` e o motor lê o MESMO par. O que
+ * estes testes travam é o par inteiro — aceitar no schema não basta se o
+ * `effectiveKnobs` não devolver o valor (a tela voltaria a mostrar 200).
+ */
+describe("pacing-knobs — teto do follow-up (#4063) viaja no par", () => {
+  /** Linha mínima: colunas ausentes são lidas como NULL (default). */
+  const LINHA: ChannelKnobsRow = {
+    throttle_ms: null,
+    jitter_max_ms: null,
+    window_start_hour: null,
+    window_end_hour: null,
+    allow_sunday: null,
+    timezone: null,
+    warmup_daily_caps: null,
+  };
+
+  it("teto do follow-up viaja no par: 350 grava e lê 350; NULL lê 200; 0 e -1 são recusados", () => {
+    // "Gravar" é o que o PATCH aceita; "ler de volta" é o que o GET devolve.
+    const escrita = pacingKnobsUpdateSchema.safeParse({
+      channel_session_id: SESSION,
+      followup_daily_cap: 350,
+    });
+    expect(escrita.success).toBe(true);
+    if (!escrita.success) return;
+    const lido = effectiveKnobs({
+      ...LINHA,
+      followup_daily_cap: escrita.data.followup_daily_cap ?? null,
+    });
+    expect(lido.followupDailyCap).toBe(350);
+
+    // NULL = "nunca mexi": o default de segurança continua 200, nunca 0.
+    expect(effectiveKnobs({ ...LINHA, followup_daily_cap: null }).followupDailyCap).toBe(200);
+    expect(PACING_DEFAULTS.followupDailyCap).toBe(200);
+
+    // Zero e negativo não são "desligar" — desligar o número tem forma expressa.
+    for (const invalido of [0, -1, 1.5]) {
+      expect(
+        pacingKnobsUpdateSchema.safeParse({
+          channel_session_id: SESSION,
+          followup_daily_cap: invalido,
+        }).success,
+      ).toBe(false);
+    }
+
+    // Teto máximo defensivo: o banco só exige > 0, a rota não deixa passar disto.
+    expect(
+      pacingKnobsUpdateSchema.safeParse({
+        channel_session_id: SESSION,
+        followup_daily_cap: 10_000,
+      }).success,
+    ).toBe(true);
+    expect(
+      pacingKnobsUpdateSchema.safeParse({
+        channel_session_id: SESSION,
+        followup_daily_cap: 10_001,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("o dado velho não perde o campo: linha sem a coluna lê o default sem estourar", () => {
+    // O PostgREST não devolve a chave para quem é anterior à migration
+    // 20261121120000; `??` é o que impede o `undefined` de vazar para o motor.
+    const linhaVelha = { ...LINHA } as ChannelKnobsRow;
+    expect("followup_daily_cap" in linhaVelha).toBe(false);
+    expect(() => effectiveKnobs(linhaVelha)).not.toThrow();
+    expect(effectiveKnobs(linhaVelha).followupDailyCap).toBe(200);
+    expect(knobsView(linhaVelha).effective.followupDailyCap).toBe(200);
   });
 });
