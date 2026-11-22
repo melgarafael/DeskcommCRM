@@ -10034,9 +10034,18 @@ export const DICIONARIO: Traducoes = {
   },
   "O que ele já sabe fazer": { es: "Lo que ya sabe hacer" },
   "O que ele nunca faz": { es: "Lo que nunca hace" },
-  "Essas conferências rodam antes de cada mensagem sair — as que podem ser desligadas ficam na configuração do agente.": {
-    es: "Estas verificaciones corren antes de que salga cada mensaje; las que se pueden desactivar quedan en la configuración del agente.",
+  "Essas conferências rodam antes de cada mensagem sair. As que dependem de um interruptor aparecem com o estado desta empresa e o caminho para ligar; as demais rodam sempre.": {
+    es: "Estas verificaciones corren antes de que salga cada mensaje. Las que dependen de un interruptor aparecen con el estado de esta empresa y el camino para activarlas; las demás corren siempre.",
   },
+  "desligada nesta organização — ligue em": {
+    es: "desactivada en esta organización: actívala en",
+  },
+  "ligada nesta organização": { es: "activada en esta organización" },
+  "ligada, mas só anota: ainda não barra nenhuma mensagem": {
+    es: "activada, pero solo anota: todavía no bloquea ningún mensaje",
+  },
+  "IA › Agentes › Confere antes de enviar": { es: "IA › Agentes › Verifica antes de enviar" },
+  "IA › Provedores de IA › cartão do Jev": { es: "IA › Proveedores de IA › tarjeta del Jev" },
   "O atendente foi criado, mas as": { es: "El agente se creó, pero las" },
   "regras da casa": { es: "reglas de la casa" },
   "não foram gravadas. Copie o que você escreveu antes de sair — e salve de novo em": {

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createDefaultAgent, skipAi } from "@/app/actions/onboarding/createDefaultAgent";
+import type { EstadoDoItem, ItemDaColuna, OndeLigar } from "@/lib/ai/guardrails/lista-de-conferencia";
 import type { PromptTemplate } from "@/lib/schemas/onboarding";
 import { cn } from "@/lib/utils";
 import { PROVEDOR_POR_ID } from "@/lib/ai/pontos/provedores";
@@ -49,7 +50,49 @@ interface Props {
   /** O que ele já sabe fazer, em linguagem de dono de negócio. */
   capacidades: string[];
   /** O que ele nunca faz — as conferências antes de cada mensagem sair. */
-  conferencias: string[];
+  conferencias: ItemDaColuna[];
+}
+
+/**
+ * O SELO DO ITEM — o estado REAL da camada nesta organização (#1041).
+ *
+ * A coluna nasceu prometendo as dezessete conferências do mesmo jeito, e quatro
+ * delas dependem de um interruptor que uma organização nova não ligou:
+ * `clinical_claim` e `commercial_restriction` nascem desligadas, a promessa
+ * semântica só liga com `PROMISE_SEMANTIC_ENABLED=true`, e a conferência de
+ * fato depende da tarefa do Jev. Sem o selo, a tela prometia proteção que o
+ * motor não executa.
+ *
+ * O caminho é o da tela onde o interruptor mora, e são DOIS lugares: as três do
+ * painel ficam em "Confere antes de enviar", dentro do agente; a de fato, no
+ * cartão do Jev, em Provedores de IA. A nota antiga mandava tudo para
+ * "configuração do agente", que não é onde a quarta está.
+ *
+ * `data-estado` carrega o estado para o teste e para quem lê a tela pelo DOM;
+ * o selo visível existe só onde há o que dizer ("sempre" é o silêncio das treze
+ * que rodam sem escolha de ninguém).
+ */
+function SeloDoItem({ estado, ondeLigar }: { estado: EstadoDoItem | null; ondeLigar: OndeLigar | null }) {
+  const t = useT();
+  if (estado === null) return null;
+  if (estado === "so_anota") {
+    return (
+      <span className="ml-1 text-muted-foreground/80">
+        — {t("ligada, mas só anota: ainda não barra nenhuma mensagem")}
+      </span>
+    );
+  }
+  if (estado === "ligada") {
+    return <span className="ml-1 text-muted-foreground/80">— {t("ligada nesta organização")}</span>;
+  }
+  const caminho =
+    ondeLigar === "jev" ? t("IA › Provedores de IA › cartão do Jev") : t("IA › Agentes › Confere antes de enviar");
+  return (
+    <span className="ml-1 text-muted-foreground/80">
+      — {t("desligada nesta organização — ligue em")}{" "}
+      <span className="font-medium">{caminho}</span>
+    </span>
+  );
 }
 
 export function SetupAiForm({ capacidades, conferencias }: Props) {
@@ -198,11 +241,14 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
           <h3 className="text-sm font-medium">{t("O que ele nunca faz")}</h3>
           <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
             {conferencias.map((c) => (
-              <li key={c}>· {c}</li>
+              <li key={c.nome} data-estado={c.estado ?? "sempre"}>
+                · {c.frase}
+                <SeloDoItem estado={c.estado} ondeLigar={c.ondeLigar} />
+              </li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            {t("Essas conferências rodam antes de cada mensagem sair — as que podem ser desligadas ficam na configuração do agente.")}
+            {t("Essas conferências rodam antes de cada mensagem sair. As que dependem de um interruptor aparecem com o estado desta empresa e o caminho para ligar; as demais rodam sempre.")}
           </p>
         </section>
       </div>
