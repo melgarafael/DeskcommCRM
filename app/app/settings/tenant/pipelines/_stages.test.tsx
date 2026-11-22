@@ -1083,3 +1083,102 @@ describe("StagesSection — os fluxos armados na etapa, só leitura (#3603)", ()
     expect(screen.queryByTestId("fluxos-de-e2")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * #4836 — O CRITÉRIO DA ETAPA, na tela.
+ *
+ * O agente já lia `crm_stages.description` e não havia onde escrevê-lo: todo
+ * funil criado pela tela ficava com `null` em todas as etapas. O que se mede
+ * aqui é o que nasce DESTE lado — o campo aparece com o texto gravado, o blur
+ * manda o texto aparado, vazio manda `null`, e o teto é recusado na TELA com a
+ * mesma régua da API (sem depender de um 422 para descobrir).
+ */
+describe("StagesSection — o critério da etapa (#4836)", () => {
+  it("o campo aparece por etapa, com o rótulo, a ajuda e o texto já gravado", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: estado({}, [
+        { id: "e1", name: "Carrinho abandonado", is_won: false, is_lost: false, description: "Entra aqui quando o carrinho fica 24 h parado." },
+        { id: "e2", name: "Aguardando pagamento", is_won: false, is_lost: false, description: null },
+      ]),
+    });
+    montar();
+    await screen.findByTestId("criterio-e1");
+
+    expect(screen.getByTestId("criterio-e1")).toHaveValue("Entra aqui quando o carrinho fica 24 h parado.");
+    expect(screen.getByTestId("criterio-e2")).toHaveValue("");
+    // O rótulo e a ajuda moram na LINHA de cada etapa (o campo é por etapa, não
+    // um cabeçalho de coluna) — por isso a asserção é dentro da linha.
+    const linha = within(screen.getByTestId("etapa-e1"));
+    expect(linha.getByText(ROTULO.criterio)).toBeInTheDocument();
+    expect(
+      linha.getByText("O assistente lê este texto para decidir quando mover o negócio para esta etapa."),
+    ).toBeInTheDocument();
+  });
+
+  it("digitar e sair do campo → PATCH com o texto APARADO", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    await screen.findByTestId("criterio-e2");
+
+    await user.type(screen.getByTestId("criterio-e2"), "  Entra aqui quando o cliente aprova.  ");
+    await user.tab();
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![0]).toContain("/stages/e2");
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({
+      description: "Entra aqui quando o cliente aprova.",
+    });
+  });
+
+  it("apagar o texto → PATCH com `null` (vazio NÃO vira string vazia)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: estado({}, [
+        { id: "e2", name: "Aguardando pagamento", is_won: false, is_lost: false, description: "Critério antigo" },
+      ]),
+    });
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    await user.clear(campo);
+    await user.tab();
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(apiClient.patch).mock.calls[0]![1]).toEqual({ description: null });
+  });
+
+  it("acima do teto → a TELA recusa, avisa e não chama a API", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    // 501 caracteres: um a mais que o teto da constante compartilhada.
+    await user.click(campo);
+    await user.paste("x".repeat(501));
+    await user.tab();
+
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith("O critério da etapa vai até 500 caracteres.");
+    // O rascunho volta ao que o banco tem — a tela não guarda o texto recusado.
+    expect(campo).toHaveValue("");
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("0/500");
+  });
+
+  it("o contador mostra o que falta e passa a marcar o excesso", async () => {
+    const user = userEvent.setup();
+    montar();
+    const campo = await screen.findByTestId("criterio-e2");
+
+    await user.type(campo, "abc");
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("3/500");
+
+    await user.clear(campo);
+    await user.click(campo);
+    await user.paste("y".repeat(520));
+    expect(screen.getByTestId("criterio-contagem-e2")).toHaveTextContent("520/500");
+  });
+});
+

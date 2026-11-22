@@ -96,6 +96,9 @@ export function rodapeDeSaida(locale?: string | null): string {
  *   - ele continua tendo de conter a palavra que `lib/opt-out/deteccao.ts`
  *     reconhece SOZINHA, no idioma da instalação — "é só me avisar" é simpático e
  *     não é detectado; a pessoa pediria para sair e seguiria recebendo;
+ *   - e ela tem de estar LEGÍVEL: riscada (`~PARAR~`), atrás de spoiler ou dentro
+ *     de código, a palavra está no texto e some na tela — a pessoa não copia o
+ *     que o canal desenha como apagado. Ver `MARCACAO_QUE_ESCONDE`;
  *   - vazio = a frase padrão de sempre, byte por byte: quem não mexer não vê
  *     diferença.
  *
@@ -114,7 +117,7 @@ export function rodapeDeSaida(locale?: string | null): string {
 export const TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA = 160;
 
 /** Por que o texto do dono não pode ser usado; `null` quando pode. */
-export type ProblemaDoTextoDaSaida = "longo" | "link" | "sem_palavra";
+export type ProblemaDoTextoDaSaida = "longo" | "link" | "sem_palavra" | "palavra_escondida";
 
 /**
  * Link dentro da saída não passa. A saída existe para a pessoa ter como SAIR, não
@@ -128,6 +131,38 @@ function contemPalavra(texto: string, palavra: string): boolean {
   return new RegExp(`\\b${normalizarTexto(palavra)}\\b`, "u").test(normalizarTexto(texto));
 }
 
+/**
+ * ─── A PALAVRA QUE ESTÁ LÁ, MAS NÃO SE LÊ ───────────────────────────────────
+ *
+ * A régua de `contemPalavra` olha o texto CRU: `~PARAR~` tem a palavra, e passa.
+ * No aparelho, `~…~` é riscado no WhatsApp, `||…||` é spoiler e o que está entre
+ * crases sai como código — o dono escreve "responda ~PARAR~", a campanha inicia,
+ * e a instrução que chega pede para a pessoa responder algo que o cliente do
+ * canal desenha como APAGADO (ou esconde até ela tocar). É a mesma classe de
+ * defeito que este módulo existe para impedir: prometer uma saída que não se
+ * consegue usar. Aqui ela entra pela FORMA, não pela ausência da palavra.
+ *
+ * Só a marcação que ESCONDE entra. `*negrito*` e `_itálico_` deixam a palavra
+ * legível, e são o jeito normal de destacar a instrução — recusá-los seria
+ * brigar com quem está tentando fazer a coisa certa.
+ *
+ * O `~` de "cerca de" (`~R$ 50`) não é riscado: o padrão exige o par fechando.
+ * Um til solto no meio de uma frase não casa, e a palavra fora do par continua
+ * visível — o teste de aceitação mede os dois lados.
+ *
+ * Dois tis de "cerca de" na mesma frase também não formam par: o riscado do
+ * WhatsApp só fecha numa letra (`~PARAR~`, nunca ` ~3 dias`) e não atravessa
+ * linha. Sem essa borda, "Planos de ~R$ 50. Responda PARAR. Entrega em ~3
+ * dias." era recusado — e a campanha já salva com ele perdia o texto do dono
+ * para a frase padrão, em silêncio (`textoDaSaidaEfetivo`).
+ */
+const MARCACAO_QUE_ESCONDE = /(~{1,2})(?=\S)[^~\n]*?\S\1|\|\|[\s\S]*?\|\||```[\s\S]*?```|`[^`\n]*`/gu;
+
+/** O texto SEM os trechos que o cliente do canal mostra riscados, escondidos ou como código. */
+function semMarcacaoQueEsconde(texto: string): string {
+  return texto.replace(MARCACAO_QUE_ESCONDE, " ");
+}
+
 /** O texto contém a palavra que ESTE idioma oferece (`palavraDeSaida`)? */
 export function contemPalavraDeSaida(texto: string, locale?: string | null): boolean {
   return contemPalavra(texto, palavraDeSaida(locale));
@@ -138,10 +173,16 @@ export function contemAlgumaPalavraDeSaida(texto: string): boolean {
   return Object.values(PALAVRA_POR_IDIOMA).some((palavra) => contemPalavra(texto, palavra));
 }
 
-function problemaNoTexto(texto: string, temPalavra: boolean): ProblemaDoTextoDaSaida | null {
+function problemaNoTexto(
+  texto: string,
+  temPalavra: (texto: string) => boolean,
+): ProblemaDoTextoDaSaida | null {
   if (texto.length > TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA) return "longo";
   if (LINK_NO_TEXTO.test(texto)) return "link";
-  if (!temPalavra) return "sem_palavra";
+  if (!temPalavra(texto)) return "sem_palavra";
+  // A palavra existe — mas só dentro de marcação que o cliente do canal
+  // desenha riscada, escondida ou como código. Ver `MARCACAO_QUE_ESCONDE`.
+  if (!temPalavra(semMarcacaoQueEsconde(texto))) return "palavra_escondida";
   return null;
 }
 
@@ -157,7 +198,7 @@ export function problemaNoTextoDaSaida(
 ): ProblemaDoTextoDaSaida | null {
   const proprio = (texto ?? "").trim();
   if (proprio === "") return null;
-  return problemaNoTexto(proprio, contemAlgumaPalavraDeSaida(proprio));
+  return problemaNoTexto(proprio, contemAlgumaPalavraDeSaida);
 }
 
 /**
@@ -171,7 +212,7 @@ export function problemaNoTextoDaSaidaNoIdioma(
 ): ProblemaDoTextoDaSaida | null {
   const proprio = (texto ?? "").trim();
   if (proprio === "") return null;
-  return problemaNoTexto(proprio, contemPalavraDeSaida(proprio, locale));
+  return problemaNoTexto(proprio, (t) => contemPalavraDeSaida(t, locale));
 }
 
 /**

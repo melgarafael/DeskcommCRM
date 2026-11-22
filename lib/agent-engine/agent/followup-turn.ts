@@ -31,6 +31,7 @@ import type pg from 'pg';
 
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
+import { rescheduleJob } from '../queue/queue';
 import {
   getLeadContext,
   textoDoClienteNaUltimaMensagem,
@@ -41,7 +42,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { runBeforeSend } from '../guardrails/before-send';
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
-import { estadoDaJanela } from '@/lib/channels/janela';
+import { aJanelaRegulatoriaSeAplica, estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
 import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
@@ -72,6 +73,14 @@ import { protecaoAgendaPg } from '@/lib/agenda/protecao-followup';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { liberaEnvioComODono } from '@/lib/followup/envio-com-o-dono';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import {
+  MOTIVO_DO_MODELO_DISPENSADO,
+  carenciaDoAmbiente,
+  decidirAntesDoModeloPago,
+  jaEsperouPelaCarencia,
+  lerJanelaDaConversa,
+  rastroDaCarencia,
+} from './carencia-antes-do-modelo';
 import {
   followupPublicadoDoEnrollment,
   proximaAberturaDoFollowup,
@@ -183,8 +192,12 @@ export type FollowupFlowTurnResult =
   | { kind: 'classified'; class: string }
   /** Classificar sem resposta ao envio do fluxo: nada a concluir, só o rastro da espera. */
   | { kind: 'awaiting_reply' }
-  /** O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi recusado. */
-  | { kind: 'deferred'; until: Date; reason: string }
+  /**
+   * O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi
+   * recusado. `janelaRegulatoria` é o ESCOPO do canal deste turno: só ele
+   * autoriza o dossiê a falar em janela de 24 h (ver `aJanelaRegulatoriaSeAplica`).
+   */
+  | { kind: 'deferred'; until: Date; reason: string; janelaRegulatoria?: boolean }
   | { kind: 'planned'; propostas: PropostaDeEsperaBruta[]; modelo: string };
 
 /**
@@ -529,7 +542,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: pessoa.ate, reason: 'pessoa_no_comando' },
+            result: {
+              kind: 'deferred',
+              until: pessoa.ate,
+              reason: 'pessoa_no_comando',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -657,7 +675,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: proximaAbertura, reason: 'followup_send_window' },
+            result: {
+              kind: 'deferred',
+              until: proximaAbertura,
+              reason: 'followup_send_window',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -736,7 +759,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
  */
 type EnvioFixoDesfecho =
   | { kind: "sent" }
-  | { kind: "deferred"; until: Date; reason: string }
+  | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria: boolean }
   | { kind: "skipped" };
 
 interface ReentrySendTarget {
@@ -849,6 +872,115 @@ async function runFlowDrivenTurn(
         variaveis: undefined,
       });
     }
+    // #4835 — O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu.
+    const registrarModeloDispensado = (motivo: 'texto_livre' | 'dispensar'): Promise<void> =>
+      pool
+        .query(
+          `insert into followup_enrollment_events
+             (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+           values ($1, $2, $3, 'modelo_pago_dispensado', $4, $5)
+           on conflict (enrollment_id, idempotency_key) where idempotency_key is not null do nothing`,
+          [
+            target.tenantId,
+            enrollmentId,
+            nodeId,
+            { job_id: job.id, motivo, no_do_payload: nodeId, tem_texto_livre: motivo === 'texto_livre' },
+            `${job.id}:modelo_pago_dispensado`,
+          ],
+        )
+        .then(
+          () => undefined,
+          (err: unknown) => {
+            // Instrumentação nunca derruba o envio (nem o pulo).
+            runLog.warn('registro do modelo dispensado não entrou', {
+              error: err instanceof Error ? err.message.slice(0, 160) : 'erro desconhecido',
+            });
+          },
+        );
+    // A VOLTA DA CARÊNCIA NO PLANO B DA IA: o cliente escreveu, a janela abriu,
+    // e o bloco acima já não troca a IA pelo modelo — o gancho abaixo nem é
+    // alcançado. A economia aconteceu aqui, e sem este registro ela não entra
+    // na contagem de `modelo_pago_dispensado`.
+    if (
+      passo === null &&
+      input.fallbackTemplateId !== undefined &&
+      input.templateId === undefined &&
+      jaEsperouPelaCarencia(job.payload)
+    ) {
+      await registrarModeloDispensado('texto_livre');
+    }
+    // #4835 — A CARÊNCIA ANTES DO MODELO PAGO, e a reconferência da janela no
+    // instante de gastar. Aqui é o ÚLTIMO ponto antes de reservar o modelo: o
+    // passo já foi resolvido (é modelo aprovado de verdade, não texto de
+    // `message_templates`), e nada foi enviado nem cobrado ainda.
+    //
+    // O lead que chega por integração com a janela fechada só pode receber
+    // modelo — e o cliente costuma escrever nos primeiros segundos, quando a
+    // janela abriria de graça. No webhook de captação o primeiro tick roda
+    // dentro do POST e o claim vem ~2–4 s depois; sem esta carência, a
+    // conferência que já existia (`janelaFechada`, acima) chega tarde.
+    if (passo !== null && passo.tipo === 'modelo_aprovado') {
+      const decisaoDoModelo = decidirAntesDoModeloPago({
+        passoEhModeloPago: true,
+        // A reserva da IA tem texto livre no lugar; o passo de modelo puro, não.
+        temTextoLivreNoLugar: input.fallbackTemplateId !== undefined && input.templateId === undefined,
+        carenciaMs: carenciaDoAmbiente(deps.knobs.carenciaDoModeloMs),
+        janela: await lerJanelaDaConversa(pool, {
+          organizationId: target.tenantId,
+          conversationId: target.conversationId,
+          agora: clock(),
+        }),
+        jaEsperou: jaEsperouPelaCarencia(job.payload),
+        agora: clock(),
+      });
+      if (decisaoDoModelo.acao === 'esperar') {
+        const reenfileirado = await rescheduleJob(pool, job.id, ctx.workerId, {
+          delayMs: decisaoDoModelo.esperaMs,
+          reason: 'carência antes do modelo pago: esperando o cliente escrever',
+          acquiredAt: claimOfJob(job)?.acquired_at,
+          payloadPatch: rastroDaCarencia({
+            esperaMs: decisaoDoModelo.esperaMs,
+            agora: clock(),
+          }),
+        });
+        // Lease perdido (reaper/re-claim) → o job já tem dono: não loga espera
+        // que não houve, e não deixa o turno seguir para o envio.
+        runLog.info('modelo pago adiado pela carência — o cliente pode escrever antes', {
+          espera_ms: decisaoDoModelo.esperaMs,
+          volta_em: decisaoDoModelo.ate.toISOString(),
+          reenfileirado: reenfileirado !== null,
+          node_id: nodeId,
+        });
+        throw new JobSettledError('carência antes do modelo pago — job devolvido à fila');
+      }
+      if (decisaoDoModelo.acao === 'texto_livre' || decisaoDoModelo.acao === 'dispensar') {
+        // O GANHO, MEDIDO: cada linha destas é um modelo pago que não saiu. É o
+        // número que responde "quanto a reconferência economizou" depois.
+        await registrarModeloDispensado(decisaoDoModelo.acao);
+        if (decisaoDoModelo.acao === 'texto_livre') {
+          // A janela abriu: o texto livre é o do turno de IA, que roda logo
+          // abaixo. Nada de modelo pago — e nada de pular o passo.
+          runLog.info('modelo pago dispensado — a janela abriu na carência; o turno responde em texto livre', {
+            node_id: nodeId,
+          });
+          passo = null;
+        } else {
+          runLog.info('passo do fluxo pulado — o cliente escreveu na carência', {
+            motivo: MOTIVO_DO_MODELO_DISPENSADO,
+            node_id: nodeId,
+          });
+          await complete(pool, {
+            jobId: job.id,
+            jobClaim: claimOfJob(job),
+            organizationId: target.tenantId,
+            enrollmentId,
+            nodeId,
+            result: { kind: 'skipped', reason: MOTIVO_DO_MODELO_DISPENSADO },
+          });
+          return;
+        }
+      }
+    }
     if (passo !== null && passo.tipo === 'recusado') {
       runLog.info('passo do fluxo pulado — o modelo não pode sair', { motivo: passo.motivo });
       await complete(pool, { jobId: job.id, jobClaim: claimOfJob(job), organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'skipped', reason: passo.motivo } });
@@ -919,7 +1051,7 @@ async function runFlowDrivenTurn(
       } else if (desfecho.kind === 'skipped') {
         await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'skipped',reason:'O envio foi recusado pelas regras do atendimento.'}});
       } else {
-        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason}});
+        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason,janelaRegulatoria:desfecho.janelaRegulatoria}});
       }
       return;
     }
@@ -948,7 +1080,12 @@ async function runFlowDrivenTurn(
         organizationId: target.tenantId,
         enrollmentId,
         nodeId,
-        result: { kind: 'deferred', until: aberturaAntiBan, reason: 'outside_window' },
+        result: {
+          kind: 'deferred',
+          until: aberturaAntiBan,
+          reason: 'outside_window',
+          janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+        },
       });
       return;
     }
@@ -1598,7 +1735,12 @@ async function sendFixedOutbound(
         code: chain.code,
         next_run_at: chain.nextAllowedAt.toISOString(),
       });
-      return { kind: "deferred", until: chain.nextAllowedAt, reason: chain.code };
+      return {
+        kind: "deferred",
+        until: chain.nextAllowedAt,
+        reason: chain.code,
+        janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+      };
     }
     /**
      * #4429 — A COLISÃO DE REPETIÇÃO ADIA, COMO A JANELA. O veto pode chegar por
@@ -1631,6 +1773,32 @@ async function sendFixedOutbound(
       throw new Error('envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
     case 'unavailable':
       throw new Error(`envio fixo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
+  }
+}
+
+/**
+ * O canal desta conversa impõe a janela de 24 h? Lido do PROVEDOR (capability),
+ * nunca do nome do canal, e só quando um adiamento está sendo registrado.
+ *
+ * O dado serve ao dossiê: `action_deferred` daqui carrega `janela_regulatoria`
+ * junto com o motivo, para a linha do tempo não anunciar a janela da Meta numa
+ * conexão por QR — que é o defeito medido na #4913. Falha de leitura responde
+ * `false`: o adiamento já está decidido, e o erro não pode derrubá-lo.
+ */
+async function janelaRegulatoriaDoCanal(
+  pool: pg.Pool,
+  tenantId: string,
+  channelSessionId: string | null | undefined,
+): Promise<boolean> {
+  if (!channelSessionId) return false;
+  try {
+    const { rows } = await pool.query<{ provider: string | null }>(
+      `select provider from channel_sessions where organization_id = $1 and id = $2 limit 1`,
+      [tenantId, channelSessionId],
+    );
+    return aJanelaRegulatoriaSeAplica(rows[0]?.provider);
+  } catch {
+    return false;
   }
 }
 
@@ -1681,7 +1849,12 @@ async function adiarPorRepeticao(
     adiamento: adiamentos + 1,
     teto: MAX_ADIAMENTOS_POR_REPETICAO,
   });
-  return { kind: 'deferred', until, reason: motivo };
+  return {
+    kind: 'deferred',
+    until,
+    reason: motivo,
+    janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+  };
 }
 
 /** Quantos adiamentos POR REPETIÇÃO este passo já teve — o teto de `adiarPorRepeticao`. */

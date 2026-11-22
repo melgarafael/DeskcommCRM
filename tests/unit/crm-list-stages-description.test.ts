@@ -62,11 +62,20 @@ describe('corpo() — o que sai para quem lê o funil', () => {
 });
 
 describe('a ferramenta crm_list_stages (caminho do MCP / do Operador)', () => {
-  /** supabase de mentira: o funil existe e devolve estas linhas, já na ordem do quadro. */
+  /**
+   * supabase de mentira: o funil existe e devolve estas linhas, já na ordem do quadro.
+   * Guarda o argumento do `select` de cada tabela — sem isso o dublê devolve
+   * `description` mesmo quando a consulta real não a pede (#4846: a coluna saiu
+   * de `COLUNAS` e o teste seguia verde).
+   */
+  const selecionado: Record<string, string> = {};
   function supabase(linhas: unknown[]) {
-    const encadeia = (resolve: () => unknown) => {
+    const encadeia = (tabela: string, resolve: () => unknown) => {
       const q: Record<string, unknown> = {};
-      q.select = () => q;
+      q.select = (colunas: string) => {
+        selecionado[tabela] = colunas;
+        return q;
+      };
       q.eq = () => q;
       q.order = () => Promise.resolve(resolve());
       q.maybeSingle = () => Promise.resolve(resolve());
@@ -75,8 +84,8 @@ describe('a ferramenta crm_list_stages (caminho do MCP / do Operador)', () => {
     return {
       from: (tabela: string) =>
         tabela === 'crm_pipelines'
-          ? encadeia(() => ({ data: { id: 'p1' }, error: null }))
-          : encadeia(() => ({ data: linhas, error: null })),
+          ? encadeia(tabela, () => ({ data: { id: 'p1' }, error: null }))
+          : encadeia(tabela, () => ({ data: linhas, error: null })),
     };
   }
 
@@ -99,6 +108,18 @@ describe('a ferramenta crm_list_stages (caminho do MCP / do Operador)', () => {
       ['7. Não fechou', 'lost'],
       ['Sem equivalente', null],
     ]);
+  });
+
+  it('a consulta de crm_stages PEDE a coluna description (senão o critério chega sempre null)', async () => {
+    await crmListStages.handler(
+      { pipeline_id: '33000000-0000-4000-8000-000000000001' },
+      {
+        supabase: supabase([etapa({ id: 'a', description: 'Entra quando pede orçamento' })]),
+        organizationId: '33000000-0000-4000-8000-000000000002',
+        requestId: 'req-2',
+      } as never,
+    );
+    expect(selecionado.crm_stages).toMatch(/\bdescription\b/);
   });
 
   it('a descrição da ferramenta anuncia o campo (o modelo só usa o que a ferramenta diz que tem)', () => {

@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/hooks/i18n/useT";
+import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { MagnifyingGlass } from "@/lib/ui/icons";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -41,20 +43,17 @@ export interface DestinoDaPaleta {
   /** Id do grupo; a ordem e o rótulo vêm de `grupos`. */
   group: string;
   icon: PhosphorIcon;
+  /**
+   * Ação no lugar de navegar (ex.: "Abrir ao lado" do módulo conectado). Sem ela, escolher o
+   * destino faz `router.push(href)`; com ela, o `href` só serve de identidade única na lista.
+   */
+  acao?: () => void;
 }
 
 export interface GrupoDaPaleta {
   id: string;
   /** Texto em português: é a CHAVE do dicionário. */
   label: string;
-}
-
-/** Sem acento e sem caixa: ninguém digita "orçamento" com cedilha às pressas. */
-function normalizar(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 export interface PaletaDeDestinosProps {
@@ -138,6 +137,7 @@ function Resultados({
   placeholder: string;
 }) {
   const t = useT();
+  const idioma = useIdioma();
   const router = useRouter();
   const [busca, setBusca] = useState("");
   const [destacado, setDestacado] = useState(0);
@@ -151,17 +151,41 @@ function Resultados({
     return grupos.filter((g) => gruposNoCatalogo.has(g.id));
   }, [destinos, grupos]);
 
+  // O casamento usa `termoSemAcento` (`lib/inbox/termo-de-busca.ts`) — a MESMA
+  // régua das listas de fluxos, funis e agentes (#4593). Havia aqui uma cópia
+  // local (`normalize("NFD")` sem a tabela das letras que não decompõem), e duas
+  // cópias divergem no primeiro ajuste: «Øyvind» achava na lista e não aqui.
+  //
+  // Casa também o que a tela MOSTRA no idioma ativo (#4999): em espanhol a
+  // paleta exibe "Productos", e quem lê isso digita "productos". Os dois textos
+  // são casados SEPARADOS — emendados, a junta entre um e outro inventaria
+  // casamentos ("crm produtos"). Fora do português, o NOME que a tela mostra
+  // vem primeiro, depois o resto do português, depois o resto traduzido —
+  // senão "agent" em espanhol punha Productos (cuja descrição traduzida fala de
+  // "agente") à frente de Agentes, e o Enter abria a errada. Em pt-BR é a
+  // regra de sempre, sem posto: um texto só, na ordem do catálogo.
   const resultados = useMemo(() => {
-    const termo = normalizar(busca.trim());
-    const filtrados = destinos.filter((d) => {
-      const casaCategoria = categoriaAtiva === "todos" || d.group === categoriaAtiva;
-      if (!casaCategoria) return false;
-      if (!termo) return true;
-      return normalizar(`${d.label} ${d.description} ${rotuloGrupo.get(d.group) ?? ""}`).includes(
-        termo,
-      );
-    });
-    if (termo) return filtrados;
+    const termo = termoSemAcento(busca.trim());
+    const daCategoria = destinos.filter(
+      (d) => categoriaAtiva === "todos" || d.group === categoriaAtiva,
+    );
+    if (termo) {
+      const posto = (d: DestinoDaPaleta): number => {
+        const grupo = rotuloGrupo.get(d.group) ?? "";
+        const casaPortugues = termoSemAcento(`${d.label} ${d.description} ${grupo}`).includes(termo);
+        if (idioma === "pt-BR") return casaPortugues ? 0 : -1;
+        if (termoSemAcento(`${d.label} ${t(d.label)}`).includes(termo)) return 0;
+        if (casaPortugues) return 1;
+        const traduzido = `${t(d.description)} ${t(rotuloGrupo.get(d.group) ?? "")}`;
+        return termoSemAcento(traduzido).includes(termo) ? 2 : -1;
+      };
+      return daCategoria
+        .map((d) => ({ d, p: posto(d) }))
+        .filter(({ p }) => p >= 0)
+        .sort((a, b) => a.p - b.p)
+        .map(({ d }) => d);
+    }
+    const filtrados = daCategoria;
     // O catálogo não é contíguo por grupo (a Prospecção, de CRM, vem antes do
     // Inbox). Sem reordenar, a 1ª seção seria a do 1º item e as setas, que
     // andam por este array, pulariam de uma seção para outra. Ordenado pelos
@@ -169,7 +193,7 @@ function Resultados({
     return [...filtrados].sort(
       (a, b) => (ordemGrupo.get(a.group) ?? 0) - (ordemGrupo.get(b.group) ?? 0),
     );
-  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo]);
+  }, [busca, destinos, categoriaAtiva, rotuloGrupo, ordemGrupo, t, idioma]);
 
   // Agrupamento para exibição visual estruturada quando não há busca específica digitada
   const resultadosAgrupados = useMemo(() => {
@@ -184,6 +208,10 @@ function Resultados({
 
   function navegar(destino: DestinoDaPaleta) {
     aoEscolher();
+    if (destino.acao) {
+      destino.acao();
+      return;
+    }
     router.push(destino.href);
   }
 
@@ -308,7 +336,8 @@ function Resultados({
                     {t(label)}
                   </h3>
                   <span className="text-[11px] text-muted-foreground">
-                    {itens.length} {itens.length === 1 ? t("ferramenta") : t("ferramentas")}
+                    {/* Só o número: o grupo pode ser de telas ou de registros (funis, fluxos, agentes) (#4593). */}
+                    {itens.length}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

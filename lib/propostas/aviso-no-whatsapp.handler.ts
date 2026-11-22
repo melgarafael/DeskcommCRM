@@ -35,9 +35,14 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
               return resolverPadroesDaProposta((data as { settings?: unknown } | null)?.settings).avisarNoWhatsApp;
             },
             carregaConfig: (orgId) => doCaso.carregaConfig(orgId),
-            // O MESMO adapter do aviso de caso: a #3803 resolve o destino pela
-            // mesma função nas duas rotas (conversa → negócio → carteira).
-            carregaMundoDoAviso: doCaso.carregaMundoDoAviso,
+            // A MESMA leitura do aviso de caso: a #3803 resolve o destino pela
+            // mesma função nas duas rotas (conversa → negócio → carteira). Sem
+            // `comMarca`: "Não enviar aviso de caso" (#4989) não vale para
+            // proposta, e ela não espera essa leitura.
+            async carregaMundoDoAviso(entrada) {
+              const { carregaMundoDoAviso } = await import("@/lib/escalacao/membros-do-aviso");
+              return carregaMundoDoAviso(admin, entrada);
+            },
             async carregaProposta(orgId, propostaId) {
               const { data } = await admin
                 .from("crm_proposals")

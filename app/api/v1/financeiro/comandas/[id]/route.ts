@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -28,35 +29,57 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   // #1907 item 4 — comanda é MÓDULO DE TABELA: sem `modulos_instalados` a
   // linha ativa as cinco tabelas não existem e a rota não existe. 404,
   // mesmo molde da cobrança desligada (falha fechada, dois lados).
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comanda_ler", requestId);
+  if (teto) return teto;
 
   const { id } = await ctx.params;
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("sales")
-    // Literal único — ver a nota em `comandas/route.ts`.
+    // Literal único — ver a nota em `comandas/route.ts`. Sem embed de `sale_items`:
+    // os itens vêm na consulta abaixo, com a organização.
     .select(
-      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id, created_at)",
+      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at",
     )
     .eq("id", id)
+    // #4845 — o id vem de uma lista que vazou, e a RLS de `sales` libera todas as
+    // empresas de que a pessoa é membro. Sem este filtro a comanda da outra
+    // empresa era lida inteira — itens, valores, observação.
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!data) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
-  const itens = (data.sale_items ?? []) as Array<{ total_cents: number }>;
+  const { data: itensDaVenda } = await supabase
+    .from("sale_items")
+    .select(
+      "id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id, created_at",
+    )
+    .eq("sale_id", id)
+    .eq("organization_id", authz.organizationId);
+
+  const itens = (itensDaVenda ?? []) as Array<{ total_cents: number }>;
   const soma = itens.reduce((acc, i) => acc + Number(i.total_cents), 0);
   return ok(
     {
       ...data,
+      sale_items: itens,
       items_total_cents: soma,
       total_cents:
         data.status === "open"
@@ -94,6 +117,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
+    // #4845 — a conferência de empresa é ANTES de qualquer escrita, e a recusa é
+    // o mesmo 404 da comanda inexistente: quem está na A não descobre, pela
+    // resposta, que existe uma comanda com este id na B.
+    .eq("organization_id", authz.org.orgId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
@@ -116,7 +143,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     mudanca.cancelled_at = new Date().toISOString();
   }
 
-  const { error } = await supabase.from("sales").update(mudanca).eq("id", id);
+  // O filtro de empresa vai também no UPDATE, e não só na leitura acima: é o
+  // mesmo molde de `tasks/[id]`, e é o que impede que uma corrida entre a leitura
+  // e a escrita mude a linha de outra empresa.
+  const { error } = await supabase
+    .from("sales")
+    .update(mudanca)
+    .eq("id", id)
+    .eq("organization_id", authz.org.orgId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   // ⚠️ NUNCA espalhe o corpo lido aqui. `lib/audit` grava `metadata` CRU em
@@ -132,6 +166,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   // a observação. Este é o padrão que o POST de abertura já segue.
   await audit({
     action: lido.data.cancel ? "comanda.cancelada" : "comanda.alterada",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "sale",
     resourceId: id,
     requestId,
