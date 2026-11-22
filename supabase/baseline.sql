@@ -10171,7 +10171,7 @@ values
   -- Google (ids NÃO verificados — ver cabeçalho)
   ('google',    'gemini-3.1-pro-preview', 'Gemini 3.1 Pro (Preview)',
    'Prévia; preço sobe para $4/$18 por milhão acima de 200 mil tokens de entrada.', 200, 1200, true),
-  ('google',    'gemini-3.5-flash',  'Gemini 3.5 Flash',     null, 150, 900, true),
+  ('google',    'gemini-3.5-flash',  'Gemini 3.5 Flash',     null, 150, 750, true),
   ('google',    'gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite',
    'O mais barato da linha Gemini.', 10, 40, true),
   ('google',    'gemini-2.0-flash',  'Gemini 2.0 Flash',     null, 10, 40, true)
@@ -10225,7 +10225,7 @@ values
   ('gpt-5.4-nano',            20,    125,  'catálogo 0101'),
   ('gpt-5.4-pro',           3000,  18000,  'catálogo 0101'),
   ('gemini-3.1-pro-preview', 200,   1200,  'catálogo 0101 — sobe acima de 200k tokens de entrada'),
-  ('gemini-3.5-flash',       150,    900,  'catálogo 0101'),
+  ('gemini-3.5-flash',       150,    750,  'catálogo 0101 — saída alinhada ao 3.6 Flash (#5090)'),
   ('gemini-2.5-flash-lite',   10,     40,  'catálogo 0101'),
   ('gemini-2.0-flash',        10,     40,  'catálogo 0101'),
   ('gemini-2.5-pro',         125,   1000,  'catálogo 0101 — saída corrigida de 500 para 1000'),
@@ -87180,6 +87180,39 @@ values
   ('gemini-3.6-flash', 150, 750, 'catálogo 0649 — tarifa de 01/01/2027 UTC; o motor aplica 75/375 até lá'),
   ('gemini-3.7-flash', 150, 750, 'catálogo 0649 — tarifa de 01/01/2027 UTC; o motor aplica 75/375 até lá'),
   ('gemini-3.8-flash', 150, 750, 'catálogo 0649 — tarifa de 01/01/2027 UTC; o motor aplica 75/375 até lá')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
+
+-- ---- preço do Gemini 3.5 Flash: 150/750, a tarifa do 3.6 (migration 9460, #5090) ----
+-- O banco guardava 150/900 da 0101 — preço que a página oficial do Google nunca
+-- teve. O endpoint do 3.5 foi aposentado em 19/05/2026 e todo pedido é roteado
+-- ao 3.6 Flash, cuja tarifa de 01/01/2027 é 1,50/7,50; é essa que o motor
+-- (`pricing.ts`, #4968) já cobra. Com o banco em 900, a tela mostrava um preço
+-- e o orçamento somava outro (20% acima na saída; o dobro na entrada durante a
+-- promo). Mesmo desenho da 0649: um número só por tabela, a tarifa de 2027; a
+-- promo (75/375/7,5) é do motor, até o instante anterior a 2027-01-01T00:00:00Z.
+-- As DUAS tabelas com os MESMOS números (invariante catálogo×preço), `notes`
+-- começando com `catálogo`. Não mexe no padrão (segue gemini-3.5-flash).
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('google', 'gemini-3.5-flash', 'Gemini 3.5 Flash',
+   'Aposentado em 19/05/2026 e roteado ao 3.6 Flash. Preço de catálogo: tarifa de 01/01/2027 (US$ 1,50/US$ 7,50); o motor cobra a promo até essa data (UTC).',
+   150, 750, true)
+on conflict (provider, model_id) do update set
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gemini-3.5-flash', 150, 750, 'catálogo 9460 — tarifa de 01/01/2027 UTC; o motor aplica 75/375 até lá')
 on conflict (model) do update set
   prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
   completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
