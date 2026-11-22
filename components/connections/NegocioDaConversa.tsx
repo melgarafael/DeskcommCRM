@@ -76,7 +76,7 @@ export function NegocioDaConversa({ channelId }: { channelId: string }) {
       ) : (
         <p className="text-[11px] text-muted-foreground">
           {ligado
-            ? t("Ligado: cada conversa nova neste número abre um card no funil padrão.")
+            ? t("Ligado: cada conversa nova neste número abre um card no funil.")
             : t("Desligado: a conversa chega, o contato nasce, a IA atende — só o card não nasce. Criar o negócio à mão continua igual.")}
         </p>
       )}

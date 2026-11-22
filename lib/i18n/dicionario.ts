@@ -20268,8 +20268,8 @@ export const DICIONARIO: Traducoes = {
   "O período passou do limite de leitura: os números contam só as conversas mais recentes.": { es: "El período superó el límite de lectura: los números cuentan solo las conversaciones más recientes." },
   "Guardar o histórico anterior à vinculação": { es: "Guardar el historial anterior al vínculo" },
   "Conversas novas criam negócio no funil": { es: "Las conversaciones nuevas crean negocio en el embudo" },
-  "Ligado: cada conversa nova neste número abre um card no funil padrão.": {
-    es: "Activo: cada conversación nueva en este número abre una ficha en el embudo predeterminado.",
+  "Ligado: cada conversa nova neste número abre um card no funil.": {
+    es: "Activo: cada conversación nueva en este número abre una ficha en el embudo.",
   },
   "Desligado: a conversa chega, o contato nasce, a IA atende — só o card não nasce. Criar o negócio à mão continua igual.": {
     es: "Desactivado: la conversación llega, el contacto nace, la IA atiende; solo la ficha no nace. Crear el negocio a mano sigue igual.",
