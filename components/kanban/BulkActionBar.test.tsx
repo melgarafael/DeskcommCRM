@@ -339,7 +339,7 @@ describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (
       await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
       await user.click(within(caixa).getByRole("button", { name: "Levar" }));
       await within(caixa).findByTestId("resultado-do-lote");
-      await user.click(within(caixa).getAllByRole("button", { name: "Fechar" })[0]);
+      await user.click(within(caixa).getAllByRole("button", { name: "Fechar" })[0]!);
     }
 
     await levarSelecionados();

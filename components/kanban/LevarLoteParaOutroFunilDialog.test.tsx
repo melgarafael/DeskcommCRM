@@ -154,7 +154,7 @@ describe("LevarLoteParaOutroFunilDialog", () => {
       await user.click(screen.getByRole("button", { name: "Levar" }));
       await screen.findByTestId("resultado-do-lote");
 
-      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]);
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
 
       // Só o negócio cuja cópia existe no destino sai da seleção; o outro
       // (recusado sem cópia) continua selecionado para a pessoa tentar de novo.
@@ -166,13 +166,12 @@ describe("LevarLoteParaOutroFunilDialog", () => {
   });
 
   it("ao fechar depois de levar todos, entrega todos os que foram levados", async () => {
-    destinos([
-      {
-        id: "p2",
-        name: "Pós-venda",
-        stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
-      },
-    ]);
+    const pipeline = {
+      id: "p2",
+      name: "Pós-venda",
+      stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+    };
+    destinos([pipeline]);
     const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} } as never);
     const onConcluido = vi.fn();
     const user = userEvent.setup();
@@ -194,7 +193,7 @@ describe("LevarLoteParaOutroFunilDialog", () => {
       await user.click(screen.getByRole("button", { name: "Levar" }));
       await screen.findByTestId("resultado-do-lote");
 
-      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]);
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
 
       expect(onConcluido).toHaveBeenCalledWith(["a", "b"]);
     } finally {
@@ -203,13 +202,12 @@ describe("LevarLoteParaOutroFunilDialog", () => {
   });
 
   it("ao fechar sem nenhuma cópia criada, não mexe na seleção", async () => {
-    destinos([
-      {
-        id: "p2",
-        name: "Pós-venda",
-        stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
-      },
-    ]);
+    const pipeline = {
+      id: "p2",
+      name: "Pós-venda",
+      stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+    };
+    destinos([pipeline]);
     const post = vi
       .spyOn(apiClient, "post")
       .mockRejectedValueOnce(
@@ -235,7 +233,7 @@ describe("LevarLoteParaOutroFunilDialog", () => {
       await user.click(screen.getByRole("button", { name: "Levar" }));
       await screen.findByTestId("resultado-do-lote");
 
-      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]);
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
 
       expect(onConcluido).not.toHaveBeenCalled();
     } finally {
