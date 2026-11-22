@@ -337,6 +337,8 @@ describe("pausa e retomada automáticas pelo caminho que já existe (#4830)", ()
         if (sql.includes("pausada_pela_janela and coalesce(config->>'arquivada_em'"))
           return { rows: [{ ...campanha(), status: "paused", pausada_pela_janela: true }] };
         if (sql.includes("status='running' and id<>$3")) return { rows: [] };
+        if (sql.includes("set status='running',pausada_pela_janela=false"))
+          return { rows: [{ id: CAMPANHA_A }] };
         return { rows: [] };
       }),
     };
@@ -356,6 +358,36 @@ describe("pausa e retomada automáticas pelo caminho que já existe (#4830)", ()
     await expect(
       retomarCampanhasNaJanela(ocupado as never, ORG, TERCA_9H, FUSO),
     ).resolves.toEqual({ retomadas: [], esperando: [CAMPANHA_A] });
+  });
+
+  it("#4847: a pausa da pessoa que chega entre a leitura e a escrita do tick NÃO é desfeita", async () => {
+    // A rota `pause` não espera o bloqueio do tick. A corrida: o SELECT da
+    // varredura vê a campanha com a marca; antes do UPDATE, a pessoa aperta
+    // Pausar (marca vira false, status segue 'paused'). O UPDATE precisa
+    // conferir a marca de novo — senão a campanha volta a rodar sozinha.
+    const linha = { status: "paused", pausada_pela_janela: true };
+    const banco = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("pausada_pela_janela and coalesce(config->>'arquivada_em'"))
+          return { rows: [{ ...campanha(), ...linha }] };
+        if (sql.includes("status='running' and id<>$3")) {
+          linha.pausada_pela_janela = false; // a pausa manual chega aqui
+          return { rows: [] };
+        }
+        if (sql.startsWith("update prospecting_campaigns set status='running'")) {
+          const comMarca = /and pausada_pela_janela/.test(sql.slice(sql.indexOf(" where ")));
+          if (linha.status !== "paused" || (comMarca && !linha.pausada_pela_janela))
+            return { rows: [] };
+          linha.status = "running";
+          return { rows: [{ id: CAMPANHA_A }] };
+        }
+        return { rows: [] };
+      }),
+    };
+    await expect(
+      retomarCampanhasNaJanela(banco as never, ORG, TERCA_9H, FUSO),
+    ).resolves.toEqual({ retomadas: [], esperando: [] });
+    expect(linha.status).toBe("paused");
   });
 
   it("(b) fora da janela a varredura de pausa não pausa quem está dentro", async () => {

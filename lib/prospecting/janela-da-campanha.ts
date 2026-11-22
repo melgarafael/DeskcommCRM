@@ -203,11 +203,15 @@ export async function retomarCampanhasNaJanela(
     if (janela && !janelaDaCampanhaAberta(now, janela, timezone)) continue;
     try {
       await assertCanalLivre(db, org, linha.id, canalDaCampanha(linha));
-      await db.query(
-        "update prospecting_campaigns set status='running',pausada_pela_janela=false,error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2 and status='paused'",
+      // A marca entra no WHERE de novo, e não só no SELECT acima: a rota `pause`
+      // não espera o bloqueio do tick, então uma pausa da pessoa pode chegar
+      // entre a leitura e esta escrita. Ela zera a marca e o status continua
+      // 'paused'; sem a marca aqui, o tick desfaria a pausa de quem apertou.
+      const { rows: acordou } = await db.query<{ id: string }>(
+        "update prospecting_campaigns set status='running',pausada_pela_janela=false,error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2 and status='paused' and pausada_pela_janela returning id",
         [org, linha.id],
       );
-      retomadas.push(linha.id);
+      if (acordou.length > 0) retomadas.push(linha.id);
     } catch (error) {
       const ocupada =
         error instanceof ProspectingError && error.codigo === "prospecting_channel_busy";
