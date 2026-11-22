@@ -239,7 +239,7 @@ import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
-import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
+import { eTetoDoDia, janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
@@ -5791,7 +5791,7 @@ async function executarTurnoDoAgente(
             // `rescheduleJob` já usado pra janela horária), em vez de deixar o lead sem
             // resposta até a próxima mensagem dele chegar (ou nunca).
             if (
-              (chain.code === 'warmup_cap' || chain.code === 'daily_cap') &&
+              eTetoDoDia(chain.code) &&
               chain.nextAllowedAt !== undefined
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
