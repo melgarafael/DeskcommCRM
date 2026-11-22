@@ -28,6 +28,8 @@ interface ChannelKnobsRow {
   allow_sunday: boolean | null;
   /** O teto conta só a abordagem (#3851, 9215). NULL = régua de sempre (conta todo disparo). */
   teto_so_abordagem: boolean | null;
+  /** Teto diário próprio do follow-up (#4063). NULL = o default de `defaults.ts` (200). */
+  followup_daily_cap: number | null;
   /** Dias da prospecção (0642, `smallint[]`, 0=dom … 6=sáb). Coluna NOT NULL. */
   prospeccao_dias: number[] | null;
   timezone: string | null;
@@ -101,6 +103,31 @@ export function parseDiasDaProspeccao(value: unknown): number[] | null {
   return dias.length > 0 ? dias : null;
 }
 
+/**
+ * O teto do follow-up vindo do banco (#4063): inteiro positivo ou o default.
+ *
+ * Não é preciosismo de validação: a coluna é escrita pela ficha do canal (e por
+ * qualquer escritor futuro), e um `0` gravado por engano barraria TODO follow-up do
+ * número em silêncio — o oposto do que a opção existe para fazer —, enquanto um
+ * `null`/`NaN` deixaria a comparação sempre falsa e reabriria o buraco que este
+ * teto fecha. Em ambos os casos o default conservador é o desfecho honesto, com
+ * warn (ids não são PII).
+ */
+function tetoDoFollowupValido(
+  valor: number | null,
+  logger: Logger | undefined,
+  tenantId: string,
+  channelSessionId: string,
+): number {
+  if (valor === null || valor === undefined) return PACING_DEFAULTS.followupDailyCap;
+  if (Number.isInteger(valor) && valor > 0) return valor;
+  logger?.warn('followup_daily_cap inválido em channel_knobs — usando o default', {
+    tenantId,
+    channelSessionId,
+  });
+  return PACING_DEFAULTS.followupDailyCap;
+}
+
 export interface ChannelPacingConfig {
   knobs: PacingKnobs;
   /** null = sem linha em channel_knobs → o engine trata como idade 0 (conservador). */
@@ -124,7 +151,7 @@ export async function loadChannelKnobs(
     `select k.throttle_ms, k.jitter_max_ms, k.window_start_hour, k.window_end_hour,
             k.resposta_start_hour, k.resposta_end_hour,
             k.atraso_notar_ms, k.ms_por_caractere, k.atraso_minimo_ms, k.atraso_maximo_ms,
-            k.allow_sunday, k.teto_so_abordagem, k.prospeccao_dias, k.timezone,
+            k.allow_sunday, k.teto_so_abordagem, k.followup_daily_cap, k.prospeccao_dias, k.timezone,
             k.warmup_daily_caps, k.number_activated_at,
             o.timezone as org_timezone
      from organizations o
@@ -172,6 +199,12 @@ export async function loadChannelKnobs(
       // Opção por canal (#3851): NULL = desligada, a régua de sempre. Nenhuma
       // linha existente muda de comportamento por causa da coluna nova.
       tetoSoAbordagem: row.teto_so_abordagem ?? PACING_DEFAULTS.tetoSoAbordagem,
+      // Teto próprio do follow-up (#4063): o MESMO lugar dos outros limites do
+      // número. NULL = default. Valor inválido (zero, negativo, NaN vindo de
+      // escritor externo) também cai no default — um teto 0 barraria todo
+      // follow-up e um NaN nunca barraria nenhum; o default é o único valor que
+      // não mente sobre a intenção de quem gravou.
+      followupDailyCap: tetoDoFollowupValido(row.followup_daily_cap, logger, tenantId, channelSessionId),
       // Dias próprios da prospecção (0642). Inválido/vazio cai na regra antiga
       // (`allowSunday`), com warn — nunca fila parada em silêncio.
       prospeccaoDias: (() => {

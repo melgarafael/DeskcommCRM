@@ -10,7 +10,10 @@
  * dias próprios na prospecção) → caps diários (warm-up por idade do número;
  * limite do CRM injetado) → throttle+jitter.
  */
-import type { PacingKnobs, WarmupStep } from './defaults';
+// `PACING_DEFAULTS` por VALOR: é o fallback do teto do follow-up quando o knob
+// chega montado à mão sem o campo (#4063) — sem isso o teto seria `undefined`
+// e a comparação deixaria passar tudo.
+import { PACING_DEFAULTS, type PacingKnobs, type WarmupStep } from './defaults';
 
 export interface PacingState {
   /** Último envio deste número (qualquer dia) — base do throttle. */
@@ -97,7 +100,13 @@ export interface PacingInput {
   rng?: () => number;
 }
 
-export type PacingVetoCode = 'outside_window' | 'warmup_cap' | 'daily_cap';
+/**
+ * `followup_cap` (#4063) é o teto PRÓPRIO do follow-up, e só ele: nasce quando a
+ * opção `tetoSoAbordagem` está ligada e os follow-ups do dia chegaram a
+ * `followupDailyCap`. Código separado de `warmup_cap`/`daily_cap` de propósito —
+ * quem lê o trace precisa saber qual régua bateu, e a saída (amanhã) é a mesma.
+ */
+export type PacingVetoCode = 'outside_window' | 'warmup_cap' | 'daily_cap' | 'followup_cap';
 
 export type PacingDecision =
   | { allow: true; waitMs: number }
@@ -168,6 +177,38 @@ export function decidePacing(input: PacingInput): PacingDecision {
   // `prospeccao` prevalece aqui também: abordagem fria É a 1ª mensagem a pessoa
   // nova, então um chamador que declare as duas coisas não abre o teto por ela.
   if (soAbordagem && !prospeccao && input.abordagem === false) {
+    // ─── O FOLLOW-UP NÃO FICA SEM TETO (#4063) ────────────────────────────────
+    //
+    // A opção acima tira o teto de ABORDAGEM do follow-up — e é isso que se
+    // queria. O que ela fazia junto era deixar o follow-up sem teto NENHUM: com
+    // a chave ligada, 200, 300, 400 follow-ups no mesmo dia saíam todos, porque
+    // a única régua que os media era a que a opção desliga. Medido antes: 380
+    // follow-ups num dia, zero vetos.
+    //
+    // O teto DAQUI é outro número, com outro nome e outro motivo: segurança de
+    // VOLUME do que já está em conversa. `knobs.followupDailyCap` vem do mesmo
+    // lugar que os demais limites do canal (`channel_knobs`), e `??` cobre quem
+    // monta `PacingKnobs` à mão (testes, chamadores antigos) — nesse caso vale o
+    // default conservador, nunca "sem teto".
+    //
+    // A conta sai do estado que já desceu na MESMA consulta: `sentToday` conta
+    // todo disparo do dia (resposta não entra, 9061) e `abordagensToday` o recorte
+    // que é abordagem; a diferença é o follow-up. Sem `abordagensToday` (estado
+    // montado à mão) o recorte vale 0, ou seja, conta tudo como follow-up: falha
+    // FECHADO, como no `contagemDoTeto` abaixo.
+    const tetoDoFollowup = knobs.followupDailyCap ?? PACING_DEFAULTS.followupDailyCap;
+    const followupsHoje = Math.max(0, state.sentToday - (state.abordagensToday ?? 0));
+    if (followupsHoje >= tetoDoFollowup) {
+      const nextAllowedAt = addMs(nextDayOpen(now, knobs, diasProspeccao), jitterOf(rng, knobs));
+      return {
+        allow: false,
+        code: 'followup_cap',
+        nextAllowedAt,
+        reason:
+          `teto diário de follow-up atingido (${tetoDoFollowup}/dia, teto próprio de segurança do ` +
+          `número); agende para ${formatInTz(nextAllowedAt, knobs.timezone)} (próxima abertura + jitter)`,
+      };
+    }
     return { allow: true, waitMs: throttleWaitMs(now, state, knobs, rng) };
   }
 

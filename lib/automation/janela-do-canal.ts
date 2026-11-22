@@ -115,6 +115,11 @@ export async function knobsDoCanal(
     // `abordagem` omitido — que o motor já trata como "conta no teto". Ler o
     // knob aqui daria a impressão de que ele vale neste caminho sem valer.
     tetoSoAbordagem: PACING_DEFAULTS.tetoSoAbordagem,
+    // O teto próprio do follow-up (#4063) NÃO vale neste caminho, pelo mesmo motivo
+    // do knob acima: a automação não classifica abordagem x follow-up, então todo
+    // envio dela declara `abordagem` omitido (= conta no teto de abordagem) e o teto
+    // do follow-up — que é o ramo do `abordagem: false` — nunca é alcançado.
+    followupDailyCap: PACING_DEFAULTS.followupDailyCap,
   };
 }
 

@@ -1788,11 +1788,15 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // O teto entra nesta conta e não numa consulta própria: "1ª mensagem a pessoa nova"
     // é exatamente a pergunta que o disclosure já faz. A condição ganha o knob porque
     // canal com a opção desligada (o default) não pode pagar uma query nova por envio.
+    //
+    // O NÚMERO vai junto (#4063): "já recebeu" é deste canal, não da organização. Sem
+    // ele, a pessoa abordada pelo número A contava como abordada para o B — o B não se
+    // apresentava e a abordagem dele não entrava no teto (virava follow-up).
     const tetoSoAbordagem = pacingCfg.knobs.tetoSoAbordagem === true;
     const precisaSaberPrimeiroEnvio =
       disclosure !== null || args.lgpd !== undefined || tetoSoAbordagem;
     const isFirstOutbound = precisaSaberPrimeiroEnvio
-      ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
+      ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId, args.channelSessionId)) === 0
       : false;
     // ABORDAGEM: resposta nunca é abordagem (a pessoa veio até nós); disparo é
     // abordagem quando não houve envio accepted anterior a este contato. Sem

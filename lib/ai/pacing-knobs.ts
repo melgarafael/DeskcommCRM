@@ -200,6 +200,8 @@ export interface ChannelKnobsRow {
   allow_sunday: boolean | null;
   /** Teto só na abordagem (#3851). Ausente/null = régua de sempre. */
   teto_so_abordagem?: boolean | null;
+  /** Teto próprio do follow-up (#4063). Ausente/null = default (200/dia). */
+  followup_daily_cap?: number | null;
   /** Dias da prospecção (0642). Ausente/null = default (todos os dias). */
   prospeccao_dias?: number[] | null;
   timezone: string | null;
@@ -240,6 +242,7 @@ export function effectiveKnobs(row: ChannelKnobsRow | null, fusoDaOrg?: string |
     respostaEndHour: row?.resposta_end_hour ?? row?.window_end_hour ?? PACING_DEFAULTS.respostaEndHour,
     allowSunday: row?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
     tetoSoAbordagem: row?.teto_so_abordagem ?? PACING_DEFAULTS.tetoSoAbordagem,
+    followupDailyCap: row?.followup_daily_cap ?? PACING_DEFAULTS.followupDailyCap,
     // Dias próprios da prospecção (0642). Inválido/vazio = todos os dias, que
     // é o default do banco e o comportamento de antes — display não veta.
     prospeccaoDias: parseDiasDaProspeccao(row?.prospeccao_dias) ?? PACING_DEFAULTS.prospeccaoDias,

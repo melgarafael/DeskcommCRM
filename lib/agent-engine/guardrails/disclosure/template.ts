@@ -11,6 +11,9 @@
  */
 import type pg from 'pg';
 import type { Queryable } from '../../queue/queue';
+// Valor (não tipo): a régua de "de qual número é este job" mora num lugar só —
+// o claim, o watchdog e esta consulta perguntam do mesmo jeito (#4063).
+import { CANAL_DO_JOB_SQL } from '../../queue/queue';
 
 /** Modo do gate quando a 1ª mensagem sai sem disclosure (knob, DISCLOSURE_MODE). */
 export type DisclosureMode = 'inject' | 'veto';
@@ -85,19 +88,52 @@ export async function loadDisclosureTemplate(db: Queryable, tenantId: string): P
  * contam: um 'queued'/'failed' não alcançou o lead, então a próxima tentativa ainda é a
  * primeira e leva o disclosure. organization_id/contact_id de fonte confiável (row do job — regra dura nº 1).
  *
+ * ─── #4063: "1º outbound" é do NÚMERO, não da empresa ────────────────────────
+ *
+ * A pergunta que os três chamadores fazem (disclosure F4-05, LGPD F4-09 e o
+ * `abordagem` do teto #3851) é "esta PESSOA já recebeu uma mensagem NOSSA?" — e
+ * "nossa" era a organização inteira. Com dois números na mesma empresa, quem
+ * recebeu pelo número A contava como já abordado para o B: o B não se apresentava
+ * (o disclosure é por número, é o número que o cliente vê) e a abordagem do B
+ * deixava de contar no teto, porque o gate a lia como follow-up. Medido: com um
+ * envio `accepted` no A e um `queued` no B, a função devolvia 1 para o B.
+ *
+ * `channelSessionId` presente fecha a conta no canal do job — `CANAL_DO_JOB_SQL`,
+ * a MESMA régua que o claim e o watchdog usam para dizer de qual número é um job
+ * (payload direto ou a conversa do atendimento). Sem o parâmetro o comportamento
+ * é o de antes, de propósito: a prévia do agente (`agent/preview.ts`) monta o
+ * contexto sem número e continua perguntando pela organização.
+ *
  * Devolve 0 ou 1, nunca o total: os chamadores só comparam com 0, e um `count(*)` por
  * envio contava todas as linhas casadas para responder "existe?"; o `exists` para na
  * primeira. ponytail: o nome
  * ficou `count` para não abrir conflito em `before-send.ts`; vira `hasPriorAcceptedSend`
  * quando aquela região estiver livre.
  */
-export async function countPriorAcceptedSends(db: Queryable, tenantId: string, leadId: string): Promise<number> {
+export async function countPriorAcceptedSends(
+  db: Queryable,
+  tenantId: string,
+  leadId: string,
+  channelSessionId?: string,
+): Promise<number> {
+  if (channelSessionId === undefined) {
+    const { rows } = await db.query<{ existe: boolean }>(
+      `select exists(
+         select 1 from send_ledger
+         where organization_id = $1 and contact_id = $2 and status = 'accepted'
+       ) as existe`,
+      [tenantId, leadId],
+    );
+    return rows[0]?.existe ? 1 : 0;
+  }
   const { rows } = await db.query<{ existe: boolean }>(
     `select exists(
-       select 1 from send_ledger
-       where organization_id = $1 and contact_id = $2 and status = 'accepted'
+       select 1 from send_ledger l
+       join job_queue j on j.id = l.job_id
+       where l.organization_id = $1 and l.contact_id = $2 and l.status = 'accepted'
+         and ${CANAL_DO_JOB_SQL} = $3
      ) as existe`,
-    [tenantId, leadId],
+    [tenantId, leadId, channelSessionId],
   );
   return rows[0]?.existe ? 1 : 0;
 }

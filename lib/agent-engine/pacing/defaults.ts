@@ -104,6 +104,27 @@ export interface PacingKnobs {
    * abrir a ficha.
    */
   tetoSoAbordagem: boolean;
+  /**
+   * TETO DIÁRIO PRÓPRIO DO FOLLOW-UP — o teto de SEGURANÇA de quem já foi
+   * abordado (#3851/#4063).
+   *
+   * Sem ele, ligar `tetoSoAbordagem` abria um buraco: o follow-up deixava de gastar
+   * e de esperar o teto de abordagem (que é o objetivo da opção), mas nada o
+   * segurava — 200, 300, 400 follow-ups no mesmo dia saíam todos. O que leva a
+   * banimento é o número falar em VOLUME, e follow-up é mensagem como qualquer
+   * outra: a opção tira a régua errada, não a única.
+   *
+   * Conta os disparos do dia que NÃO são abordagem (`pacing_ledger.abordagem`) nem
+   * resposta — a mesma conta que o estado já traz. É um teto SEPARADO do de
+   * abordagem: um número pode bater o teto de abordagem (20) e continuar falando
+   * com quem já conhece, mas não sem limite.
+   *
+   * Lido do mesmo lugar que os outros limites: os knobs do canal
+   * (`channel_knobs.followup_daily_cap`; NULL = este default). Só arma com
+   * `tetoSoAbordagem` ligado — desligado, a régua é a de sempre (todo disparo conta
+   * no teto de abordagem/warm-up) e este número não é lido.
+   */
+  followupDailyCap: number;
   /** Degraus de warm-up ordenados por minAgeDays crescente (o primeiro cobre idade 0). */
   warmupDailyCaps: WarmupStep[];
 }
@@ -154,6 +175,12 @@ export const PACING_DEFAULTS: PacingKnobs = {
   // Desligado: o teto do dia mede todo disparo (abordagem + follow-up de quem já
   // foi abordado), como sempre mediu. Ligar é decisão do dono do canal, um por um.
   tetoSoAbordagem: false,
+  // Teto de SEGURANÇA do follow-up (#4063): 200 disparos/dia que não são abordagem
+  // nem resposta. Alto de propósito — o volume de retomada de uma operação real
+  // cabe nele — e finito de propósito: com a opção ligada, o follow-up não tem
+  // mais o teto de abordagem segurando, e sem um número aqui a única coisa entre
+  // o número e um blast seria a janela horária.
+  followupDailyCap: 200,
   // Número sem linha em channel_knobs é tratado como idade 0 (o degrau mais
   // conservador) até alguém registrar number_activated_at.
   warmupDailyCaps: [

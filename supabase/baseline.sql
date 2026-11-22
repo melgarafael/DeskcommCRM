@@ -75112,3 +75112,33 @@ comment on column public.campaigns.provider_broadcast_id is
   'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';
+
+
+-- ---- teto próprio do follow-up (migration 1043, #4063) ----
+-- A opção `teto_so_abordagem` tira o teto de ABORDAGEM do follow-up — era o
+-- pedido — e com isso o follow-up ficava sem teto nenhum: 200, 300, 400 no mesmo
+-- dia saíam todos. `followup_daily_cap` é o teto de SEGURANÇA desse volume,
+-- separado do de abordagem, lido pelo mesmo `loadChannelKnobs` e só armado com a
+-- opção ligada. NULL = default do motor (200/dia). O porquê inteiro está no
+-- cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists followup_daily_cap integer;
+
+comment on column public.channel_knobs.followup_daily_cap is
+  'Teto diário PRÓPRIO do follow-up (disparo que não é abordagem nem resposta), separado do teto de abordagem. Só arma com teto_so_abordagem ligado; desligado, o follow-up conta no teto de sempre. NULL = default do motor (200/dia). Inteiro > 0; valor inválido cai no default com warn (#4063, refs #3851).';
+
+do $followup_daily_cap$ begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_knobs_followup_daily_cap_check'
+       and conrelid = 'public.channel_knobs'::regclass
+  ) then
+    alter table public.channel_knobs
+      add constraint channel_knobs_followup_daily_cap_check
+      check (followup_daily_cap is null or followup_daily_cap > 0);
+  end if;
+end $followup_daily_cap$;
+
+notify pgrst, 'reload schema';
