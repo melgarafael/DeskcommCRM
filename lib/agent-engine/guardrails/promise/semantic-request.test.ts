@@ -184,7 +184,9 @@ describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", ()
       await classifyPromise(
         db,
         cfg,
-        { tenantId: "tenant-a", leadId: "contato-a" },
+        // Um turno por caso: o veredito é guardado por conteúdo + turno (#4665),
+        // e os dois casos têm conteúdo idêntico depois do filtro.
+        { tenantId: "tenant-a", leadId: "contato-a", jobId: `turno-${Object.keys(mudanca)[0]}` },
         {
           candidate: "Sua consulta está confirmada.",
           bookingEvidence: [{ ...comprovante, ...mudanca }],

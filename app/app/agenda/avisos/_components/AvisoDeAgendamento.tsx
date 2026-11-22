@@ -82,6 +82,7 @@ function rascunhoDoEstado(estado: EstadoDaTelaDoAvisoDeAgendamento): Rascunho {
       grupo: SEM_GRUPO,
       ligado: false,
       lembrarAntes: false,
+      resumoSoComAgendamento: false,
     };
   }
   return {
@@ -91,6 +92,7 @@ function rascunhoDoEstado(estado: EstadoDaTelaDoAvisoDeAgendamento): Rascunho {
     grupo: estado.config.grupo ?? SEM_GRUPO,
     ligado: estado.config.ligado,
     lembrarAntes: estado.config.lembrar_antes === true,
+    resumoSoComAgendamento: estado.config.resumo_so_com_agendamento === true,
   };
 }
 
@@ -168,6 +170,9 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
         grupo: rascunho.grupo === SEM_GRUPO ? null : rascunho.grupo,
         ligado: rascunho.ligado,
         lembrar_antes: rascunho.ligado ? rascunho.lembrarAntes === true : false,
+        // Desligar os avisos não apaga esta escolha: ela volta como estava
+        // quando os avisos forem religados.
+        resumo_so_com_agendamento: rascunho.resumoSoComAgendamento === true,
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -365,6 +370,29 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
           <p className="text-xs text-muted-foreground">
             {t(
               "Nos mesmos horários do lembrete do cliente, definidos em cada tipo de atendimento (por exemplo, 1 dia e 1 hora antes). Se a reunião for pelo Google Meet, o link vai junto.",
+            )}
+          </p>
+          {!rascunho.ligado ? (
+            <p className="text-xs text-muted-foreground">{t("Ligue os avisos de agendamento acima para usar esta opção.")}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border p-3" data-testid="resumo-so-com-agendamento">
+        <Switch
+          id="resumo-so-com-agendamento"
+          checked={rascunho.ligado && rascunho.resumoSoComAgendamento === true}
+          disabled={!rascunho.ligado}
+          onCheckedChange={(v) => setRascunho((r) => ({ ...r, resumoSoComAgendamento: v }))}
+          aria-label={t("Enviar o resumo do dia só quando houver agendamento")}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="resumo-so-com-agendamento" className="text-sm font-medium">
+            {t("Enviar o resumo do dia só quando houver agendamento")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "No dia sem nenhum horário, o resumo das 7h não sai. Se algo foi marcado, remarcado ou cancelado durante a noite, ele sai mesmo assim. Os avisos de cada horário continuam chegando.",
             )}
           </p>
           {!rascunho.ligado ? (

@@ -39,6 +39,15 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Desligado `catalogo_por_feed` (o padrão), a rota responde 404 antes de
  * qualquer leitura ou busca de URL, como as rotas dos outros módulos.
+ *
+ * A chave é perguntada DUAS vezes: a primeira sem empresa, que é o TETO da
+ * instalação (é a que responde antes do `requireRole`); a segunda com a
+ * organização que o COOKIE resolveu, lida de `organization_modules` (#4871). O
+ * cron que consome esta fonte (`catalog-feed-sync`) já decide por empresa desde
+ * o #4969 — sem a segunda pergunta aqui, a empresa que desligou o módulo
+ * continuaria publicando pela tela o que o trabalho de fundo passou a recusar.
+ * Empresa sem linha herda a instalação; leitura ilegível fecha, o mesmo lado de
+ * `modulosLigados`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -109,7 +118,13 @@ const COLUNAS_DA_COMPARACAO = "id,id_externo,nome,descricao,preco_cents,fotos,qu
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  if (!(await moduloLigado(createAdminClient(), "catalogo_por_feed"))) {
+  const admin = createAdminClient();
+
+  // ─── O TETO: a INSTALAÇÃO, antes de qualquer leitura ──────────────────────
+  // Desligada, a rota responde 404 antes até de saber de quem é a requisição —
+  // a mesma ordem do cron (`sincronizarFontes`), e o motivo de `requireRole` não
+  // ser chamado aqui: quem não tem o módulo no servidor não recebe nem 401.
+  if (!(await moduloLigado(admin, "catalogo_por_feed"))) {
     return fail("not_found", "Not found", 404, { requestId });
   }
 
@@ -120,6 +135,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
+
+  // ─── A EMPRESA: a linha dela em `organization_modules` (#4871) ────────────
+  // A instalação é o teto; a empresa pode desligar o que o servidor oferece. Sem
+  // esta pergunta, a empresa que desligou o Catálogo por feed continuava
+  // publicando e gravando preço por aqui — e o cron, que já recebe a empresa
+  // (#4969), recusava a mesma fonte. Aqui é o MESMO 404 dos outros módulos e o
+  // da instalação desligada: nada de código novo, e nada lido nem buscado antes
+  // disto. Empresa sem linha herda a instalação; leitura ilegível fecha.
+  if (!(await moduloLigado(admin, "catalogo_por_feed", orgId))) {
+    return fail("not_found", "Not found", 404, { requestId });
+  }
 
   const parsed = corpoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -270,7 +296,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (fonteSalva) {
       // A conta de falhas recomeçou: o aviso de "não está sincronizando" da Central
       // deixa de ser verdade. Service role, filtrado pela organização do COOKIE.
-      await createAdminClient()
+      await admin
         .from("agent_inbox_items")
         .update({ status: "resolved", resolved_at: new Date().toISOString() })
         .eq("organization_id", orgId)

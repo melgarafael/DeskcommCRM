@@ -41,15 +41,25 @@
  *
  * Cursor pagination opaco base64 (created_at + id), como as demais rotas.
  * Filtro opcional ?status=.
+ *
+ * ## Sessão OU token de integração (Spec 33, R1)
+ *
+ * O token precisa de `config:read` e de papel admin (`tokenRole`), como o irmão
+ * `GET /ai/agents/:id`. A organização sai de `authz.organizationId` (linha do
+ * token, nunca do path). No ramo do token o cliente é a service role, que
+ * ignora a RLS: o `organization_id` da consulta abaixo deixou de ser reforço e
+ * é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { logger } from "@/lib/logger";
-import { createClient } from "@/lib/supabase/server";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -109,7 +119,7 @@ export interface ConteudoDoTeste {
   tool_calls: unknown;
 }
 
-type ClienteDeSessao = Awaited<ReturnType<typeof createClient>>;
+type ClienteDeSessao = SupabaseClient;
 
 /**
  * Busca, para as linhas de TESTE desta página, o que o run de prévia guardou:
@@ -122,10 +132,10 @@ type ClienteDeSessao = Awaited<ReturnType<typeof createClient>>;
  * `llm_calls.preview_run_id`, então a busca é `in (ids)` sobre a PK: UMA
  * consulta por página, indexada, e não um `select` por linha.
  *
- * Filtrar por organização aqui seria o reflexo errado: `id` já é único, o valor
- * veio de uma linha que a RLS do chamador liberou, e a policy de
- * `ai_agent_runs` decide o resto. Um filtro por organização A MAIS não protegeria
- * nada e daria a impressão de que a proteção mora nesta consulta.
+ * O filtro por organização é obrigatório aqui, embora `id` já seja único: pela
+ * sessão a policy de `ai_agent_runs` repete o recorte, mas pelo token (Spec 33)
+ * o cliente é a service role, que ignora a RLS, e esta consulta passa a ser a
+ * única barreira entre a página e o run de outra organização.
  *
  * Falhar aqui NÃO derruba a lista: a aba continua com custo, tokens e status, e
  * a linha do teste volta sem texto — o estado de antes do conserto. O aviso vai
@@ -134,6 +144,7 @@ type ClienteDeSessao = Awaited<ReturnType<typeof createClient>>;
  */
 async function textosDoTeste(
   supabase: ClienteDeSessao,
+  organizationId: string,
   chamadas: readonly LlmCallRow[],
   requestId: string,
 ): Promise<Map<string, ConteudoDoTeste>> {
@@ -151,6 +162,7 @@ async function textosDoTeste(
   const { data, error } = await supabase
     .from("ai_agent_runs")
     .select("id, input_text, output_text, tool_calls")
+    .eq("organization_id", organizationId)
     .in("id", ids);
 
   if (error) {
@@ -251,10 +263,18 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, supabase } = authz;
 
   const sp = req.nextUrl.searchParams;
   const parsed = runsListQuerySchema.safeParse({
@@ -270,13 +290,12 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
   let query = supabase
     .from("llm_calls")
     .select(CALL_COLUMNS)
-    // `organization_id` explícito mesmo com RLS: é a convenção do repo e o que
-    // sobrevive a alguém trocar o client por um admin um dia.
-    .eq("organization_id", activeOrg.orgId)
+    // `organization_id` explícito: pela sessão a RLS repete o filtro; pelo
+    // token o cliente é a service role e este é o único.
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -301,7 +320,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const chamadas = (data ?? []) as unknown as LlmCallRow[];
   // #4426: as linhas de TESTE levam a pergunta e a resposta; as reais ficam sem
   // texto (o mapa só tem as prévias desta página).
-  const textos = await textosDoTeste(supabase, chamadas, requestId);
+  const textos = await textosDoTeste(supabase, organizationId, chamadas, requestId);
   const rows = chamadas.map((c) =>
     paraLinhaDeExecucao(c, (c.preview_run_id && textos.get(c.preview_run_id)) || null),
   );

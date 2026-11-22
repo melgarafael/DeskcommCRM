@@ -11,6 +11,10 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
@@ -60,7 +64,21 @@ async function rodarVencimento(
   const vencidas = encontrarPropostasVencidas(candidatas ?? [], new Date(), fusoPorOrganizacao);
   if (vencidas.length === 0) return { vencidas: 0 };
 
-  for (const p of vencidas) {
+  // A camada POR EMPRESA (#4871): o cron é GLOBAL, então a pergunta é feita por
+  // organização, uma vez cada, antes de qualquer escrita. `moduloLigado` já
+  // aplica as duas réguas de uma vez — instalação desligada é teto (a rodada nem
+  // chega aqui) e a linha `desligado` da empresa tira o módulo dela. Leitura que
+  // falha devolve `false` (falha fechada), então a empresa fica de fora da
+  // rodada em vez de ser vencida sem permissão.
+  const organizacoesPermitidas = new Set<string>();
+  for (const orgId of new Set(vencidas.map((p) => p.organization_id))) {
+    if (await moduloLigado(admin, "propostas", orgId)) organizacoesPermitidas.add(orgId);
+  }
+  const aVencer = vencidas.filter((p) => organizacoesPermitidas.has(p.organization_id));
+  if (aVencer.length === 0) return { vencidas: 0 };
+
+  const idiomas = new Map<string, Idioma>();
+  for (const p of aVencer) {
     const { error: updErr } = await admin
       .from("crm_proposals")
       .update({ status: "vencida" })
@@ -89,12 +107,17 @@ async function rodarVencimento(
       .eq("status", "open")
       .maybeSingle();
     if (!existente) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, p.organization_id, idiomas);
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: p.organization_id,
         kind: "proposal_expired_notice",
         severity: "warn",
-        title: "Uma proposta venceu sem decisão do cliente",
-        body: "O prazo de validade passou e ninguém marcou aceite ou recusa. Reveja a proposta e decida os próximos passos com o cliente.",
+        title: traduzir("Uma proposta venceu sem decisão do cliente", idioma),
+        body: traduzir(
+          "O prazo de validade passou e ninguém marcou aceite ou recusa. Reveja a proposta e decida os próximos passos com o cliente.",
+          idioma,
+        ),
         ref_kind: "proposal",
         ref_id: p.id,
       });
@@ -104,7 +127,7 @@ async function rodarVencimento(
     }
   }
 
-  return { vencidas: vencidas.length };
+  return { vencidas: aVencer.length };
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -115,7 +138,15 @@ async function handle(req: NextRequest): Promise<Response> {
 
   let result: VencimentoResult;
   try {
-    result = await rodarVencimento(createAdminClient(), requestId);
+    const admin = createAdminClient();
+    // #4871: `propostas` é o módulo dono destas linhas. Instalação desligada não
+    // roda — a mesma régua dos outros crons do módulo (rotas 404, cron pula) — e a
+    // resposta diz POR QUE a rodada saiu, em vez de devolver `vencidas: 0`, que se
+    // confunde com "nada vencia hoje".
+    if (!(await moduloLigado(admin, "propostas"))) {
+      return ok({ pulado: "modulo_desligado" }, { requestId });
+    }
+    result = await rodarVencimento(admin, requestId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[proposal-expiry] falhou", { error: detail, requestId });

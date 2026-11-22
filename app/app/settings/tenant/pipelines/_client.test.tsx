@@ -17,7 +17,7 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { customFieldSchema } from "@/lib/schemas/settings";
+import { customFieldSchema, MAX_CAMPOS_DO_NEGOCIO } from "@/lib/schemas/settings";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -967,10 +967,18 @@ describe("o botão de acrescentar campo e a cota do negócio (#3111)", () => {
     expect(screen.getByRole("button", { name: /Adicionar campo/i })).toBeInTheDocument();
   });
 
-  it("50 campos do negócio escondem o botão, com ou sem contato junto", () => {
-    render(<PipelinesClient pipelines={[funilCom(50, 5)]} podeEditarConfig />);
+  it("o teto de campos do negócio esconde o botão, com ou sem contato junto", () => {
+    render(<PipelinesClient pipelines={[funilCom(MAX_CAMPOS_DO_NEGOCIO, 5)]} podeEditarConfig />);
     abrirEditores();
     expect(screen.queryByRole("button", { name: /Adicionar campo/i })).toBeNull();
+  });
+
+  it("um campo abaixo do teto ainda mostra o botão (#4780: o teto é 100)", () => {
+    render(
+      <PipelinesClient pipelines={[funilCom(MAX_CAMPOS_DO_NEGOCIO - 1, 5)]} podeEditarConfig />,
+    );
+    abrirEditores();
+    expect(screen.getByRole("button", { name: /Adicionar campo/i })).toBeInTheDocument();
   });
 });
 
@@ -1674,6 +1682,73 @@ describe("mostrar no resumo da passagem (#4303)", () => {
       settings: { fields: [{ key: "cpf", label: "CPF", type: "text", escopo: "contato" }] },
     });
     expect(screen.queryByLabelText("Mostrar no resumo da passagem — CPF")).toBeNull();
+  });
+});
+
+/**
+ * O INTERRUPTOR "A IA PODE LER ESTE CAMPO" (issue #4669).
+ *
+ * É a autorização que os dois caminhos do modelo consultam. Nasce DESLIGADA e
+ * desmarcar APAGA a chave — a ausência é o desmarcado, então o funil que
+ * ninguém tocou não muda de forma ao abrir esta tela.
+ */
+describe("a IA pode ler este campo (#4669)", () => {
+  const FUNIL_DA_IA: PipelineRow = {
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Clínica",
+    slug: "clinica",
+    vocabulary: null,
+    settings: {
+      fields: [{ key: "condicao", label: "Condição de saúde", type: "text" }],
+    },
+  };
+  const FUNIL_DA_IA_LIGADO: PipelineRow = {
+    ...FUNIL_DA_IA,
+    settings: {
+      fields: [
+        { key: "condicao", label: "Condição de saúde", type: "text", ia_pode_ler: true },
+      ],
+    },
+  };
+
+  const tela = (p: PipelineRow) => {
+    render(<PipelinesClient pipelines={[p]} podeEditarConfig />);
+    abrirEditores();
+  };
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("vem DESLIGADO — campo sem a marca não vai ao modelo", () => {
+    tela(FUNIL_DA_IA);
+    expect(screen.getByLabelText("A IA pode ler este campo — Condição de saúde")).not.toBeChecked();
+  });
+
+  it("marcar grava a autorização no campo", () => {
+    tela(FUNIL_DA_IA);
+    fireEvent.click(screen.getByLabelText("A IA pode ler este campo — Condição de saúde"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]?.ia_pode_ler).toBe(true);
+  });
+
+  it("desmarcar APAGA a chave — e aí o campo volta a ser ilegível para a IA", () => {
+    tela(FUNIL_DA_IA_LIGADO);
+    const caixa = screen.getByLabelText("A IA pode ler este campo — Condição de saúde");
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]).not.toHaveProperty("ia_pode_ler");
+  });
+
+  it("campo do CONTATO não oferece o interruptor — o valor dele não está no card", () => {
+    tela({
+      ...FUNIL_DA_IA,
+      settings: { fields: [{ key: "cpf", label: "CPF", type: "text", escopo: "contato" }] },
+    });
+    expect(screen.queryByLabelText("A IA pode ler este campo — CPF")).toBeNull();
   });
 });
 

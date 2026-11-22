@@ -12,8 +12,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * índices únicos imediatos cobram) vivem em `lib/leads/stage-operations.ts`,
  * compartilhadas com o agente de IA — BRIEFING §3, Decisão 4.
  *
- * Auth: sessão por cookie, papel manager+. `organization_id` sai do JWT — nunca
- * do body nem da URL.
+ * Auth: sessão por cookie, papel manager+, OU Bearer `dsk_…` com `config:write` e
+ * papel admin (`tokenRole`). `organization_id` sai do JWT ou da linha do token —
+ * nunca do body nem da URL. No token o cliente é o admin (sem RLS): a lib lê o
+ * funil com o filtro de organização ANTES de escrever (funil, etapa ou destino
+ * de outra organização = 404/422, sem escrita), e o audit leva o token em
+ * `actor_api_token_id`. Arquivar move negócios e grava a atividade de cada card
+ * com o ator do token (sistema, nunca uma pessoa).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -21,9 +26,9 @@ import { z } from "zod";
 
 import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { arquivarEtapa, atualizarEtapa } from "@/lib/leads/stage-operations";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +70,30 @@ const bodySchema = z
      * aqui é mandar a frase em português antes de tocar no banco.
      */
     expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+    /**
+     * A cor da etapa, `#rrggbb` (`crm_stages.color`), ou `null` para voltar ao
+     * padrão de hoje. O CHECK `crm_stages_color_format` já recusa outro formato,
+     * mas com 23514 cru: aqui a recusa vira frase em português antes do banco.
+     * Item 2 da #4802 — a escrita que faltava para o campo que o Kanban pinta.
+     */
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "A cor da etapa é um hex de seis dígitos, como #0091ff.")
+      .nullable()
+      .optional(),
+    /**
+     * O CRITÉRIO da etapa (`crm_stages.description`) — quando um negócio entra
+     * nela, em texto livre. `null` limpa e a etapa volta a "sem critério" na
+     * leitura do agente.
+     *
+     * ⚠️ SEM `.max()` AQUI, e é de propósito: o teto e o `trim` vivem em
+     * `validarDescricaoDeEtapa`/`normalizarDescricaoDeEtapa`
+     * (`lib/leads/stage-editing.ts`), a MESMA função que a tela e o MCP usam. Um
+     * `.max(500)` no Zod contaria ANTES do `trim`, então 500 caracteres com um
+     * espaço na ponta passariam na tela (que recorta) e tomariam 422 aqui — duas
+     * réguas para a mesma frase.
+     */
+    description: z.string().nullable().optional(),
   })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: "Nada para alterar." });
@@ -74,9 +103,17 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const { id: pipelineId, stageId } = await ctx.params;
 
@@ -95,13 +132,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
   }
 
-  const supabase = await createClient();
   try {
     const { funil } = await atualizarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       { pipelineId, stageId, pedido: parsed.data },
@@ -117,19 +154,27 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
 
   const { id: pipelineId, stageId } = await ctx.params;
   const destinoId = req.nextUrl.searchParams.get("destino");
 
-  const supabase = await createClient();
   try {
     const { funil } = await arquivarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       { pipelineId, stageId, destinoId },

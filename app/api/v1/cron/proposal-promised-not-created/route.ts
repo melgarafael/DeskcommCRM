@@ -9,8 +9,11 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
-import { modulosLigados } from "@/lib/instalacao/modulos";
+import { moduloLigado, modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { TaskSourceKind } from "@/lib/tarefas/vocabulario-de-origem";
@@ -63,15 +66,26 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
 
   const { data: orgs, error: orgsErr } = await admin.from("organizations").select("id, settings");
   if (orgsErr) throw new Error(`query_orgs_failed: ${orgsErr.message}`);
-  const modulos = await modulosLigados(admin);
-  const orgsLigadas = new Set(
-    (orgs ?? []).filter((o) => capacidadesLigadas(o.settings, modulos).includes("propostas")).map((o) => o.id),
-  );
+
+  // A camada POR EMPRESA (#4871): o cron é GLOBAL, e a lista de módulos era lida
+  // UMA vez, sem organização — a empresa que desligou `propostas` em Módulos por
+  // empresa continuava recebendo o aviso, porque a instalação ligada vencia a
+  // linha dela. Agora a leitura é por empresa: `modulosLigados(admin, org)` já
+  // aplica a instalação como teto e a linha `desligado` como exceção, e
+  // `capacidadesLigadas` continua exigindo a chave da própria empresa em
+  // `settings`. Leitura que falha devolve lista vazia (falha fechada): a empresa
+  // fica de fora desta rodada em vez de ser avisada sem permissão.
+  const orgsLigadas = new Set<string>();
+  for (const o of orgs ?? []) {
+    const modulos = await modulosLigados(admin, o.id);
+    if (capacidadesLigadas(o.settings, modulos).includes("propostas")) orgsLigadas.add(o.id);
+  }
 
   const achadas = encontrarPromessasSemProposta(
     { tarefas: tarefas ?? [], propostas: propostas ?? [], orgsLigadas },
     new Date(),
   );
+  const idiomas = new Map<string, Idioma>();
   for (const t of achadas) {
     const { data: existente } = await admin
       .from("agent_inbox_items")
@@ -82,10 +96,12 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
       .eq("status", "open")
       .maybeSingle();
     if (!existente) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, t.organization_id, idiomas);
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: t.organization_id, kind: "proposal_promised_not_created", severity: "warn",
-        title: "Uma proposta prometida não foi criada",
-        body: "Um compromisso de enviar proposta venceu e nenhuma proposta foi criada para este negócio.",
+        title: traduzir("Uma proposta prometida não foi criada", idioma),
+        body: traduzir("Um compromisso de enviar proposta venceu e nenhuma proposta foi criada para este negócio.", idioma),
         ref_kind: "lead", ref_id: t.lead_id,
       });
       if (inboxErr) {
@@ -104,7 +120,14 @@ async function handle(req: NextRequest): Promise<Response> {
 
   let result: PromessaSemPropostaResult;
   try {
-    result = await rodar(createAdminClient(), requestId);
+    const admin = createAdminClient();
+    // #4871: `propostas` é o módulo dono do sinal. Instalação desligada não roda —
+    // e não paga as três leituras da rodada para devolver `sinalizadas: 0`, que se
+    // confunde com "nenhuma promessa venceu".
+    if (!(await moduloLigado(admin, "propostas"))) {
+      return ok({ pulado: "modulo_desligado" }, { requestId });
+    }
+    result = await rodar(admin, requestId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[proposal-promised-not-created] falhou", { error: detail, requestId });

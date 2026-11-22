@@ -43,8 +43,8 @@ de escrita de anexo:
 - `logger.error("[leads/attachments] insert falhou", { detalhe: insertError?.message, requestId })`
   e `fail("internal_error", "Falha ao registrar anexo no banco de dados.", 500)`, em
   `app/api/v1/leads/[id]/attachments/route.ts:242-245`;
-- numa página que lê o banco, a exceção não tratada sobe até a borda de erro e a pessoa vê **“Algo de
-  errado”** — `components/feedback/SegmentError.tsx:42`.
+- numa página que lê o banco, a exceção não tratada sobe até a borda de erro e a pessoa vê
+  **“Algo deu errado”** — `components/feedback/SegmentError.tsx:42`.
 
 Passada a carência, a restrição é a do §5.2 — **banco em somente leitura** e **402** em toda
 requisição —, então o primeiro sintoma tende a ser o de cota de consumo, não um erro de banco cheio.
@@ -99,11 +99,11 @@ como conferência no painel (**Settings → Usage → Auth**), não como primeir
 | 3 | **Autohospedar** o Supabase | a cota deixa de existir; o custo vira a VPS | só está documentado para instalação **nova** — migração com dados não tem passo a passo |
 
 **1. Limpar — custo zero, e o que exatamente sai.** O cron `data-retention` roda às 04h40
-(`docker/scheduler/entrypoint.sh:163`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
+(`docker/scheduler/entrypoint.sh:181`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
 alavancas (`JOB_QUEUE_RETENTION_DAYS`, `AUDIT_LOG_RETENTION_DAYS`, as de telemetria de IA) estão em
 §4.1 e §4.2. Para o storage há dois crons, e eles trabalham em par:
 
-- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:167`), enfileira o arquivo de mensagem
+- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:185`), enfileira o arquivo de mensagem
   mais velho que `organizations.media_retention_days` — padrão **365** dias, piso **30**
   (`supabase/migrations/20260926200200_0432_poda_de_midia.sql:35`) — e o órfão de conversa apagada;
   a rodada enfileira até 10 mil arquivos (`app/api/v1/cron/media-retention/route.ts:39-41`);
@@ -241,6 +241,16 @@ O worker **não é a única origem** de consumo. O contêiner `scheduler` dispar
 crons HTTP do app, e cada um deles fala com o PostgREST; numa instalação parada
 isso costuma ser a maior parte do que sobra. Se o seu número não fechar depois de
 ajustar os intervalos, meça o `app` separadamente antes de mexer em mais nada.
+
+**O backup (`backup.sh`) também conta no egress.** O `pg_dump` lê o banco
+inteiro a cada rodada, pela conexão de banco do `.env`. O kit recomenda rodar
+**todo dia** e esse continua sendo o padrão: backup é a rede de segurança do seu
+dado. Para saber quanto ele custa no seu caso, olhe no dia seguinte em
+**Settings → Usage → Egress**, na linha **Shared Pooler**. Na única medição que
+temos (#2235, banco de ~160 MB), essa linha foi **1%** do egress do dia de pico;
+o grosso era PostgREST, Auth e Realtime, isto é, telas abertas. Se no seu painel
+o backup pesar, passe o cron para semanal (`0 3 * * 0`): o `update.sh` já faz um
+backup antes de cada atualização.
 
 ## 4. Espaço em disco é outra cota (e ela não se resolve com intervalo)
 
@@ -383,6 +393,12 @@ ends in early 2027”). Ou seja: a cota existe e é ela que dispara o aviso, mas
 excedente hoje não vira dinheiro — e isso muda sozinho. Confira a data na página
 antes de contar com a carência.
 
+E a restrição também ainda não vale para este item: a nota do lançamento da
+cobrança de log diz que, por enquanto, os limites não são aplicados (“limits are
+not yet enforced”, [*changelog 50925*](https://supabase.com/changelog/50925-logs-usage-based-pricing),
+lida em 18/11/2026). O caminho do §5.2 — inclusive o segundo estouro sem
+carência — passa a valer para o log quando o Supabase começar a aplicá-los.
+
 ### 5.2. O que o aviso significa, e por que a segunda vez é pior
 
 O aviso não corta nada na hora. O caminho tem ordem, e a ordem é a informação:
@@ -478,7 +494,7 @@ em toda instalação: o plano grátis continua sendo o caminho documentado de in
 **Micro (1 GB)** é o próximo passo a testar: dá o dobro de memória à introspecção. **Não está medido que resolva:**
 na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
 replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
-`supabase-compute-insuficiente-free.md`.
+`supabase-sem-memoria-no-free.md`.
 
 **Micro só existe em plano pago, e assinar não troca o compute.** O plano grátis roda o Nano e o Micro é dos planos
 pagos, então este passo são dois atos: assinar um plano pago e depois trocar o compute do projeto. O projeto que veio

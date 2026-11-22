@@ -21,6 +21,8 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -119,11 +121,13 @@ async function handle(req: NextRequest): Promise<Response> {
     if (!claimed) continue; // outro tick já processou esta conversa
 
     if (willReopen) {
+      // A Central mostra o título como foi gravado: nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, c.organization_id);
       await admin.from("agent_inbox_items").insert({
         organization_id: c.organization_id,
         kind: "snooze_expired",
         severity: "warn",
-        title: "Lead não respondeu no prazo",
+        title: traduzir("Lead não respondeu no prazo", idioma),
         ref_kind: "conversation",
         ref_id: c.id,
       });

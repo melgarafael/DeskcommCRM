@@ -330,6 +330,40 @@ describe("Terra grava custo real por passo do seam", () => {
   });
 });
 
+it("grava o custo do Luna com um passo longo e um passo curto", async () => {
+  const modelo = "gpt-6-luna";
+  vi.mocked(generateText).mockResolvedValue({
+    text: "ok",
+    usage: {
+      inputTokens: 450_000,
+      outputTokens: 200_000,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+    steps: [
+      { usage: { inputTokens: 300_000, outputTokens: 100_000 } },
+      { usage: { inputTokens: 150_000, outputTokens: 100_000 } },
+    ],
+    response: { id: "luna-test", modelId: modelo },
+    responseMessages: [],
+    toolCalls: [],
+    finishReason: "stop",
+  } as never);
+  const { pool, inserts } = poolDaAnthropic("openai", modelo);
+  const resultado = await runModelCall(
+    pool,
+    { openaiApiKey: "sk-de-teste" },
+    { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+    {
+      registry: {
+        openai: () => ({ modelId: modelo, provider: "openai.responses", specificationVersion: "v3" }),
+      } as never,
+    },
+  );
+  // 13,5 centavos no passo longo e 6,5 no curto.
+  expect(resultado.costCents).toBeCloseTo(20);
+  expect(inserts[0]?.params[11]).toBeCloseTo(20);
+});
+
 /**
  * CLAUDE PELA OPENROUTER, PELO SEAM INTEIRO.
  *
@@ -505,3 +539,85 @@ describe("o custo gravado na OpenRouter é o que ela cobrou (T8)", () => {
     expect(concluida).not.toHaveProperty("custo_origem");
   });
 });
+
+/**
+ * O ELO QUE DEIXA A PRÉVIA FECHAR COM O CUSTO DELA (#4664).
+ *
+ * `llm_calls.preview_run_id` é o que liga a chamada ao run de `ai_agent_runs` —
+ * é por ele que a rota de teste soma tokens e custo do PRÓPRIO teste, e é por
+ * ele que a aba "Execuções" acha a pergunta e a resposta (#4426). O turno real
+ * usa `job_id` e nasce sem este elo.
+ *
+ * Sem este caso, apagar o `preview_run_id` do INSERT não derrubava teste
+ * nenhum: a coluna ficaria nula, a prévia fecharia em zero e o defeito voltaria
+ * com outra roupa.
+ */
+describe("a chamada de prévia aponta para o run que a causou (#4664)", () => {
+  const RUN_DA_PREVIA = "55555555-5555-4555-8555-555555555555";
+
+  function respostaDoModelo() {
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+      steps: [],
+      response: { id: "resp-elo", modelId: "gpt-6.1-terra" },
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+  }
+
+  const registryTerra = {
+    openai: () => ({
+      modelId: "gpt-6.1-terra",
+      provider: "openai.responses",
+      specificationVersion: "v3",
+    }),
+  } as never;
+
+  it("⭐ o INSERT de llm_calls leva `preview_run_id` igual ao run do teste", async () => {
+    respostaDoModelo();
+    const { pool, inserts } = poolDaAnthropic("openai", "gpt-6.1-terra");
+
+    await runModelCall(
+      pool,
+      { openaiApiKey: "sk-de-teste", cacheTtl: "1h" },
+      {
+        tenantId: ORG,
+        purpose: "agent_preview",
+        previewRunId: RUN_DA_PREVIA,
+        messages: [{ role: "user", content: "que horas abrem?" }],
+      },
+      { registry: registryTerra },
+    );
+
+    expect(inserts).toHaveLength(1);
+    // `preview_run_id` é a ÚLTIMA coluna da instrução — o valor tem de ser o id
+    // do run, e não nulo: é a chave que a soma do fechamento usa.
+    expect(inserts[0]?.params.at(-1)).toBe(RUN_DA_PREVIA);
+  });
+
+  it("o turno real continua sem o elo — `job_id` é a chave dele, não esta", async () => {
+    respostaDoModelo();
+    const { pool, inserts } = poolDaAnthropic("openai", "gpt-6.1-terra");
+
+    await runModelCall(
+      pool,
+      { openaiApiKey: "sk-de-teste", cacheTtl: "1h" },
+      {
+        tenantId: ORG,
+        purpose: "agent_turn",
+        messages: [{ role: "user", content: "que horas abrem?" }],
+      },
+      { registry: registryTerra },
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.params.at(-1)).toBeNull();
+  });
+});
+

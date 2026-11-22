@@ -32,6 +32,10 @@ function consulta(nome: string, filtros: Array<(l: Linha) => boolean> = []) {
   const com = (f: (l: Linha) => boolean) => consulta(nome, [...filtros, f]);
   const q = {
     select: () => q,
+    // O builder do supabase-js tem `limit`; o dublê não tinha, e a rota passou a
+    // usá-lo nas pastas de histórico (#4451). Devolve a MESMA consulta, com os
+    // filtros já aplicados — o teto não é o que este teste mede.
+    limit: () => q,
     eq: (c: string, v: unknown) => com((l) => l[c] === v),
     is: (c: string, v: unknown) => com((l) => (v === null ? l[c] == null : l[c] === v)),
     in: (c: string, vs: unknown[]) => com((l) => vs.includes(l[c])),
@@ -73,7 +77,13 @@ vi.mock("@/lib/auth/require-role", () => ({
 }));
 vi.mock("@/lib/channels/desativado", () => ({ idsDosCanaisDesativados: async () => [] }));
 vi.mock("@/lib/ai/agents/org-tem-automatico", () => ({ orgTemAutomatico: async () => false }));
-vi.mock("@/app/api/v1/conversations/_handler", () => ({ idsDeContatosPessoais: async () => [] }));
+// `idsDeContatosPessoaisVisiveis` (#4434) é novo no handler, e a rota de counts
+// o chama em TODA leitura: sem ele no dublê o vitest explode antes do caso.
+// Vazio é o cenário destes arquivos — nenhum contato pessoal marcado.
+vi.mock("@/app/api/v1/conversations/_handler", () => ({
+  idsDeContatosPessoais: async () => [],
+  idsDeContatosPessoaisVisiveis: async () => [],
+}));
 
 const { GET } = await import("@/app/api/v1/conversations/counts/route");
 

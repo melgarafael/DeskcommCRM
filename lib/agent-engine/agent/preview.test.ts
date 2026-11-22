@@ -271,6 +271,103 @@ describe('prévia: open_human_case chamado conta como caso aberto para a trava (
 });
 
 
+/**
+ * #4663 — a mensagem devolvida pelo `send_message` é o que o modelo LÊ, e ele para
+ * o turno quando ela manda encerrar. No rascunho assistido isso matava a chamada
+ * da ferramenta de passagem que viria DEPOIS da resposta: o rascunho aprovado saía
+ * prometendo "vou te passar para a equipe" sem a passagem. A mensagem passa a ser
+ * por modo: o Testar mantém a frase de hoje (nada sai e nada é aprovado) e o
+ * assistido diz que o rascunho foi guardado e manda chamar a ferramenta AGORA,
+ * antes de encerrar.
+ */
+describe('prévia: a mensagem do send_message depende do modo (#4663)', () => {
+  const resposta = 'Claro, consigo sim.';
+  const assistido = () => ({
+    ...preview(),
+    kind: 'assisted' as const,
+    contactId: 'contato-real',
+  });
+
+  it('no rascunho assistido, diz que guardou o rascunho e manda chamar a ferramenta de passagem AGORA', async () => {
+    const p = assistido();
+    const tools = applyPreviewPolicy({ send_message: definition(vi.fn()) }, p, gate(), () => []);
+    const retorno = (await execute(tools, 'send_message', { body: resposta })) as { message: string };
+    expect(retorno.message).toContain('guardado para aprovação');
+    expect(retorno.message).toContain('AGORA');
+    expect(retorno.message).toContain('antes de encerrar');
+    // A instrução tem de dizer QUAL promessa obriga a chamada: passar para uma
+    // pessoa ou abrir um caso — as duas coisas que o turno real resolve com uma
+    // ferramenta própria.
+    expect(retorno.message).toContain('passar o atendimento para uma pessoa');
+    expect(retorno.message).toContain('abrir um caso');
+  });
+
+  it('no Testar (sandbox), mantém a frase de hoje', async () => {
+    const p = preview();
+    const tools = applyPreviewPolicy({ send_message: definition(vi.fn()) }, p, gate(), () => []);
+    const retorno = (await execute(tools, 'send_message', { body: resposta })) as { message: string };
+    expect(retorno.message).toBe('Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.');
+  });
+});
+
+/**
+ * #4663 (item 2) — o contexto do gate tem de medir o caso que a PRÓPRIA prévia
+ * propôs, como o turno real mede o caso que o `execute` de `open_human_case`
+ * gravou (`inbound-turn.ts`: `openedCaseThisTurn = true`). Aqui a prova é pelo
+ * consumidor do flag: a trava `case_promise_without_case` só veta quando ele está
+ * desligado, então candidato que sobrevive = flag ligado; veto = flag desligado.
+ *
+ * #4592 já liga o sinal na prévia (`preview.ts`, spread do
+ * `casoHumanoSimuladoNesteTurno`), mas só o Testar estava coberto. O modo
+ * assistido é justamente onde um veto falso segura a resposta de um cliente real
+ * — e é onde o rascunho segue com o texto lido pelo modelo do #4663.
+ */
+describe('prévia assistida: open_human_case proposto conta como caso do turno (#4663)', () => {
+  const fraseDeEspera = 'Vou verificar com a equipe e já te retorno, aguarde um pouquinho por aqui.';
+  const casoValido = {
+    title: 'Voo cancelado',
+    summary: 'Cliente pede reembolso da passagem cancelada.',
+    blocker: 'Estorno fora do playbook e exige decisão de uma pessoa.',
+  };
+  const assistidoComCasos = () => ({
+    ...preview(),
+    kind: 'assisted' as const,
+    contactId: 'contato-real',
+  });
+  const contextoDeCasos = () => ({ ...gate(), casesEnabled: true });
+
+  it('com a proposta antes do envio, o gate vê o caso aberto NESTE turno e a promessa passa', async () => {
+    const p = assistidoComCasos(),
+      executarDeVerdade = vi.fn();
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(executarDeVerdade), send_message: definition(vi.fn()) },
+      p,
+      contextoDeCasos(),
+      () => [],
+    );
+    const proposta = (await execute(tools, 'open_human_case', casoValido)) as { status: string };
+    expect(proposta.status).toBe('proposal_only');
+    await execute(tools, 'send_message', { body: fraseDeEspera });
+    expect(p.result.impediments).toEqual([]);
+    expect(p.result.candidates.map((c) => c.body)).toEqual([fraseDeEspera]);
+    // Continua PROPOSTA: o execute real da ferramenta nunca roda na prévia.
+    expect(executarDeVerdade).not.toHaveBeenCalled();
+  });
+
+  it('controle negativo: turno sem proposta de caso mantém o flag desligado e a promessa é vetada', async () => {
+    const p = assistidoComCasos();
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(vi.fn()), send_message: definition(vi.fn()) },
+      p,
+      contextoDeCasos(),
+      () => [],
+    );
+    await execute(tools, 'send_message', { body: fraseDeEspera });
+    expect(p.result.impediments.map((i) => i.code)).toEqual(['case_promise_without_case']);
+    expect(p.result.candidates).toEqual([]);
+  });
+});
+
 describe('proteção comercial: ferramenta e prévia concordam', () => {
   it.each(['Os óculos custam R$ 299,90.', 'Pode pagar em 10x.', 'Temos desconto de 15%.'])
     ('barra o mesmo texto sem acionar transporte: %s', async body => {

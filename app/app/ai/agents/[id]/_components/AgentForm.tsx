@@ -66,7 +66,7 @@ import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { SkillsDoAgente } from "./SkillsDoAgente";
 import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
-import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
+import { FunisDoAgente, type CoberturaPorFunil, type NumeroDoAgente } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
 import { FraseDoAviso } from "./FraseDoAviso";
@@ -189,6 +189,14 @@ type Props = (EditProps | CreateProps) & {
   funis?: FunilDaResposta[];
   /** Quanto de cada funil o assistente sabe percorrer (spec 17 passo 4). */
   cobertura?: CoberturaPorFunil;
+  /**
+   * Onde nasce o card das conversas novas de cada número (#4921), por id do
+   * número, já pela régua do nascimento do lead (nulo = funil padrão). Ausente:
+   * o aviso do funil de entrada olha só o funil padrão, como antes.
+   */
+  funilDeEntradaPorNumero?: Record<string, string | null>;
+  /** Números vivos dos roteadores ativos que levam conversa a este agente (#4940). */
+  numerosDoRoteador?: string[];
   /**
    * O acervo da organização, para o assistente escolher o que consulta (0181).
    *
@@ -1073,6 +1081,11 @@ export function AgentForm(props: Props) {
           <FunisDoAgente
             funis={funis}
             cobertura={props.cobertura}
+            numeros={numerosDoAgente(
+              [form.channel_session_id, ...(props.numerosDoRoteador ?? [])],
+              props.channelSessions,
+              props.funilDeEntradaPorNumero,
+            )}
             value={form.pipeline_ids}
             onChange={(ids) => patch({ pipeline_ids: ids })}
             disabled={disabled}
@@ -1568,7 +1581,7 @@ export function AgentForm(props: Props) {
             {form.voz_enabled && channelSession?.enviaNotaDeVoz === false ? (
               <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="voz-canal-sem-nota">
                 {t(
-                  "O canal escolhido não recebe nota de voz da IA (redes sociais como Instagram e Facebook). Nele, o agente responde em texto.",
+                  "O canal escolhido não recebe nota de voz da IA (como o Facebook e o Telegram). Nele, o agente responde em texto.",
                 )}
               </p>
             ) : null}
@@ -1947,4 +1960,32 @@ export function AgentForm(props: Props) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Os números que este assistente atende, para o aviso do funil de entrada
+ * (#4940): o número escolhido no formulário (vale na hora, antes de salvar) e os
+ * dos roteadores ativos que levam conversa a ele. Sem o mapa de funis de entrada, devolve
+ * `undefined` e o aviso fica na régua antiga (só o funil padrão).
+ */
+function numerosDoAgente(
+  ids: Array<string | null | undefined>,
+  canais: ChannelSessionLite[],
+  funilDeEntradaPorNumero: Record<string, string | null> | undefined,
+): NumeroDoAgente[] | undefined {
+  if (!funilDeEntradaPorNumero) return undefined;
+  const unicos = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  // Só números vivos (a lista oferecível já exclui arquivado): número arquivado
+  // não recebe conversa nova.
+  return unicos.flatMap((id) => {
+    const canal = canais.find((c) => c.id === id);
+    if (!canal) return [];
+    return [
+      {
+        id,
+        nome: `${canal.display_name}${canal.phone_number ? ` · ${canal.phone_number}` : ""}`,
+        funilDeEntradaId: funilDeEntradaPorNumero[id] ?? null,
+      },
+    ];
+  });
 }

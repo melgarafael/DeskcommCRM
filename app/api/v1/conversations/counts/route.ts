@@ -4,7 +4,9 @@
  * Usa o client user-scoped (cookie session) → toda contagem HERDA a RLS de
  * SELECT de `conversations` (fn_can_view_conversation, migration 0035). Um agent
  * em modo own* recebe a contagem do SEU escopo, NUNCA o total da org — a mesma
- * garantia do listing. Head count (count:'exact', head:true) não devolve linhas.
+ * garantia do listing. As abas acionáveis usam head count (`count: 'exact'`,
+ * `head: true`), que não devolve linha; as pastas de histórico contam LINHAS até
+ * `TETO_DAS_PASTAS` (#4451) — nunca estimativa.
  */
 import { randomUUID } from "node:crypto";
 
@@ -20,9 +22,29 @@ import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
-import { idsDeContatosPessoais } from "../_handler";
+import { idsDeContatosPessoais, idsDeContatosPessoaisVisiveis } from "../_handler";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * O teto das contagens das PASTAS DE HISTÓRICO (#4451).
+ *
+ * "Fechadas" e "Arquivadas" não podem ser contadas de dois jeitos que este
+ * arquivo já teve:
+ *
+ * - `count: 'exact'` varre o histórico INTEIRO a cada 30 s, por pessoa, em toda
+ *   tela — o custo que o #4325 mediu (820 ms de média, 7,3 s de máximo numa
+ *   instalação de 270 conversas);
+ * - `count: 'planned'` custa barato, mas o planejador do Postgres NUNCA estima
+ *   menos de UMA linha: pasta com zero conversas saía `rows=1` no `EXPLAIN`, e
+ *   a instalação nova nascia mostrando "1 (aprox.)" numa pasta vazia (#4451).
+ *
+ * O terceiro caminho — o de agora — conta ATÉ cem LINHAS e para: custo limitado
+ * por construção e número EXATO enquanto ele é pequeno, que é o caso de toda
+ * pasta recém-criada. No teto o badge diz "99+" em vez de prometer um total que
+ * ninguém mediu.
+ */
+export const TETO_DAS_PASTAS = 100;
 
 /** Um par pronto para virar predicado: coluna e valor. */
 export type FiltroDeContagem = readonly [coluna: string, valor: string | boolean];
@@ -83,6 +105,37 @@ export function contagemSoNaoLidas(sp: URLSearchParams): boolean {
   return sp.get("unread") === "true";
 }
 
+/** O que o badge das pastas de histórico recebe: número a mostrar e se parou no teto. */
+export type PlacarDasPastas = {
+  /** O número da tela: no máximo `TETO_DAS_PASTAS - 1` (99), e ZERO na pasta vazia. */
+  count: number;
+  /** `true` quando as cem linhas vieram: o número é "pelo menos 100". */
+  truncada: boolean;
+  error: { message: string } | null;
+};
+
+/**
+ * Lê o resultado de `linhasCom()` — LINHAS, não contagem (#4451).
+ *
+ * A pasta vazia devolve `data: []` e portanto ZERO. É o caso que o `count:
+ * 'planned'` não sabia responder (o planejador do Postgres nunca estima menos de
+ * uma linha) e que fazia a instalação nova nascer com "1 (aprox.)" no histórico.
+ *
+ * No teto o número mostrado para em 99 e `truncada` avisa a tela: "99+" é
+ * honesto, "100" seria um total que ninguém contou.
+ */
+export function placarDasLinhas(resposta: {
+  data: unknown[] | null;
+  error: { message: string } | null;
+}): PlacarDasPastas {
+  const linhas = resposta.data?.length ?? 0;
+  return {
+    count: Math.min(linhas, TETO_DAS_PASTAS - 1),
+    truncada: linhas >= TETO_DAS_PASTAS,
+    error: resposta.error,
+  };
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
@@ -131,19 +184,62 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Canal desativado nunca entra na inbox: o mesmo corte da lista, para badge
   // e aba nunca divergirem.
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
-  const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) => {
+  const consultaCom = (
+    /**
+     * O que o `select` pede. `{ count: "exact", head: true }` CONTA sem trazer
+     * linha; `{}` traz LINHAS (até o `.limit()` de quem chama). É o único
+     * argumento que separa os dois caminhos — os filtros são sempre os mesmos.
+     */
+    selecao: { count?: "exact"; head?: true },
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+    /**
+     * #4434 — a aba "Pessoal" INVERTE a exclusão: em vez de subtrair os contatos
+     * pessoais, conta só os que ESTE usuário pode ver. Vem como argumento da
+     * fábrica, e não como consulta solta, porque montar contagem por fora de
+     * `consultaCom()` é a única forma de o badge deixar de herdar organização,
+     * auxiliares e não-lidas — e há cerca para isso.
+     *
+     * `undefined` = régua de sempre (pessoal fora). Conjunto vazio nunca chega
+     * aqui: quem chama responde zero sem consultar o banco.
+     */
+    pessoalVisivel?: readonly string[],
+  ) => {
     let q = supabase
       .from("conversations")
-      .select("id", { count: "exact", head: true })
+      .select("id", selecao)
       .eq("organization_id", org);
     if (idsDesativados.length > 0) q = q.not("channel_session_id", "in", `(${idsDesativados.join(",")})`);
     for (const [coluna, valor] of filtrosDaAba) q = q.eq(coluna, valor);
     // O marcador entra pela régua da LISTA — a mesma função, não uma segunda.
     q = aplicarMarcadores(q, marcadores, modo);
-    if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
+    if (pessoalVisivel) q = q.in("contact_id", [...pessoalVisivel]);
+    else if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
     return q;
   };
+  /**
+   * A contagem EXATA — `count: "exact"` + `head: true`: conta sem trazer linha.
+   *
+   * É a régua das abas em que alguém AGE, e a única saída da fábrica que TEM
+   * `count`. A aba "Pessoal" (#4434) também passa por aqui, com o `pessoalVisivel`
+   * — o repasse conferido na revisão continua byte a byte igual.
+   */
+  const countExact = (
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+    pessoalVisivel?: readonly string[],
+  ) => consultaCom({ count: "exact", head: true }, filtrosDaAba, pessoalVisivel);
+  /**
+   * As LINHAS das pastas de histórico — no máximo `TETO_DAS_PASTAS`, sem `count`.
+   *
+   * Sem `count` porque contar é justamente o que não se pode pagar aqui: cem
+   * linhas de `id` são baratas, um `count` sobre o histórico inteiro não é, e
+   * `planned` mentiria "1" numa pasta vazia (#4451). Quem lê o resultado é
+   * `placarDasLinhas`.
+   */
+  const linhasCom = (
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+    pessoalVisivel?: readonly string[],
+  ) => consultaCom({}, filtrosDaAba, pessoalVisivel).limit(TETO_DAS_PASTAS);
 
   // Espelha tabToFilter (InboxLayout): unassigned = fila aberta sem dono;
   // mine = atribuídas a mim e ainda ABERTAS; all = tudo que o usuário VÊ.
@@ -180,7 +276,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     idsParticipadas = [];
   }
 
-  const [fila, automatico, mine, all, closed, archived] = await Promise.all([
+  // Quem vê qual pessoal (#4434): só o DONO da marca. A MESMA função que a lista
+  // usa — duas réguas divergem na primeira condição nova, e aqui a divergência
+  // seria um badge contando o pessoal de outra pessoa.
+  const pessoaisVisiveis = await idsDeContatosPessoaisVisiveis(supabase, org, user.id);
+
+  const [fila, automatico, mine, all, closed, archived, pessoal] = await Promise.all([
     // A FILA DEIXOU DE SER "sem dono + status de espera".
     //
     // Aquele par contava como trabalho humano pendente tudo que o robô estava
@@ -230,11 +331,27 @@ export async function GET(req: NextRequest): Promise<Response> {
     // `status='closed'` — o badge dizia 120 e a lista mostrava 40. Era a mesma
     // classe de defeito que este arquivo já conserta desde a Fila, encontrada
     // aqui no caminho (#923).
-    countExact().eq("status", "closed"),
+    //
+    // #4325/#4451: conta ATÉ cem LINHAS, nunca com `count`. É a pasta que cresce
+    // sem limite com o histórico (todo atendimento encerrado entra e nenhum sai),
+    // e o número só serve para dizer o TAMANHO do arquivo — não é fila de
+    // trabalho. `exact` pagaria O(histórico) a cada 30 s; `planned` custava
+    // barato, mas mentia "1" na pasta vazia (o planejador nunca estima menos de
+    // uma linha). No teto, o badge diz "99+"; ver `placarDasLinhas`.
+    linhasCom().eq("status", "closed").then(placarDasLinhas),
     // A aba "Arquivadas" (#923): a pasta do histórico, separada de "Fechadas"
     // para que arquivar seja reversível e auditável sem se confundir com o
-    // encerramento do atendimento.
-    countExact().eq("status", "archived"),
+    // encerramento do atendimento. Mesmo teto do "Fechadas" (#4451): é a outra
+    // pasta que só cresce.
+    linhasCom().eq("status", "archived").then(placarDasLinhas),
+    // A aba "Pessoal" (#4434): conta o MESMO que ela lista — o pessoal DESTE
+    // usuário, em qualquer status, sem os canais desativados. NÃO pode usar a
+    // régua de `undefined`, que EXCLUI pessoal: badge que conta o que a aba
+    // esconde manda o atendente procurar trabalho que não existe.
+    // EXATA, como as demais abas acionáveis: é fila de leitura, não arquivo.
+    pessoaisVisiveis.length === 0
+      ? Promise.resolve({ count: 0, error: null })
+      : countExact(auxiliares, pessoaisVisiveis),
   ]);
 
   // ─── A CONTAGEM POR FILA (#3876) ──────────────────────────────────────────
@@ -274,7 +391,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   );
 
   const firstErr =
-    fila.error ?? automatico.error ?? mine.error ?? all.error ?? closed.error ?? archived.error;
+    fila.error ??
+    automatico.error ??
+    mine.error ??
+    all.error ??
+    closed.error ??
+    archived.error ??
+    pessoal.error;
   if (firstErr) {
     return fail("internal_error", firstErr.message, 500, { requestId });
   }
@@ -290,8 +413,28 @@ export async function GET(req: NextRequest): Promise<Response> {
       unassigned: fila.count ?? 0,
       mine: mine.count ?? 0,
       all: all.count ?? 0,
-      closed: closed.count ?? 0,
-      archived: archived.count ?? 0,
+      closed: closed.count,
+      archived: archived.count,
+      /**
+       * As abas cujo número PAROU no teto de cem linhas (#4451).
+       *
+       * Sai junto com os valores porque a tela precisa poder dizer isso: "99"
+       * com "+" é "pelo menos cem", e um número que se apresenta como total é
+       * pior que nenhum. Abaixo do teto a lista sai vazia, e o número é EXATO —
+       * inclusive o zero da pasta vazia, que o `count: 'planned'` não sabia dar.
+       */
+      truncadas: [
+        ...(closed.truncada ? (["closed"] as const) : []),
+        ...(archived.truncada ? (["archived"] as const) : []),
+      ],
+      /**
+       * A aba "Pessoal" (#4434): quantas conversas de contato pessoal ESTE
+       * usuário pode ler — as dele, e só as dele. Campo opcional do lado da tela
+       * pelo mesmo motivo de `closed`/`archived`: cache gravado antes deste
+       * deploy não tem a chave, e um `number` obrigatório imprimiria `NaN` no
+       * primeiro segundo.
+       */
+      pessoal: pessoal.count ?? 0,
       /**
        * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor.
        * Vem vazio quando a organização não tem fila — e é o que o seletor do

@@ -1144,22 +1144,59 @@ com_prazo() {  # com_prazo <segundos> <comando...>
 #   incompleta    → ALGUMA falta e o registro respondeu = publicação incompleta;
 #   indisponivel  → NENHUMA respondeu = o registro/DNS está fora (ou a tag nem
 #                   existe, o que para o chamador dá no mesmo: não se sabe).
-veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
-  local versao="${1:-}" img total=0 achadas=0
+# Preenchida por veredito_das_imagens_da_release: quais imagens não responderam e
+# por quê (`nome:ausente` ou `nome:indeterminado`). Existe para o agent.sh poder
+# REGISTRAR o motivo de esconder uma release — antes disto, o silêncio da tela não
+# deixava rastro nenhum e o diagnóstico morria em "não apareceu".
+IMAGENS_SEM_RESPOSTA=""
+
+veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão alvo> [versão instalada]
+  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0 com_controle=0
+  # ponytail: o controle pela tag instalada só vale para quem PASSA o 2º
+  # argumento (o agent.sh passa sempre, mesmo vazio). O preflight do update.sh e
+  # o portão do build (build_local_permitido) chamam com UM argumento e leem
+  # `incompleta` como "o registro respondeu": para eles fica a regra de antes
+  # (alguma achada = incompleta; nenhuma = indisponivel). Sem isto, 3 de 4
+  # imagens publicadas viravam `indisponivel`, o preflight culpava a rede e o
+  # portão recusava o build local de recuperação (#1060/#1143).
+  [ "$#" -ge 2 ] && com_controle=1
+  IMAGENS_SEM_RESPOSTA=""
   versao="${versao#v}"
+  instalada="${instalada#v}"
   [ -n "$versao" ] || { printf 'indisponivel'; return 0; }
   for img in "$IMG_APP" "$IMG_WORKER" "$IMG_SCHEDULER" "$IMG_VOICE_AGENT"; do
     total=$((total + 1))
     if com_prazo 20 docker buildx imagetools inspect "${img}:${versao}" >/dev/null 2>&1; then
       achadas=$((achadas + 1))
+      continue
+    fi
+    [ "$com_controle" -eq 1 ] || continue
+    # ⛔ A SONDA DE CONTROLE, pelo mesmo motivo da sonda do app.
+    #
+    # `com_prazo 20` transforma timeout e 429 do registro em "esta imagem não
+    # existe" — e a diferença entre as duas coisas é o que decide se a release é
+    # escondida. A tag INSTALADA é a sonda certa porque ela existe com certeza:
+    # está rodando aqui. Se nem ela responde, o que está fora é o registro, não
+    # a imagem; e aí esconder a atualização seria ligar o silêncio da tela a um
+    # problema de rede que ninguém vê.
+    if [ -n "$instalada" ] && com_prazo 20 docker buildx imagetools inspect "${img}:${instalada}" >/dev/null 2>&1; then
+      ausentes=$((ausentes + 1))
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:ausente"
+    else
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:indeterminado"
     fi
   done
   if [ "$achadas" -eq "$total" ]; then
     printf 'prontas'
-  elif [ "$achadas" -eq 0 ]; then
-    printf 'indisponivel'
-  else
+  elif [ "$com_controle" -eq 0 ] && [ "$achadas" -gt 0 ]; then
     printf 'incompleta'
+  elif [ "$ausentes" -gt 0 ]; then
+    # Há pelo menos uma imagem provadamente ausente: a release não está pronta.
+    # Isso cala o botão — e é o único caso que deve calar.
+    printf 'incompleta'
+  else
+    # Nenhuma ausência provada: só falha de sonda. Anunciar, como sempre foi.
+    printf 'indisponivel'
   fi
 }
 
@@ -2062,7 +2099,9 @@ relatar_saude_do_app() {
 wait_app_healthy() {
   local tentativas="${1:-20}" intervalo="${2:-3}" saida='' status='' corpo='' i=0
   while [ "$i" -lt "$tentativas" ]; do
-    saida="$(app_health_probe)"
+    # A stalled Docker exec must leave room for the next attempt. Use the
+    # same per-probe deadline as the standalone healthcheck.
+    saida="$(app_health_probe 30)"
     status="$(printf '%s\n' "$saida" | head -1 | tr -d '\r')"
     corpo="$(printf '%s\n' "$saida" | tail -n +2)"
     case "$status" in
@@ -2805,6 +2844,11 @@ gravar_imagens() {
   # acima: é a função que o update.sh antigo chama depois de reler o kit, então
   # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
   completar_par_vapid "$envfile"
+  # A conversão do consentimento de telemetria (#4936) mora aqui pelo mesmo
+  # motivo: a chamada no corpo do update.sh só existe a partir da versão que a
+  # traz, e quem atualiza roda o corpo ANTIGO. Sem esta linha, quem aceitou
+  # perderia a telemetria na atualização que traz a mudança.
+  migrar_consentimento_de_telemetria "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
@@ -2876,6 +2920,80 @@ gerar_par_vapid() {
   priv="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | head -c 39 | tail -c 32 | _b64url)" || return 1
   [ "${#pub}" -eq 87 ] && [ "${#priv}" -eq 43 ] || return 1
   printf '%s %s\n' "$pub" "$priv"
+}
+
+# marcar_consentimento_de_telemetria <arquivo> — a marca de "a conversão do
+# consentimento já passou por aqui". Só é criada quando a decisão ficou tomada:
+# nas saídas em que não dá para escrever, ela não nasce, e a próxima atualização
+# tenta de novo. Falhar ao criá-la não derruba nada (devolve 0).
+marcar_consentimento_de_telemetria() {
+  ( umask 077; printf '%s\n' "# Gerado pelo kit (#4948): a conversão do consentimento de telemetria já rodou nesta instalação. Não apague." > "$1" ) 2>/dev/null || true
+}
+
+# migrar_consentimento_de_telemetria [envfile] — usada pelo update.sh (#4936).
+#
+# Antes desta versão, `SENTRY_DSN` VAZIO significava "aceito o Sentry do
+# projeto": era o que o install.sh gravava quando a pessoa respondia "sim".
+# Agora vazio significa DESLIGADO e o aceite é o token `comunidade`
+# (lib/sentry/dsn.ts). Sem esta conversão, quem já havia aceitado perderia a
+# telemetria em silêncio depois de atualizar — e o remédio seria editar o `.env`
+# à mão, que a doutrina de empacotamento proíbe exigir.
+#
+# Converte SÓ a chave DECLARADA e VAZIA. Três casos ficam intocados:
+#   - chave ausente: quem nunca decidiu; ausência já é "desligado", e gravá-la
+#     seria consentir por alguém;
+#   - `off`/`false`/`0`: escolha escrita de quem não quer telemetria;
+#   - um DSN literal: quem aponta para o próprio Sentry.
+# Sempre devolve 0: telemetria não derruba atualização. Deixa
+# TELEMETRIA_CONVERTIDA=1 quando converter (o `up -d` de lá já recria o app com
+# o `.env` novo, então não há nada a reiniciar por conta disto).
+migrar_consentimento_de_telemetria() {
+  local envfile="${1:-.env}" declarado tmp marca
+  TELEMETRIA_CONVERTIDA=""
+  [ -f "$envfile" ] || return 0
+  # UMA VEZ por instalação (#4948). Depois desta versão, vazio é "desligado": quem
+  # esvazia a chave de propósito, ou o `install.sh --yes` com SENTRY_DSN vazio no
+  # ambiente, não pode ser religado pela atualização seguinte. A marca fica num
+  # arquivo ao lado (o nome casa com `.env*`, como o `.env.cron-drain`, e o
+  # `.gitignore` já o deixa de fora), para não mexer no `.env` de quem nunca
+  # decidiu. O install.sh novo a cria: instalação nova nunca é convertida.
+  marca="$(dirname -- "$envfile")/.env.consentimento-de-telemetria"
+  [ -e "$marca" ] && return 0
+  # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
+  # elas também contam como a chave declarada (mesma régua do `completar_par_vapid`).
+  declarado="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+  if [ -n "$declarado" ]; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" 2>/dev/null; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if [ ! -w "$envfile" ]; then
+    # Montagem somente-leitura ou permissão errada: quem opera precisa saber que
+    # a conversão NÃO aconteceu, senão a telemetria some sem explicação.
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo.")"
+    return 0
+  fi
+
+  # Escrita atômica, como no `set_env_var`: o tmp nasce 600 e o `mv` troca o
+  # arquivo de uma vez, para uma queda no meio não deixar `.env` pela metade.
+  tmp="${envfile}.tmp.$$"
+  if ! ( umask 077
+         { { grep -vE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" || true; } \
+           && printf 'SENTRY_DSN=%s\n' "comunidade"; } > "$tmp" ) \
+     || ! chmod 600 "$tmp" || ! mv "$tmp" "$envfile"; then
+    rm -f "$tmp"
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria no .env; a telemetria segue como estava. Para converter à mão: SENTRY_DSN=comunidade.")"
+    return 0
+  fi
+  # O ambiente também: o `load_env` já exportou o vazio, e é dele que o Compose
+  # lê o que interpola.
+  SENTRY_DSN="comunidade"; export SENTRY_DSN
+  TELEMETRIA_CONVERTIDA=1
+  marcar_consentimento_de_telemetria "$marca"
+  c_grn "$(t "✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)")"
 }
 
 # completar_par_vapid [envfile] — usada pelo install.sh (depois de escrever o
@@ -3277,12 +3395,233 @@ trocar_segredo_do_cron_vazado() {
   return 0
 }
 
+# ── Janela de manutenção da atualização: configurável (#4334) ────────────────
+#
+# O pedido da #4334: quem opera em horário comercial não quer a instalação ~5
+# minutos em manutenção no meio do expediente (clique 09:01, início 09:05, fim
+# 09:10). O primeiro desenho deste PR abria a janela mudando o HORÁRIO DA LINHA
+# do cron do agente — e o mantenedor recusou com a medição na mão: no `agent.sh`
+# a MESMA rodada manda o heartbeat ao painel e vigia a volta depois de uma
+# atualização (seção 3, #2757). Fora da janela, as duas paravam junto.
+#
+# A janela daqui segura SÓ a execução do pedido de atualização, dentro do
+# `agent.sh` (seção 4). O cron do agente continua `*/5 * * * *` — `install.sh` e
+# `update.sh` gravam a linha de sempre, e `setup_update_agent_cron` nem lê esta
+# variável —, então o batimento e a vigília seguem rodando o dia inteiro.
+#
+# Sintaxe: os CINCO campos do cron (minuto hora dia mês dia-da-semana), os
+# mesmos que quem já mexe em crontab conhece. A janela é de HORÁRIO, então os
+# três últimos têm de ser `*`: o cron da VPS casa dia-do-mês E dia-da-semana com
+# OU (regra do vixie-cron), e reproduzir essa regra aqui seria uma segunda
+# semântica com o mesmo nome — o tipo de divergência que só aparece de madrugada
+# na VPS de quem configurou. Recusar é mais honesto que adivinhar.
+#
+# Ausente ou vazia = sem janela = o comportamento de hoje, byte a byte: executa
+# assim que o app pede. Valor inválido = aviso em voz alta (no
+# `.update-agent.log`) e janela ABERTA, que é o de hoje: um erro de digitação
+# não pode deixar a instalação sem atualização para sempre, e o aviso diz
+# exatamente o que corrigir.
+#
+# O relógio da janela é o de parede do fuso `SYSTEM_UPDATE_WINDOW_TZ` (IANA),
+# `America/Sao_Paulo` quando ausente — nunca o fuso do sistema, que numa VPS
+# nova costuma ser UTC e deslocaria a janela em 3 horas sem ninguém ver. Quem
+# confere: `TZ=America/Sao_Paulo date`. Fuso desconhecido pelo `date` vira UTC
+# (é o `date`, não esta função, quem decide), então escreva o nome IANA exato.
+SYSTEM_UPDATE_WINDOW_PADRAO=''
+SYSTEM_UPDATE_WINDOW_TZ_PADRAO='America/Sao_Paulo'
+
+# O `date` no fuso da janela, numa chamada só (o formato vem de quem chama).
+_date_da_janela() { TZ="${SYSTEM_UPDATE_WINDOW_TZ:-$SYSTEM_UPDATE_WINDOW_TZ_PADRAO}" date "$@"; }
+
+# _item_cron <item> <min> <max> — analisa UM item de campo cron (`*`, `7`,
+# `2-5`, e o `/passo` opcional em qualquer um dos três) e deixa o resultado em
+# _CRON_INI/_CRON_FIM/_CRON_PASSO. Devolve 1 se o item não servir.
+_item_cron() {
+  local item="${1-}" min="$2" max="$3" passo="" n
+  case "$item" in
+    */*) passo="${item#*/}"; item="${item%%/*}" ;;
+  esac
+  case "$item" in
+    '*') _CRON_INI="$min"; _CRON_FIM="$max" ;;
+    *-*) _CRON_INI="${item%%-*}"; _CRON_FIM="${item#*-}" ;;
+    *)   _CRON_INI="$item";     _CRON_FIM="$item" ;;
+  esac
+  _CRON_PASSO="${passo:-1}"
+  # Numérico E não vazio nos três: `case` com `[!0-9]` sozinho deixa passar o
+  # vazio (nenhum caractere viola a classe), e a aritmética seguinte viraria
+  # erro de sintaxe do bash — dentro do `agent.sh`, isso é o `set -e` matando a
+  # rodada inteira, não uma recusa.
+  for n in "$_CRON_INI" "$_CRON_FIM" "$_CRON_PASSO"; do
+    [ -n "$n" ] || return 1
+    case "$n" in *[!0123456789]*) return 1 ;; esac
+  done
+  # `10#` porque zero à esquerda é octal para a aritmética do bash: `08` sem
+  # isto é "valor inválido" e a janela aberta às 8h nunca casaria.
+  _CRON_INI=$((10#$_CRON_INI)); _CRON_FIM=$((10#$_CRON_FIM)); _CRON_PASSO=$((10#$_CRON_PASSO))
+  [ "$_CRON_PASSO" -ge 1 ] || return 1
+  [ "$_CRON_INI" -ge "$min" ] && [ "$_CRON_FIM" -le "$max" ] || return 1
+  [ "$_CRON_INI" -le "$_CRON_FIM" ] || return 1
+  return 0
+}
+
+# _campo_cron_valido <campo> <min> <max> — o campo inteiro (lista separada por
+# vírgula) serve? É a régua de CONFIGURAÇÃO, e ela é mais dura que a de
+# casamento de propósito: campo malformado que passasse daqui nunca casaria, a
+# janela nunca abriria, e a instalação ficaria sem atualização para sempre, em
+# silêncio — o pior desfecho desta feature.
+_campo_cron_valido() {
+  local campo="${1-}" min="$2" max="$3" item
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  [ "${#itens[@]}" -ge 1 ] || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+  done
+  return 0
+}
+
+# _campo_cron_casa <campo> <valor> <min> <max> — o valor está coberto pelo campo?
+_campo_cron_casa() {
+  local campo="${1-}" valor="$2" min="$3" max="$4" item i
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+    i="$_CRON_INI"
+    while [ "$i" -le "$_CRON_FIM" ]; do
+      [ "$i" -eq "$valor" ] && return 0
+      i=$((i + _CRON_PASSO))
+    done
+  done
+  return 1
+}
+
+# Puro (sem `date`, sem aviso, sem tocar em disco): imprime a janela
+# normalizada — cinco campos com UM espaço entre eles — e devolve 0; devolve 1
+# SEM IMPRIMIR NADA quando o valor não serve. O silêncio é o contrato: quem
+# chama usa o comportamento de hoje, nunca o valor recusado.
+janela_normalizada() {  # janela_normalizada <valor>
+  local valor="${1-}" campo saida=""
+  local -a campos=()
+
+  # Quebra de linha (e CR, o que sobra de um `.env` editado no Windows) FORA
+  # antes de tudo: o valor não vira mais linha de crontab, então não há injeção
+  # a temer — mas um `\n` no meio de um campo só produziria uma recusa ilegível,
+  # e é mais barato recusar pelo motivo óbvio.
+  case "$valor" in
+    '' | *$'\n'* | *$'\r'*) return 1 ;;
+  esac
+
+  # Separa por branco e exige CINCO campos. `read -a` colapsa espaço/tab
+  # repetidos, e o normalizado sai com UM espaço entre campos.
+  IFS=$' \t' read -r -a campos <<<"$valor" || true
+  [ "${#campos[@]}" -eq 5 ] || return 1
+
+  # Alfabeto do cron e SÓ ele: dígitos, `*`, `,`, `-` e `/`. Qualquer outro
+  # caractere (`;`, crase, `$`, aspas) recusa o valor inteiro — este campo vem
+  # de um arquivo que qualquer um edita, e não é lugar de expressão de shell.
+  for campo in "${campos[@]}"; do
+    case "$campo" in
+      *[!0123456789*,/-]*) return 1 ;;
+    esac
+    [ -n "$saida" ] && saida="$saida "
+    saida="$saida$campo"
+  done
+
+  IFS=' ' read -r -a campos <<<"$saida"
+  # Minuto (0-59) e hora (0-23): as duas que a janela usa, validadas por
+  # inteiro — é o que impede `25:00` ou `*/0` de virarem janela que nunca abre.
+  _campo_cron_valido "${campos[0]}" 0 59 || return 1
+  # O agente roda nos minutos múltiplos de 5 (`*/5`). Um campo de minuto que
+  # não cobre nenhum deles (`1`, `3-4`) é válido para o cron e é uma janela que
+  # NUNCA abre aqui: o pedido esperaria para sempre, em silêncio. Recusar.
+  local m multiplo_de_5=""
+  for ((m = 0; m < 60; m += 5)); do
+    _campo_cron_casa "${campos[0]}" "$m" 0 59 && { multiplo_de_5=1; break; }
+  done
+  [ -n "$multiplo_de_5" ] || return 1
+  _campo_cron_valido "${campos[1]}" 0 23 || return 1
+  # Dia, mês e dia-da-semana: só `*`. Está explicado no comentário do bloco.
+  for campo in "${campos[@]:2}"; do
+    [ "$campo" = '*' ] || return 1
+  done
+
+  printf '%s\n' "$saida"
+}
+
+# Puro: a janela (já normalizada) cobre o minuto e a hora dados? 0 = dentro.
+janela_contem() {  # janela_contem <expressao> <minuto> <hora>
+  local expressao="${1-}" minuto="${2-}" hora="${3-}"
+  local -a campos=()
+  case "$minuto$hora" in '' | *[!0123456789]*) return 1 ;; esac
+  IFS=' ' read -r -a campos <<<"$expressao" || return 1
+  [ "${#campos[@]}" -eq 5 ] || return 1
+  _campo_cron_casa "${campos[0]}" "$((10#$minuto))" 0 59 || return 1
+  _campo_cron_casa "${campos[1]}" "$((10#$hora))" 0 23 || return 1
+  return 0
+}
+
+# A pergunta do `agent.sh` (seção 4): posso executar o pedido AGORA?
+#   0 = pode (sem janela, ou dentro dela);
+#   1 = fora da janela — anuncia, vigia, NÃO executa;
+#   2 = valor recusado — avisa e executa, que é o comportamento de hoje.
+# Um único `date`: duas chamadas seguidas podem cair em minutos diferentes (o
+# relógio vira entre elas) e a janela seria lida com a hora de um e o minuto do
+# outro — justo na virada da janela, que é quando isso importa.
+janela_aberta() {  # janela_aberta [valor]
+  local bruto="${1-}" normalizada="" hora minuto agora
+  [ -n "$bruto" ] || return 0
+  janela_normalizada "$bruto" >/dev/null 2>&1 || return 2
+  normalizada="$(janela_normalizada "$bruto")" || return 2
+  agora="$(_date_da_janela +%H:%M)"
+  hora="${agora%%:*}"; minuto="${agora##*:}"
+  if janela_contem "$normalizada" "$minuto" "$hora"; then return 0; fi
+  return 1
+}
+
+# Puro: quantos minutos faltam, a partir de <hora>:<minuto>, para a próxima
+# rodada do agente (minuto múltiplo de 5) DENTRO da janela já normalizada.
+# Imprime 1..1440; devolve 1 se não houver nenhuma num dia (não acontece com
+# janela que passou pela `janela_normalizada`).
+# ponytail: minutos de parede, sem horário de verão (o Brasil não tem desde
+# 2019); num fuso com DST a hora prevista erra 1h na noite da troca.
+janela_minutos_ate_abrir() {  # janela_minutos_ate_abrir <expressao> <minuto> <hora>
+  local expressao="${1-}" agora k c
+  case "${2-}${3-}" in '' | *[!0123456789]*) return 1 ;; esac
+  agora=$((10#$3 * 60 + 10#$2))
+  for ((k = 5 - agora % 5; k <= 1440; k += 5)); do
+    c=$(((agora + k) % 1440))
+    if janela_contem "$expressao" "$((c % 60))" "$((c / 60))"; then
+      printf '%s\n' "$k"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Quando o pedido que espera vai rodar: o epoch (segundos, UTC) da próxima
+# rodada do agente dentro da janela. É o que o `agent.sh` conta ao painel
+# (`run_scheduled`), para a tela dizer "agendada para 02h00" e a cerca das
+# extensões saber que o pedido segue de pé (#4334). Devolve 1 sem imprimir
+# quando o valor não serve.
+janela_proxima_abertura() {  # janela_proxima_abertura <valor>
+  local normalizada hora minuto segundo epoch k
+  normalizada="$(janela_normalizada "${1-}")" || return 1
+  read -r hora minuto segundo epoch <<<"$(_date_da_janela '+%H %M %S %s')" || return 1
+  k="$(janela_minutos_ate_abrir "$normalizada" "$minuto" "$hora")" || return 1
+  printf '%s\n' "$((epoch - 10#$segundo + k * 60))"
+}
+
 # Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele
 # avisa o app da versão instalada e, se alguém clicou em "Atualizar agora" na
-# tela, roda o update.sh sozinho. É o que faz o botão da tela existir de
-# verdade — sem cron, a tela mostra "atualização automática indisponível" pra
-# sempre. Chamada por install.sh e update.sh (bloco 7) — re-rodar não duplica
-# a linha do crontab.
+# tela, roda o update.sh sozinho — dentro da janela de manutenção, quando o
+# `.env` tem `SYSTEM_UPDATE_WINDOW` (a janela é decidida no `agent.sh`, não
+# aqui: o passo desta linha não muda nunca; #4334). É o que faz o botão da tela
+# existir de verdade — sem cron, a tela mostra "atualização automática
+# indisponível" pra sempre. Chamada por install.sh e update.sh (bloco 7) —
+# re-rodar não duplica a linha do crontab.
 setup_update_agent_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar.")"; return 0; }
   local secret="${INTERNAL_CRON_SECRET:-${INTERNAL_SECRET:-}}"

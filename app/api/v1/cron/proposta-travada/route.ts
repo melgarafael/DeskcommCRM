@@ -18,10 +18,13 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +47,13 @@ export async function recuperarPropostasTravadas(
   admin: ReturnType<typeof createAdminClient>,
   now: Date,
   requestId: string,
+  /**
+   * O portão POR EMPRESA (#4871), injetado: `handle` passa
+   * `(org) => moduloLigado(admin, "propostas", org)`. Obrigatório de propósito —
+   * um padrão `async () => true` transformaria "esqueci de passar" em fail-open,
+   * que é o defeito que esta fatia conserta.
+   */
+  permitida: (organizacaoId: string) => Promise<boolean>,
 ): Promise<RecuperarResult> {
   const cutoff = new Date(now.getTime() - STUCK_AFTER_MS).toISOString();
 
@@ -80,6 +90,13 @@ export async function recuperarPropostasTravadas(
   let organizacoesComAviso = 0;
 
   for (const [orgId, props] of porOrg) {
+    // A camada POR EMPRESA (#4871): a rodada é GLOBAL (uma linha por empresa no
+    // mesmo `select`), então a permissão é perguntada por organização antes de
+    // tocar nas linhas dela. `moduloLigado` aplica as duas réguas — a instalação
+    // como teto e a linha `desligado` da empresa — e leitura que falha devolve
+    // `false`: a proposta daquela empresa fica presa mais uma rodada, que é
+    // reversível, em vez de ser mexida por quem desligou o módulo.
+    if (!(await permitida(orgId))) continue;
     // `.eq("status", "enviando")` no UPDATE é o claim atômico: se a mensagem
     // confirmou entre o SELECT e o UPDATE, a linha já não está `enviando` e
     // não é tocada — sem isso, o cron reverteria um envio que na verdade
@@ -103,14 +120,23 @@ export async function recuperarPropostasTravadas(
     revertidas += n;
     organizacoesComAviso += 1;
 
+    // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+    const idioma = await idiomaDoAviso(admin, orgId);
     const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
       organization_id: orgId,
       kind: "proposta_travada",
       severity: "critical",
-      title: n === 1 ? "Uma proposta não confirmou o envio" : `${n} propostas não confirmaram o envio`,
-      body:
-        `Ficaram mais de ${STUCK_AFTER_MS / 60000} minutos em envio e voltaram a rascunho, com o número mantido. ` +
-        `Verifique a conexão do WhatsApp e reenvie manualmente — nada foi reenviado sozinho.`,
+      title:
+        n === 1
+          ? traduzir("Uma proposta não confirmou o envio", idioma)
+          : preencher(traduzir("{n} propostas não confirmaram o envio", idioma), { n }),
+      body: preencher(
+        traduzir(
+          "Ficaram mais de {minutos} minutos em envio e voltaram a rascunho, com o número mantido. Verifique a conexão do WhatsApp e reenvie manualmente — nada foi reenviado sozinho.",
+          idioma,
+        ),
+        { minutos: STUCK_AFTER_MS / 60000 },
+      ),
       // "proposal" é a chave de `REFERENCIAS_DE_AVISO` (lib/ai/inbox-destino.ts)
       // — não o nome da tabela. Errar aqui faz o botão "Abrir proposta" nunca
       // aparecer (falha fechada, sem erro visível).
@@ -130,7 +156,14 @@ export async function recuperarPropostasTravadas(
  * `tests/unit/cron-passa-pelo-portao.test.ts` lê o AST e reprova se divergir:
  * passo novo aqui embaixo NÃO roda numa instalação sem proposta em `enviando`.
  */
-const PASSOS_DEPOIS_DO_PORTAO = ["let result", "try", "if (result.revertidas > 0)", "return"] as const;
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "if (!(await moduloLigado(admin, \"propostas\")))",
+  "let result",
+  "try",
+  "if (result.revertidas > 0)",
+  "return",
+] as const;
 void PASSOS_DEPOIS_DO_PORTAO;
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -144,9 +177,19 @@ async function handle(req: NextRequest): Promise<Response> {
   // não custa nada: a proposta só é "presa" depois de 5 min.
   if (await recursoOcioso("propostas")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
+  const admin = createAdminClient();
+  // #4871: `propostas` é o módulo dono destas linhas. Instalação desligada não
+  // roda — e diz isso na resposta, em vez de um `revertidas: 0` que se confunde
+  // com "nada estava preso". Fica DEPOIS do portão do piso ocioso de propósito:
+  // instalação ociosa sai antes de pagar a leitura do módulo (é o passo novo
+  // declarado em PASSOS_DEPOIS_DO_PORTAO).
+  if (!(await moduloLigado(admin, "propostas"))) return ok({ pulado: "modulo_desligado" }, { requestId });
+
   let result: RecuperarResult;
   try {
-    result = await recuperarPropostasTravadas(createAdminClient(), new Date(), requestId);
+    result = await recuperarPropostasTravadas(admin, new Date(), requestId, (orgId) =>
+      moduloLigado(admin, "propostas", orgId),
+    );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[proposta-travada] falhou", { error: detail, requestId });

@@ -26,6 +26,11 @@ ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key
 ARG NEXT_PUBLIC_APP_URL=https://placeholder.invalid
 ARG NEXT_PUBLIC_ADMIN_URL=https://placeholder.invalid
+# Teto de heap do build. O PADRÃO (4096) é o de quem builda na VPS pelo override
+# docker-compose.build.yml (docs/runbooks/deploy.md §4) e não muda. O CI passa
+# 6144 por build-arg (publish-image.yml): em 17/11 o type check do `next build`
+# passou de 4 GB e o imagens-ok caiu por "heap out of memory" (#4390, #4832).
+ARG NODE_HEAP_MB=4096
 # O build do Next é faminto: o heap default do Node (~2GB) estoura. NODE_OPTIONS
 # eleva pra 4GB. Isso é custo de QUEM BUILDA — o CI —, não de quem instala: o
 # caminho normal do self-hoster é `docker compose pull`, e o install.sh não
@@ -37,7 +42,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    NODE_OPTIONS=--max-old-space-size=4096
+    NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 
 # Turbopack (`pnpm build`): ~4min vs ~34min do webpack num VPS. O bloco `webpack:`
 # do Sentry (tree-shake + upload de sourcemap em build-time) é ignorado, mas o
@@ -80,6 +85,23 @@ RUN PDFJS_DIR=$(basename node_modules/.pnpm/pdfjs-dist@*) && \
           ".next/standalone/node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs/canvas" && \
     cp "node_modules/.pnpm/$PDFJS_DIR/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs" \
        ".next/standalone/.next/server/chunks/pdf.worker.mjs"
+
+# `.next/static` entra no PRÓPRIO standalone para que servidor e estáticos saiam de
+# UMA cópia só (#4967). O `output: standalone` não leva `.next/static`, e a receita
+# antiga o copiava num `COPY --from=build` SEPARADO. O BuildKit resolve cada `COPY`
+# contra o snapshot que ele tiver para aquele passo, e em 18/11/2026 isso entregou
+# uma imagem de DOIS builds: o cache do GHA veio com blobs faltando
+# (`ERROR: blob sha256:…: not found`, run 44382924945), o `RUN pnpm build`
+# REEXECUTOU por 262,7 s, o `COPY` do standalone foi servido do snapshot antigo
+# (DONE 6,3 s) e o do static do build novo (DONE 1,7 s). A 1.118.0 saiu com
+# `.next/BUILD_ID` `L0Ae8OxIf-v2KzwJoCU0E` e `.next/static/`
+# `K2qYwFMofIRXoOdBpIUbx`, e todo chunk referenciado pelo HTML virou ChunkLoadError.
+# Com os dois no MESMO diretório copiado, um único `COPY` decide os dois: ou o
+# snapshot inteiro vem do cache (coerente, ainda que velho) ou é refeito do build
+# novo (coerente). Imagem com os dois ids trocados deixa de ser representável.
+# O caminho final NÃO muda: continua `/app/.next/static`, que é onde o `server.js`
+# do standalone procura (medido nas imagens 1.117.0 e 1.118.0).
+RUN cp -a .next/static .next/standalone/.next/static
 
 # ---- runner: imagem slim de produção ----
 FROM node:22-alpine AS runner
@@ -127,8 +149,10 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 # O output standalone NÃO inclui public/ nem .next/static — copiar explicitamente,
 # senão CSS/JS/assets retornam 404 (app "sem estilo").
+# `.next/static` NÃO tem `COPY` próprio: ele já vem dentro do standalone (o passo
+# `cp -a` do estágio `build`), de propósito — dois `COPY` independentes podiam ser
+# servidos de snapshots diferentes e montar a imagem de dois builds (#4967).
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 USER nextjs
 EXPOSE 3000

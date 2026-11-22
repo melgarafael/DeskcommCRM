@@ -98,7 +98,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/plataformas-de-anuncio\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
+  // `/api/mcp` e o OAuth dele (`/api/mcp/oauth/{register,authorize,token,revoke}`,
+  // migration 9390): bearer ou nenhuma sessão por natureza. A autoridade mora
+  // dentro de cada rota — `dsk_` hasheado no MCP, PKCE e código de uso único no
+  // token, cliente autenticado na revogação. O `authorize` só confere o pedido
+  // e passa pela ponte same-origin até `/oauth/mcp/consentir`, que NÃO é
+  // pública: é lá que a sessão de quem administra a organização decide.
   /^\/api\/mcp(\/.*)?$/,
+  // Descoberta do OAuth do MCP (RFC 9728 e RFC 8414): documentos estáticos,
+  // sem banco e sem dado de organização. Sem estas linhas o proxy devolveria
+  // 307 para /login ao cliente de MCP, que lê isso como "não há OAuth aqui".
+  // Ancorados: só os dois documentos e a forma com o caminho do recurso.
+  /^\/\.well-known\/oauth-protected-resource(\/api\/mcp)?$/,
+  /^\/\.well-known\/oauth-authorization-server$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
   // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
   // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga
@@ -227,6 +239,16 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/members$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/test$/i,
+  // BUSCA DO TOKEN DO MÓDULO `connected` (spec 33, F2). Quem chama é o servidor do módulo, que não tem
+  // cookie: a identidade é a assinatura HMAC com o segredo da instalação (`X-Module-*`), conferida DENTRO
+  // da rota (`app/api/v1/extensions/token/route.ts`), com carimbo, nonce de uso único e rate limit. Só
+  // este caminho exato: `/api/v1/extensions/` tem irmãos de sessão (`[id]/segredo`, `install`, etc.) que
+  // não podem nascer públicos de carona.
+  /^\/api\/v1\/extensions\/token$/,
+  // LEITURA DOS EVENTOS DO MÓDULO `connected` (spec 33, F5). Mesma identidade da busca de token: assinatura
+  // HMAC `X-Module-*`, conferida DENTRO da rota (`app/api/v1/extensions/events/route.ts`), mais a
+  // autorização do par organização × instalação pelo banco. Só este caminho exato, pelo mesmo motivo.
+  /^\/api\/v1\/extensions\/events$/,
   // AS ROTAS DAS FATIAS R DA SPEC 33 (configuração, operação, leitura). Mesma
   // dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota, com a organização saindo da
@@ -247,6 +269,15 @@ export const PUBLIC_PATHS: RegExp[] = [
   // pedem, e somente com a marca da instalação.
   /^\/app-icon\/(180|192|512|maskable)$/,
   /^\/manifest\.webmanifest$/,
+  // TÚNEL DO SENTRY (`tunnelRoute` em `next.config.ts`, issue #5091). É um
+  // rewrite do Next para o ingest do Sentry, e o proxy roda antes dele: sem
+  // esta linha o envelope de erro do navegador recebia 307 para `/login` e
+  // nenhum erro de tela chegava ao Sentry, nem os do próprio `/login`. Público
+  // não é aberto: antes desta lista o `proxy.ts` passa pela guarda de
+  // `lib/sentry/tunel.ts` (só o projeto do DSN desta instalação, só POST, teto
+  // de tamanho e de frequência por IP). Âncora `$`: nenhum sub-path nasce
+  // público de carona.
+  /^\/monitoring$/,
   /^\/team\/accept-invite\/.+$/,
   // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de
   // terceiro que não tem — nem pode ter — sessão nossa. O conteúdo é HTML com

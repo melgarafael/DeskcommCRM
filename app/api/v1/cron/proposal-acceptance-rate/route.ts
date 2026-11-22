@@ -4,8 +4,10 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
-import { modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { empresasComModuloDesligado, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -22,12 +24,29 @@ export function calcularTaxaDeAceite(propostas: readonly { status: string }[]): 
 
 export interface TaxaDeAceiteResult { organizacoes_avisadas: number }
 
-/** Só as organizações que ligaram Propostas entram na rodada do laço de retorno. */
+/**
+ * Só as organizações que ligaram Propostas entram na rodada do laço de retorno.
+ *
+ * Job GLOBAL (#4871): a rodada lê todas as empresas e responde por cada uma. A
+ * organização entra quando as DUAS chaves dizem sim — a capacidade dela em
+ * `settings` e o módulo que a instalação resolve — e quando ela não está em
+ * `desligadas`, a lista das que têm linha `desligado` na camada por empresa
+ * (`organization_modules`). Sem linha, a empresa herda a instalação; com a
+ * instalação desligada, ninguém entra, nem quem tem linha `ligado`.
+ *
+ * `desligadas === null` é leitura que falhou, não "ninguém desligou": a rodada
+ * não avisa ninguém (o `rodar` transforma isso em 500).
+ */
 export function organizacoesComPropostas(
   orgs: { id: string; settings: unknown }[],
   modulos: readonly ModuloOpcional[],
+  desligadas: ReadonlySet<string> | null = new Set(),
 ): string[] {
-  return orgs.filter((o) => capacidadesLigadas(o.settings, modulos).includes("propostas")).map((o) => o.id);
+  if (desligadas === null) return [];
+  return orgs
+    .filter((o) => !desligadas.has(o.id))
+    .filter((o) => capacidadesLigadas(o.settings, modulos).includes("propostas"))
+    .map((o) => o.id);
 }
 
 async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: string): Promise<TaxaDeAceiteResult> {
@@ -35,8 +54,23 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
   const { data: orgs, error: orgsErr } = await admin.from("organizations").select("id, settings");
   if (orgsErr) throw new Error(`query_orgs_failed: ${orgsErr.message}`);
 
+  // A camada POR EMPRESA (#4871), uma leitura para a rodada inteira: o cron não
+  // tem "a empresa do request", então a decisão de cada uma é resolvida aqui, uma
+  // vez, e o laço abaixo só consulta o conjunto. Sem isto, a empresa que desligou
+  // `propostas` na tela de Módulos por empresa continuava recebendo o aviso — a
+  // instalação ligada vencia a linha dela.
+  // Com a instalação desligada ninguém entra, e a leitura por empresa não mudaria
+  // a resposta: ela só acontece quando pode tirar alguém (mesma régua do tick).
+  const modulos = await modulosLigados(admin);
+  const desligadas = modulos.includes("propostas")
+    ? await empresasComModuloDesligado(admin, "propostas")
+    : new Set<string>();
+  // Falha de leitura fecha: um aviso a menos é reversível na próxima rodada; um
+  // aviso para quem desligou o módulo é ruído que ninguém pediu.
+  if (desligadas === null) throw new Error("query_modulos_failed: organization_modules ilegível");
+
   let avisadas = 0;
-  for (const orgId of organizacoesComPropostas(orgs ?? [], await modulosLigados(admin))) {
+  for (const orgId of organizacoesComPropostas(orgs ?? [], modulos, desligadas)) {
     const org = { id: orgId };
     const { data: propostas, error: propErr } = await admin
       .from("crm_proposals")
@@ -60,10 +94,15 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
       .eq("status", "open")
       .maybeSingle();
     if (!existente) {
+      // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, org.id);
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: org.id, kind: "proposal_acceptance_rate_drop", severity: "warn",
-        title: "A taxa de aceite de propostas caiu",
-        body: `${Math.round(taxa * 100)}% das propostas decididas nos últimos 30 dias foram aceitas — abaixo do piso de ${Math.round(PISO_DE_ACEITE * 100)}%.`,
+        title: traduzir("A taxa de aceite de propostas caiu", idioma),
+        body: preencher(
+          traduzir("{taxa}% das propostas decididas nos últimos 30 dias foram aceitas — abaixo do piso de {piso}%.", idioma),
+          { taxa: Math.round(taxa * 100), piso: Math.round(PISO_DE_ACEITE * 100) },
+        ),
       });
       if (inboxErr) {
         logger.error("[proposal-acceptance-rate] aviso na Central falhou", { error: inboxErr.message, organization_id: org.id, requestId });

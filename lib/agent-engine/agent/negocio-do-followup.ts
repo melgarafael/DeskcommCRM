@@ -17,17 +17,19 @@
  * `updated_at`, então no gatilho por etapa o negócio movido é o escolhido.
  *
  * QUAIS CAMPOS: só os do NEGÓCIO declarados no funil (`escopo` ausente ou
- * `negocio`), com o rótulo que a organização deu, e só os preenchidos. Chave de
- * `custom_fields` que o funil não declara fica de fora — sem rótulo não há como
- * o modelo saber o que o valor significa. Arquivo fica de fora: é URL de
- * storage, não contexto.
+ * `negocio`), com o rótulo que a organização deu, e só os preenchidos. E só os
+ * que o dono do funil MARCOU como legíveis pela IA (`ia_pode_ler: true`, issue
+ * #4669): a marca é consentimento, e a ausência dela é DESMARCADO — campo
+ * antigo sem a chave não vai ao modelo. Chave de `custom_fields` que o funil
+ * não declara fica de fora — sem rótulo não há como o modelo saber o que o
+ * valor significa. Arquivo fica de fora: é URL de storage, não contexto.
  *
  * NUNCA DERRUBA O TURNO: o bloco é ACRÉSCIMO. Falhou a leitura, o turno segue
  * exatamente como era antes deste arquivo existir (ver `carregarBlocoDoNegocio`).
  */
 import type pg from 'pg';
 
-import { camposDoFunil, camposPorEscopo } from '@/lib/leads/campos-do-funil';
+import { camposDoFunil, camposLiberadosParaIa } from '@/lib/leads/campos-do-funil';
 import type { CustomFieldDef } from '@/lib/schemas/settings';
 
 /** Teto da descrição no prompt — o card pode ser um diário de obra inteiro. */
@@ -81,7 +83,10 @@ export function blocoDoNegocio(negocio: NegocioDoFollowup | null): string {
   if (etapa) linhas.push(`Etapa atual: ${etapa}`);
 
   const custom = negocio.custom_fields ?? {};
-  const campos = camposPorEscopo(camposDoFunil(negocio.pipeline_settings), 'negocio');
+  // Só os campos que o dono do funil marcou "A IA pode ler" (#4669): a marca é
+  // consentimento, e campo sem a marca fica no card — documento, dado de saúde,
+  // observação interna não vão ao modelo por este caminho.
+  const campos = camposLiberadosParaIa(camposDoFunil(negocio.pipeline_settings), 'negocio');
   for (const campo of campos) {
     const v = valorLegivel(campo, custom[campo.key]);
     if (v !== null) linhas.push(`${campo.label}: ${v}`);

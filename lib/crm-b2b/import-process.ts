@@ -15,16 +15,30 @@ import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { logger } from "@/lib/logger";
+import type { LinhaClassificada } from "@/lib/crm-b2b/import-previa";
 
 type SB = SupabaseClient;
 
 export interface ProcessImportOpts {
   organizationId: string;
   batchId: string;
-  userId: string;
+  /**
+   * Quem pediu a importação, como AUTOR das linhas (`created_by`,
+   * `created_by_user_id`). `null` quando quem pediu foi um token de servidor:
+   * o id de um token não existe em `auth.users`, e as quatro colunas aceitam nulo.
+   */
+  userId: string | null;
   sheet: SheetMatrix;
   mapping: Partial<Record<MappingField, string>>;
   enrichCompanies?: boolean;
+  /**
+   * O veredito da PRÉVIA por linha (A23, #4888), indexado pelo número da linha na
+   * planilha. Só as `nova` são gravadas; as demais viram `import_rows` com o
+   * motivo (`conflict` para já existe/conflito/repetida, `failed` para sem
+   * telefone/inválida) e nada é criado por elas. Ausente = o comportamento
+   * antigo (grava todas).
+   */
+  classificacao?: ReadonlyMap<number, LinhaClassificada>;
 }
 
 export interface ProcessImportResult {
@@ -92,6 +106,20 @@ export async function processCompaniesPeopleImport(
       continue;
     }
     const rowId = rowRec.id as string;
+
+    // A23: a prévia já disse que esta linha não entra (só `nova` e `anexada` gravam). Registra o motivo e segue.
+    const veredito = opts.classificacao?.get(rowNumber);
+    if (veredito && veredito.status !== "nova" && veredito.status !== "anexada") {
+      const statusDaLinha = veredito.status === "sem_telefone" || veredito.status === "invalida" ? "failed" : "conflict";
+      await supabase
+        .from("import_rows")
+        .update({ status: statusDaLinha, error: veredito.motivo })
+        .eq("id", rowId)
+        .eq("organization_id", organizationId);
+      if (statusDaLinha === "conflict") conflict += 1;
+      else failed += 1;
+      continue;
+    }
 
     try {
       const outcome = await processOneRow(supabase, {
@@ -175,7 +203,7 @@ async function processOneRow(
   ctx: {
     organizationId: string;
     batchId: string;
-    userId: string;
+    userId: string | null;
     mapped: Record<MappingField, string>;
     companyByKey: Map<string, string>;
     personByKey: Map<PersonCacheKey, PessoaDoLote>;

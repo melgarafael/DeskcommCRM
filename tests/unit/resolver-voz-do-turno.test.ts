@@ -71,7 +71,19 @@ describe("resolverVozDoTurno", () => {
     expect(r).toMatchObject({ apiKey: "sk_elevenlabs", voiceId: "v1", formato: "ogg_opus" });
   });
 
-  it("canal que não entrega nota de voz (Instagram/Facebook): texto, sem ler a voz, sem orçamento, sem síntese", async () => {
+  it("DM do Instagram (wav-only): FALA, e pede a síntese em WAV — mp3 e ogg/opus voltam 400", async () => {
+    resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk_elevenlabs" });
+    const r = await resolverVozDoTurno({
+      ...base,
+      voiceNote: "wav-only",
+      vozEnabled: true,
+      vozQuando: "sempre",
+      inboundType: "audio",
+    });
+    expect(r).toMatchObject({ apiKey: "sk_elevenlabs", voiceId: "v1", formato: "wav" });
+  });
+
+  it("canal que não entrega nota de voz (Facebook, Telegram): texto, sem ler a voz, sem orçamento, sem síntese", async () => {
     // Instalação real, 15/11/2026: o canal social declarava `server-convert`,
     // o agente sintetizava mp3 e o provedor respondia 400 em toda tentativa —
     // cada retry do turno, mais uma bolha de áudio falhada. Com `none`, o turno

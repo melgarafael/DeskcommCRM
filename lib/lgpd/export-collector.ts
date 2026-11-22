@@ -75,6 +75,12 @@ export interface ContactSnapshot {
    */
   additional_phones?: ContactPhoneSnapshot[];
   /**
+   * As identidades de rede social do contato (#3764, fatia 1): o perfil do
+   * Instagram e o do Facebook — cada uma com a rede de onde veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
+   * titular pedia acesso e não recebia o que a ingestão guardou sobre ele.
+   */
+  identities?: ContactIdentitySnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -96,6 +102,13 @@ export interface ContactPhoneSnapshot {
   /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
   wa_lid: string | null;
   created_at: string;
+}
+
+/** Uma identidade do contato num canal, como o titular a recebe (#3764). */
+export interface ContactIdentitySnapshot {
+  canal: string;
+  identificador: string;
+  criado_em: string;
 }
 
 export interface ConsentRow {
@@ -380,6 +393,22 @@ export interface ScheduledMessageRow {
   body: string;
   scheduled_at: string;
   status: string;
+  created_at: string;
+}
+
+/**
+ * Venda registrada no negócio do titular (#5087). A anonimização limpa
+ * `observacao` e `tags`; valor, moeda e dia ficam (registro do dinheiro). O
+ * pedido de acesso entrega a linha inteira — mesma régua da comanda (`sales`).
+ */
+export interface VendaRegistradaRow {
+  id: string;
+  lead_id: string | null;
+  valor_cents: number;
+  currency: string;
+  data: string;
+  tags: string[];
+  observacao: string | null;
   created_at: string;
 }
 
@@ -788,6 +817,8 @@ export interface ExportPayload {
   /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
   cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
   cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
+  /** Módulo `amigo` (#4227): o vínculo do titular com o cadastro de paciente no sistema da clínica. */
+  amigo_vinculos?: { connection_id: string; patient_id: number; lead_id: string | null }[];
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
@@ -812,6 +843,8 @@ export interface ExportPayload {
    * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
    */
   scheduled_messages?: ScheduledMessageRow[];
+  /** Presente só quando há linha, como `scheduled_messages`. */
+  vendas_registradas?: VendaRegistradaRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -1356,6 +1389,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
+  // (#3764) As identidades de rede social do contato. A anonimização as apaga
+  // pelo gatilho da ficha — e o titular que pede ACESSO tem de receber o que a
+  // ingestão guardou sobre ele. Sem esta leitura, o dado existia no banco e não
+  // saía no `data.json`: a mesma assimetria que a cerca de acesso×redação cobra.
+  // A consulta filtra organização e ficha: o cliente aqui é o administrador.
+  let identidades: ContactIdentitySnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("canal, identificador, criado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("criado_em", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact identities load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    identidades = (data ?? []) as ContactIdentitySnapshot[];
+  }
+  if (contact && identidades.length > 0) contact.identities = identidades;
+
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
   if (contact?.consent && typeof contact.consent === "object") {
@@ -1646,6 +1702,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
           if (eventos) { conferirTeto("cadencias_eventos", eventos, 500); cadencias_eventos = eventos; }
         }
       }
+    }
+  }
+
+  // Módulo `amigo` (#4227), pelo mesmo caminho de cadências: o REGISTRO diz se o
+  // módulo existe; ausente, a chave nem aparece e a tabela nem é consultada.
+  // Suspenso também exporta. Só os ids do vínculo: o cadastro do paciente mora
+  // no Amigo, e a instalação não guarda cópia dele.
+  let amigoInstalado = false;
+  let amigo_vinculos: NonNullable<ExportPayload["amigo_vinculos"]> = [];
+  if (contactId) {
+    const { data: moduloAmigo, error: erroModuloAmigo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "amigo").maybeSingle();
+    if (erroModuloAmigo) throw new Error("amigo_export_module_read_failed");
+    if (moduloAmigo) {
+      amigoInstalado = true;
+      const { data: vinculos, error: erroVinculos } = await admin.from("amigo_patient_links")
+        .select("connection_id, patient_id, lead_id")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).limit(500);
+      if (erroVinculos) throw new Error("amigo_export_load_failed");
+      if (vinculos) { conferirTeto("amigo_vinculos", vinculos, 500); amigo_vinculos = vinculos; }
     }
   }
 
@@ -1979,6 +2054,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("scheduled_messages", data, 500);
       scheduled_messages = data;
+    }
+  }
+
+  // Vendas registradas — contact_id direto em vendas_registradas (#5087). A
+  // venda de negócio herda o contato do negócio ao nascer (POST /api/v1/vendas),
+  // e é por esse contact_id que a anonimização a limpa.
+  let vendas_registradas: VendaRegistradaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("vendas_registradas")
+      .select("id, lead_id, valor_cents, currency, data, tags, observacao, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("data", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] vendas registradas load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("vendas_registradas", data, 500);
+      vendas_registradas = data;
     }
   }
 
@@ -2674,6 +2772,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // O módulo ausente não altera o contrato do arquivo legado. Instalado
     // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
     ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
+    ...(amigoInstalado ? { amigo_vinculos } : {}),
     orders,
     activities,
     checkpoints,
@@ -2685,6 +2784,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     proposals,
     tasks,
     ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
+    ...(vendas_registradas.length > 0 ? { vendas_registradas } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

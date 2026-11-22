@@ -807,7 +807,7 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
  * abordadas), e foi ela que deixou a campanha CONCLUÍDA sem saída — justamente
  * a que se quer reaproveitar para outra oferta. Agora o botão aparece em
  * qualquer campanha com empresas, e abre um menu com "Só as não abordadas (N)"
- * e "Todas (M)".
+ * e "Incluir as empresas já abordadas (M)".
  *
  * Os números vêm do SERVIDOR (`?resumo=1`), da mesma régua do arquivo: quem
  * pediu para parar é achado também pelo telefone, e esse vínculo não está na
@@ -832,7 +832,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     return user;
   }
 
-  it("campanha concluída: 'Todas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
+  it("campanha concluída: 'Incluir as empresas já abordadas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
     const base = fixture();
     const concluida = {
       ...base,
@@ -855,7 +855,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     );
     await abrirMenu();
 
-    const todas = await screen.findByRole("menuitem", { name: "Todas (2)" });
+    const todas = await screen.findByRole("menuitem", { name: "Incluir as empresas já abordadas (2)" });
     expect(todas).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`);
     // Nada para abordar: o item existe, diz zero e não vira link de arquivo vazio.
     const soNaoAbordadas = screen.getByRole("menuitem", { name: "Só as não abordadas (0)" });
@@ -888,7 +888,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
       "href",
       `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
     );
-    expect(screen.getByRole("menuitem", { name: "Todas (3)" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Incluir as empresas já abordadas (3)" })).toBeVisible();
     expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
       "2 empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
     );
@@ -912,7 +912,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     );
     // Sem a contagem ninguém sabe se há o que baixar: um `<a download>` ali
     // salvaria o corpo da recusa (422) como se fosse a planilha.
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -926,7 +926,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     });
     await abrirMenu();
     expect(await screen.findByText("Contando as empresas…")).toBeVisible();
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -978,7 +978,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     await fecharEReabrir(user);
     await waitFor(() => expect(pedidos).toHaveLength(2));
     expect(await screen.findByText("Contando as empresas…")).toBeVisible();
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -1004,7 +1004,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
     );
-    for (const nome of ["Todas", "Só as não abordadas"]) {
+    for (const nome of ["Incluir as empresas já abordadas", "Só as não abordadas"]) {
       const item = screen.getByRole("menuitem", { name: nome });
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).not.toHaveAttribute("href");
@@ -1050,5 +1050,166 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     await screen.findByRole("heading", { name: "Clínicas de estética" });
     expect(screen.queryByTestId("baixar-lista")).toBeNull();
     expect(screen.queryByText(FRASE_DO_CARTAO)).toBeNull();
+  });
+});
+
+/**
+ * #4847 — o cartão de uma campanha PAUSADA PELA JANELA oferece "Pausar
+ * abordagens". Sem o botão nesse estado, quem quer parar às 14h a campanha da
+ * manhã não consegue: a rota hoje aceitaria (com o conserto), mas a tela não dá
+ * o gesto. Os outros botões do cartão pausado (Editar ritmo, Editar instrução,
+ * Retomar fila) continuam lá — o botão novo NÃO substitui nada.
+ */
+describe("o cartão da campanha pausada pela janela (#4847)", () => {
+  function campanhaPausada(marca: boolean | undefined) {
+    return {
+      configured: true,
+      campaigns: [
+        {
+          id: COMPLETA,
+          search: BUSCA_NOVA,
+          name: "Manhã — clínicas",
+          status: "paused",
+          search_status: "succeeded",
+          error: "Fora do horário da campanha. Ela volta sozinha na próxima abertura.",
+          config: CONFIG,
+          result_count: 5,
+          skipped_count: 0,
+          cost_usd: "0.10",
+          next_send_at: "2026-11-18T10:00:00Z",
+          channel_session_id: CHANNEL,
+          ...(marca === undefined ? {} : { pausada_pela_janela: marca }),
+        },
+      ],
+      candidates: [],
+      agents: [{ id: AGENT, name: "Agente existente" }],
+      personalizacao: {
+        vendedor_nome: "",
+        vendedor_apresentacao: "",
+        vendedor_diferencial: "",
+        vocabulario: {},
+      },
+      channels: [{ id: CHANNEL, display_name: "Comercial", phone_number: null, status: "WORKING" }],
+      stages: [],
+    };
+  }
+
+  async function abrirCartao(marca: boolean | undefined) {
+    api.get.mockImplementation(async () => ({ data: campanhaPausada(marca) }));
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Manhã — clínicas/ }));
+    await screen.findByRole("heading", { name: "Manhã — clínicas" });
+  }
+
+  it("A5: com a marca da janela, o cartão oferece Pausar abordagens JUNTO de Retomar fila", async () => {
+    await abrirCartao(true);
+    const pausar = await screen.findByRole("button", { name: "Pausar abordagens" });
+    expect(pausar).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retomar fila" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Editar ritmo" })).toBeVisible();
+    // O gesto vai para a rota com a ação certa.
+    fireEvent.click(pausar);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+        action: "pause",
+        id: COMPLETA,
+      }),
+    );
+  });
+
+  it("A5: sem a marca (pausa da pessoa), o botão NÃO aparece — nada mudou para quem já pausou", async () => {
+    await abrirCartao(false);
+    await screen.findByRole("button", { name: "Retomar fila" });
+    expect(screen.queryByRole("button", { name: "Pausar abordagens" })).toBeNull();
+  });
+
+  it("A5: campanha pausada SEM a coluna no JSON (GET de antes do conserto) também não mostra o botão", async () => {
+    // O cartão lê o que o GET devolve: sem a coluna, `undefined` — e "talvez"
+    // não é "sim": a marca verdadeira é o que autoriza o botão.
+    await abrirCartao(undefined);
+    await screen.findByRole("button", { name: "Retomar fila" });
+    expect(screen.queryByRole("button", { name: "Pausar abordagens" })).toBeNull();
+  });
+});
+
+describe("R4: 'Suas campanhas' agrupa por nicho (#4956/PR9)", () => {
+  /** Uma campanha como o servidor manda — `search.niche` é o único campo que o grupo lê. */
+  function doGrupo(id: string, nome: string, nicho: string | null, result_count = 3) {
+    return {
+      id: `99999999-9999-4999-8999-00000000000${id}`,
+      name: nome,
+      search: nicho === null ? null : { niche: nicho, location: "São Paulo", origem: "busca" },
+      status: "draft",
+      search_status: "succeeded",
+      error: null,
+      config: null,
+      result_count,
+      skipped_count: 0,
+      cost_usd: null,
+      next_send_at: "2026-10-10T00:00:00Z",
+    };
+  }
+
+  async function abrirCom(campanhas: ReturnType<typeof doGrupo>[]) {
+    api.get.mockImplementation(async () => ({
+      data: { ...fixture(), campaigns: campanhas, candidates: [] },
+    }));
+    openPage();
+    // O cabeçalho "Suas campanhas" existe ANTES de a resposta chegar; esperar o
+    // primeiro cartão é o que garante que os grupos já foram desenhados.
+    await screen.findByRole("button", { name: new RegExp(campanhas[0]!.name) });
+    // Só os grupos da LISTA: a página tem outros `role="group"` implícitos (o
+    // `<details>` de "Voz e vocabulário", os `<fieldset>` do detalhe).
+    const lista = screen.getByRole("heading", { name: "Suas campanhas" }).closest("section")!;
+    return within(lista).getAllByRole("group");
+  }
+
+  it("nicho repetido: um cabeçalho só, com as campanhas na ordem da lista", async () => {
+    const todos = await abrirCom([
+      doGrupo("1", "Padarias centro", "Padarias"),
+      doGrupo("2", "Clínicas do bairro", "Clínicas"),
+      doGrupo("3", "Padarias zona sul", "Padarias"),
+    ]);
+
+    // A ordem dos grupos é a da lista: "Padarias" apareceu primeiro e não é reordenado.
+    expect(todos.map((g) => g.getAttribute("aria-label"))).toEqual(["Padarias", "Clínicas"]);
+    expect(within(todos[0]!).getAllByRole("heading", { name: "Padarias" })).toHaveLength(1);
+
+    const texto = todos[0]!.textContent ?? "";
+    expect(texto).toContain("Padarias centro");
+    expect(texto).toContain("Padarias zona sul");
+    expect(texto.indexOf("Padarias centro")).toBeLessThan(texto.indexOf("Padarias zona sul"));
+    // Cada campanha aparece UMA vez na LISTA (o cartão aberto no detalhe repete o
+    // nome, e isso não é a lista): agrupar não duplica cartão.
+    expect(within(todos[0]!).getAllByText("Padarias centro")).toHaveLength(1);
+    expect(within(todos[1]!).queryByText("Padarias centro")).toBeNull();
+  });
+
+  it("nicho único: a campanha fica sob um cabeçalho com o nicho dela", async () => {
+    const todos = await abrirCom([doGrupo("4", "Imobiliárias da serra", "Imobiliárias")]);
+
+    expect(todos).toHaveLength(1);
+    expect(within(todos[0]!).getByRole("heading", { name: "Imobiliárias" })).toBeVisible();
+    expect(within(todos[0]!).getByText("Imobiliárias da serra")).toBeVisible();
+  });
+
+  it("campanha sem nicho cai num grupo próprio, nomeado, e não some da lista", async () => {
+    const todos = await abrirCom([
+      doGrupo("5", "Sem busca nenhuma", null),
+      doGrupo("6", "Padarias centro", "Padarias"),
+    ]);
+
+    expect(todos.map((g) => g.getAttribute("aria-label"))).toEqual(["Sem nicho", "Padarias"]);
+    expect(within(todos[0]!).getByText("Sem busca nenhuma")).toBeVisible();
+  });
+
+  it("a contagem e o status do cartão continuam exatamente os mesmos", async () => {
+    const todos = await abrirCom([
+      doGrupo("7", "Padarias centro", "Padarias", 5),
+      doGrupo("8", "Padarias zona sul", "Padarias", 12),
+    ]);
+
+    expect(within(todos[0]!).getByText("Preparar campanha · 5 empresas")).toBeVisible();
+    expect(within(todos[0]!).getByText("Preparar campanha · 12 empresas")).toBeVisible();
   });
 });

@@ -69,9 +69,13 @@ import type { Message } from "@/lib/types/messaging";
 
 type SB = SupabaseClient;
 
-/** As colunas da mensagem de origem que o encaminhamento de fato lê. */
+/**
+ * As colunas da mensagem de origem que o encaminhamento de fato lê. `metadata`
+ * entra pelo nome original do arquivo (#4457): o PostgREST não devolve coluna
+ * que não foi pedida, e sem ela o anexo sai com o nome do objeto no bucket.
+ */
 const COLUNAS_DA_ORIGEM =
-  "id, organization_id, conversation_id, type, body, media_url, media_storage_path, media_mime, revoked_at";
+  "id, organization_id, conversation_id, type, body, media_url, media_storage_path, media_mime, metadata, revoked_at";
 
 export interface MensagemDeOrigem {
   id: string;
@@ -82,6 +86,8 @@ export interface MensagemDeOrigem {
   media_url: string | null;
   media_storage_path: string | null;
   media_mime: string | null;
+  /** Só o nome original do arquivo sai daqui — ver `MidiaDaOrigem.metadata`. */
+  metadata?: unknown;
   revoked_at: string | null;
 }
 
@@ -186,12 +192,17 @@ export function montarEntradaDeEncaminhamento(
   if (origem.body) entrada.body = origem.body;
   // Mídia do NOSSO Storage vai por `media_storage_path` — o handler assina o
   // objeto e manda a URL assinada. A URL crua do provedor NUNCA viaja daqui.
+  // O nome original (#4457) vai no MESMO campo que o Composer usa: o envio o
+  // põe no documento do canal e o grava em `metadata.media_filename` do
+  // destino. Sem ele, o cliente recebe o nome do objeto no bucket.
   if (midia.tipo === "copia") {
     entrada.media_storage_path = midia.media_storage_path;
     if (midia.media_mime) entrada.media_mime = midia.media_mime;
+    if (midia.media_filename) entrada.media_filename = midia.media_filename;
   } else if (midia.tipo === "externa") {
     entrada.media_url = midia.media_url;
     if (midia.media_mime) entrada.media_mime = midia.media_mime;
+    if (midia.media_filename) entrada.media_filename = midia.media_filename;
   }
   return entrada;
 }
