@@ -1352,6 +1352,7 @@ jobs:
       # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
       # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
+        agencias-organizacoes.spec.ts
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
         admin-gestao-de-tenants.spec.ts
@@ -1373,6 +1374,7 @@ jobs:
         i18n-espanhol-na-tela.spec.ts
         extensoes-declarativas.spec.ts
         marca-logo.spec.ts
+        aparencia-templates.spec.ts
         suporte-temporario.spec.ts
         olhar-telas-do-epico.spec.ts
         jev-decisoes-rapidas.spec.ts
@@ -1522,6 +1524,12 @@ jobs:
       # aplica um funil com nome novo e reaplica o mesmo arquivo em
       # Configurações › Funis. Só usa o seed de credenciais e arquiva pela API o
       # funil que criou. PREVISÃO, não medida no CI: ~30 s de caso.
+      #
+      # `operacao-do-dia` entrou em 2026-11-16: cria a PRÓPRIA organização
+      # sintética (fuso de Beirute, admin/viewer/agent sem MFA), semeia uma
+      # conversa `projeto` pelo service role, gera o relatório pela tela e
+      # apaga tudo no fim. Não fala com WAHA nem com o Graph. PREVISÃO, não
+      # medida no CI: ~60 s de caso (quatro logins).
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1538,6 +1546,7 @@ jobs:
         aviso-pelo-numero-oficial.spec.ts
         molde-de-ia-empresas-novas.spec.ts
         blueprint-de-funis.spec.ts
+        operacao-do-dia.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
@@ -1575,6 +1584,7 @@ jobs:
         system-update.spec.ts
         respostas-rapidas-conteudos.spec.ts
         b2b-vinculos-pela-tela.spec.ts
+        mcp-oauth-chatgpt.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

@@ -13,7 +13,9 @@
  * webhook" para "posso varrer e falar com a rede interna do servidor".
  */
 import { lookup } from "node:dns/promises";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { isIPv4, isIPv6 } from "node:net";
+import type { LookupFunction } from "node:net";
 
 /** Converte IPv4 pontuado em inteiro de 32 bits. */
 function ipv4ParaInt(ip: string): number | null {
@@ -76,6 +78,45 @@ export function ipEhEspecial(ip: string): boolean {
   return true; // nem IPv4 nem IPv6: não é destino que se saiba julgar
 }
 
+/** Resolve e valida todos os destinos, devolvendo os mesmos IPs para o socket. */
+export async function resolverDestinosPublicos(
+  hostname: string,
+  resolve: (host: string, options: { all: true; verbatim: true }) => Promise<LookupAddress[]> = lookup,
+): Promise<LookupAddress[]> {
+  const host = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  if (isIPv4(host) || isIPv6(host)) {
+    if (ipEhEspecial(host)) throw new Error("unsafe_url:private_ip");
+    return [{ address: host, family: isIPv4(host) ? 4 : 6 }];
+  }
+
+  let addresses: LookupAddress[];
+  try {
+    addresses = await resolve(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error("unsafe_url:dns_failed");
+  }
+  if (addresses.length === 0) throw new Error("unsafe_url:dns_empty");
+  if (addresses.some(({ address }) => ipEhEspecial(address))) {
+    throw new Error("unsafe_url:private_ip");
+  }
+  return addresses;
+}
+
+/** Lookup preso aos endereços já verificados; não consulta DNS durante a conexão. */
+export function lookupFixo(hostname: string, addresses: LookupAddress[]): LookupFunction {
+  const expected = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+  return (requested, options: LookupOptions, callback) => {
+    if (requested !== expected || addresses.length === 0) {
+      callback(Object.assign(new Error("Destino DNS não validado."), { code: "EHOSTUNREACH" }), "", 0);
+      return;
+    }
+    if (options.all) callback(null, addresses);
+    else callback(null, addresses[0]!.address, addresses[0]!.family);
+  };
+}
+
 /**
  * Resolve o hostname e devolve os endereços, recusando se QUALQUER um cair em
  * faixa especial.
@@ -85,31 +126,9 @@ export function ipEhEspecial(ip: string): boolean {
  * é a assinatura do rebinding — o `fetch` pode escolher o privado, e não temos
  * como saber qual ele pegou.
  *
- * Isto REDUZ muito a janela do rebinding, mas não a fecha por completo: entre
- * esta resolução e a do `fetch` existe um intervalo em que o DNS pode mudar de
- * resposta. Fechar de vez exige fixar o IP na conexão (agente com `lookup`
- * próprio), o que muda o SNI/Host e quebra TLS com vários destinos legítimos.
- * A janela residual está declarada aqui de propósito, para o próximo leitor não
- * precisar descobrir sozinho — que foi exatamente como este arquivo nasceu.
+ * O resultado é passado ao `lookupFixo`, que impede uma segunda resolução
+ * durante a conexão TCP.
  */
 export async function assertDestinoResolvidoSeguro(hostname: string): Promise<void> {
-  // Literal de IP não passa por DNS: julga direto.
-  if (isIPv4(hostname) || isIPv6(hostname)) {
-    if (ipEhEspecial(hostname)) throw new Error("unsafe_url:private_ip");
-    return;
-  }
-
-  let enderecos: Array<{ address: string }>;
-  try {
-    enderecos = await lookup(hostname, { all: true });
-  } catch {
-    // Não resolveu: recusa. Falhar fechado aqui custa uma entrega de webhook;
-    // falhar aberto custa a rede interna.
-    throw new Error("unsafe_url:dns_failed");
-  }
-
-  if (enderecos.length === 0) throw new Error("unsafe_url:dns_empty");
-  for (const { address } of enderecos) {
-    if (ipEhEspecial(address)) throw new Error("unsafe_url:private_ip");
-  }
+  await resolverDestinosPublicos(hostname);
 }

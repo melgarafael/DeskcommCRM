@@ -34,6 +34,7 @@ import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FL
 import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
+import { bloqueioDeChamadasLigado } from "@/lib/organizacao/bloqueio-de-chamadas";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { capacidadesLigadas, type CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { conversaFicaComQuemAtendeu } from "@/lib/schemas/routing";
@@ -134,9 +135,17 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Comandas",
     oQueFaz: "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade.",
   },
+  catalogo_servicos: {
+    nome: "Catálogo de serviços",
+    oQueFaz: "Itens do catálogo que são serviço, com variações, prazo e sinal — e o agente responde com esses valores.",
+  },
   lista_de_espera: {
     nome: "Lista de espera da agenda",
     oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
+  },
+  amigo: {
+    nome: "Amigo (sistema de clínicas)",
+    oQueFaz: "A agenda passa a usar o sistema de clínicas Amigo: pacientes, vagas e consultas vêm de lá, e a IA marca pelo Amigo.",
   },
   ouvidoria: {
     nome: "Ouvidoria",
@@ -200,6 +209,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   revisao_por_km: {
     nome: "Revisão por quilometragem",
     oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
+  },  agencias: {
+    nome: "Agências administram clientes",
+    oQueFaz: "Uma empresa-agência cria as empresas dos clientes dela e entra nelas para administrar, sem login separado em cada uma; tudo o que faz lá fica registrado com o nome da agência.",
+  },
+  catalogo_por_feed: {
+    nome: "Catálogo sincronizado por feed",
+    oQueFaz:
+      "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
   },
 };
 
@@ -624,6 +641,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "admin",
     href: "/app/settings/security",
+  },
+  {
+    id: "bloqueio_de_chamadas",
+    nome: "Bloquear chamadas recebidas",
+    oQueFaz: "Recusa sozinha a ligação de voz que chega no WhatsApp dos números da empresa.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/security",
+    ler: peloSettings(bloqueioDeChamadasLigado),
   },
   {
     id: "tronco_sip",

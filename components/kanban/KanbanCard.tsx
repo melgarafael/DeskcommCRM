@@ -1,6 +1,6 @@
 "use client";
 import { Draggable } from "@hello-pangea/dnd";
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
@@ -17,6 +17,7 @@ import { OwnerBadge } from "./OwnerBadge";
 import { ContatoNoCard } from "./ContatoNoCard";
 import { ArquivosNoCard } from "./ArquivosNoCard";
 import { TarefasNoCard } from "./TarefasNoCard";
+import { FotoDoContato } from "./FotoDoContato";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
 export type GestoDeSelecao = "alterna" | "intervalo";
@@ -69,6 +70,12 @@ interface KanbanCardProps {
    * de escrita próprias).
    */
   somenteLeitura?: boolean;
+  /**
+   * O card está na coluna da etapa. A coluna já diz o nome, então o rodapé não
+   * repete "em <etapa>" — só o tempo, quando há. Fora da coluna, a etapa vai
+   * para uma linha própria, debaixo do responsável.
+   */
+  naColuna?: boolean;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -89,8 +96,11 @@ function formatValor(cents: number | null, currency: string | null): string | nu
  * dados, ele TROCA de estado.
  *
  * Cor só aparece na borda esquerda, e só quando o estado pede (Lei C).
+ *
+ * `memo` (#4788): com props iguais o card não redesenha — marcar, pulsar ou
+ * mover um card redesenha só ele, não a coluna inteira.
  */
-export function KanbanCard({
+export const KanbanCard = memo(function KanbanCard({
   card,
   lead,
   index,
@@ -104,6 +114,7 @@ export function KanbanCard({
   onMoverPara,
   denso = false,
   somenteLeitura = false,
+  naColuna = true,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
@@ -145,11 +156,7 @@ export function KanbanCard({
   // O título é o maior e mais natural alvo do card. Quem lê "Segurando Shift,
   // um clique seleciona tudo entre o card anterior e o que você clicou" e clica
   // no card clica no nome dele — e recebia o dossiê.
-  const decidirClique = (e: {
-    shiftKey: boolean;
-    metaKey: boolean;
-    ctrlKey: boolean;
-  }): void => {
+  const decidirClique = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): void => {
     if (e.shiftKey) {
       onSelect?.(card.id, "intervalo");
       return;
@@ -183,7 +190,7 @@ export function KanbanCard({
           data-densidade={denso ? "compacta" : "confortavel"}
           className={cn(
             "group relative overflow-hidden rounded-md border border-border bg-surface",
-            denso ? "py-1.5 pl-2.5 pr-2" : "py-2.5 pl-3 pr-3",
+            denso ? "py-1.5 pr-2 pl-2.5" : "py-2.5 pr-3 pl-3",
             "shadow-xs transition-colors",
             "hover:border-border-strong",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
@@ -244,9 +251,7 @@ export function KanbanCard({
                   className={cn(
                     "mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent transition-opacity",
                     "focus:opacity-100 focus-visible:outline-2 focus-visible:outline-accent",
-                    isSelected || isSelecting
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100",
+                    isSelected || isSelecting ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                   )}
                 />
               )}
@@ -259,6 +264,11 @@ export function KanbanCard({
                   aria-label={`${t("Tag")}: ${card.canonicalTag}`}
                 />
               )}
+              {/* A foto do contato — só quando HÁ foto: sem ela, nada (o disco
+                  de iniciais do rodapé é o do responsável; ver FotoDoContato). */}
+              {lead.contact_id && lead.contact_has_avatar === true ? (
+                <FotoDoContato contactId={lead.contact_id} denso={denso} />
+              ) : null}
               {/* O TÍTULO é o elemento ativável, não o card inteiro.
                   `role="group"` no card foi decisão da wave 2 (o dnd marca o
                   handle como button, e com o menu de ações dentro isso vira
@@ -272,7 +282,7 @@ export function KanbanCard({
                 // dossiê). O dado não some — some a segunda linha.
                 title={denso ? card.title : undefined}
                 className={cn(
-                  "text-sm font-medium leading-5 text-text",
+                  "text-sm leading-5 font-medium text-text",
                   denso ? "line-clamp-1 h-5" : "line-clamp-2 h-10",
                 )}
               >
@@ -293,12 +303,15 @@ export function KanbanCard({
               </h3>
             </div>
             {!somenteLeitura && (
-              <KanbanCardActions
-                lead={lead}
-                pipelineId={pipelineId}
-                etapas={etapas}
-                onMoverPara={onMoverPara}
-              />
+              <div className="flex shrink-0 items-center">
+                {/* O "+" de registrar venda mora em KanbanCardActions, atrás do mesmo piso de papel. */}
+                <KanbanCardActions
+                  lead={lead}
+                  pipelineId={pipelineId}
+                  etapas={etapas}
+                  onMoverPara={onMoverPara}
+                />
+              </div>
             )}
           </div>
 
@@ -328,12 +341,7 @@ export function KanbanCard({
           </p>
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
-          <div
-            className={cn(
-              "flex items-center gap-2 text-xs",
-              denso ? "mt-1 h-5" : "mt-1.5 h-6",
-            )}
-          >
+          <div className={cn("flex items-center gap-2 text-xs", denso ? "mt-1 h-5" : "mt-1.5 h-6")}>
             {state.slot.type === "awaiting" && (
               // A proposta do agente é a ÚNICA linha do card com ação: é o
               // ponto onde a decisão do humano entra. Sem os botões aqui, o
@@ -404,30 +412,42 @@ export function KanbanCard({
               arquivo — quem não usa o recurso não vê card diferente. */}
           <ArquivosNoCard lead={lead} />
 
-          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio */}
+          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio.
+              O nome da etapa não divide esta linha: na coluna ele já está no
+              cabeçalho, e um nome longo desenhava por cima de "em <etapa>". */}
           <div
-            className={cn(
-              "flex items-center justify-between gap-2",
-              denso ? "mt-1 h-5" : "mt-1 h-6",
-            )}
+            className={cn("flex min-w-0 items-center gap-2", denso ? "mt-1 h-5" : "mt-1 h-6")}
+            data-testid="rodape-do-card"
           >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <OwnerBadge
                 ownerKind={card.owner.kind}
                 ownerName={card.owner.name}
                 agentVersion={card.owner.agentVersion}
                 foraDaEquipe={card.owner.foraDaEquipe}
+                abreviarNome
               />
               <TarefasNoCard tarefas={lead.tarefas} />
             </div>
-            <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
+            {naColuna && state.showStageAge && age ? (
+              <span className="shrink-0 text-[11px] whitespace-nowrap text-text-muted tabular-nums">
+                {age}
+              </span>
+            ) : null}
+          </div>
+          {!naColuna && (
+            <p
+              className="mt-0.5 min-w-0 overflow-hidden text-[11px] text-ellipsis whitespace-nowrap text-text-muted"
+              data-testid="etapa-fora-da-coluna"
+              title={card.stageName}
+            >
               {state.showStageAge && age
                 ? `${age} ${t("em")} ${card.stageName}`
                 : `${t("em")} ${card.stageName}`}
-            </span>
-          </div>
+            </p>
+          )}
         </div>
       )}
     </Draggable>
   );
-}
+});

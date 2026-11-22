@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
+import { corpoDoEnvio } from '@/lib/agent-engine/edge/crm/send-message';
 import type { HandlerCtx } from '@/lib/api/handlers/types';
 import { deriveActor } from '@/lib/mcp/auth';
 import type { SendMessageInput } from '@/lib/schemas';
@@ -593,5 +594,94 @@ describe('sendMessageHandler — token de servidor (api_token) no ponto de uso',
       msg.sent_via,
       'o envio da integração nasceu carimbado como `ai`: o balão mostra "IA" para o que a integração mandou e a contagem de mensagens da IA conta envio que nenhum algoritmo escreveu',
     ).toBe('system');
+  });
+});
+
+// #4129 — o material da empresa não tem porta própria: o corpo que o turno do
+// agente monta (`corpoDoEnvio`) entra AQUI, e os vetos daqui valem para ele. O
+// par abaixo prova as duas metades com o mesmo corpo: o contato que bloqueou
+// não recebe nada, e o que não bloqueou recebe o documento pela URL assinada
+// do Storage (nunca o arquivo inline), com o nome da empresa e o `material_id`
+// gravado na linha — que é o que o freio de reenvio conta depois.
+describe('sendMessageHandler — o material da empresa pelo mesmo caminho de mídia', () => {
+  const MATERIAL = '66666666-6666-4666-8666-666666666666';
+  const CAMINHO = `${ORG}/${CONV}/material-77777777-7777-4777-8777-777777777777.pdf`;
+  const corpoDoMaterial = () =>
+    corpoDoEnvio(
+      {
+        tenantId: ORG,
+        leadId: 'lead',
+        jobId: 'job',
+        seq: 1,
+        conversationId: CONV,
+        body: 'Segue o catálogo',
+        media: { storagePath: CAMINHO, mime: 'application/pdf', type: 'document', filename: 'Catálogo 2026.pdf' },
+        materialId: MATERIAL,
+      },
+      'k-material',
+    );
+
+  it('contato que BLOQUEOU o atendimento: 403, nenhuma linha, nada sai pela rede', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const duble = criarDubleDoHandler({ conversation: conversationRow({ isBlocked: true }) });
+
+    await expect(sendMessageHandler(duble.supabase, ctx, corpoDoMaterial())).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(duble.capturas.inserts.messages).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('contato que não bloqueou: documento por URL assinada, com o nome da empresa e o material_id na linha', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(async (..._args: unknown[]) => Response.json({ id: { _serialized: 'MAT1' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const duble = criarDubleDoHandler({ conversation: conversationRow() });
+
+    const msg = await sendMessageHandler(duble.supabase, ctx, corpoDoMaterial());
+
+    expect(msg.status).toBe('sent');
+    expect(signedUrl).toHaveBeenCalledWith(CAMINHO, 600);
+    const sendFile = fetchMock.mock.calls.find(([url]) => String(url) === `${WAHA_BASE}/api/sendFile`);
+    expect(sendFile, 'sendFile não foi chamado').toBeTruthy();
+    const body = JSON.parse(String((sendFile![1] as RequestInit).body)) as {
+      file?: { url?: string; filename?: string; data?: unknown };
+    };
+    expect(body.file?.url).toBe('https://signed.example/a.jpg');
+    expect(body.file?.data).toBeUndefined();
+    expect(body.file?.filename).toBe('Catálogo 2026.pdf');
+    const linha = duble.capturas.inserts.messages![0] as { type?: string; metadata?: Record<string, unknown> };
+    expect(linha.type).toBe('document');
+    expect(linha.metadata).toMatchObject({ material_id: MATERIAL, media_filename: 'Catálogo 2026.pdf' });
+  });
+});
+
+// #5034 — o caminho que o cliente MCP manda em `media_storage_path` passa pela posse
+// do handler REAL: de outra conversa ou com ponto codificado, 422 antes de assinar
+// URL, gravar linha ou tocar o canal.
+describe('sendMessageHandler — media_storage_path de fora da conversa (#5034)', () => {
+  it.each([
+    `${ORG}/outra-conversa/out-1.pdf`,
+    `${ORG}/${CONV}/%2e%2e/%2e%2e/outra-org/out-1.pdf`,
+  ])('%s: 422 invalid_media_path, sem assinar nem enviar', async (caminho) => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    signedUrl.mockClear();
+    const duble = criarDubleDoHandler({ conversation: conversationRow() });
+
+    await expect(
+      sendMessageHandler(duble.supabase, ctx, {
+        conversation_id: CONV,
+        type: 'document',
+        media_storage_path: caminho,
+        media_filename: 'laudo.pdf',
+      } as never),
+    ).rejects.toMatchObject({ status: 422, code: 'invalid_media_path' });
+    expect(signedUrl).not.toHaveBeenCalled();
+    expect(duble.capturas.inserts.messages ?? []).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

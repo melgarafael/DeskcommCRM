@@ -1,10 +1,17 @@
 import type { ZodSchema } from "zod";
 
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
-import { statusValeRepetir, statusValeRepetirEscrita } from "@/lib/api/retentativa";
+import {
+  statusValeRepetir,
+  statusValeRepetirEscrita,
+  tipoDeFalha,
+} from "@/lib/api/retentativa";
 import { mostrarAvisoOrgDivergente } from "@/lib/auth/aviso-org-divergente";
 import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA, orgDaAba } from "@/lib/auth/org-da-aba";
+import { CODIGO_SENHA_PROVISORIA } from "@/lib/auth/senha-provisoria";
 import { randomId } from "@/lib/random-id";
+import { registrarRetentativa } from "@/lib/api/registro-de-retentativa";
+import { entrarEmVoo, sairDeVoo } from "@/lib/api/requisicoes-em-voo";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -170,6 +177,20 @@ function irParaOHubDaSuspensao(): void {
   window.location.assign(HUB_DA_SUSPENSAO);
 }
 
+/**
+ * PRIMEIRO ACESSO COM SENHA PROVISÓRIA (#3876). O servidor recusa `/api/v1`
+ * inteiro até a troca; quem ainda está com uma tela aberta recebe a recusa e
+ * vai para a tela de troca, em vez de ver um erro vermelho em cada botão. A
+ * trava contra o laço é o próprio endereço — já lá, não navega de novo.
+ */
+const TELA_DE_TROCA_DE_SENHA = "/trocar-senha";
+
+function irParaATelaDeTrocaDeSenha(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === TELA_DE_TROCA_DE_SENHA) return;
+  window.location.assign(TELA_DE_TROCA_DE_SENHA);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -254,6 +275,26 @@ async function request<T>(
   body: unknown,
   opts: RequestOpts = {},
 ): Promise<T> {
+  // Toda requisição pode ser encerrada de fora (`lib/api/requisicoes-em-voo.ts`),
+  // pelo mesmo caminho de quem cancela pelo próprio `signal`.
+  const controle = new AbortController();
+  entrarEmVoo(controle);
+  try {
+    return await executarRequisicao<T>(method, path, body, {
+      ...opts,
+      signal: combineSignals([opts.signal, controle.signal]),
+    });
+  } finally {
+    sairDeVoo(controle);
+  }
+}
+
+async function executarRequisicao<T>(
+  method: HttpMethod,
+  path: string,
+  body: unknown,
+  opts: RequestOpts,
+): Promise<T> {
   const requestId = randomId();
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -307,6 +348,17 @@ async function request<T>(
         signal,
       });
 
+      // O `fetch` pode RESOLVER mesmo depois de quem chamou desistir — a
+      // resposta já estava a caminho quando o abort chegou (#4508). Devolvê-la
+      // seria aplicar o resultado de uma lista que não está mais na tela, que é
+      // exatamente o "resposta velha sobrescreve a nova" da issue. Cancelado
+      // não tem resposta: rejeita com o mesmo motivo que o abort carrega.
+      if (opts.signal?.aborted) {
+        throw (
+          opts.signal.reason ?? new DOMException("A requisição foi cancelada.", "AbortError")
+        );
+      }
+
       const responseRequestId = res.headers.get("X-Request-Id") ?? requestId;
 
       if (res.ok) {
@@ -334,6 +386,15 @@ async function request<T>(
         ? statusValeRepetirEscrita(res.status)
         : statusValeRepetir(res.status);
       if (valeRepetir && attempt < MAX_ATTEMPTS) {
+        // O rastro da repetição (#4508, item 8): sem ele, "a API está fora" e
+        // "a API está lenta" ficam indistinguíveis de fora da tela.
+        registrarRetentativa({
+          metodo: method,
+          rota: path,
+          tentativa: attempt + 1,
+          requestId,
+          status: res.status,
+        });
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
         await sleep(delay, opts.signal);
@@ -352,6 +413,9 @@ async function request<T>(
         }
         if (res.status === 403 && e.code === "org_suspended") {
           irParaOHubDaSuspensao();
+        }
+        if (res.status === 403 && e.code === CODIGO_SENHA_PROVISORIA) {
+          irParaATelaDeTrocaDeSenha();
         }
         // #2335, metade 2: o servidor recusou a escrita porque a organização
         // que ESTA aba declarou diverge do cookie `active_org`. A tela traduz
@@ -417,6 +481,17 @@ async function request<T>(
       }
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
+        // Mesmo rastro do retry por status, para o retry por TRANSPORTE
+        // (timeout/rede) — é o que acontece quando a API some no meio.
+        registrarRetentativa({
+          metodo: method,
+          rota: path,
+          tentativa: attempt + 1,
+          requestId,
+          // O vocabulário de `lib/api/retentativa.ts` (`tempo_esgotado`,
+          // `sem_conexao`, …): o mesmo que a tela usa para dizer o motivo.
+          erro: tipoDeFalha(err),
+        });
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }

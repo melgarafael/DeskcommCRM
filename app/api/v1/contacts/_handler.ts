@@ -15,6 +15,7 @@ import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -123,19 +124,26 @@ function decodeCursor(raw: string): CursorPayload | null {
 
 function actorAuditPayload(actor: Actor): {
   actorUserId: string | null;
+  /** O token de integração por trás da ação, quando houver (`api_tokens.id`). */
+  actorApiTokenId: string | null;
   metadataActor: Record<string, unknown>;
 } {
   if (actor.type === "user") {
-    return { actorUserId: actor.id, metadataActor: { actor_type: "user" } };
+    return { actorUserId: actor.id, actorApiTokenId: null, metadataActor: { actor_type: "user" } };
   }
   return {
     actorUserId: null,
+    // Token de servidor sem escopo de agente (`api_token`): o `id` do ator É o
+    // id da linha do token. No agente de IA, o token vem em `api_token_id`.
+    actorApiTokenId:
+      actor.type === "api_token" ? actor.id : actor.type === "ai_agent" ? (actor.api_token_id ?? null) : null,
     metadataActor: {
       actor_type: actor.type,
       actor_id: actor.id,
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -499,28 +507,20 @@ export async function getContactHandler(
     if (!roleAtLeast(role, "manager")) {
       cpfDecryptDenied = true;
     } else {
+      // (9423) O propósito vai como PARÂMETRO: o PostgREST abre a transação dele,
+      // e o GUC `app.decrypt_purpose` não tem como ser fixado na mesma transação
+      // desta chamada. A trilha da LEITURA é a linha `contact.cpf_decrypted`, e é
+      // ela que passa a carregar o motivo — antes o motivo ia para uma linha
+      // `contact.updated`, que anunciava uma atualização de ficha que não houve.
       const { data: dec, error: decErr } = await supabase.rpc("decrypt_cpf", {
         p_contact_id: input.contactId,
+        p_purpose: input.decryptPurpose,
       });
       if (decErr) {
         console.warn("[contacts.get] decrypt_cpf RPC unavailable", decErr.message);
       } else if (typeof dec === "string") {
         cpfDecrypted = dec;
       }
-      const a = actorAuditPayload(ctx.actor);
-      await audit({
-        action: "contact.updated",
-        actorUserId: a.actorUserId,
-        organizationId: contact.organization_id,
-        resourceType: "contact",
-        resourceId: contact.id,
-        requestId: ctx.requestId,
-        metadata: {
-          ...a.metadataActor,
-          decrypt_purpose: input.decryptPurpose,
-          success: !!cpfDecrypted,
-        },
-      });
     }
   }
 
@@ -1182,6 +1182,8 @@ export async function patchContactHandler(
   await audit({
     action: "contact.updated",
     actorUserId: a.actorUserId,
+    // Só quando há token: a sessão segue com o objeto de sempre.
+    ...(a.actorApiTokenId ? { actorApiTokenId: a.actorApiTokenId } : {}),
     organizationId: contact.organization_id,
     resourceType: "contact",
     resourceId: contact.id,
@@ -1235,9 +1237,36 @@ function throwOnDbError(
  * Tabela nova com RESTRICT para `contacts` entra aqui como uma linha, e o
  * teste que acompanha este handler (`tests/unit/contato-delete.test.ts`)
  * exercita a contagem com filtro de organização.
+ *
+ * `barraSe` é o recorte do que a exclusão NÃO resolve sozinha, num filtro `or`
+ * do PostgREST. Ele tem de dizer o MESMO que `fn_apagar_contato_com_historico`
+ * faz por dentro: a função desvincula o compromisso CANCELADO que não é reserva
+ * de serviço (migration 9405, achado A9 de `curso/ACHADOS.md`), então só barra o
+ * que não está cancelado ou o que é reserva de serviço. Contar a mais faz a tela
+ * pedir um gesto impossível ("cancele" o que já está cancelado); contar a menos
+ * faz a pré-checagem dizer "pode excluir" e a FK recusar depois.
  */
-const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: string }> = [
-  { tabela: "calendar_appointments", rotulo: "compromisso(s) na agenda" },
+const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{
+  tabela: string;
+  rotulo: string;
+  barraSe?: string;
+}> = [
+  {
+    tabela: "calendar_appointments",
+    rotulo: "compromisso(s) na agenda",
+    barraSe: "status.neq.cancelled,service_occurrence_id.not.is.null",
+  },
+  // A6: o card ABERTO não é fechado pela exclusão (fechar como perdido lançaria
+  // a perda na métrica do dono e dispararia `lead.lost` — automações, push e
+  // webhooks — para um contato que some em seguida). Quem exclui fecha ou move
+  // cada negócio com o motivo real, e só então a ficha sai. Card ganho ou perdido
+  // é histórico de venda e não barra. `crm_leads.contact_id` é `on delete set
+  // null`: sem esta barra, o card aberto ficaria solto no Kanban.
+  {
+    tabela: "crm_leads",
+    rotulo: "negócio(s) aberto(s) no funil",
+    barraSe: "status.eq.open",
+  },
 ];
 
 /**
@@ -1286,11 +1315,12 @@ async function contarVinculosRestrict(
   // (texto em pt-BR) segue igual ao da auditoria.
   const por_tabela: Record<string, number> = {};
   for (const vinculo of VINCULOS_RESTRICT_NAO_APAGADOS) {
-    const { count, error } = await supabase
+    const consulta = supabase
       .from(vinculo.tabela)
       .select("id", { count: "exact", head: true })
       .eq("contact_id", contactId)
       .eq("organization_id", ctx.organization_id);
+    const { count, error } = await (vinculo.barraSe ? consulta.or(vinculo.barraSe) : consulta);
     if (error) {
       // Falha da CONTAGEM não autoriza seguir apagando: seguir aqui é cair no
       // defeito que esta pré-checagem existe para impedir (histórico

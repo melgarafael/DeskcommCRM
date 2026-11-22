@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { resolverModelo } from "@/lib/propostas/modelos/resolver";
@@ -28,11 +29,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "manager", scope: "mcp:write" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_modelo", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -42,7 +45,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: proposta } = await admin
     .from("crm_proposals")
     .select("id, status, template_slug, secoes_editadas")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!proposta) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
@@ -54,13 +57,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     const { error } = await admin
       .from("crm_proposals")
       .update({ template_slug: null, template_version: null })
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("id", id);
     if (error) return fail("internal_error", t("Falha ao remover o modelo."), 500, { requestId });
     return ok({ template_slug: null }, { requestId });
   }
 
-  const modelo = await resolverModelo(admin, authz.org.orgId, parsed.data.template_slug);
+  const modelo = await resolverModelo(admin, authz.organizationId, parsed.data.template_slug);
   if (!modelo) return fail("validation_failed", t("Modelo não encontrado."), 422, { requestId });
 
   // §6.1 da spec de 21/09: trocar o modelo com rascunho em andamento perde o
@@ -85,16 +88,17 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
       template_slug_sugerido: null,
       ...(trocaDeModelo ? { secoes_editadas: null } : {}),
     })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id);
   if (error) return fail("internal_error", t("Falha ao confirmar o modelo."), 500, { requestId });
 
-  void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.org.orgId, id);
+  void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.organizationId, id);
 
   void audit({
     action: "proposal.modelo_confirmado",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "crm_proposals",
     resourceId: id,
     requestId,

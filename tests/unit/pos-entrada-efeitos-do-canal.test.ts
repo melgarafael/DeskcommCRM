@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
+import * as desvios from "@/lib/modulos/desvios-da-entrada";
 import { palavraDeSaida } from "@/lib/prospecting/rodape-de-saida";
 
 /**
@@ -87,6 +88,7 @@ let filtrosDeMessages: Array<[string, unknown]> = [];
 let refCasado: { utm: Record<string, string> } | null = null;
 let refGoogleCasado: { gclid: string; query_raw: Record<string, unknown> } | null = null;
 let filtrosDoRefGoogle: Record<string, unknown> = {};
+let caminhoWaha: "sem conversa" | "pessoal" | "módulo" | "reentrega" | "comercial" = "comercial";
 /** Os `.eq()`/`.is()` do consumo do ref — provam a organização e a trava de uso único. */
 let filtrosDoRef: Record<string, unknown> = {};
 /** Os negócios ABERTOS do contato, como a leitura de `crm_leads` os devolve. */
@@ -121,6 +123,16 @@ function cadeia(rotulo: string): Record<string, unknown> {
 const admin = {
   from(tabela: string) {
     return {
+      insert() {
+        return {
+          select: () => ({
+            async maybeSingle() {
+              if (caminhoWaha === "reentrega") return { data: null, error: { code: "23505" } };
+              return { data: { id: "msg-1" }, error: null };
+            },
+          }),
+        };
+      },
       update(payload: Record<string, unknown>) {
         if (tabela === "google_ads_click_refs") {
           const consumo = {
@@ -185,6 +197,9 @@ const admin = {
             return consulta;
           },
           async maybeSingle() {
+            if (tabela === "contacts" && _colunas === "is_personal") {
+              return { data: { is_personal: caminhoWaha === "pessoal" }, error: null };
+            }
             if (tabela !== "messages") return { data: null, count: null, error: null };
             sequencia.push("select:messages");
             return {
@@ -227,6 +242,10 @@ const admin = {
     rpcChamadas.push({ nome, args });
     ultimaRpc = args;
     sequencia.push(`rpc:${args.p_event_type ?? nome}`);
+    if (nome === "fn_upsert_wa_contact") return { data: "contato-1", error: null };
+    if (nome === "fn_upsert_wa_conversation") {
+      return { data: caminhoWaha === "sem conversa" ? null : "conversa-1", error: null };
+    }
     return { error: rpcErro };
   },
 } as never;
@@ -260,6 +279,7 @@ beforeEach(() => {
   filtrosDeMessages = [];
   refCasado = { utm: { utm_campaign: "black-friday", utm_ad: "video-depoimento-v3" } };
   refGoogleCasado = null;
+  caminhoWaha = "comercial";
   filtrosDoRefGoogle = {};
   filtrosDoRef = {};
   leadsAbertos = [];
@@ -1010,6 +1030,77 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("referência Google recebida pelo webhook WAHA (#4631)", () => {
+  const textoComRef = "Olá [ref:K7M2P9]";
+  const clique = { gclid: "clique", query_raw: { utm_campaign: "Campanha atual" } };
+
+  async function receber(texto = textoComRef) {
+    const { dispatchWahaEvent } = await import("@/lib/waha/ingest");
+    await dispatchWahaEvent(admin, { id: "sessao-1", organization_id: "org-1" } as never, {
+      event: "message.any",
+      session: "default",
+      payload: { id: "id-sintetico", from: "5511999999999@c.us", fromMe: false, body: texto },
+    }, "req-1");
+  }
+
+  it.each(["sem conversa", "pessoal", "módulo"] as const)(
+    "%s: registra a origem do contato sem abrir negócio nem acionar o agente",
+    async (caminho) => {
+      caminhoWaha = caminho;
+      refGoogleCasado = clique;
+      if (caminho === "módulo") {
+        vi.spyOn(desvios, "moduloQueAssumeAEntrada").mockResolvedValueOnce({ modulo: "ouvidoria", motivo: "tratado" });
+      }
+      await receber();
+      expect(rpcChamadas.filter(({ nome }) => nome === "fn_estampar_atribuicao_de_anuncio")).toEqual([
+        { nome: "fn_estampar_atribuicao_de_anuncio", args: expect.objectContaining({
+          p_org: "org-1", p_contact: "contato-1", p_platform: "google_ads",
+          p_metadata: expect.objectContaining({ utm_campaign: "Campanha atual" }),
+        }) },
+      ]);
+      expect(garantirLeadDaConversa).not.toHaveBeenCalled();
+      expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+    },
+  );
+
+  it("usa o clique uma única vez e leva a campanha da mensagem ao negócio", async () => {
+    refGoogleCasado = clique;
+    await receber();
+    expect(sequencia.filter((passo) => passo === "update:google_ads_click_refs")).toHaveLength(1);
+    expect(garantirLeadDaConversa).toHaveBeenCalledExactlyOnceWith(admin, expect.objectContaining({
+      atribuicaoDaMensagem: expect.objectContaining({
+        plataforma: "google_ads", metadadosDaCampanha: { utm_campaign: "Campanha atual" },
+      }),
+    }));
+  });
+
+  it("a entrega duplicada não consome um clique ainda livre", async () => {
+    caminhoWaha = "reentrega";
+    refGoogleCasado = clique;
+    await receber();
+    expect(sequencia).toContain("rpc:fn_upsert_wa_conversation");
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
+    expect(garantirLeadDaConversa).not.toHaveBeenCalled();
+    expect(refGoogleCasado).toEqual(clique);
+  });
+
+  it("quando o recibo é de site, consulta o Google uma vez e conserva a origem do site", async () => {
+    await receber();
+    expect(sequencia.filter((passo) => passo === "update:google_ads_click_refs")).toHaveLength(1);
+    expect(sequencia).toContain("update:meta_ads_click_refs");
+    expect(rpcChamadas).toContainEqual({
+      nome: "fn_estampar_atribuicao_de_anuncio",
+      args: expect.objectContaining({ p_platform: "site" }),
+    });
+  });
+
+  it("sem referência, segue o atendimento sem consultar os recibos do Google", async () => {
+    await receber("Bom dia");
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(sequencia).not.toContain("update:google_ads_click_refs");
   });
 });
 

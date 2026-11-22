@@ -30,6 +30,32 @@ export const inviteMemberSchema = z.object({
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
+/**
+ * Criar a pessoa SEM convite (#3876): a senha provisória é gerada pelo
+ * SERVIDOR (`gerarSenhaProvisoria`) e devolvida uma vez; o corpo não carrega
+ * senha nenhuma: quem administra não escolhe (nem reaproveita) a senha de
+ * outra pessoa.
+ *
+ * `.strict()`: um `password` no corpo é recusado, não ignorado — cliente antigo
+ * que ainda manda a senha descobre na hora que ela não vale.
+ *
+ * `interface_settings` segue a regra do convite (`interfaceTemDestino`): papel
+ * sem nenhuma área permitida abriria uma conta que não abre nada.
+ */
+export const createTeamUserSchema = z
+  .object({
+    full_name: z.string().trim().min(2, "Informe o nome da pessoa").max(120),
+    email: z.string().email("Email inválido"),
+    role: z.enum(ROLES),
+    interface_settings: interfaceSettingsSchema.optional(),
+  })
+  .strict()
+  .refine((v) => !v.interface_settings || interfaceTemDestino(v.interface_settings, v.role), {
+    path: ["interface_settings"],
+    message: "Selecione ao menos uma área permitida ao papel.",
+  });
+export type CreateTeamUserInput = z.infer<typeof createTeamUserSchema>;
+
 export const acceptInviteSchema = z.object({
   token: z.string().min(20),
 });

@@ -266,6 +266,8 @@ Ordem = a distância do usuário:
 
 `honorarios` e `financeiro` provisionam **esquema** por instalação (`fn_modulo_instalar`, `fn_financeiro_provisionar`) e entram na catraca de LGPD do #1902. Desligar por empresa aí é decidir o que fazer com dado já provisionado — issue própria, com aviso e backup. Fica declarado fora de propósito.
 
+**Nota de 2026-11-18 (medida em `79fb9abbbe`).** A F3 do #4871 achou **seis** módulos de tabela — os dois acima e mais `cadencias`, `lista_de_espera`, `ouvidoria` e `amigo`, que entraram depois deste plano —, e a `main` de `f42b4dde30` acha **sete**, com `catalogo_servicos` (do #3480). Os quatro que entraram antes da F3 já decidem por empresa na **própria linha** (`settings.cadencias.enabled`, `settings.lista_de_espera.ativa`, `settings.ouvidoria.ativa` e a conexão em `amigo_connections`), então a frase "o módulo de tabela não tem chave por empresa" vale para `honorarios`, `financeiro` e `catalogo_servicos`. A regra está registrada na ADR-0002, D3.1; `organization_modules` continua fora dos módulos de tabela.
+
 ## 9. Compatibilidade
 
 | Situação | Antes | Depois |

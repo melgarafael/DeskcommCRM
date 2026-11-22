@@ -630,6 +630,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         // sozinha mandava transferir uma conversa que já é de quem está aqui.
         onError: (erro) => {
           restoreOnError();
+          // #4787: a citada foi apagada DEPOIS de escolhida. O servidor recusou
+          // (`citacao_apagada`) — e a citação não tem como ficar: sem tirá-la,
+          // todo Enter seguinte levaria a mesma recusa e a resposta ficaria
+          // presa atrás de uma mensagem que não existe mais. O TEXTO fica (o
+          // `restoreOnError` acima), então reenviar sem citação é um Enter.
+          // O aviso com o motivo é o toast da rota, que já saiu no onError de
+          // `useSendMessage` — aqui não se inventa uma segunda frase.
+          if (erro instanceof ApiError && erro.code === "citacao_apagada") {
+            onCancelarResposta?.();
+          }
           const aviso = erro instanceof ApiError ? avisoDaContinua(erro.code, erro.details) : null;
           if (aviso) setContinua({ conversationId, ...aviso });
         },
@@ -830,15 +840,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     void upload
       .mutateAsync({ conversationId, file: arquivo, destino })
       .then((uploaded) => {
-        // Cada arquivo que SAIU deixa a fila, e a legenda com ele: se o
-        // próximo falhar, o retry do diálogo recomeça do que falhou, sem
-        // reenviar o que já foi nem repetir o texto (#2526, critério "falha
-        // no envio da mídia não causa duplicação do texto"). Zerar a
-        // `legendaInicial` é o que faz o diálogo repor a legenda VAZIA quando
-        // a fila encolhe.
+        // Cada arquivo que SAIU deixa a fila: se o próximo falhar, o retry do
+        // diálogo recomeça do que falhou, sem reenviar o que já foi nem repetir
+        // o texto (#2526, critério "falha no envio da mídia não causa duplicação
+        // do texto"). A legenda fica na fila até sair com o anexo que a leva.
         const proximo = () => {
           setPendingFiles((fila) => fila.slice(1));
-          setLegendaInicial(null);
+          setLegendaInicial(destino === "mensagem" && indice < indiceLegenda ? caption : null);
           enviarAnexos(caption, indice + 1);
         };
         if (destino === "nota") {

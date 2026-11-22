@@ -30,6 +30,7 @@ import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { modeloAposentadoNoProvedor } from "@/lib/agent-engine/edge/llm/modelos-aposentados";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -270,6 +271,16 @@ export function PainelDeProvedores() {
   );
 }
 
+/**
+ * O catálogo ainda lista os Gemini que o Google aposentou: eles saem das opções
+ * novas, como no seletor do agente (#5100). O já salvo fica, porque o seletor só
+ * mostra um valor que esteja entre as opções, e quem o usa precisa vê-lo para trocar.
+ */
+function semAposentados(modelos: Modelo[], provider: string, salvo: string | null): Modelo[] {
+  if (provider !== "google") return modelos;
+  return modelos.filter((m) => !modeloAposentadoNoProvedor(m.model_id) || m.model_id === salvo);
+}
+
 /** O que o grupo usa hoje, sem obrigar a abrir ponto a ponto. */
 function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Promise<void> }) {
   const t = useT();
@@ -278,8 +289,13 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
   const [salvando, setSalvando] = useState(false);
 
   const modelosDoProvedor = useMemo(
-    () => dados.modelos.filter((m) => m.provider === provider),
-    [dados.modelos, provider],
+    () =>
+      semAposentados(
+        dados.modelos.filter((m) => m.provider === provider),
+        provider,
+        dados.padrao.defaultModel,
+      ),
+    [dados.modelos, dados.padrao.defaultModel, provider],
   );
 
   // Quantos pontos herdam HOJE. É o número que explica por que esta caixa
@@ -400,6 +416,11 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
               </SelectContent>
             </Select>
           )}
+          {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+            </p>
+          ) : null}
         </div>
 
         {dados.podeEditar && (
@@ -583,79 +604,85 @@ function CartaoDeVoz({ podeEditar }: { podeEditar: boolean }) {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-64 space-y-1.5">
-          <Label className="text-xs" htmlFor="voz-voice-id">
-            {t("Voice ID")}
-          </Label>
-          {catalogo.length > 0 && (
-            <Select
-              value={naLista ? voiceId : ""}
-              onValueChange={(id) => {
-                setVoiceId(id);
+      {/* Sem credencial validada a voz não é oferecida (#4260, item 2): não há
+          catálogo a listar nem prévia a sintetizar, e salvar um id aqui só
+          deixaria uma escolha que o turno não consegue usar. O caminho é o
+          link acima, que leva a cadastrar a chave. */}
+      {temCredencial && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-64 space-y-1.5">
+            <Label className="text-xs" htmlFor="voz-voice-id">
+              {t("Voice ID")}
+            </Label>
+            {catalogo.length > 0 && (
+              <Select
+                value={naLista ? voiceId : ""}
+                onValueChange={(id) => {
+                  setVoiceId(id);
+                  setErroDeFormato(null);
+                }}
+                disabled={!podeEditar}
+              >
+                <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
+                  <SelectValue placeholder={t("escolha da lista")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {catalogo.map((voz) => (
+                    <SelectItem key={voz.id} value={voz.id}>
+                      {voz.nome === voz.id
+                        ? voz.id
+                        : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Input
+              id="voz-voice-id"
+              value={voiceId}
+              onChange={(e) => {
+                setVoiceId(e.target.value);
                 setErroDeFormato(null);
               }}
+              placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
+              data-testid="voz-voice-id"
               disabled={!podeEditar}
-            >
-              <SelectTrigger data-testid="voz-escolher-da-lista" aria-label={t("Escolher da lista")}>
-                <SelectValue placeholder={t("escolha da lista")} />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogo.map((voz) => (
-                  <SelectItem key={voz.id} value={voz.id}>
-                    {voz.nome === voz.id
-                      ? voz.id
-                      : `${voz.nome}${voz.idioma ? ` — ${voz.idioma}` : ""}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Input
-            id="voz-voice-id"
-            value={voiceId}
-            onChange={(e) => {
-              setVoiceId(e.target.value);
-              setErroDeFormato(null);
-            }}
-            placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
-            data-testid="voz-voice-id"
-            disabled={!podeEditar}
-            aria-invalid={erroDeFormato !== null}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
-            )}
-          </p>
-          {erroDeFormato !== null && (
-            <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
-              {erroDeFormato}
+              aria-invalid={erroDeFormato !== null}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.",
+              )}
             </p>
-          )}
-        </div>
+            {erroDeFormato !== null && (
+              <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-de-formato">
+                {erroDeFormato}
+              </p>
+            )}
+          </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={ouvindo || voiceId.trim() === ""}
-          onClick={() => void ouvirPrevia()}
-          data-testid="voz-ouvir-previa"
-        >
-          {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
-        </Button>
-
-        {podeEditar && (
           <Button
             size="sm"
-            disabled={salvando || voiceId.trim() === ""}
-            onClick={() => void salvar()}
-            data-testid="voz-salvar"
+            variant="outline"
+            disabled={ouvindo || voiceId.trim() === ""}
+            onClick={() => void ouvirPrevia()}
+            data-testid="voz-ouvir-previa"
           >
-            {salvando ? t("Salvando…") : t("Salvar voz")}
+            {ouvindo ? t("Gerando…") : t("Ouvir prévia")}
           </Button>
-        )}
-      </div>
+
+          {podeEditar && (
+            <Button
+              size="sm"
+              disabled={salvando || voiceId.trim() === ""}
+              onClick={() => void salvar()}
+              data-testid="voz-salvar"
+            >
+              {salvando ? t("Salvando…") : t("Salvar voz")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {erroDoProvedor !== null && (
         <p className="text-xs text-destructive" role="alert" data-testid="voz-erro-do-provedor">
@@ -723,7 +750,11 @@ function CartaoDoPonto({
   const [baseUrl, setBaseUrl] = useState(ponto.efetivo.baseUrl ?? "");
   const [salvando, setSalvando] = useState(false);
 
-  const modelosDoProvider = dados.modelos.filter((m) => m.provider === provider);
+  const modelosDoProvider = semAposentados(
+    dados.modelos.filter((m) => m.provider === provider),
+    provider,
+    ponto.efetivo.modelId,
+  );
   const credsDoProvider = dados.credenciais.filter((c) => c.provider === provider);
   // Endpoint próprio só faz sentido em provedor compatível com a API da OpenAI
   // — é a mesma condição que `lib/ai/pontos/provedores.ts` declara e que o
@@ -1001,6 +1032,11 @@ function CartaoDoPonto({
                 </SelectContent>
               </Select>
             )}
+            {provider === "google" && modeloAposentadoNoProvedor(modelId) ? (
+              <p role="alert" className="mt-1 text-sm text-destructive">
+                {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
+              </p>
+            ) : null}
           </div>
 
           <div>

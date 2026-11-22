@@ -334,11 +334,39 @@ export const customFieldSchema = z.object({
    * da conversa (negócio), nunca campos do contato nem de outra organização.
    */
   mostrar_no_resumo_da_passagem: z.boolean().optional(),
+  /**
+   * A IA PODE LER ESTE CAMPO? (issue #4669)
+   *
+   * LIGADO, o valor deste campo pode chegar ao modelo: o bloco do negócio do
+   * follow-up escrito por IA (`lib/agent-engine/agent/negocio-do-followup.ts`)
+   * e a leitura `crm_get_lead` DENTRO de um turno de agente
+   * (`lib/mcp/tools/leads.ts`) o devolvem. DESLIGADO, o valor fica no card e
+   * não vai para o modelo por nenhum destes dois caminhos — documento, dado de
+   * saúde, observação interna.
+   *
+   * A AUSÊNCIA é DESMARCADO, e isso é a decisão desta fatia, não um detalhe:
+   * um campo que ninguém marcou NÃO está autorizado a ir para o modelo.
+   * `null` numa caixa de consentimento não é `sim` — e é o que o dono do funil
+   * espera ao ver a caixa vazia. Consequência declarada: as definições que já
+   * existem (sem a chave) param de ir ao modelo até alguém marcá-las; é o
+   * mesmo sentido dos outros booleanos opcionais daqui (`multiple`,
+   * `allow_new`, `mostrar_no_resumo_da_passagem`), cuja ausência também é
+   * "desligado". O interruptor mora na mesma fatia, na tela do funil
+   * (`app/app/settings/tenant/pipelines/_client.tsx`), e desmarcá-lo APAGA a
+   * chave — é o que faz da ausência o desmarcado também no que a tela grava.
+   *
+   * Sem `.default(false)` de propósito, igual a `escopo`: o `handleSave`
+   * regrava `fields` inteiro, e gravar a chave em cima de toda definição
+   * existente mudaria a forma do funil no primeiro salvamento. Quem lê só o
+   * `true` explícito — `campoLiberadoParaIa` em `lib/leads/campos-do-funil.ts` —
+   * é a régua única dos dois caminhos.
+   */
+  ia_pode_ler: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
 /**
- * A COTA DE CAMPOS DO NEGÓCIO por funil (issue #3111).
+ * A COTA DE CAMPOS DO NEGÓCIO por funil (issues #3111 e #4780).
  *
  * O teto de 50 nasceu quando TODO campo do funil era do NEGÓCIO. Desde a #2791
  * os campos do CONTATO também são declarados no funil padrão (`escopo:
@@ -346,17 +374,24 @@ export type CustomFieldDef = z.infer<typeof customFieldSchema>;
  * campos do negócio + 20 do contato, chegava a 40 de 50 e travava antes de
  * cobrir o negócio.
  *
- * A cota continua 50, e passa a valer SÓ para o NEGÓCIO. O campo do contato não
- * aparece no card e o valor dele mora em `contacts.custom_fields`, não em
- * `crm_leads.custom_fields` — não é um campo do funil na conta que importa.
- * Não há cota própria do contato: nada no produto limita quantos campos uma
- * ficha de contato pode declarar.
+ * A cota vale SÓ para o NEGÓCIO. O campo do contato não aparece no card e o
+ * valor dele mora em `contacts.custom_fields`, não em `crm_leads.custom_fields`
+ * — não é um campo do funil na conta que importa. Não há cota própria do
+ * contato: nada no produto limita quantos campos uma ficha de contato pode
+ * declarar.
  *
- * A régua do NEGÓCIO NÃO afrouxou: a ausência de `escopo` lê como `negocio`
- * (mesma leitura de `lib/leads/campos-do-funil.ts`), então toda definição que já
- * existe continua contando e 51 campos do negócio seguem recusados.
+ * O NÚMERO subiu de 50 para 100 na #4780: uma agência de viagens precisava de
+ * +5 campos condicionais no funil e batia no teto. É a saída 1 da issue
+ * ("aumentar o limite, ex.: 100"), a única que esta entrega faz — contar
+ * condicionais à parte e agrupar por produto (saídas 2 e 3) são decisão de
+ * produto do mantenedor. A régua de CONTAGEM não mudou com isso.
+ *
+ * A régua do NEGÓCIO NÃO afrouxou além do número: a ausência de `escopo` lê
+ * como `negocio` (mesma leitura de `lib/leads/campos-do-funil.ts`), então toda
+ * definição que já existe continua contando e 101 campos do negócio seguem
+ * recusados.
  */
-export const MAX_CAMPOS_DO_NEGOCIO = 50;
+export const MAX_CAMPOS_DO_NEGOCIO = 100;
 
 /** A recusa do teto, legível: diz o número e o que não entra na conta. */
 export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
@@ -835,6 +870,18 @@ export const crmSettingsSchema = z
      */
     avisar_transferencia_no_whatsapp: z.boolean().catch(true),
     /**
+     * `aviso_transferencia_com_nome`: o aviso de transferência também leva o
+     * PRIMEIRO nome do cliente, além do link.
+     *
+     * ⚠️ NASCE DESLIGADA, ao contrário da vizinha `avisar_transferencia_no_whatsapp`:
+     * a mensagem padrão é mínima por decisão de privacidade. Só o booleano `true` liga.
+     *
+     * Só o nome, nunca o "resumo" (doc 372 = A, que segue o doc 176): texto escrito
+     * pela IA chega à equipe com a cara da empresa, e na maioria das passagens o
+     * `last_handoff_reason` nem é resumo — é código interno (`requested_human`).
+     */
+    aviso_transferencia_com_nome: z.boolean().catch(false),
+    /**
      * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
      * aberto) volta pelo funil de clientes, e não pelo de captação.
      *
@@ -884,6 +931,7 @@ export const crmSettingsSchema = z
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
+    aviso_transferencia_com_nome: false,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
     duplicados_por_nome: false,
@@ -905,11 +953,36 @@ export const CONTEUDO_NA_TELA_BLOQUEADA_PADRAO: ConteudoNaTelaBloqueada = "nome"
 
 export const conteudoNaTelaBloqueadaWriteSchema = z.enum(CONTEUDOS_NA_TELA_BLOQUEADA);
 
+/**
+ * `organizations.settings.notificacoes.cor_por_canal` — o aviso de mensagem
+ * nova sai na cor da rede ou no neutro de sempre (#4094).
+ *
+ * Mora no MESMO nó `notificacoes` que a opção da tela bloqueada: é uma escolha
+ * da empresa sobre os avisos, não uma preferência de aparelho, e uma tabela
+ * nova para um booleano seria mais superfície (RLS, migration, backup) do que
+ * a decisão pede. `true` é o padrão: quem já usa o produto recebe a cor sem
+ * mexer em nada, e quem não gosta desliga num interruptor.
+ */
+export const COR_POR_CANAL_PADRAO = true;
+
 export const notificacoesSettingsSchema = z
   .object({
     conteudo_na_tela_bloqueada: conteudoNaTelaBloqueadaWriteSchema.catch(CONTEUDO_NA_TELA_BLOQUEADA_PADRAO),
+    cor_por_canal: z.boolean().catch(COR_POR_CANAL_PADRAO),
   })
-  .catch({ conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO });
+  .catch({
+    conteudo_na_tela_bloqueada: CONTEUDO_NA_TELA_BLOQUEADA_PADRAO,
+    cor_por_canal: COR_POR_CANAL_PADRAO,
+  });
+
+/** A cor por canal está ligada nesta organização? Nunca lança. */
+export function corPorCanalLigada(settings: unknown): boolean {
+  const notificacoes =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).notificacoes
+      : undefined;
+  return notificacoesSettingsSchema.parse(notificacoes ?? {}).cor_por_canal;
+}
 
 /** O que aparece com a tela bloqueada nesta organização. Nunca lança. */
 export function conteudoNaTelaBloqueada(settings: unknown): ConteudoNaTelaBloqueada {
@@ -1116,6 +1189,15 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
 
+/** Ausente DESLIGA; só o booleano `true` põe o primeiro nome no aviso de transferência. */
+export function avisoDeTransferenciaComNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).aviso_transferencia_com_nome === true;
+}
+
 /**
  * `organizations.settings.memoria_da_ia.limite_do_aviso_tokens` — acima deste
  * peso a tela Memória da IA AVISA que a memória pesa. Só avisa: nada é
@@ -1222,8 +1304,9 @@ export function ouvidoriaLigada(settings: unknown): boolean {
  * EXPLÍCITO liga (a régua de `ouvidoriaLigada`); ausente, `"true"` ou lixo é
  * desligado. Nunca lança: roda no fecho do negócio.
  *
- * ponytail: ainda sem porta de escrita — o interruptor na tela chega com o
- * #4264, quando todas as portas de ganho e de perda passarem pela mesma regra.
+ * ponytail: ainda sem porta de escrita — o interruptor na tela chega na fatia
+ * seguinte ao #4264 (issue #3602), que pôs todas as portas de ganho e de perda
+ * na mesma regra.
  */
 export function recorrenciaNoGanhoLigada(settings: unknown): boolean {
   const raiz =

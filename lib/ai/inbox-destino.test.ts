@@ -26,6 +26,19 @@ function leitor(rows = [ID], falha = false, pipelineVisible = true) {
   return { client, queries };
 }
 describe("destinos da Central", () => {
+  it("o aviso de saúde/go-live do número (ref_kind number_health) leva a Conexões, para o admin", async () => {
+    // O produtor (`lib/agent-engine/health/circuit.ts`) grava kind 'other' +
+    // ref_kind 'number_health' + ref_id = id da conexão. Sem destino registrado
+    // o botão caía em "Este contexto não está disponível para você".
+    const l = leitor();
+    const [admin] = await resolverDestinosDosAvisos(l.client, ORG, "admin", [aviso("other", "number_health")]);
+    expect(admin?.destination).toMatchObject({ estado: "disponivel", href: "/app/connections", rotulo: "Revisar conexão" });
+    expect(l.queries[0]).toMatchObject({ table: "channel_sessions", archived: true });
+    const [agente] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso("other", "number_health")]);
+    expect(agente?.destination.estado).toBe("sem_permissao");
+    const [sumida] = await resolverDestinosDosAvisos(leitor([]).client, ORG, "admin", [aviso("other", "number_health")]);
+    expect(sumida?.destination.estado).toBe("indisponivel");
+  });
   it("aviso Meet abre só compromisso visível ao agente e mantém os vetos do resolvedor", async () => {
     for (const [role, rows, failure, state] of [
       ["agent", [ID], false, "disponivel"],
