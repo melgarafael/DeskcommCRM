@@ -592,6 +592,11 @@ describe("extensões: atualizar, desfazer a última troca e remover", () => {
     await expect(prepare(v12, randomUUID(), catalog, actor, 2)).rejects.toThrow("extension_core_update_in_progress");
     // Um `dispatched` de mais de 15 minutos é desfecho desconhecido para o app (RUN_STALE_AFTER_MS): não trava.
     await query("update system_update_runs set dispatched_at=now()-interval '16 minutes' where id=$1", [run]);
+    // ...a não ser que o agente tenha contado que o pedido espera a janela de manutenção (#4334):
+    // a cerca vale até 15 minutos depois da hora agendada, não do clique.
+    await query("update system_update_runs set scheduled_for=now()+interval '6 hours' where id=$1", [run]);
+    await expect(desfazer(id, 2)).rejects.toThrow("extension_core_update_in_progress");
+    await query("update system_update_runs set scheduled_for=now()-interval '16 minutes' where id=$1", [run]);
     expect((await desfazer(id, 2)).status).toBe("completed");
     await query("update system_update_runs set status='failed',finished_at=now() where id=$1", [run]);
     await remover(id, 3);

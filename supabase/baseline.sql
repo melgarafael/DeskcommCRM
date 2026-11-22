@@ -83380,6 +83380,25 @@ update public.crm_leads l
  where l.id = s.lead_id
    and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
 
+-- ---- atualização agendada pela janela de manutenção (migration 9457) ----
+alter table public.system_update_runs
+  add column if not exists scheduled_for timestamptz;
+
+comment on column public.system_update_runs.scheduled_for is
+  'Quando o agent.sh vai executar este pedido, se ele espera a janela de manutenção (SYSTEM_UPDATE_WINDOW, #4334). Gravada pelo agente (run_scheduled) a cada ciclo de espera; nula = sem janela. A cerca das extensões e o "desfecho desconhecido" da tela contam os 15 min a partir do mais tarde entre dispatched_at e esta coluna.';
+
+-- `greatest` ignora o nulo: sem agendamento, é a régua de sempre (dispatched_at).
+create or replace function public.fn_extensions_core_update_in_progress()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from public.system_update_runs
+    where status='dispatched'
+      and greatest(dispatched_at, scheduled_for) > now() - interval '15 minutes');
+$$;
+
+revoke execute on function public.fn_extensions_core_update_in_progress() from public, anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -89798,4 +89817,45 @@ comment on column public.crm_metas.alvo is
 comment on table public.crm_metas is
   'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
-notify pgrst, 'reload schema';
+-- ---- teto do dia só na abordagem (migration 9455, #3851) ----
+-- Opção POR CANAL (#3851): ligada, o teto diário conta e barra só a 1ª mensagem
+-- a pessoa nova; o follow-up de quem já foi abordado não gasta nem espera o
+-- teto. O porquê inteiro está no cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists teto_so_abordagem boolean;
+comment on column public.channel_knobs.teto_so_abordagem is
+  'true = o teto diário (warm-up e daily_message_limit) conta só a 1ª mensagem a pessoa nova; follow-up de quem já foi abordado não gasta nem espera o teto. NULL/false = régua de sempre (conta todo disparo). Resposta nunca passa pelo teto (9061). Opção POR CANAL (#3851).';
+
+alter table public.pacing_ledger
+  add column if not exists abordagem boolean not null default true;
+comment on column public.pacing_ledger.abordagem is
+  'true = 1ª mensagem a pessoa nova (abordagem). false = follow-up de quem já foi abordado. Só a coluna `teto_so_abordagem` do canal faz o teto do dia ler isto; resposta é marcada por `resposta` e nunca conta (#3851).';
+
+-- ---- teto próprio do follow-up (migration 9456, #4063) ----
+-- A opção `teto_so_abordagem` tira o teto de ABORDAGEM do follow-up — era o
+-- pedido — e com isso o follow-up ficava sem teto nenhum: 200, 300, 400 no mesmo
+-- dia saíam todos. `followup_daily_cap` é o teto de SEGURANÇA desse volume,
+-- separado do de abordagem, lido pelo mesmo `loadChannelKnobs` e só armado com a
+-- opção ligada. NULL = default do motor (200/dia). O porquê inteiro está no
+-- cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists followup_daily_cap integer;
+
+comment on column public.channel_knobs.followup_daily_cap is
+  'Teto diário PRÓPRIO do follow-up (disparo que não é abordagem nem resposta), separado do teto de abordagem. Só arma com teto_so_abordagem ligado; desligado, o follow-up conta no teto de sempre. NULL = default do motor (200/dia). Inteiro > 0; valor inválido cai no default com warn (#4063, refs #3851).';
+
+do $followup_daily_cap$ begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_knobs_followup_daily_cap_check'
+       and conrelid = 'public.channel_knobs'::regclass
+  ) then
+    alter table public.channel_knobs
+      add constraint channel_knobs_followup_daily_cap_check
+      check (followup_daily_cap is null or followup_daily_cap > 0);
+  end if;
+end $followup_daily_cap$;

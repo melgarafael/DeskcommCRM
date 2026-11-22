@@ -8398,6 +8398,10 @@ export const DICIONARIO: Traducoes = {
     es: "Los envíos masivos, la prospección y los mensajes que retoman una conversación detenida solo salen dentro de esta ventana. Fuera de ella, el envío queda programado para cuando se abra de nuevo, y el motivo aparece en la conversación.",
   },
   "Enviar aos domingos": { es: "Enviar los domingos" },
+  "Teto do dia só na abordagem": { es: "Tope del día solo en el primer contacto" },
+  "Ligado: o teto diário conta apenas a primeira mensagem a uma pessoa nova. Responder quem escreveu e retomar quem já foi abordado continua respeitando o intervalo e a janela, mas não gasta nem espera o teto.": {
+    es: "Activado: el tope diario cuenta solo el primer mensaje a una persona nueva. Responder a quien escribió y retomar a quien ya fue contactado sigue respetando el intervalo y la ventana, pero no gasta ni espera el tope.",
+  },
   "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligue se você faz prospecção ativa e prefere não incomodar no fim de semana.": {
     es: "Activado por defecto: quien escribe un domingo espera respuesta el domingo. Desactívalo si haces prospección activa y prefieres no molestar el fin de semana.",
   },
@@ -9136,6 +9140,11 @@ export const DICIONARIO: Traducoes = {
     es: " — avanza sola en cuanto el servidor empiece.",
   },
   "Esperando há": { es: "Esperando desde hace" },
+  // O pedido que espera a janela de manutenção do servidor (#4334).
+  "Atualização agendada para": { es: "Actualización programada para las" },
+  "Este servidor só atualiza na janela de manutenção configurada, e o pedido roda sozinho quando ela abrir.": {
+    es: "Este servidor solo se actualiza en la ventana de mantenimiento configurada, y la solicitud se ejecuta sola cuando se abra.",
+  },
   "Pode fechar esta página: o pedido já está registrado e não se perde.": {
     es: "Puedes cerrar esta página: la solicitud ya está registrada y no se pierde.",
   },
@@ -10447,6 +10456,9 @@ export const DICIONARIO: Traducoes = {
   },
   "O limite diário de envios do número foi atingido — proteção contra bloqueio do WhatsApp. Libera de novo amanhã, a partir das": {
     es: "El número alcanzó su límite diario de envíos. Es una protección para evitar que WhatsApp lo bloquee. Se restablece mañana, a partir de las",
+  },
+  "O limite diário de follow-ups do número foi atingido — proteção contra bloqueio do WhatsApp. A mensagem volta amanhã, a partir das": {
+    es: "El número alcanzó su límite diario de seguimientos. Es una protección para evitar que WhatsApp lo bloquee. El mensaje vuelve mañana, a partir de las",
   },
   // #4943: o aviso diz o próximo passo (o que escrever no prompt) e o que o
   // gate isenta. A chave é o texto em português, então o texto antigo sai.
@@ -13695,6 +13707,16 @@ export const DICIONARIO: Traducoes = {
   },
   "Desligada: nenhuma pergunta sai ao encerrar.": {
     es: "Desactivada: no se envía ninguna pregunta al cerrar.",
+  },
+  // #4737 — Tarefas: abrir em "Minhas", lembrar o filtro e dizer o recorte do banco.
+  "Sua empresa mostra aqui as suas tarefas e as que você criou.": {
+    es: "Tu empresa muestra aquí tus tareas y las que creaste.",
+  },
+  "Sua empresa mostra aqui as suas tarefas, as que você criou e as que ainda não têm responsável.": {
+    es: "Tu empresa muestra aquí tus tareas, las que creaste y las que todavía no tienen responsable.",
+  },
+  "A lista mudou, mas não consegui lembrar esta escolha para a próxima visita.": {
+    es: "La lista cambió, pero no pude recordar esta elección para la próxima visita.",
   },
   "Resultado dos últimos 30 dias": {
     es: "Resultado de los últimos 30 días",
@@ -21873,6 +21895,11 @@ export const DICIONARIO: Traducoes = {
   // O módulo opcional da revisão por quilometragem (#4376, adaptação do #4536) em /admin/sistema e em Recursos opcionais.
   "Revisão por quilometragem": { es: "Revisión por kilometraje" },
   "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.": { es: "El kilometraje informado en el negocio se convierte en la fecha prevista de la próxima revisión, en el campo de fecha que eligió el embudo." },
+  // O módulo opcional do menu de atendimento sem IA (#4594, fatia 1) em /admin/sistema e em Recursos opcionais.
+  "Menu de atendimento sem IA": { es: "Menú de atención sin IA" },
+  "A primeira mensagem recebe um menu com opções numeradas e o cliente escolhe por número — fila, pessoa ou arquivo — sem nenhuma resposta gerada por IA.": { es: "El primer mensaje recibe un menú con opciones numeradas y el cliente elige por número — cola, persona o archivo — sin ninguna respuesta generada por IA." },
+  "Ligado, a primeira mensagem de uma conversa sem dono recebe um menu com opções numeradas, escrito pela empresa, e o cliente escolhe por número: a conversa vai para a fila, para uma pessoa, ou recebe um arquivo que já existe. Enquanto o menu espera a escolha, nenhuma resposta é gerada por IA — não há token gasto. Desligado, a entrada continua sendo da IA ou de quem atende, como hoje. A empresa ainda precisa ligar o menu em settings.menu_de_atendimento.ativa.": { es: "Activado, el primer mensaje de una conversación sin dueño recibe un menú con opciones numeradas, escrito por la empresa, y el cliente elige por número: la conversación va a la cola, a una persona, o recibe un archivo que ya existe. Mientras el menú espera la elección, ninguna respuesta se genera por IA — no se gastan tokens. Desactivado, la entrada sigue siendo de la IA o de quien atiende, como hoy. La empresa todavía tiene que activar el menú en settings.menu_de_atendimento.ativa." },
+  "Não cria porta no menu do CRM: nesta fatia o menu é escrito em settings.menu_de_atendimento e a tela de edição ainda não existe.": { es: "No crea entrada en el menú del CRM: en esta parte el menú se escribe en settings.menu_de_atendimento y la pantalla de edición todavía no existe." },
   "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.": { es: "Activado, el embudo que declare la regla de revisión por kilometraje pasa a calcular la fecha prevista de la próxima revisión cuando se informa el kilometraje del negocio, por la tarjeta, la API, el MCP o la respuesta del guion, y guarda esa fecha en el campo de fecha que eligió el embudo. Desactivado, el kilometraje se sigue guardando y no se calcula ninguna fecha; las fechas ya guardadas quedan como están." },
   "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.": { es: "No crea entrada en el menú del CRM: la regla se declara por embudo, en pipelines.settings.revisao_por_km, y todavía no hay pantalla para declararla." },
   // O módulo opcional das agências (doc 321, adaptação do #4034) em /admin/sistema e em Recursos opcionais.
