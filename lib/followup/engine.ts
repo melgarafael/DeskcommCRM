@@ -7,6 +7,11 @@ import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { isFollowupCasRecusado, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
+import {
+  FollowupNaoComercialError,
+  MOTIVO_DO_CANCELAMENTO_POR_CLASSIFICACAO,
+  exigirFollowupComercial,
+} from "@/lib/followup/elegibilidade-do-negocio";
 /**
  * Follow-up flow engine — worker tick (Task 4.1). Orchestrates DB access
  * around the pure decisions in `node-handlers.ts`: claim due enrollments,
@@ -1056,7 +1061,18 @@ async function processEnrollment(
     // `dormente` o ramo abaixo só alcança a FRONTEIRA — a guarda de agenda é
     // pulada para ele, acima — mas a frase sai da mesma tabela, para que
     // reaproximar as duas guardas não faça o texto voltar a mentir.
-    const causa = guarda === "agenda" ? MOTIVO_DA_AGENDA_VENCIDA : MOTIVO_DA_FRONTEIRA_VENCIDA;
+    // #4191: a classificação do negócio cancela com o motivo DELA. Chamar de
+    // "atendimento encerrado" uma cobrança barrada porque o card foi marcado
+    // como não comercial é a mentira que a Central não pode ter.
+    const causa =
+      error instanceof FollowupNaoComercialError
+        ? {
+            curto: MOTIVO_DO_CANCELAMENTO_POR_CLASSIFICACAO,
+            explica: "o negócio foi classificado como não comercial",
+          }
+        : guarda === "agenda"
+          ? MOTIVO_DA_AGENDA_VENCIDA
+          : MOTIVO_DA_FRONTEIRA_VENCIDA;
     if (enrollment.status === "dormente") {
       const nome =
         (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
@@ -1383,7 +1399,23 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   const revisions=new Map<string,number>();
   return {
-    async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
+    async assertServiceBoundary(enrollment) {
+      if (!revisions.has(enrollment.id) && enrollment.revision !== undefined) revisions.set(enrollment.id, enrollment.revision);
+      await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null);
+      // #4191, item 2: o negócio classificado como não comercial não é cobrado.
+      // A guarda vive AQUI, ao lado de `assertServiceBoundarySupabase`, porque
+      // precisa valer no disparo — o card pode ter sido classificado dias depois
+      // da inscrição. Vale no tick do motor; o passo já enfileirado (turn-bridge,
+      // enviar-texto-fixo) não passa por aqui.
+      // A unidade é o NEGÓCIO da inscrição (`lead_id`), nunca o contato: o outro
+      // negócio aberto da mesma pessoa continua sendo cobrado.
+      await exigirFollowupComercial(admin, {
+        organizationId: enrollment.organization_id,
+        enrollmentId: enrollment.id,
+        leadId: enrollment.lead_id ?? null,
+        boundary: enrollment.service_boundary ?? null,
+      });
+    },
     async retornoQueSeguraOFluxo(enrollment) {
       const quando = await quandoDoRetornoVivo(admin, enrollment.organization_id, enrollment.contact_id);
       if (quando === null) return null;

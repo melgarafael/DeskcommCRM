@@ -77,6 +77,7 @@ vi.mock("./ConversaNoDossie", () => ({ ConversaNoDossie: () => null }));
 vi.mock("./ScoreSlot", () => ({ ScoreSlot: () => null }));
 vi.mock("./OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => <div data-peca="vendas" /> }));
+vi.mock("./ClassificacaoComercial", () => ({ ClassificacaoComercial: () => null }));
 vi.mock("./LeadTimeline", () => ({
   LeadTimeline: ({ itens }: { itens: Array<{ id: string; type: string }> }) => (
     <ul data-peca="linha-do-tempo">
