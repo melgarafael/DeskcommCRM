@@ -118,11 +118,13 @@ describe("abrirAcesso com o módulo desligado", () => {
     const { db, from } = banco();
     const acesso = await abrirAcesso(db, "org", "conexao");
     expect(acesso).toEqual({ ok: false, motivo: "modulo_desligado" });
-    // As DUAS consultas de `modulosLigados` (flag + módulo de tabela) — e mais nenhuma:
-    // a tabela de conexões nem é tocada quando o módulo já está desligado.
-    expect(from).toHaveBeenCalledTimes(2);
+    // As TRÊS consultas de `modulosLigados` com organização (#3868: flag da instalação,
+    // módulo de tabela e a linha da EMPRESA) — e mais nenhuma: a tabela de conexões nem
+    // é tocada quando o módulo já está desligado.
+    expect(from).toHaveBeenCalledTimes(3);
     expect(from).toHaveBeenCalledWith("platform_config");
     expect(from).toHaveBeenCalledWith("modulos_instalados");
+    expect(from).toHaveBeenCalledWith("organization_modules");
   });
 });
 
@@ -153,3 +155,51 @@ describe("a chave da cobrança do revendedor (spec 2026-09-29, PR 2)", () => {
     expect(await modulosLigados(banco({ platform_config: { data: lixo } }).db)).toEqual([]);
   });
 });
+
+/**
+ * `catalogo_por_feed` na camada POR EMPRESA (#4871, F2).
+ *
+ * O módulo é por FLAG e estava FORA de `MODULOS_POR_EMPRESA`: a linha `desligado`
+ * da empresa ficava inerte, e o cron seguia buscando o feed dela. O efeito é
+ * externo (o servidor sai para a internet e reescreve preço), então a exceção da
+ * empresa vale tanto quanto a da instalação — e a instalação continua sendo teto.
+ */
+describe("modulosLigados — catalogo_por_feed por EMPRESA (#4871)", () => {
+  const catalogo = [{ chave: "MODULO_CATALOGO_POR_FEED", valor: "ligado" }];
+
+  it("linha `desligado` da empresa tira o módulo dela", async () => {
+    const comExcecao = await modulosLigados(
+      banco({
+        platform_config: { data: catalogo },
+        organization_modules: { data: [{ modulo: "catalogo_por_feed", estado: "desligado" }] },
+      }).db,
+      "org-1",
+    );
+    expect(comExcecao).not.toContain("catalogo_por_feed");
+  });
+
+  it("sem linha da empresa, ela herda a instalação", async () => {
+    const semLinha = await modulosLigados(banco({ platform_config: { data: catalogo } }).db, "org-2");
+    expect(semLinha).toContain("catalogo_por_feed");
+  });
+
+  it("instalação desligada vence a linha `ligado` da empresa", async () => {
+    const semInstalacao = await modulosLigados(
+      banco({ organization_modules: { data: [{ modulo: "catalogo_por_feed", estado: "ligado" }] } }).db,
+      "org-3",
+    );
+    expect(semInstalacao).not.toContain("catalogo_por_feed");
+  });
+
+  it("leitura da empresa que falha fecha o módulo (não assume ligado)", async () => {
+    const recusada = await modulosLigados(
+      banco({
+        platform_config: { data: catalogo },
+        organization_modules: { error: { code: "42501", message: "permission denied" } },
+      }).db,
+      "org-4",
+    );
+    expect(recusada).not.toContain("catalogo_por_feed");
+  });
+});
+

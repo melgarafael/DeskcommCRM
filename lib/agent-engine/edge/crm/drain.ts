@@ -68,6 +68,14 @@ export interface DrainKnobs {
   idleIntervalMs: number;
   /** Janela de coalescência de rajada inbound por contato (0 = sem debounce). */
   debounceMs: number;
+  /**
+   * Teto da rajada DESLIZANTE (`INBOUND_BURST_MAX_MS`, issue #196): quanto tempo,
+   * contado do `created_at` do job da primeira mensagem, ele ainda aceita
+   * carona e é empurrado para frente. Ausente = janela ancorada (o `run_after`
+   * nasce e não anda), que é o comportamento de antes do #196 — os dublês de
+   * teste que não o passam ficam no modo antigo de propósito.
+   */
+  debounceMaxMs?: number;
   /** Evento 'processing' órfão volta a 'pending' após isto. */
   reapTimeoutMs: number;
   /**
@@ -384,9 +392,15 @@ async function processEvent(
   // `not null default now()` hoje, mas o padrão do repo, ver migration 0027, não
   // confia nisso) com desempate por `created_at` (ordem de INGESTÃO, uma
   // mensagem por webhook) dá recência determinística.
+  //
+  // #2797: a REAÇÃO (👍) é linha inbound, mas não emite
+  // `ai_agent.dispatch_requested` (`lib/channels/reacao.ts`) — não tem turno
+  // próprio. Contada aqui, ela tornava "superado" o texto que ela segue, e
+  // ninguém respondia. Mesmo filtro de `loadLastInboundBody` (follow-up).
   const { rows: ultimaInbound } = await pool.query<{ id: string }>(
     `select id from messages
      where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+       and type <> 'reaction'
      order by coalesce(sent_at, created_at) desc, created_at desc, id desc
      limit 1`,
     [event.organization_id, p.conversation_id],
@@ -597,11 +611,24 @@ async function processEvent(
         agora: knobs.clock?.() ?? new Date(),
         log,
       }),
+    // Teto da rajada deslizante (#196). Ausente no knob = janela ancorada, que
+    // é o comportamento anterior a esta mudança (ver `tetoDaRajada`).
+    knobs.debounceMaxMs,
   );
   if (rajada.tipo === 'coalescido') {
+    if (rajada.erroAoEstender !== undefined) {
+      // Não derruba o evento: a mensagem JÁ entrou na carona, só a janela ficou
+      // onde estava — o lote responde um pouco antes, e o cliente não espera.
+      log.warn('drain: não consegui empurrar a janela da rajada — lote segue no horário antigo', {
+        event_id: event.id,
+        job_id: rajada.jobId,
+        error: rajada.erroAoEstender.slice(0, 160),
+      });
+    }
     log.info('drain: rajada coalescida em job pendente', {
       event_id: event.id,
       job_id: rajada.jobId,
+      janela_estendida_ate: rajada.janelaEstendidaAte?.toISOString() ?? null,
     });
     return 'processado';
   }

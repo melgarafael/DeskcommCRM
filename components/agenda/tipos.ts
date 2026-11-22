@@ -69,6 +69,12 @@ export type Agendamento = {
   tipo?: string;
   /** `calendar_event_types.id` — remarcar segue o tipo DO compromisso. Ausente no Google. */
   tipoId?: string | null;
+  /**
+   * A duração é a da agenda do SERVIÇO (tipo com `service_enabled` ou vaga de
+   * uma ocorrência): a rota recusa `duration_minutes` com
+   * `agenda_duracao_do_servico`, então a grade não oferece a borda (#4450).
+   */
+  duracaoFixa?: boolean;
   local?: string;
   origem: OrigemDoAgendamento;
   situacao: SituacaoDoAgendamento;

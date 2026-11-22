@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
 import { requireRole } from "@/lib/auth/require-role";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -9,14 +13,42 @@ import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { audit } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+/**
+ * GET aceita sessão (como sempre) OU Bearer `dsk_…` (`config:read`, papel admin
+ * via `tokenRole`). A sessão segue IDÊNTICA: `allowPlatformAdmin: "leitura"` e a
+ * prova de MFA (`mfaEmDivida`). Só o ramo do token é novo, e a organização dele
+ * vem da linha do token, nunca da query. O PATCH fica só de sessão
+ * (`fn_set_channel_routing` exige `auth.uid()`).
+ */
+async function responder(
+  obterDb: () => Promise<SupabaseClient>,
+  organizationId: string,
+  requestId: string,
+): Promise<Response> {
+  try {
+    return ok(await loadChannelRoutingSettings(await obterDb(), organizationId), { requestId });
+  } catch { return fail("internal_error", "Não foi possível carregar os responsáveis. Tente novamente.", 500, { requestId }); }
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "settings_routing",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "settings.routing_channels", requestId);
+    if (teto) return teto;
+    return responder(async () => authz.supabase, authz.organizationId, requestId);
+  }
   const auth = await requireRole("manager", { requestId, resource: "settings_routing", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
-  try {
-    return ok(await loadChannelRoutingSettings(await createClient(), auth.org.orgId), { requestId });
-  } catch { return fail("internal_error", "Não foi possível carregar os responsáveis. Tente novamente.", 500, { requestId }); }
+  return responder(() => createClient(), auth.org.orgId, requestId);
 }
 
 export async function PATCH(req: Request): Promise<Response> {

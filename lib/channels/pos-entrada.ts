@@ -73,6 +73,8 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
 import { moduloQueAssumeAEntrada } from "@/lib/modulos/desvios-da-entrada";
+import { atenderMenuSemIa } from "@/lib/atendimento/menu/atender";
+import { portasDoMenu } from "@/lib/atendimento/menu/portas";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
@@ -654,10 +656,75 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       conversation_id: entrada.conversationId,
       campanha: casada.id,
     });
+    // ─── 3º efeito: QUEM responde (#4024) ────────────────────────────────
+    //
+    // A elegibilidade é do CONTATO; a escolha do agente é da CONVERSA. A coluna
+    // é lida por `resolve-turn-agent` (degrau 0b, acima do roteador) em todo
+    // turno desta conversa — decisão do mantenedor (2026-11-05), a mesma regra
+    // da campanha de saída. Só a conversa em que a frase casou é afetada: uma
+    // conversa nova do mesmo contato volta à régua do número, e uma troca
+    // explícita de agente continua possível.
+    if (casada.agent_id !== undefined) {
+      await registrarAgenteDaCampanhaDeEntrada(admin, entrada, casada.agent_id);
+    }
   } catch (err) {
     logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
+ * 2c · O agente que a campanha de ENTRADA declarou, gravado na CONVERSA (#4024).
+ *
+ * A elegibilidade (`autorizarContatoParaIA` acima) é do contato e é permanente:
+ * `ai_authorized_reason = campanha:<id>` continua respondendo "por que a IA pôde
+ * assumir". Já "quem responde" é outra pergunta, e a resposta vale para ESTA
+ * conversa: por isso o `agent_id` da campanha mora aqui, em
+ * `conversations.campaign_entry_agent_id`, e não numa releitura da `reason`.
+ *
+ * `is("campaign_entry_agent_id", null)` NÃO é preciosismo: a primeira campanha
+ * que casou é a que trouxe o cliente. Uma frase de outro anúncio escrita dias
+ * depois, na mesma conversa, não troca o agente que já abriu o atendimento.
+ *
+ * Best-effort, como o resto do arquivo: falha aqui vira log e o turno segue pelo
+ * agente do número — o lado seguro. A FK composta da 9415 ainda recusa, no
+ * banco, um `agent_id` de OUTRA organização (a coluna nem é gravada, e o
+ * `resolve-turn-agent` não tem como escolhê-lo).
+ */
+async function registrarAgenteDaCampanhaDeEntrada(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  agentId: string,
+): Promise<void> {
+  try {
+    const { error } = await admin
+      .from("conversations")
+      .update({ campaign_entry_agent_id: agentId })
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .is("campaign_entry_agent_id", null);
+    if (error) {
+      logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        agent_id: agentId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    logger.info("pos-entrada: conversa marcada com o agente da campanha de entrada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
+    });
+  } catch (err) {
+    logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
   }
@@ -1132,6 +1199,7 @@ async function abrirDemanda(
       messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
+      channelSessionId: entrada.channelSessionId,
       ...(atribuicaoDaMensagem ? { atribuicaoDaMensagem } : {}),
     });
 
@@ -1165,6 +1233,25 @@ async function abrirDemanda(
  * O payload é o MESMO dos dois canais, campo a campo. Um payload por canal
  * faria o consumidor adivinhar de quem veio — e o consumidor é um só
  * (`lib/agent-engine/edge/crm/drain.ts`).
+ *
+ * ─── O MENU DE ATENDIMENTO SEM IA TEM A PALAVRA ANTES (#4594) ───────────────
+ *
+ * Com `settings.menu_de_atendimento.ativa === true`, o menu determinístico
+ * responde a mensagem e o evento abaixo NÃO é emitido — é esta linha que faz o
+ * "sem gastar token" da issue ser verdade, não uma promessa na descrição da
+ * feature. O lugar é aqui, e não antes de `abrirDemanda`, porque um menu de
+ * entrada é ATENDIMENTO: a conversa continua virando card no funil, do mesmo
+ * jeito que quando quem responde é a IA ou uma pessoa.
+ *
+ * Desligado (o padrão de fábrica), `atenderMenuSemIa` lê a configuração, não
+ * acha a chave e devolve `tratado: false` — uma leitura a mais por mensagem, e o
+ * caminho de hoje intacto.
+ *
+ * Por que NÃO em `DESVIOS_DA_ENTRADA` (`lib/modulos/desvios-da-entrada.ts`): o
+ * registro é para o módulo que TIRA a mensagem do caminho comercial. O menu não
+ * tira — ele atende e o card do funil continua nascendo, como quando quem
+ * responde é uma pessoa. Entrar no registro faria a conversa deixar de virar
+ * demanda, que é justamente o que o menu não quer.
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
@@ -1190,6 +1277,34 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
       organization_id: entrada.organizationId,
       detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
     });
+  }
+
+  // O menu não lança: qualquer desfecho dele é um `tratado` booleano, e
+  // `false` significa "não é comigo, siga o caminho de sempre".
+  const menu = await atenderMenuSemIa(
+    admin,
+    {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    },
+    portasDoMenu(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    }),
+  );
+  if (menu.tratado) {
+    logger.info("pos-entrada: menu de atendimento assumiu — IA não despachada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      motivo: menu.motivo,
+    });
+    return;
   }
 
   const { error } = await admin.rpc("emit_event" as never, {

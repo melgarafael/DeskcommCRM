@@ -1,13 +1,11 @@
 /**
  * Chamadas à API do Google Ads que NÃO são envio de conversão (0436): criar e
  * listar ações de conversão, ler métricas de campanha e os recursos de mensagem
- * do WhatsApp.
+ * do WhatsApp. As consultas de relatório usam a autorização do projeto Cloud,
+ * inclusive nas instalações que nunca receberam um developer token.
  *
  * O envio continua no Data Manager (`data-manager.ts`) ou no upload antigo
- * (`conversions.ts`). O que mora aqui exige duas coisas que o envio não exige:
- * o developer token da INSTALAÇÃO e o escopo `adwords` na autorização da
- * organização. Quando falta uma delas, a resposta diz qual — a tela mostra o
- * que fazer em vez de um erro genérico.
+ * (`conversions.ts`). A leitura requer o escopo `adwords` e acesso ao anunciante.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -24,6 +22,8 @@ const PRAZO_MS = 15_000;
 
 export type FalhaDaApiGoogle =
   | "sem_developer_token"
+  | "projeto_sem_acesso"
+  | "oauth_nao_configurado"
   | "sem_conexao"
   | "cifra_indisponivel"
   | "reconectar"
@@ -40,26 +40,27 @@ export interface ConexaoGoogleParaApi {
   loginCustomerId: string | null;
 }
 
-const soDigitos = (v: string) => v.replace(/\D/g, "");
+export const normalizarIdLegado = (v: string) => v.replace(/\D/g, "");
 
 /** Lê a autorização e a conta da organização. Nunca devolve o token para o browser. */
 export async function lerConexaoGoogleParaApi(
   admin: SupabaseClient,
   organizationId: string,
+  somenteCustomerId?: string,
 ): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
   const { data, error } = await admin
     .from("ad_platform_connections")
     .select("google_refresh_token_encrypted, google_customer_id, google_login_customer_id")
     .eq("organization_id", organizationId)
-    .eq("platform", "google_ads")
-    .maybeSingle();
+    .eq("platform", "google_ads").maybeSingle();
   if (error) return { ok: false, falha: "transitorio", detalhe: "Leitura da conexão falhou." };
   const linha = data as {
     google_refresh_token_encrypted: string | null;
     google_customer_id: string | null;
     google_login_customer_id: string | null;
   } | null;
-  if (!linha?.google_refresh_token_encrypted || !linha.google_customer_id)
+  const customerId = normalizarIdLegado(linha?.google_customer_id ?? "");
+  if (!linha?.google_refresh_token_encrypted || !customerId || (somenteCustomerId && somenteCustomerId !== customerId))
     return {
       ok: false,
       falha: "sem_conexao",
@@ -76,9 +77,9 @@ export async function lerConexaoGoogleParaApi(
     ok: true,
     dados: {
       refreshToken,
-      customerId: soDigitos(linha.google_customer_id),
+      customerId,
       loginCustomerId: linha.google_login_customer_id
-        ? soDigitos(linha.google_login_customer_id)
+        ? normalizarIdLegado(linha.google_login_customer_id)
         : null,
     },
   };
@@ -114,6 +115,11 @@ export function classificarRecusa(
       detalhe:
         "A autorização do Google não inclui o Google Ads. Clique em Reconectar e autorize de novo.",
     };
+  if (/CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION/.test(bruto))
+    return {
+      falha: "projeto_sem_acesso",
+      detalhe: "Solicite acesso de produção à Google Ads API no projeto Google Cloud usado na autorização.",
+    };
   if (/DEVELOPER_TOKEN_NOT_APPROVED|DEVELOPER_TOKEN_PROHIBITED/.test(bruto))
     return {
       falha: "sem_developer_token",
@@ -136,14 +142,16 @@ async function chamar(
   conexao: ConexaoGoogleParaApi,
   caminho: string,
   corpo: unknown,
+  finalidade: "google_ads" | "relatorio" = "google_ads",
 ): Promise<RespostaDaApiGoogle<unknown>> {
-  const app = configuracaoDoGoogleAds("google_ads");
+  const app = configuracaoDoGoogleAds(finalidade);
   if (!app)
     return {
       ok: false,
-      falha: "sem_developer_token",
-      detalhe:
-        "Esta instalação não tem GOOGLE_ADS_DEVELOPER_TOKEN. Sem ele, só é possível informar o ID da ação à mão.",
+      falha: finalidade === "relatorio" ? "oauth_nao_configurado" : "sem_developer_token",
+      detalhe: finalidade === "relatorio"
+        ? "Configure o cliente OAuth do Google Ads para consultar campanhas."
+        : "Esta instalação não tem GOOGLE_ADS_DEVELOPER_TOKEN. Sem ele, só é possível informar o ID da ação à mão.",
     };
   const token = await renovarToken(app, conexao.refreshToken, { agora: new Date() });
   if (!token.ok)
@@ -152,11 +160,21 @@ async function chamar(
       falha: token.motivo === "resposta_invalida" ? "transitorio" : "reconectar",
       detalhe: "Não foi possível renovar a autorização do Google. Tente de novo ou reconecte.",
     };
+  return chamarComToken(token.token.access_token, conexao, caminho, corpo, app.developerToken);
+}
+
+async function chamarComToken(
+  accessToken: string,
+  conexao: Pick<ConexaoGoogleParaApi, "customerId" | "loginCustomerId">,
+  caminho: string,
+  corpo: unknown,
+  developerToken?: string,
+): Promise<RespostaDaApiGoogle<unknown>> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
-    authorization: `Bearer ${token.token.access_token}`,
-    "developer-token": app.developerToken,
+    authorization: `Bearer ${accessToken}`,
   };
+  if (developerToken) headers["developer-token"] = developerToken;
   if (conexao.loginCustomerId) headers["login-customer-id"] = conexao.loginCustomerId;
   let resposta: Response;
   try {
@@ -184,6 +202,24 @@ async function chamar(
     return { ok: false, ...recusa };
   }
   return { ok: true, dados: json };
+}
+
+/** Confere o anunciante com o consentimento recém-concedido antes de guardar a conexão. */
+export async function conferirContaDeRelatorio(
+  accessToken: string, customerId: string, loginCustomerId: string | null,
+): Promise<RespostaDaApiGoogle<unknown>> {
+  const resposta = await chamarComToken(accessToken, { customerId, loginCustomerId }, "googleAds:search", {
+    query: "SELECT customer.id, customer.manager FROM customer LIMIT 1",
+  });
+  if (!resposta.ok) return resposta;
+  const linha = z.object({
+    results: z.array(z.object({ customer: z.object({ id: z.string(), manager: z.boolean().optional() }) })).length(1),
+  }).safeParse(resposta.dados);
+  const cliente = linha.success ? linha.data.results[0]?.customer : undefined;
+  if (!cliente || cliente.id !== customerId || cliente.manager) {
+    return { ok: false, falha: "sem_permissao", detalhe: "Escolha uma conta de anunciante à qual este login do Google tenha acesso." };
+  }
+  return { ok: true, dados: customerId };
 }
 
 // ── Ações de conversão ──────────────────────────────────────────────────────
@@ -290,6 +326,8 @@ export interface CampanhaGoogle {
   id: string;
   nome: string;
   status: string;
+  moeda?: string;
+  fuso?: string;
   impressoes: number;
   cliques: number;
   custo: number;
@@ -297,6 +335,10 @@ export interface CampanhaGoogle {
 }
 
 const linhaDeCampanha = z.object({
+  customer: z.object({
+    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional(),
+    timeZone: z.string().optional(),
+  }).optional(),
   campaign: z.object({
     id: z.union([z.string(), z.number()]).transform(String),
     name: z.string().default(""),
@@ -326,27 +368,26 @@ export async function lerCampanhas(
   if (!data.test(periodo.de) || !data.test(periodo.ate))
     return { ok: false, falha: "recusado", detalhe: "Período inválido." };
   const resposta = await chamar(conexao, "googleAds:search", {
-    query: `SELECT campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
-  });
+    query: `SELECT customer.currency_code, customer.time_zone, campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
+  }, "relatorio");
   if (!resposta.ok) return resposta;
   const resultados = z
-    .object({ results: z.array(z.unknown()).optional() })
+    .object({ results: z.array(linhaDeCampanha).optional() })
     .safeParse(resposta.dados);
-  const campanhas = (resultados.success ? (resultados.data.results ?? []) : []).flatMap((r) => {
-    const l = linhaDeCampanha.safeParse(r);
-    if (!l.success) return [];
-    return [
-      {
-        id: l.data.campaign.id,
-        nome: l.data.campaign.name,
-        status: l.data.campaign.status,
-        impressoes: numero(l.data.metrics.impressions),
-        cliques: numero(l.data.metrics.clicks),
-        custo: numero(l.data.metrics.costMicros) / 1_000_000,
-        conversoes: numero(l.data.metrics.conversions),
-      },
-    ];
-  });
+  if (!resultados.success) {
+    return { ok: false, falha: "transitorio", detalhe: "O Google devolveu um relatório de campanhas que não pôde ser lido." };
+  }
+  const campanhas = (resultados.data.results ?? []).map(({ campaign, customer, metrics }) => ({
+    id: campaign.id,
+    nome: campaign.name,
+    status: campaign.status,
+    ...(customer?.currencyCode && { moeda: customer.currencyCode }),
+    ...(customer?.timeZone && { fuso: customer.timeZone }),
+    impressoes: numero(metrics.impressions),
+    cliques: numero(metrics.clicks),
+    custo: numero(metrics.costMicros) / 1_000_000,
+    conversoes: numero(metrics.conversions),
+  }));
   return { ok: true, dados: campanhas };
 }
 

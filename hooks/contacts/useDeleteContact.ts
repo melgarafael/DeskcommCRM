@@ -18,26 +18,58 @@ export function mensagemDeBloqueioPorVinculo(
   details: Record<string, unknown> | undefined,
   t: (texto: string) => string,
 ): string | null {
+  const frases = [fraseDaAgenda(details, t), fraseDosNegocios(details, t)].filter(
+    (f): f is string => f !== null,
+  );
+  return frases.length > 0 ? frases.join(" ") : null;
+}
+
+function contagem(details: Record<string, unknown> | undefined, tabela: string): number {
   const porTabela = details?.por_tabela as Record<string, unknown> | undefined;
-  const n = porTabela?.calendar_appointments;
-  if (typeof n !== "number" || n < 1) return null;
+  const n = porTabela?.[tabela];
+  return typeof n === "number" && n >= 1 ? n : 0;
+}
+
+function fraseDaAgenda(details: Record<string, unknown> | undefined, t: (texto: string) => string): string | null {
+  const n = contagem(details, "calendar_appointments");
+  if (n < 1) return null;
   return n === 1
-    ? t("Este contato tem 1 compromisso na Agenda. Cancele ou apague o compromisso antes de excluir.")
-    : t("Este contato tem {n} compromissos na Agenda. Cancele ou apague os compromissos antes de excluir.").replace(
+    ? t("Este contato tem 1 compromisso não cancelado na Agenda. Cancele o compromisso antes de excluir.")
+    : t("Este contato tem {n} compromissos não cancelados na Agenda. Cancele os compromissos antes de excluir.").replace(
         "{n}",
         String(n),
       );
+}
+
+/** A6: negócio ABERTO barra a exclusão; quem exclui fecha ou move cada um antes. */
+function fraseDosNegocios(details: Record<string, unknown> | undefined, t: (texto: string) => string): string | null {
+  const n = contagem(details, "crm_leads");
+  if (n < 1) return null;
+  return n === 1
+    ? t("Este contato tem 1 negócio aberto no funil. Feche ou mova o negócio antes de excluir.")
+    : t("Este contato tem {n} negócios abertos no funil. Feche ou mova os negócios antes de excluir.").replace(
+        "{n}",
+        String(n),
+      );
+}
+
+/** Para onde a pessoa vai resolver o que barrou: a Agenda, se houver compromisso; senão o funil. */
+export function destinoDoBloqueio(details: Record<string, unknown> | undefined): { href: string; rotulo: string } {
+  return contagem(details, "calendar_appointments") > 0
+    ? { href: "/app/agenda", rotulo: "Abrir Agenda" }
+    : { href: "/app/crm", rotulo: "Ver oportunidades" };
 }
 
 function toastDeBloqueioPorVinculo(err: ApiError): boolean {
   const t = (s: string) => traduzir(s, idiomaAtual());
   const mensagem = mensagemDeBloqueioPorVinculo(err.details, t);
   if (!mensagem) return false;
+  const destino = destinoDoBloqueio(err.details);
   toast.error(mensagem, {
     action: {
-      label: t("Abrir Agenda"),
+      label: t(destino.rotulo),
       onClick: () => {
-        window.location.href = "/app/agenda";
+        window.location.href = destino.href;
       },
     },
   });

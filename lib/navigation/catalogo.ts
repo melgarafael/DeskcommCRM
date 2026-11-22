@@ -18,7 +18,19 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+/**
+ * `modulos` é o único id que NÃO está em `NAV_GROUPS`: o grupo "Módulos" é GERADO em tempo de
+ * execução (um item por módulo conectado ativo da organização, Spec 33 F4), por
+ * `sidebarGroups`/`searchable` em `registry.ts`. Nenhuma entrada de `NAV_CATALOG` pode usá-lo.
+ */
+export type NavGroupId =
+  | "atendimento"
+  | "crm"
+  | "ia"
+  | "canais"
+  | "analise"
+  | "organizacao"
+  | "modulos";
 
 export interface NavGroup {
   id: NavGroupId;
@@ -423,6 +435,20 @@ export const NAV_CATALOG = [
     // onde o catálogo se CADASTRA — trabalho de quando entra produto novo ou
     // muda preço, não de toda manhã. Quem atende não a abre para vender; abre o
     // Inbox e o funil, que continuam no menu.
+  },
+  {
+    // Módulo opcional `catalogo_servicos` (doc 212, #3480): a porta só existe
+    // depois que o administrador da instalação instala o módulo em
+    // `/admin/modulos`. Ao lado de Produtos porque é o mesmo catálogo — o
+    // serviço é item dele —, e no hub pelo mesmo motivo: cadastra-se quando
+    // muda preço, não toda manhã.
+    href: "/app/servicos",
+    label: "Serviços",
+    description: "Hora marcada, projeto ou plano recorrente, com variações, prazo e sinal.",
+    icon: "Storefront",
+    group: "crm",
+    section: "Preparar a venda",
+    modulo: "catalogo_servicos",
   },
   {
     href: "/app/imports",
@@ -929,6 +955,22 @@ export const NAV_CATALOG = [
     modulo: "honorarios",
   },
   {
+    // ── O PAINEL DE VENDAS ─────────────────────────────────────
+    //
+    // "Quanto vendi" numa tela só: cartões de Vendas, Valor vendido, Ticket
+    // médio e Conversão, o gráfico do período e a lista das vendas por funil e
+    // tag. Fonte: os negócios GANHOS (`lib/relatorios/painel-de-vendas.ts`).
+    // SÓ NO HUB ("Ver tudo em Análise") e no ⌘K: o menu lateral está no teto
+    // medido de 15 itens (`tests/unit/interface-por-empresa.test.ts`).
+    href: "/app/vendas",
+    label: "Vendas",
+    description: "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
+  },
+  {
     href: "/app/metrics",
     label: "Desempenho",
     description: "Funil e performance por atendente nos últimos 30 dias.",
@@ -980,6 +1022,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    href: "/app/ads/google",
+    label: "Google Ads",
+    description: "Resultados dos negócios atribuídos ao Google Ads e desempenho da conta de anúncios.",
+    icon: "Megaphone",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "manager",
+  },
+  {
     // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
     // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
     // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
@@ -1005,6 +1056,31 @@ export const NAV_CATALOG = [
     section: "Os números do período",
     // Módulo opcional da instalação, desligado por padrão (#3403).
     modulo: "painel_atendimento",
+  },
+  {
+    // Irmã do Painel de atendimento, com outra pergunta: lá é a FILA de agora,
+    // por número; aqui é o DIA inteiro — quem chegou, quem espera, o que foi
+    // pedido (etiquetas e buscas de produto da IA), o que fechou e o que
+    // falhou. Viewer, como Desempenho: a RLS recorta o que cada um enxerga.
+    // Fora do sidebar: o menu está no limite medido (ver a Prospecção, acima).
+    href: "/app/operacao",
+    label: "Operação do dia",
+    description: "Quem chegou, quem espera uma pessoa, o que foi pedido e o que falhou hoje.",
+    icon: "ClipboardText",
+    group: "analise",
+    section: "Os números do período",
+  },
+  {
+    // Os dias guardados da tela acima. `manager`, a mesma régua da RLS de
+    // `relatorios_operacao_diarios`: o relatório reúne as conversas da equipe
+    // inteira, e o escopo de visibilidade de uma conversa não alcança o jsonb.
+    href: "/app/operacao/relatorios",
+    label: "Relatórios do dia",
+    description: "O relatório de cada dia, salvo sozinho na hora marcada, com o link de cada conversa.",
+    icon: "FileText",
+    group: "analise",
+    section: "O histórico que se consulta",
+    minRole: "manager",
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.
@@ -1075,6 +1151,28 @@ export const NAV_CATALOG = [
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
     icon: "UsersThree",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
+    // A tela da #3603. O prazo dos fluxos de etapa parada já se editava no
+    // construtor, mas só fluxo por fluxo: nenhuma tela mostrava quais deles
+    // alcançam cada etapa. A tela é uma JANELA para os fluxos de etapa parada:
+    // mostra os que alcançam cada etapa e edita o prazo NO PRÓPRIO FLUXO, sem
+    // chave paralela em `settings`.
+    //
+    // A entrada automática no funil NÃO está aqui: ela vive na main como um
+    // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
+    // oferecesse gravaria valor que ninguém lê.
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/followup-por-etapa",
+    label: "Follow-up por etapa",
+    description: "O que a operação espera de cada etapa do funil depois que a conversa chega.",
+    icon: "FlowArrow",
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",

@@ -59,8 +59,9 @@ export const dynamic = "force-dynamic";
 // `stage_id` e as `etapas` do funil alimentam o seletor de etapa do painel: mover
 // o negócio (ex.: "Pedido confirmado") direto da conversa, sem ir ao quadro.
 // `tags` = as do NEGÓCIO, só para ler no painel (as do contato e da conversa já vinham).
+// `stage_changed_at` (reserva: `created_at`) = os dias na etapa da barra de etapas do painel.
 const LEAD_COLS =
-  "id, title, status, value_cents, recurring_value_cents, recurring_period, recurring_months, currency, updated_at, pipeline_id, stage_id, custom_fields, tags, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
+  "id, title, status, value_cents, recurring_value_cents, recurring_period, recurring_months, currency, updated_at, stage_changed_at, created_at, pipeline_id, stage_id, custom_fields, tags, crm_pipelines!inner(name, settings, is_archived, etapas:crm_stages!crm_stages_pipeline_id_fkey(id, name, position, is_won, is_lost, is_archived)), crm_stages!crm_leads_stage_id_fkey(name)";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**

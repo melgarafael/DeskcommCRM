@@ -532,11 +532,74 @@ it('coalescência exclui job em hold (held_run_after) — sessão morta não seq
   });
   await drainTick({ query } as unknown as pg.Pool, debounceKnobs, log);
 
-  const coalescencia = calls.find((s) => s.includes('select id, payload from job_queue'));
+  const coalescencia = calls.find((s) =>
+    s.includes('select id, payload, created_at, run_after from job_queue'),
+  );
   expect(coalescencia, 'a query de coalescência deveria ter rodado').toBeTruthy();
   expect(coalescencia).toContain('held_run_after');
   // Sem o job em hold como falso-positivo, o turno segue e enfileira um job novo.
   expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(true);
+});
+
+/**
+ * #196 (b): a carona EMPURRA a janela do job da rajada.
+ *
+ * O drain não decide sozinho — ele entrega o `debounceMaxMs` (o
+ * `INBOUND_BURST_MAX_MS` da instalação) e o módulo de debounce faz o UPDATE. O
+ * que este caso prende é o FIO: sem o knob chegando aqui, a janela volta a ser
+ * ancorada e o defeito do #196 volta em silêncio.
+ */
+it('carona na rajada estende o run_after do job — e o teto do knob chega na consulta', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  const agora = Date.now();
+  const created = new Date(agora - 12_000);
+  const runAfter = new Date(agora - 4_000); // janela ancorada JÁ vencida
+  const query = vi.fn().mockImplementation((sql: string, p: unknown[] = []) => {
+    calls.push(sql);
+    params.push(p);
+    if (sql.includes('as tem_leitor')) return { rows: [{ settings: {}, tem_leitor: true }] };
+    if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(12_000)] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('media_derived_status')) return { rows: [{ type: 'text', media_derived_status: null }] };
+    // O job da rajada segue PENDENTE e dentro do teto: é o caso do #196.
+    if (sql.includes('select id, payload, created_at, run_after from job_queue')) {
+      return { rows: [{ id: 'job-rajada', payload: {}, created_at: created, run_after: runAfter }] };
+    }
+    if (sql.includes('update job_queue set run_after')) return { rows: [] };
+    return { rows: [] };
+  });
+
+  await drainTick(
+    { query } as unknown as pg.Pool,
+    { ...knobs, debounceMs: 8_000, debounceMaxMs: 45_000 },
+    log,
+  );
+
+  const consulta = calls.findIndex((s) =>
+    s.includes('select id, payload, created_at, run_after from job_queue'),
+  );
+  expect(consulta, 'a consulta de carona deveria ter rodado').toBeGreaterThanOrEqual(0);
+  expect(params[consulta], 'o teto vai como parâmetro do SELECT').toEqual([
+    event.organization_id,
+    event.payload.contact_id,
+    45_000,
+  ]);
+
+  const estender = calls.findIndex((s) => s.includes('update job_queue set run_after'));
+  expect(estender, 'a carona tinha de empurrar a janela — sem isso o #196 volta').toBeGreaterThan(
+    consulta,
+  );
+  const [jobId, novoRunAfter, org] = params[estender]!;
+  expect(jobId).toBe('job-rajada');
+  expect(org).toBe(event.organization_id);
+  // `run_after = agora + debounce` (8s), porque o teto (45s desde o created_at)
+  // está longe: quem manda é a janela curta.
+  expect(Date.parse(String(novoRunAfter))).toBeGreaterThan(runAfter.getTime());
+  expect(Date.parse(String(novoRunAfter)) - agora).toBeLessThanOrEqual(8_000 + 1_000);
+  expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(false);
 });
 
 
@@ -750,6 +813,84 @@ it("anti-backlog: ordena a última inbound por coalesce(sent_at, created_at), n�
 });
 
 /**
+ * #2797 — a REAÇÃO não supera o texto que ela segue.
+ *
+ * O cliente escreve e, segundos depois, reage (👍) a uma mensagem anterior. A
+ * reação é linha `inbound` em `messages` (`type = 'reaction'`, gravada por
+ * `lib/channels/reacao.ts`), mas não emite `ai_agent.dispatch_requested`: não
+ * tem turno próprio. Contada como "inbound mais recente", ela fazia o evento do
+ * texto sair como superado, sem job — e ninguém respondia (medido na 1.109.0,
+ * com a API oficial: o evento saiu `done`, sem linha em `job_queue`).
+ *
+ * O pool falso responde à consulta da última inbound a partir das linhas da
+ * conversa e só tira a reação quando a CONSULTA a exclui: é isso que estes
+ * casos distinguem. A ordem da consulta tem cerca própria
+ * (`tests/invariants/drain-recencia-inbound.test.ts`).
+ */
+const TEXTO_DO_EVENTO = '44444444-4444-4444-8444-444444444444';
+
+type LinhaDaConversa = { id: string; type: string; sent_at: string };
+
+function ultimaInboundDaConversa(sql: string, linhas: LinhaDaConversa[]): Array<{ id: string }> {
+  const excluiReacao = /\btype\s*(?:<>|!=)\s*'reaction'/.test(sql);
+  return linhas
+    .filter((l) => !(excluiReacao && l.type === 'reaction'))
+    .sort((a, b) => b.sent_at.localeCompare(a.sent_at))
+    .slice(0, 1)
+    .map((l) => ({ id: l.id }));
+}
+
+function poolDaConversa(calls: string[], jobs: unknown[][], linhas: LinhaDaConversa[]) {
+  const base = poolElegibilidade(calls);
+  const query = vi.fn().mockImplementation((sql: string, params?: unknown[]) => {
+    if (sql.includes('select id from messages') && sql.includes("direction = 'inbound'")) {
+      calls.push(sql);
+      return { rows: ultimaInboundDaConversa(sql, linhas) };
+    }
+    if (sql.includes('insert into job_queue')) {
+      calls.push(sql);
+      jobs.push(params ?? []);
+      return { rows: [{ id: 'job-do-texto' }] };
+    }
+    return base.query(sql, params);
+  });
+  return { query } as unknown as pg.Pool;
+}
+
+it('#2797: texto seguido de reação — o texto ainda ganha o inbound_turn', async () => {
+  const calls: string[] = [];
+  const jobs: unknown[][] = [];
+  await drainTick(
+    poolDaConversa(calls, jobs, [
+      { id: TEXTO_DO_EVENTO, type: 'text', sent_at: '2026-11-13T23:01:21.000Z' },
+      // gravada ANTES de o dreno consumir o evento do texto, como no caso medido
+      { id: 'reacao-depois-do-texto', type: 'reaction', sent_at: '2026-11-13T23:01:29.000Z' },
+    ]),
+    knobs,
+    log,
+  );
+  expect(jobs, 'a reação calou o texto: o evento saiu como superado, sem job').toHaveLength(1);
+  expect(jobs[0]?.[2]).toBe('inbound_turn');
+  expect((jobs[0]?.[4] as { inbound_message_id?: string }).inbound_message_id).toBe(TEXTO_DO_EVENTO);
+});
+
+it('#2797, controle: um TEXTO mais novo depois da reação continua superando o evento', async () => {
+  const calls: string[] = [];
+  const jobs: unknown[][] = [];
+  await drainTick(
+    poolDaConversa(calls, jobs, [
+      { id: TEXTO_DO_EVENTO, type: 'text', sent_at: '2026-11-13T23:01:21.000Z' },
+      { id: 'reacao-depois-do-texto', type: 'reaction', sent_at: '2026-11-13T23:01:29.000Z' },
+      { id: 'texto-mais-novo', type: 'text', sent_at: '2026-11-13T23:01:40.000Z' },
+    ]),
+    knobs,
+    log,
+  );
+  expect(jobs, 'o filtro da reação desligou o anti-backlog').toHaveLength(0);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+/**
  * #2729 — a segunda camada da regra nº 12: o skip do grupo continua sendo a
  * primeira coisa depois do run-lock, e ele só abre para a chave POR GRUPO
  * `ia_responde = true`. `false`, `null` (linha gravada por uma versão anterior,
@@ -878,7 +1019,9 @@ function poolDaJanela(
         ],
       };
     }
-    if (sql.includes('select id, payload from job_queue')) return { rows: candidato ? [candidato] : [] };
+    if (sql.includes('select id, payload, created_at, run_after from job_queue')) {
+      return { rows: candidato ? [candidato] : [] };
+    }
     if (sql.includes('update job_queue')) return { rows: [{ id: candidato?.id }], rowCount: 1 };
     if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
     return { rows: [] };

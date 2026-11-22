@@ -162,7 +162,7 @@ export async function lerQualificacaoDaIA(
 
     const { data: candidatos, error: agentesErr } = await supabase
       .from("ai_agents")
-      .select("id, kind, is_active, paused_at, published_version_id, archived_at, priority, created_at")
+      .select("id, kind, channel, is_active, paused_at, published_version_id, archived_at, priority, created_at")
       .eq("organization_id", organizationId)
       .is("archived_at", null);
     if (agentesErr) throw new Error(agentesErr.message);

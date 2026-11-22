@@ -584,3 +584,43 @@ describe("agenda e tarefas — organização em visibility_mode = 'own' e opçã
     expect(countAs(GOV_MANAGER, `select count(*) from public.crm_tasks where id = '${TASK_B_OWN}';`)).toBe(1);
   });
 });
+
+// ─── #4800: a tarefa que o atendente CRIOU e entregou a um colega ────────────
+//
+// O par da policy é (responsável, criador): `fn_can_view_task` libera o
+// `created_by = auth.uid()` antes de olhar o modo. É o caso em que uma régua só
+// na rota já divergiu do banco (a rota respondia 403, a RLS liberava). A rota
+// não tem régua própria (`tests/unit/tarefas-minhas-e-escopo-do-atendente.test.ts`,
+// bloco (c)); aqui fica a metade do banco, nos dois lados da opção da #978.
+const TASK_A_PARA_B = "e2902003-0000-4000-8000-000000000001"; // GOV_ORG, opção ligada por ausência
+const TASK_A_PARA_B_OFF = "e2902003-0000-4000-8000-000000000002"; // OFF_ORG, opção desligada
+const TASK_A_PARA_B_OWN = "e2902003-0000-4000-8000-000000000003"; // OWN_ORG, opção desligada + 'own'
+
+describe("tarefas — o criador alcança a tarefa que entregou a um colega, dos dois lados da opção (#4800)", () => {
+  beforeAll(() => {
+    sql(`
+      insert into public.crm_tasks (id, organization_id, title, status, assigned_to, created_by)
+      values
+        ('${TASK_A_PARA_B}',     '${GOV_ORG}', 'Tarefa que o agent A entregou ao agent B', 'pending', '${GOV_AGENT_B}', '${GOV_AGENT_A}'),
+        ('${TASK_A_PARA_B_OFF}', '${OFF_ORG}', 'Tarefa que o agent A entregou ao agent B (opção desligada)', 'pending', '${GOV_AGENT_B}', '${GOV_AGENT_A}'),
+        ('${TASK_A_PARA_B_OWN}', '${OWN_ORG}', 'Tarefa que o agent A entregou ao agent B (modo own)', 'pending', '${GOV_AGENT_B}', '${GOV_AGENT_A}')
+        on conflict (id) do nothing;
+    `);
+  });
+
+  it.each([
+    ["opção ligada por ausência", TASK_A_PARA_B],
+    ["opção desligada, own_and_unassigned", TASK_A_PARA_B_OFF],
+    ["opção desligada, own", TASK_A_PARA_B_OWN],
+  ])("⭐ %s: agent A VÊ e EDITA a tarefa que criou para o agent B", (_caso, id) => {
+    expect(countAs(GOV_AGENT_A, `select count(*) from public.crm_tasks where id = '${id}';`)).toBe(1);
+    expect(
+      writeCountAs(GOV_AGENT_A, `update public.crm_tasks set title = 'editada pelo criador' where id = '${id}'`),
+    ).toBe(1);
+  });
+
+  it("controle: com a opção desligada, a tarefa do agent B que A NÃO criou segue fora (0)", () => {
+    expect(countAs(GOV_AGENT_A, `select count(*) from public.crm_tasks where id = '${TASK_B_OFF}';`)).toBe(0);
+    expect(countAs(GOV_AGENT_A, `select count(*) from public.crm_tasks where id = '${TASK_B_OWN}';`)).toBe(0);
+  });
+});

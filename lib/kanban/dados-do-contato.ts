@@ -1,7 +1,10 @@
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import type { Lead } from "@/lib/types/leads";
 
-type DadosDoContato = Pick<Lead, "contact_phone" | "contact_email" | "contact_links">;
+type DadosDoContato = Pick<
+  Lead,
+  "contact_phone" | "contact_email" | "contact_links" | "contact_has_avatar"
+>;
 
 /** A linha de `contacts` como o quadro a lê — as colunas que esta regra usa. */
 export interface LinhaDoContatoNoQuadro {
@@ -10,6 +13,8 @@ export interface LinhaDoContatoNoQuadro {
   email: string | null;
   custom_fields: Record<string, unknown> | null;
   is_anonymized: boolean | null;
+  /** Só se pergunta se EXISTE: o caminho do arquivo não sai no payload. */
+  avatar_storage_path?: string | null;
 }
 
 /**
@@ -39,11 +44,44 @@ export function anexarDadosDoContato(leads: Lead[], contatos: LinhaDoContatoNoQu
       ...(contato.phone_number ? { contact_phone: contato.phone_number } : {}),
       ...(contato.email ? { contact_email: contato.email } : {}),
       ...(links.length > 0 ? { contact_links: links } : {}),
+      ...(contato.avatar_storage_path ? { contact_has_avatar: true as const } : {}),
     };
     if (Object.keys(dados).length > 0) porContato.set(contato.id, dados);
   }
   if (porContato.size === 0) return leads;
 
+  return leads.map((lead) => {
+    const dados = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
+    return dados ? { ...lead, ...dados } : lead;
+  });
+}
+
+/** Nome do contato como o quadro o lê, só para o filtro de texto livre do módulo sem `contatos`. */
+export interface NomeDoContatoNoQuadro {
+  id: string;
+  name?: string | null;
+  display_name?: string | null;
+  is_anonymized?: boolean | null;
+}
+
+/**
+ * Anexa o NOME do contato ao lead (`contact_name`, `contact_display_name`). Só a rota do quadro chama, e
+ * só quando quem chama é módulo sem `contatos`, numa leitura à parte: o `redigirContatoParaModulo` coleta
+ * esses campos para filtrar o título e depois os anula. Sessão e módulo com `contatos` não passam aqui.
+ * O nome da agenda do celular NÃO entra: só as telas da equipe o leem
+ * (`tests/unit/nome-da-agenda-nunca-vai-ao-cliente.test.ts`).
+ */
+export function anexarNomeDoContato(leads: Lead[], contatos: NomeDoContatoNoQuadro[]): Lead[] {
+  const porContato = new Map<string, Partial<Lead>>();
+  for (const c of contatos) {
+    if (c.is_anonymized) continue;
+    const dados: Partial<Lead> = {
+      ...(c.name ? { contact_name: c.name } : {}),
+      ...(c.display_name ? { contact_display_name: c.display_name } : {}),
+    };
+    if (Object.keys(dados).length > 0) porContato.set(c.id, dados);
+  }
+  if (porContato.size === 0) return leads;
   return leads.map((lead) => {
     const dados = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
     return dados ? { ...lead, ...dados } : lead;

@@ -34,6 +34,7 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { truncar } from "@/lib/notifications/push_payload";
 import { enviarPushAoUsuario } from "@/lib/notifications/web_push";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
+import type { MotivoSemPrazo } from "@/lib/tarefas/prazo-relativo";
 import { HREF_MINHAS_TAREFAS, PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 /**
@@ -42,19 +43,76 @@ import { HREF_MINHAS_TAREFAS, PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } f
  * `dono_do_lead` é a forma nominal — quem monta a regra não sabe (nem deve
  * saber) o uuid de quem vai atender amanhã; o dono muda, a regra não.
  */
-export type AtribuicaoDaTarefa = "dono_do_lead" | { usuario_id: string };
+export type AtribuicaoDaTarefa =
+  | "dono_do_lead"
+  | { usuario_id: string }
+  /**
+   * Exatamente este responsável — inclusive NENHUM (`null`).
+   *
+   * É o da OCORRÊNCIA de uma série que se repete (#4595): o que a próxima herda
+   * é o dono da série, e se a série não tem dono a próxima também não tem. Usar
+   * `dono_do_lead` aqui inventaria um responsável que ninguém escolheu; recusar
+   * por `sem_dono` deixaria a série sem gerar para sempre.
+   */
+  | { exato: string | null };
 
 export interface PedidoDeTarefa {
   organizationId: string;
   /** Título com placeholders `{{lead.title}}` e `{{contact.name}}`. */
   titulo: string;
-  /** De quantos dias o prazo cai a partir de agora. `0` = vence hoje. */
-  venceEmDias: number;
+  /**
+   * De quantos dias o prazo cai a partir de agora. `0` = vence hoje.
+   *
+   * Ignorado quando `venceEm` vem preenchido: a ocorrência de uma série não
+   * vence "em N dias", ela vence numa data e hora do calendário.
+   *
+   * Um dos dois prazos é obrigatório — este ou `venceEm` —, mas NENHUM dos dois
+   * é exigido pelo tipo: quem não manda prazo cria a tarefa sem prazo, que é um
+   * estado legítimo da coluna (`due_date` nulo).
+   */
+  venceEmDias?: number;
+  /**
+   * O prazo já calculado, em instante ISO. `null` = SEM prazo: o passo do plano
+   * apontava para um campo de data vazio (ou com lixo) e o prazo não foi
+   * inventado (#4717 item 4). Quando presente, ganha de `venceEmDias`.
+   *
+   * É por aqui que a OCORRÊNCIA de uma série recebe a data e hora que
+   * `proximaOcorrencia` calculou (#4595).
+   */
+  venceEm?: string | null;
+  /** Por que a tarefa nasceu sem prazo. Só faz sentido junto de `venceEm: null`. */
+  prazoMotivo?: MotivoSemPrazo | null;
+  /**
+   * O plano que criou a tarefa e o passo de onde ela veio.
+   *
+   * É o que deixa o gatilho do card (`crm_leads_recalcula_prazos_do_plano`)
+   * encontrar as tarefas AINDA ABERTAS do plano quando a data do campo muda —
+   * sem coluna de origem a marca da aplicação só sabe dizer "aplicado", não
+   * QUAIS linhas são daquele plano.
+   */
+  plano?: { id: string; passo: number; campo: string | null; dias: number };
   atribuirA: AtribuicaoDaTarefa;
   prioridade: PrioridadeDaTarefa;
   leadId?: string | null;
   contactId?: string | null;
+  /** A demanda do atendimento a que a tarefa fica presa (#2818). */
+  demandaId?: string | null;
   descricao?: string | null;
+  /**
+   * A série que gerou esta ocorrência (#4595). Nulo = tarefa avulsa ou a
+   * própria série — é o que a lista usa para dizer "esta faz parte de uma
+   * rotina" sem repetir a regra em cada linha.
+   */
+  recurrenceSourceId?: string | null;
+  /**
+   * Tarefa SOLTA é permitida (`crm_tasks` nasce com `lead_id` e `contact_id`
+   * nulos de propósito — migration 0210). A recusa `sem_alvo` existe para as
+   * automações, que só fazem sentido presas a um negócio ou contato; a
+   * ocorrência de uma série solta é o caso legítimo de desligá-la.
+   */
+  alvoOpcional?: boolean;
+  /** Quem criou. A ocorrência herda o autor da série. */
+  createdBy?: string | null;
   /** De onde veio: `automation:create_task`, `followup:internal_task`, … */
   origem: string;
   requestId?: string;
@@ -63,13 +121,24 @@ export interface PedidoDeTarefa {
 
 export type ResultadoDaTarefa =
   | { ok: true; tarefa_id: string; assigned_to: string | null }
-  | { ok: false; codigo: "sem_alvo" | "sem_dono" | "titulo_vazio" | "falha"; erro?: string };
+  | {
+      ok: false;
+      /**
+       * `ja_existe` NÃO é falha: é o índice único `(recurrence_source_id,
+       * due_date)` recusando a segunda ocorrência da mesma série na mesma data —
+       * exatamente o que faz concluir duas vezes não criar duas tarefas.
+       */
+      codigo: "sem_alvo" | "sem_dono" | "titulo_vazio" | "ja_existe" | "falha";
+      erro?: string;
+    };
 
 export type LeadDoPedido = {
   id: string;
   title?: string | null;
   contact_id?: string | null;
   owner_user_id?: string | null;
+  /** `crm_leads.custom_fields` — de onde o prazo de um passo de data é lido. */
+  custom_fields?: unknown;
 };
 
 export type ContatoDoPedido = {
@@ -117,14 +186,25 @@ export function interpolarTitulo(
  * `sem_alvo` NÃO é daqui: ele depende de não haver lead nem contato, que é uma
  * pergunta do pedido, não do passo.
  */
+export function donoDoPedido(
+  atribuirA: AtribuicaoDaTarefa,
+  lead: LeadDoPedido | null | undefined,
+): string | null {
+  if (atribuirA === "dono_do_lead") return lead?.owner_user_id ?? null;
+  if ("exato" in atribuirA) return atribuirA.exato;
+  return atribuirA.usuario_id;
+}
+
 export function recusaDeConfiguracao(
   atribuirA: AtribuicaoDaTarefa,
   titulo: string,
   valores: { lead?: LeadDoPedido | null; contact?: ContatoDoPedido | null },
 ): "sem_dono" | "titulo_vazio" | null {
-  const atribuido =
-    typeof atribuirA === "object" ? atribuirA.usuario_id : (valores.lead?.owner_user_id ?? null);
-  if (!atribuido) return "sem_dono";
+  // `exato: null` é uma ESCOLHA (a série não tem dono), não um dono que faltou:
+  // recusar aqui faria a recorrência de uma tarefa solta nunca gerar nada.
+  const escolhaExplicita = typeof atribuirA === "object" && "exato" in atribuirA;
+  const atribuido = donoDoPedido(atribuirA, valores.lead);
+  if (!atribuido && !escolhaExplicita) return "sem_dono";
   if (!interpolarTitulo(titulo, valores)) return "titulo_vazio";
   return null;
 }
@@ -199,29 +279,52 @@ export async function criarTarefaInterna(
       )
     : null;
 
-  if (!lead && !contact) {
+  if (!lead && !contact && !pedido.alvoOpcional) {
     return { ok: false, codigo: "sem_alvo" };
   }
 
   const recusa = recusaDeConfiguracao(pedido.atribuirA, pedido.titulo, { lead, contact });
   if (recusa) return { ok: false, codigo: recusa };
 
-  const assignedTo =
-    typeof pedido.atribuirA === "object" ? pedido.atribuirA.usuario_id : (lead?.owner_user_id ?? null);
+  const assignedTo = donoDoPedido(pedido.atribuirA, lead);
   const titulo = interpolarTitulo(pedido.titulo, { lead, contact });
 
-  const dueDate = new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString();
+  // Três origens de prazo, nesta ordem de precedência:
+  //
+  //   1. `venceEm` — o instante JÁ calculado (passo de campo de data do plano,
+  //      #4717 item 4). `null` é resposta, não ausência: nasce sem prazo.
+  //   2. `venceEmDias` — o modo de sempre, com a MESMA conta de antes
+  //      (`agora + N × 24h`). Não mexer nesta linha é o que mantém o plano
+  //      antigo idêntico ao que era.
+  //   3. nenhum → sem prazo. A coluna aceita nulo de propósito.
+  const dueDate =
+    pedido.venceEm !== undefined
+      ? pedido.venceEm
+      : pedido.venceEmDias !== undefined
+        ? new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString()
+        : null;
 
   // INSERT … RETURNING id: o `.insert().select("id").maybeSingle()` do
   // PostgREST devolvia a linha criada numa segunda ida (Prefer: return=
   // representation); aqui o id vem na MESMA ida.
   let tarefaId: string;
   try {
+    // O `on conflict` é a IDEMPOTÊNCIA DA RECORRÊNCIA (#4595): concluir a mesma
+    // tarefa duas vezes calcula a mesma data e chega duas vezes aqui. O índice
+    // único parcial `(recurrence_source_id, due_date)` (migration 9369) recusa a
+    // segunda, e `do nothing` transforma a recusa em "já existia" — nunca em
+    // erro, nunca em duas tarefas. Para tarefa avulsa a cláusula é inerte: sem
+    // `recurrence_source_id` a linha fica fora do índice.
     const criadas = await db.query<{ id: string }>(
       `insert into crm_tasks
          (organization_id, title, description, due_date, priority, status,
-          lead_id, contact_id, assigned_to, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          lead_id, contact_id, demanda_id, assigned_to, created_by,
+          plan_id, plan_step, prazo_campo, prazo_dias, prazo_motivo,
+          recurrence_source_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       on conflict (recurrence_source_id, due_date)
+         where recurrence_source_id is not null and due_date is not null
+       do nothing
        returning id`,
       [
         pedido.organizationId,
@@ -232,15 +335,27 @@ export async function criarTarefaInterna(
         "pending",
         lead?.id ?? null,
         contactId,
+        pedido.demandaId ?? null,
         assignedTo,
-        null,
+        pedido.createdBy ?? null,
+        pedido.plano?.id ?? null,
+        pedido.plano?.passo ?? null,
+        pedido.plano?.campo ?? null,
+        pedido.plano?.dias ?? null,
+        pedido.prazoMotivo ?? null,
+        pedido.recurrenceSourceId ?? null,
       ],
     );
 
     // `RETURNING id` devolve exatamente a linha inserida; se o driver não
-    // devolveu nada, o INSERT não aconteceu — e isso é `falha`, nunca `ok`.
+    // devolveu nada, ou o INSERT não aconteceu ou o índice único barrou a
+    // duplicata. A segunda leitura é a que decide qual dos dois foi.
     const criada = criadas[0];
-    if (!criada) return { ok: false, codigo: "falha" };
+    if (!criada) {
+      return pedido.recurrenceSourceId
+        ? { ok: false, codigo: "ja_existe" }
+        : { ok: false, codigo: "falha" };
+    }
     tarefaId = criada.id;
   } catch (err) {
     return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
@@ -260,7 +375,11 @@ export async function criarTarefaInterna(
       contact_id: contactId,
       assigned_to: assignedTo,
       prioridade: pedido.prioridade,
-      vence_em_dias: pedido.venceEmDias,
+      vence_em_dias: pedido.venceEmDias ?? null,
+      // "Nasceu sem prazo" tem de sobrar no audit: é a consequência de um campo
+      // do card vazio, e o motivo é o que explica a tarefa sem data na lista.
+      ...(pedido.prazoMotivo ? { sem_prazo: pedido.prazoMotivo } : {}),
+      ...(pedido.plano ? { plano_id: pedido.plano.id, plano_passo: pedido.plano.passo } : {}),
     },
     ...(pedido.requestId ? { requestId: pedido.requestId } : {}),
   });

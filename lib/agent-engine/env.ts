@@ -197,11 +197,39 @@ const envSchema = z.object({
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
   INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(8_000),
+  // TETO da rajada deslizante (#196): a janela acima é empurrada para frente a
+  // cada mensagem nova do mesmo contato, e este é o quanto ela pode andar —
+  // contado do `created_at` do job da PRIMEIRA mensagem. Passado o teto, a
+  // mensagem seguinte abre rajada nova. 0 (ou o campo ausente) = janela
+  // ANCORADA, o comportamento anterior a esta chave.
+  //
+  // 45 s, e o número vem da medição da própria issue: a rajada que escapou em
+  // produção foram 3 mensagens com gaps de 12,1 s e 17,5 s — 29,6 s da
+  // primeira à última. O teto TEM de passar disso, senão as três continuam
+  // virando três turnos: 30 s cobriria 29,6 s por 0,4 s de margem, que é
+  // margem nenhuma para um comportamento humano variável. 45 s cobre o caso
+  // medido com ~15 s de folga e é o topo da faixa que a issue sugere (30-45 s).
+  //
+  // O custo do teto é conhecido e limitado: com o contato escrevendo sem parar,
+  // a PRIMEIRA mensagem da rajada espera no máximo 45 s (uma resposta por
+  // janela de 45 s, em vez de uma por mensagem) — abaixo do
+  // `RESPOSTA_OBSOLETA_TETO_MS` (120 s), o limite que o produto já usa para
+  // tratar resposta como velha demais. Com o contato parando de escrever, o
+  // turno sai no `INBOUND_DEBOUNCE_MS` de sempre (8 s).
+  INBOUND_BURST_MAX_MS: z.coerce.number().int().min(0).default(45_000),
   // Resposta obsoleta: o cliente escreveu de novo enquanto o turno pensava → a
   // resposta desatualizada não sai e o turno seguinte responde a tudo junto,
   // enquanto a mensagem mais antiga sem resposta tiver menos que isto. 0 = desliga.
   // Ver `respostaFicouObsoleta` (agent/turno-ja-respondido.ts).
   RESPOSTA_OBSOLETA_TETO_MS: z.coerce.number().int().min(0).default(120_000),
+  // CARÊNCIA ANTES DO MODELO PAGO (#4835). O lead que chega por integração com a
+  // janela de 24 h fechada só pode receber modelo aprovado — e o cliente costuma
+  // escrever nos primeiros segundos, quando a janela abriria de graça. Com este
+  // valor, o primeiro contato que gastaria modelo pago devolve o job para a fila
+  // uma vez e relê a janela na volta. 10 s porque o caminho mais rápido (webhook)
+  // chega ao claim em ~2–4 s e o tick do cron é 30 s: cabe a escrita do cliente
+  // sem esperar um minuto. 0 = desliga (comportamento de antes, byte a byte).
+  FOLLOWUP_CARENCIA_DO_MODELO_MS: z.coerce.number().int().min(0).default(10_000),
   // Circuito de saúde do número — ritmo do ticker (block/response rate por número).
   NUMBER_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   // Cron persistente por contato — knobs, nunca constantes.

@@ -37,6 +37,7 @@ import {
 } from "@/lib/leads/campos-exigidos";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: scoped } = await supabase
     .from("crm_leads")
     .select(
-      "id, organization_id, tags, stage_id, pipeline_id, contact_id, lost_reason, custom_fields, won_reason, status",
+      "id, organization_id, tags, stage_id, pipeline_id, contact_id, lost_reason, custom_fields, won_reason, status, recurring_value_cents, recurring_months, created_at",
     )
     .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
@@ -345,6 +346,49 @@ export async function POST(req: NextRequest): Promise<Response> {
       // mova o card entre a leitura e a atualização e a timeline conte a
       // transição errada.
       const movidos = movidosNoBanco.filter((r) => r.from_stage_id !== input.params.stage_id);
+
+      // ── O FINANCEIRO DO FECHO (#3602, fatia 5) ─────────────────────────────
+      //
+      // O lote é uma porta de fecho de verdade: `fn_mover_leads_em_lote` escreve
+      // `stage_id` direto no banco e o gatilho fecha os negócios que entram numa
+      // etapa `is_won`/`is_lost`. Sem esta laço, mover 30 cards para "Ganho"
+      // fechava 30 negócios e não criava molde nenhum.
+      //
+      // `movidos` já exclui quem não trocou de etapa (reordenar em lote dentro
+      // da coluna Ganho não cria molde), e a idempotência é das funções do
+      // financeiro — o mesmo card em dois lotes não gera dois moldes.
+      //
+      // Falha BAIXA card a card: o lote inteiro já moveu quando isto roda, e o
+      // `moveARecorrenciaNoFecho` não lança nem deixa de contabilizar o erro.
+      if (etapaDeDestino.is_won === true || etapaDeDestino.is_lost === true) {
+        const porId = new Map(visible.map((linha) => [linha.id, linha]));
+        for (const movido of movidos) {
+          const linha = porId.get(movido.lead_id) as
+            | {
+                pipeline_id?: string | null;
+                recurring_value_cents?: number | string | null;
+                recurring_months?: number | null;
+                created_at?: string | null;
+              }
+            | undefined;
+          if (!linha) continue;
+          await moveARecorrenciaNoFecho({
+            organizationId,
+            leadId: movido.lead_id,
+            pipelineId: linha.pipeline_id ?? null,
+            etapa: {
+              is_won: etapaDeDestino.is_won === true,
+              is_lost: etapaDeDestino.is_lost === true,
+            },
+            valorRecorrente: linha.recurring_value_cents ?? null,
+            meses: linha.recurring_months ?? null,
+            criadoEm: linha.created_at ?? null,
+            userId,
+            origem: "leads/bulk",
+            requestId,
+          });
+        }
+      }
 
       // Wave 3 (CORE 2): mover 30 cards de uma vez é 30 mudanças de estado —
       // cada uma entra no barramento, senão o lote inteiro fica invisível na

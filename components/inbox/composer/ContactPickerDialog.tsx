@@ -200,7 +200,7 @@ export function ContactPickerDialog({
             <p className="text-xs font-medium text-muted-foreground">
               {searchPhone && !phoneAlreadyInList
                 ? t("Enviar número informado")
-                : "Ou informe um contato"}
+                : t("Ou informe um contato")}
             </p>
             {searchPhone && !phoneAlreadyInList && (
               <button
@@ -224,7 +224,7 @@ export function ContactPickerDialog({
               </button>
             )}
             <div className="space-y-1.5">
-              <Label htmlFor="manual-contact-name">Nome (opcional)</Label>
+              <Label htmlFor="manual-contact-name">{t("Nome (opcional)")}</Label>
               <Input
                 id="manual-contact-name"
                 value={manualName}
@@ -249,7 +249,7 @@ export function ContactPickerDialog({
               disabled={sending || !resolvedManualPhone}
               onClick={pickManual}
             >
-              Enviar contato
+              {t("Enviar contato")}
             </Button>
           </div>
         )}

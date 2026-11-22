@@ -12,6 +12,7 @@
  * por pacote** (`entraPorPacote`). Ligar "Atender e responder" não pode, num
  * clique, dar ao agente o direito de mandar WhatsApp para o cliente de verdade.
  */
+import { IDS_DO_ADMINISTRADOR } from "./ferramentas-do-administrador";
 import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
 
 /**
@@ -123,7 +124,11 @@ function doPacote(
   catalogo: ReadonlyArray<CapacidadeSelecionavel>,
   pacote: ToolBundle,
 ): CapacidadeSelecionavel[] {
-  return catalogo.filter((c) => c.pacotes.includes(pacote) && c.marcavel !== false);
+  // As de editar assistentes são só do administrador (`ferramentas-do-administrador.ts`):
+  // o turno não as monta, então o pacote não as oferece nem reserva vaga para elas.
+  return catalogo.filter(
+    (c) => c.pacotes.includes(pacote) && c.marcavel !== false && !IDS_DO_ADMINISTRADOR.has(c.name),
+  );
 }
 
 /** As que o toggle do pacote liga sozinho — tudo que não é `critico`. */

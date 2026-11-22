@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
@@ -203,6 +204,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -485,117 +487,74 @@ export async function listConversationsHandler(
     // inteira embaralhada — pior que não achar, porque PARECE que funcionou.
     const pareceTelefone = somenteDigitos.length >= 4;
 
-    const camposDoContato = [
-      // ─── O NOME DO CONTATO CASA SEM ACENTO (#3918) ────────────────────────
-      //
-      // Aqui havia `display_name.ilike.*s*`, `name.ilike.*s*` e
-      // `address_book_name.ilike.*s*`, e os três tinham o mesmo buraco: `ILIKE`
-      // dobra a CAIXA, não o ACENTO. `lower('Á') = 'á'`, que não é `'a'` — quem
-      // digita "Andreia" não acha "Andréia", e quem digita "Andréia" não acha
-      // quem foi cadastrado sem acento. No Brasil as duas grafias convivem, e o
-      // atendente digita rápido, sem acento: o cliente parece não existir.
-      //
-      // A correção precisa dos DOIS lados normalizados, e é por isso que ela não
-      // caberia só aqui: limpar o termo e comparar com a coluna crua continua
-      // devolvendo zero. O lado do banco é a coluna GERADA
-      // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
-      // name, address_book_name))`, com índice `pg_trgm` (migration 9098) —, e o
-      // lado do termo é `termoSemAcento`, que é a mesma régua em TypeScript.
-      // As duas são comparadas por `tests/invariants/busca-do-inbox-ignora-acento.test.ts`.
-      //
-      // Por que `like` e não `ilike`: a coluna já é minúscula. `like` sobre ela
-      // com o termo minúsculo dá o mesmo resultado sem depender de o plano
-      // dobrar caixa em cima de uma coluna gerada — e o índice GIN de trigrama
-      // serve os dois operadores.
-      //
-      // O nome da agenda do celular (#2439) continua entrando: ele é a terceira
-      // parte da coluna gerada, e a lista o mostra — a busca tem de achá-lo.
-      `busca_sem_acento.like.*${termoSemAcento(s)}*`,
-      // O telefone tem OUTRO caminho: dígitos não têm acento, e o número é
-      // comparado só por dígitos (o `somenteDigitos` descarta o resto).
-      ...(pareceTelefone ? [`phone_number.ilike.*${somenteDigitos}*`] : []),
-    ].join(",");
-
-    let consultaDeContatos = supabase
-      .from("contacts")
-      .select("id")
-      // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
-      .eq("organization_id", ctx.organization_id)
-      // Anonimizar é direito do titular. Voltar a encontrá-lo pelo nome antigo
-      // criaria um vazamento onde não havia.
-      .eq("is_anonymized", false)
-      // Pessoal não é achado pela busca FORA da aba dele (spec 21, etapa 7 —
-      // critério 2): nem por nome, nem por telefone. A prévia segue pelo `.not`
-      // da query principal.
-      //
-      // #4434: dentro da aba Pessoal o sinal INVERTE pelo MESMO booleano que a
-      // lista usa — procurar "Mãe" tem de achar, e só o meu.
-      .eq("is_personal", querPessoal);
-
-    // ⚠️ O DONO, NA PRÓPRIA CONSULTA DE BUSCA — e não só no `in()` da lista.
+    // ─── O CASAMENTO DE TEXTO SAI DE DENTRO DA RLS (#4326, fatia 1, item b) ──
     //
-    // Sem esta linha a subconsulta devolveria o id do pessoal de TODO MUNDO que
-    // casasse o termo. Hoje o `query.in("contact_id", visiveis)` da lista ainda
-    // barraria o resultado, mas a busca passaria a depender de uma segunda
-    // condição para não vazar — e a segunda condição é justamente o que some na
-    // primeira refatoração. A cerca fica nas DUAS pontas: aqui e no `in()`.
-    if (querPessoal && atorHumanoId) {
-      consultaDeContatos = consultaDeContatos.eq("personal_owner_user_id", atorHumanoId);
+    // Aqui havia um `or=` com `busca_sem_acento.like` e `phone_number.ilike`, e
+    // uma SEGUNDA consulta a `contact_phones` para o telefone extra. As duas
+    // liam a organização inteira: `like`/`ilike` não são `leakproof`, e com RLS
+    // na tabela o planejador não pode usá-los como condição de índice antes de
+    // avaliar a política. Medido em Postgres descartável — 40 mil contatos na
+    // organização, busca que casa 1: `Rows Removed by Filter: 40000`, 37,0 ms.
+    // O custo cresce com a ORGANIZAÇÃO, não com o que a busca acha, e criar o
+    // índice de trigrama sozinho não muda o plano (medido: com os índices no
+    // lugar e `analyze` feito, a mesma consulta sob RLS gasta 35,7 ms e segue
+    // `Rows Removed by Filter: 40000`; o MESMO SQL como dono da tabela vira
+    // `BitmapOr` sobre os dois índices de trigrama, em 0,24 ms).
+    //
+    // `fn_contatos_da_busca` faz o MESMO casamento num `security definer`: ela
+    // confere a organização contra `fn_user_org_ids()` (quem tem sessão e não é
+    // membro recebe ZERO linha; sem `auth.uid()` a chamada é do servidor, que já
+    // bypassa RLS) e repete o filtro de organização nas duas tabelas. O termo
+    // chega no mesmo formato de antes, com UMA troca de dialeto: o `*` que o
+    // `or=` do PostgREST converte em `%` vira `%` aqui, porque no `like` do SQL
+    // ele é literal. O `\%` posto por `termoSeguroParaOr` já é o escape do
+    // próprio LIKE, então `%`/`_` digitados continuam literais. O termo vai SEM
+    // ACENTO: ele casa a coluna gerada (`busca_sem_acento`) e o telefone com o
+    // MESMO texto — dígito não tem acento, e um termo acentuado não pode deixar
+    // de achar o contato. O que volta são IDs: a leitura das linhas continua
+    // sendo a da query principal, pelo cliente da sessão, e `contact_id.in.(...)`
+    // é igualdade de uuid (`leakproof`). Quem decide o que a pessoa vê continua
+    // sendo a RLS, não a função.
+    //
+    // ─── AS REGRAS QUE A `main` GANHOU NESTE TRECHO NÃO SAÍRAM ──────────────
+    //
+    // Elas entraram como ARGUMENTO da função — o mesmo lugar do casamento, e não
+    // uma segunda condição que possa divergir:
+    //
+    //   · o nome casa sem acento (#3918) pela coluna gerada `busca_sem_acento`
+    //     (`lower(public.f_unaccent(display_name, name, address_book_name))`) e
+    //     pelo `termoSemAcento` — a mesma régua em TypeScript, conferida por
+    //     `tests/invariants/busca-do-inbox-ignora-acento.test.ts`; o nome da
+    //     agenda do celular (#2439) é a terceira parte da coluna;
+    //   · pessoal não é achado FORA da aba dele (spec 21, etapa 7 — critério 2)
+    //     e DENTRO da aba o sinal INVERTE pelo MESMO booleano da lista (#4434):
+    //     `q.pessoais` vira `p_pessoal`, e `p_dono` leva o dono para o pessoal do
+    //     colega não entrar. Era o `is_personal = querPessoal` + o filtro de dono
+    //     das duas consultas que a fatia substituiu;
+    //   · o telefone EXTRA continua ignorando a lápide da fusão
+    //     (`is_merged_into is null`) e o anonimizado nunca casa (`is_anonymized
+    //     = false`) — dentro da função, no braço que substituiu a segunda
+    //     consulta a `contact_phones`.
+    const termoDaBusca = termoSemAcento(s).replace(/\*/g, "%");
+    const { data: idsCasados, error: erroDaBusca } = await supabase.rpc(
+      "fn_contatos_da_busca",
+      {
+        p_org: ctx.organization_id,
+        p_termo: termoDaBusca,
+        p_digitos: pareceTelefone ? [somenteDigitos] : [],
+        p_limite: TETO_DE_CONTATOS_NA_BUSCA,
+        p_pessoal: querPessoal,
+        p_dono: querPessoal ? atorHumanoId : null,
+      },
+    );
+    if (erroDaBusca) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDaBusca.message);
     }
-
-    const { data: contatos } = await consultaDeContatos
-      .or(camposDoContato)
-      // Teto obrigatório: a lista de ids viaja na URL do PostgREST, e uma busca
-      // por "a" sem limite estoura a requisição.
-      //
-      // ⚠️ 200 ERA ACIMA DO MURO, e o comentário acima descrevia o perigo certo
-      // com o número errado. Medido com o `postgrest-js` real e as `SELECT_COLS`
-      // deste arquivo:
-      //
-      //     ids=  1 →   892 B      ids=186 →  8.098 B
-      //     ids=100 → 4.753 B      ids=200 →  8.653 B   ← acima de 8.192
-      //
-      // Kong 2.8.1 — o gateway que a Supabase põe na frente do PostgREST, e o
-      // mesmo que o stack local deste repo sobe — devolve `414 URI too long` a
-      // partir de ~187 ids. E o `error` desta consulta vira `500 internal_error`
-      // no handler, então o Inbox PARA: buscar "ana" ou "silva" numa base de
-      // milhares de contatos devolvia a tela quebrada, não uma lista pobre.
-      //
-      // O teto agora é de BYTES, não de linhas, porque é byte que estoura. O
-      // número de ids que cabe é consequência, e continua certo se as colunas
-      // ou o formato do id mudarem.
-      .limit(TETO_DE_CONTATOS_NA_BUSCA);
-
-    // Ficha cujo TELEFONE EXTRA casa o número também entra na lista: a busca acima
-    // só olha o principal. A consulta embute a ficha e aplica os mesmos filtros de
-    // organização, anonimizado, pessoal e lápide — e não manda lista de ids na URL.
-    let idsDoExtra: string[] = [];
-    if (pareceTelefone) {
-      let consultaDosExtras = supabase
-        .from("contact_phones")
-        .select("contact_id, contacts!inner(id)")
-        .eq("organization_id", ctx.organization_id)
-        .eq("contacts.organization_id", ctx.organization_id)
-        .eq("contacts.is_anonymized", false)
-        .eq("contacts.is_personal", querPessoal);
-      // A MESMA ponta de dono da consulta principal: o telefone extra não pode
-      // ser a fresta por onde o pessoal do colega entra na busca.
-      if (querPessoal && atorHumanoId) {
-        consultaDosExtras = consultaDosExtras.eq(
-          "contacts.personal_owner_user_id",
-          atorHumanoId,
-        );
-      }
-      const { data: extras } = await consultaDosExtras
-        .is("contacts.is_merged_into", null)
-        .ilike("phone_number", `*${somenteDigitos}*`)
-        .limit(TETO_DE_CONTATOS_NA_BUSCA);
-      idsDoExtra = ((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id);
-    }
-
-    const ids = idsQueCabemNaURL([
-      ...new Set([...(contatos ?? []).map((c) => (c as { id: string }).id), ...idsDoExtra]),
-    ]);
+    // Teto de BYTES: a lista de ids viaja na URL do PostgREST e uma busca por
+    // "a" sem limite estoura a requisição (ver `idsQueCabemNaURL`).
+    const ids = idsQueCabemNaURL(
+      ((idsCasados ?? []) as { contact_id: string }[]).map((linha) => linha.contact_id),
+    );
     if (ids.length > 0) {
       query = query.or(
         `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,

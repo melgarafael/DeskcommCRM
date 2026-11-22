@@ -44,7 +44,7 @@
  * que este limiar valeu?" recomeça do zero.
  */
 
-import { agenteAtende, precisaRecuperarLegado, type FatosDoAgente } from "@/lib/ai/agents/no-ar";
+import { agenteElegivelParaConversa, type FatosDoAgente } from "@/lib/ai/agents/no-ar";
 
 /**
  * As colunas de que a régua precisa — nada além. Como em `no-ar.ts`,
@@ -52,6 +52,7 @@ import { agenteAtende, precisaRecuperarLegado, type FatosDoAgente } from "@/lib/
  */
 export interface CandidatoDeAgente extends FatosDoAgente {
   id: string;
+  channel: string;
   priority?: number | null;
   created_at?: string | null;
   published_version_id?: string | null;
@@ -102,7 +103,7 @@ export function resolverAgenteDaConversa<T extends CandidatoDeAgente>(
 ): AgenteDaConversa<T> {
   // This reader selects configuration for sentiment, never permission to send.
   // Keep the unique legacy threshold while its publication is being recovered.
-  const atendem = candidatos.filter((c) => agenteAtende(c) || precisaRecuperarLegado(c));
+  const atendem = candidatos.filter(agenteElegivelParaConversa);
 
   const grudado = conversa?.active_ai_agent_id ?? null;
   if (grudado !== null) {

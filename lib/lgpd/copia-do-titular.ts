@@ -110,6 +110,7 @@ export const O_QUE_FICA = {
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
   scheduled_messages: "as mensagens agendadas para ele: o texto, o horário e se saíram",
+  vendas_registradas: "as vendas registradas nos negócios dele: valor, dia, etiquetas e a observação",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",
   audit_log_extract: "o registro de quem acessou e mudou os dados dele (o PDF já entrega)",
@@ -206,6 +207,7 @@ export const CAMPOS_DA_EQUIPE: Readonly<Record<string, Readonly<Record<string, s
  */
 export const NOTAS_SOBRE_O_TITULAR: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   sales: { notes: "anotação que o atendente escreveu na comanda" },
+  vendas_registradas: { observacao: "anotação que a equipe escreveu na venda registrada" },
   "b2b.pessoa": { notes: "anotação da equipe sobre a pessoa na base de empresas" },
   "b2b.vinculos": { notes: "anotação da equipe sobre o vínculo com a empresa" },
   contact_field_proposals: { motivo_recusa: "por que a equipe recusou a proposta de gravar um dado dele" },

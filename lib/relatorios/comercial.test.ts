@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LIMITE_DA_LISTA_DE_VENDAS,
   LIMITE_DE_LINHAS,
   montarRelatorioComercial,
   type NegocioBruto,
@@ -249,5 +250,132 @@ describe("(d) o dia civil é o da organização", () => {
 
     expect(agosto.negocios_ganhos).toBe(0);
     expect(setembro.negocios_ganhos).toBe(1);
+  });
+});
+
+/**
+ * (g) O RECORTE DA TELA — funil e tag (#4802, item 4).
+ *
+ * Cada caso prende uma promessa do recorte:
+ *   - o filtro vale para os rankings E para a lista;
+ *   - a tag do filtro usa a MESMA régua das tags do ranking ("Cliente " = "cliente");
+ *   - as opções dos seletores saem ANTES do recorte (senão escolher um funil
+ *     sumiria com os outros do menu);
+ *   - um recorte que não acha nada NÃO é "período sem venda".
+ */
+describe("(g) recorte por funil e por tag", () => {
+  const FUNIL_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const FUNIL_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  const periodo = [
+    negocio({ id: "a1", pipeline_id: FUNIL_A, value_cents: 30_000, tags: ["Cliente "] }),
+    negocio({ id: "a2", pipeline_id: FUNIL_A, value_cents: 10_000, tags: ["revenda"] }),
+    negocio({ id: "b1", pipeline_id: FUNIL_B, value_cents: 50_000, tags: ["cliente"] }),
+  ];
+
+  function comFiltro(filtro: { pipeline_id: string | null; tag: string | null }) {
+    return montarRelatorioComercial({
+      negocios: periodo,
+      moedaDaOrganizacao: "BRL",
+      janela: JANELA_SETEMBRO,
+      filtro,
+    });
+  }
+
+  it("sem recorte: ranking por funil soma cada funil, maior primeiro", () => {
+    const relatorio = comFiltro({ pipeline_id: null, tag: null });
+
+    expect(relatorio.funis).toEqual([
+      { pipeline_id: FUNIL_B, centavos: 50_000, negocios: 1 },
+      { pipeline_id: FUNIL_A, centavos: 40_000, negocios: 2 },
+    ]);
+    expect(relatorio.vendas_no_filtro).toBe(3);
+  });
+
+  it("recorte por funil vale para rankings e lista", () => {
+    const relatorio = comFiltro({ pipeline_id: FUNIL_A, tag: null });
+
+    expect(relatorio.negocios_ganhos).toBe(2);
+    expect(relatorio.funis).toEqual([{ pipeline_id: FUNIL_A, centavos: 40_000, negocios: 2 }]);
+    expect(relatorio.vendas.map((v) => v.id).sort()).toEqual(["a1", "a2"]);
+    expect(relatorio.tags.map((l) => l.tag).sort()).toEqual(["cliente", "revenda"]);
+  });
+
+  it("recorte por tag usa a régua do ranking: 'Cliente ' e 'cliente' são a mesma tag", () => {
+    const relatorio = comFiltro({ pipeline_id: null, tag: "cliente" });
+
+    expect(relatorio.vendas.map((v) => v.id).sort()).toEqual(["a1", "b1"]);
+    expect(relatorio.funis).toEqual([
+      { pipeline_id: FUNIL_B, centavos: 50_000, negocios: 1 },
+      { pipeline_id: FUNIL_A, centavos: 30_000, negocios: 1 },
+    ]);
+  });
+
+  it("as opções dos seletores saem ANTES do recorte", () => {
+    const relatorio = comFiltro({ pipeline_id: FUNIL_A, tag: "revenda" });
+
+    expect(relatorio.opcoes.pipeline_ids).toEqual([FUNIL_A, FUNIL_B]);
+    expect(relatorio.opcoes.tags).toEqual(["cliente", "revenda"]);
+    expect(relatorio.filtro).toEqual({ pipeline_id: FUNIL_A, tag: "revenda" });
+  });
+
+  it("recorte que não acha nada não é 'período sem venda'", () => {
+    const relatorio = comFiltro({ pipeline_id: FUNIL_B, tag: "revenda" });
+
+    expect(relatorio.negocios_ganhos).toBe(0);
+    expect(relatorio.vendas).toEqual([]);
+    // O período TEM venda: a tela precisa continuar oferecendo os seletores.
+    expect(relatorio.sem_dados).toBe(false);
+    expect(relatorio.motivo).toBeNull();
+  });
+});
+
+/**
+ * (h) A LISTA DE VENDAS — cada negócio ganho do recorte, com a data da venda.
+ */
+describe("(h) lista de vendas", () => {
+  it("vai da venda mais recente para a mais antiga, com a data do GANHO", () => {
+    const relatorio = montar([
+      negocio({ id: "velha", closed_at: "2026-09-02T10:00:00.000Z", title: "Pacote" }),
+      negocio({ id: "nova", closed_at: "2026-09-20T10:00:00.000Z", title: "  Plano  " }),
+    ]);
+
+    expect(relatorio.vendas.map((v) => v.id)).toEqual(["nova", "velha"]);
+    expect(relatorio.vendas[0]?.ganho_em).toBe("2026-09-20T10:00:00.000Z");
+    expect(relatorio.vendas[0]?.titulo).toBe("Plano");
+  });
+
+  it("valor não preenchido vem como null — não como venda de zero", () => {
+    const relatorio = montar([negocio({ id: "sem-valor", value_cents: null })]);
+
+    expect(relatorio.vendas[0]?.centavos).toBeNull();
+  });
+
+  it("não lista o que não é venda: perdido, aberto e ganho fora da janela", () => {
+    const relatorio = montar([
+      negocio({ id: "ganho" }),
+      negocio({ id: "perdido", status: "lost" }),
+      negocio({ id: "aberto", status: "open" }),
+      negocio({ id: "fora", closed_at: "2026-10-01T00:00:00.000Z" }),
+    ]);
+
+    expect(relatorio.vendas.map((v) => v.id)).toEqual(["ganho"]);
+  });
+
+  it("corta a LISTA no limite, mas conta todas em vendas_no_filtro", () => {
+    const muitas = Array.from({ length: LIMITE_DA_LISTA_DE_VENDAS + 5 }, (_, i) =>
+      negocio({ id: `v-${String(i).padStart(3, "0")}` }),
+    );
+    const relatorio = montar(muitas);
+
+    expect(relatorio.vendas).toHaveLength(LIMITE_DA_LISTA_DE_VENDAS);
+    expect(relatorio.vendas_no_filtro).toBe(LIMITE_DA_LISTA_DE_VENDAS + 5);
+  });
+
+  it("a lista não traz total somado — o número de faturamento é o da tela", () => {
+    const relatorio = montar([negocio({ id: "1" })]);
+
+    expect(relatorio).not.toHaveProperty("faturamento_centavos");
+    expect(relatorio).not.toHaveProperty("total_das_vendas");
   });
 });

@@ -15,12 +15,11 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { PAPEL_MINIMO_DA_LISTA } from "@/lib/agenda/lista-de-pessoas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-responsaveis";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -33,16 +32,19 @@ export interface PessoaDaAgenda {
   display_label: string;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole(PAPEL_MINIMO_DA_LISTA, {
+  const authz = await resolveAuthDual(req, {
     requestId,
     resource: "agenda",
+    role: PAPEL_MINIMO_DA_LISTA,
+    scope: "mcp:read",
   });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado)
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_pessoas", requestId); if (teto) return teto;
+  const orgId = authz.organizationId; // fonte confiável (cookie validado ou linha do token)
 
-  const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+  const client = isServiceRoleConfigured() ? createAdminClient() : authz.supabase;
   const { data: rows, error } = await client
     .from("user_organizations")
     .select("user_id, role")
@@ -60,7 +62,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const identidades = await rotulosDosResponsaveisDaAgenda(
     membros.map((m) => m.user_id),
-    (texto) => traduzir(texto, authz.user.idioma),
+    (texto) => traduzir(texto, authz.idioma ?? "pt-BR"),
   );
   const pessoas: PessoaDaAgenda[] = membros.map((m) => ({
     ...m,

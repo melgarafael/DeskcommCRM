@@ -36,6 +36,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { BUCKET_DE_CONHECIMENTO } from "@/lib/ai/rag/ingest/documento";
+import { caminhoDaOrganizacao } from "@/lib/ai/knowledge/caminho-do-arquivo";
 import { veioDeTextoColado } from "@/lib/ai/rag/tipos-de-fonte";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -62,9 +63,8 @@ interface FonteDoTexto {
  */
 function caminhoDoTextoColado(fonte: FonteDoTexto, orgId: string): string | null {
   if (!veioDeTextoColado(fonte.source_type, fonte.source_metadata)) return null;
-  const caminho = fonte.source_metadata?.blob_path as string;
-  if (!caminho.startsWith(`${orgId}/`) || caminho.includes("..")) return null;
-  return caminho;
+  const caminho = fonte.source_metadata?.blob_path;
+  return caminhoDaOrganizacao(caminho, orgId) ? caminho : null;
 }
 
 export async function PUT(

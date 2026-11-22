@@ -88,8 +88,17 @@ export const CAMPO_DOS_CAMPOS_ALTERADOS = "event.fields";
  * amarra: campo novo no PATCH do negócio quebra o typecheck aqui até ganhar nome
  * — sem ela, a condição "foi alterado" aceitaria texto livre e um nome errado
  * (`data_prevista`) deixaria a regra salva sem nunca disparar.
+ *
+ * `tags_adicionar`/`tags_remover` ficam fora do `Record` (#4666) porque não são
+ * campos GRAVADOS: são a instrução de como compor `tags`, e o handler as resolve
+ * ANTES de montar o patch — o que chega a `event.fields` é sempre `tags`. Listá-las
+ * ofereceria na tela uma condição que nunca dispara; o `Exclude` explícito mantém a
+ * amarra para qualquer campo novo.
  */
-export const CAMPOS_ALTERAVEIS_DO_NEGOCIO: Record<keyof UpdateLeadInput, string> = {
+export const CAMPOS_ALTERAVEIS_DO_NEGOCIO: Record<
+  Exclude<keyof UpdateLeadInput, "tags_adicionar" | "tags_remover">,
+  string
+> = {
   title: "Título",
   description: "Descrição",
   contact_id: "Contato",
@@ -111,7 +120,9 @@ function ehCampoAlteravelDoNegocio(nome: string): boolean {
 
 /** O nome que a tela mostra no lugar da coluna (`expected_close_date`). */
 export function rotuloDoCampoAlterado(nome: string): string {
-  return ehCampoAlteravelDoNegocio(nome) ? CAMPOS_ALTERAVEIS_DO_NEGOCIO[nome as keyof UpdateLeadInput] : nome;
+  return ehCampoAlteravelDoNegocio(nome)
+    ? CAMPOS_ALTERAVEIS_DO_NEGOCIO[nome as keyof typeof CAMPOS_ALTERAVEIS_DO_NEGOCIO]
+    : nome;
 }
 
 /**

@@ -449,6 +449,44 @@ fi
 # atualização, e as duas não podem correr ao mesmo tempo.)
 report() { post "{\"kind\":\"run_progress\",\"run_id\":\"${RUN_ID}\",\"step\":\"$1\"}" >/dev/null; }
 
+# ── 4.0 A janela de manutenção (#4334) ──────────────────────────────────────
+#
+# Esta é a ÚNICA coisa que a janela segura, e ela vem DEPOIS de tudo que precisa
+# continuar vivo: o heartbeat já foi (o painel sabe da versão e de que há
+# atualização esperando) e a vigília da volta já rodou na seção 3. O desenho
+# anterior deste PR abria a janela no HORÁRIO DA LINHA do cron — e aí, fora da
+# janela, batimento e vigília paravam junto, que é o que o mantenedor recusou:
+# um app que cai às 6h05 depois de uma atualização das 5h55 ficava sem a volta
+# automática até a madrugada seguinte.
+#
+# Fora da janela: anuncia e NÃO executa. O pedido segue de pé (o run continua em
+# `dispatched`, a fonte de verdade do "há pedido?"), e o próximo ciclo — 5
+# minutos, sempre — reavalia. Nada é perdido, nada precisa ser pedido de novo.
+#
+# A decisão é da `janela_aberta` (_common.sh): 0 = executa, 1 = fora da janela,
+# 2 = valor recusado (avisa e executa, que é o de hoje). `|| JANELA_RC=$?` e não
+# `JANELA_RC=$?` numa linha só: com `set -e`, um retorno != 0 mataria a rodada
+# antes de qualquer decisão.
+#
+# Fora da janela, o agente também CONTA ao painel quando o pedido vai rodar
+# (`run_scheduled`, a cada ciclo): é o que faz a tela dizer "agendada para
+# 02h00" em vez de "perdi contato", e a cerca das extensões continuar de pé
+# enquanto o pedido espera (#4334). Se o recado falhar, nada muda aqui — o
+# pedido segue esperando a janela e o próximo ciclo conta de novo.
+JANELA_RC=0
+janela_aberta "${SYSTEM_UPDATE_WINDOW:-}" || JANELA_RC=$?
+if [ "$JANELA_RC" -eq 1 ]; then
+  log_err "há pedido de atualização aberto (run ${RUN_ID}) e a janela de manutenção (${SYSTEM_UPDATE_WINDOW}, fuso ${SYSTEM_UPDATE_WINDOW_TZ:-$SYSTEM_UPDATE_WINDOW_TZ_PADRAO}) está fechada — não executo agora; o pedido fica de pé e o próximo ciclo (5 min) reavalia"
+  PROXIMA_ABERTURA="$(janela_proxima_abertura "${SYSTEM_UPDATE_WINDOW}")" || PROXIMA_ABERTURA=""
+  if [ -n "$PROXIMA_ABERTURA" ]; then
+    post "{\"kind\":\"run_scheduled\",\"run_id\":\"${RUN_ID}\",\"scheduled_for_epoch\":${PROXIMA_ABERTURA}}" >/dev/null || true
+  fi
+  exit 0
+fi
+if [ "$JANELA_RC" -eq 2 ]; then
+  log_err "SYSTEM_UPDATE_WINDOW recusado ('${SYSTEM_UPDATE_WINDOW}') — executo como antes da janela, assim que o pedido chegar. Use 5 campos (minuto hora dia mês dia-da-semana) com os três últimos em '*' e o minuto cobrindo algum múltiplo de 5, ex.: '*/5 2-5 * * *'"
+fi
+
 # Guarda a imagem em execução ANTES de puxar a nova: é por onde a gente volta
 # se o app novo não subir. `docker compose images -q` pode sair != 0 sempre
 # que o daemon soluça, o app não estiver de pé, ou houver problema de

@@ -137,9 +137,51 @@ describe("o formulário nasce com o texto gravado e só salva depois de confirma
       instruction: "Ofereça a auditoria do site e proponha uma conversa de 15 minutos.",
       qualification: CRITERIO,
       ofertas: ["site"],
+      // #4829: o interruptor da ficha digital está no mesmo formulário e vai junto —
+      // a config desta campanha não tem a chave, e ausente = ligada.
+      usar_ficha_digital: true,
     });
     expect(await screen.findByText("Instrução e critérios atualizados. A campanha continua pausada."))
       .toBeInTheDocument();
+  });
+
+  // #4829: o formulário é o único lugar que religa/desliga a ficha digital com a campanha
+  // pausada. Se o `false` não chegasse na API, o interruptor seria só estado de tela.
+  it("desligar a ficha digital no formulário manda `usar_ficha_digital: false`", async () => {
+    abrir("paused");
+    fireEvent.click(await screen.findByRole("button", { name: "Editar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Usar a ficha digital/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar alteração" }));
+
+    expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+      action: "edit_briefing",
+      id: CAMPANHA,
+      instruction: INSTRUCAO,
+      qualification: CRITERIO,
+      ofertas: ["site"],
+      usar_ficha_digital: false,
+    });
+  });
+
+  // #4315: a fonte da abordagem mora no mesmo formulário. Só vai no pedido quando muda —
+  // os dois casos acima são o controle de que salvar o texto não manda a fonte.
+  it("trocar a fonte para o prompt do agente manda `fonte_da_abordagem: 'agente'`", async () => {
+    abrir("paused");
+    fireEvent.click(await screen.findByRole("button", { name: "Editar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Prompt do agente/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar instrução e critérios" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar alteração" }));
+
+    expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+      action: "edit_briefing",
+      id: CAMPANHA,
+      instruction: INSTRUCAO,
+      qualification: CRITERIO,
+      ofertas: ["site"],
+      usar_ficha_digital: true,
+      fonte_da_abordagem: "agente",
+    });
   });
 
   it("texto abaixo do piso não deixa salvar — o servidor recusaria com 422", async () => {

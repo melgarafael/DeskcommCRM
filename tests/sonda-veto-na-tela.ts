@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       .then((c) => c.newPage());
     await login(page, "admin");
     await page.goto(`${BASE}/app/contacts/${alvo.contact_id}`, { waitUntil: "networkidle" });
-    await page.getByRole("tab", { name: "Timeline" }).click();
+    await page.getByRole("tab", { name: "Linha do tempo" }).click();
 
     // Aceita os DOIS desfechos: sem o `or`, uma falha viraria timeout de 15s em
     // vez de veredito — o teste diria "demorou" onde devia dizer "não apareceu".

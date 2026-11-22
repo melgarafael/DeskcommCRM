@@ -178,6 +178,26 @@ describe("detectarVazamentoInterno — calibração contra fala legítima", () =
     // falso-positivo mais caro do conjunto.
     expect(detectarVazamentoInterno("me escreve em contato_vendas@empresa.com.br").termos).toEqual([]);
     expect(detectarVazamentoInterno("o cupom está em https://loja.com.br/promo_verao").termos).toEqual([]);
+    const UUID = "afc35b68-fe81-4861-a4d4-f1603cb47a4f";
+    const cliente = { linkDoCliente: true };
+    // #4951: o link público do portal, com o UUID como segmento do caminho, chega ao cliente.
+    expect(
+      detectarVazamentoInterno(`Seu portal do cliente está disponível: https://portal.example.com/projeto/${UUID}.`, cliente)
+        .termos,
+    ).toEqual([]);
+    // Controles: a exceção é só esta. Fora da mensagem ao cliente (tradução de erro de
+    // ferramenta), o mesmo link segue barrado — a falha fica fechada.
+    expect(detectarVazamentoInterno(`https://portal.example.com/projeto/${UUID}`).achou).toBe(true);
+    for (const texto of [
+      `Seu atendimento é /projeto/${UUID}`, // caminho sem esquema
+      `Código: caso@${UUID}`, // colado a um @
+      `Veja https://portal.example.com/projeto?id=${UUID}`, // na query, não no caminho
+      `Erro em https://abcdefgh.supabase.co/rest/v1/contacts/${UUID}`, // host de infraestrutura
+      `Veja https://crm.example.com/api/v1/leads/${UUID}`, // caminho de API
+      `Veja http://10.0.0.5/projeto/${UUID}`, // IP
+    ]) {
+      expect(detectarVazamentoInterno(texto, cliente).achou, texto).toBe(true);
+    }
   });
 });
 
