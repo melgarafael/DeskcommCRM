@@ -295,8 +295,12 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
  *
  * A chave é a mesma do runtime (`nome`), e `tests/unit/onboarding-frases-do-
  * novo-tenant.test.tsx` exige a mesma lista de chaves, na mesma ordem: renomear
- * gate, tirar conferência ou acrescentar uma sem dar-lhe fala reprova. É o que
- * impede a tela de prometer proteção que não roda — e o inverso.
+ * gate, tirar conferência ou acrescentar uma sem dar-lhe fala reprova.
+ *
+ * ⚠️ Isto prende a FALA à cadeia; não prova que a camada está ligada. Quem diz
+ * se ela roda nesta organização é `itensDaColuna`, com o estado lido do motor —
+ * e é por isso que a coluna deixou de ser uma lista de frases e passou a levar
+ * o estado ao lado de cada uma (#1041).
  *
  * O texto é traduzido em `app/onboarding/setup-ai/page.tsx` por
  * `Object.values(...).map(traduzir)`: a varredura de espanhol resolve os
