@@ -132,8 +132,17 @@ export interface CandidatoDeCarona {
   runAfterEm: number | null;
 }
 
-/** `Date`/ISO do driver → ms; qualquer coisa que não seja data vira `null`. */
-function emMs(valor: Date | string | null | undefined): number | null {
+/**
+ * `Date`/ISO do driver → ms; qualquer coisa que não seja data vira `null`.
+ *
+ * É RÉGUA DE LEITURA de data de armazenamento, e por isso está declarada na
+ * lista ÚNICA (`tests/invariants/reguas-de-data.ts`): `jobs.created_at` (a
+ * âncora da rajada) e `jobs.run_after` chegam `Date` pelo driver `pg` e string
+ * pelo PostgREST/payload clonado. Recusar o `Date` aqui devolveria `null` e a
+ * janela simplesmente NÃO estenderia — modo de falha mudo, sem uma linha de
+ * erro, que é exatamente o que aquela cerca existe para pegar.
+ */
+export function emMs(valor: Date | string | null | undefined): number | null {
   if (valor === null || valor === undefined) return null;
   const ms = valor instanceof Date ? valor.getTime() : new Date(valor).getTime();
   return Number.isFinite(ms) ? ms : null;
