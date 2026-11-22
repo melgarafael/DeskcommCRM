@@ -10,12 +10,29 @@
  * o Inbox já projeta esse jsonb. Toda escrita faz read-modify-write preservando
  * as outras chaves — `metadata` é compartilhado com a tela.
  *
- * ─── A JANELA DE 24 H ──────────────────────────────────────────────────────
+ * ─── A JANELA DE 24 H, E O QUE ELA NÃO FAZ MAIS ────────────────────────────
  *
  * Estado velho EXPIRA. Sem isso, um cliente que abriu o menu e sumiu deixaria a
  * conversa presa: quando voltasse três dias depois, a mensagem dele seria lida
- * como resposta à opção 2 de uma lista que ele não tem mais na tela. Expirado,
- * o menu é enviado de novo — que é o comportamento de entrada.
+ * como resposta à opção 2 de uma lista que ele não tem mais na tela.
+ *
+ * O que a validade NÃO decide é se o menu volta. Ela só diz que o estado não
+ * vale mais como ESPERA — vencido, o que o cliente escreveu não é uma escolha.
+ * Quem decide se o menu entra é o critério abaixo, e ele é o do texto do módulo
+ * (`/admin/sistema`): "a primeira mensagem de uma conversa sem dono". Renovar o
+ * estado a cada mensagem faria o menu reaparecer no meio de um atendimento vivo,
+ * que é exatamente a queixa do mantenedor (#4636).
+ *
+ * ─── O CRITÉRIO: O ATENDIMENTO AINDA NÃO COMEÇOU ───────────────────────────
+ *
+ * `atendimentoJaComecou` entra pronto (a leitura é de `atender.ts`, que é quem
+ * fala com o banco) e significa "a empresa já escreveu nesta conversa". Sem
+ * saída anterior, o menu é a entrada; com qualquer saída — o próprio menu, uma
+ * resposta da IA, uma mensagem de gente —, o atendimento é um diálogo em
+ * andamento e o menu não tem o que apresentar de novo.
+ *
+ * É PURA, como o resto deste arquivo: quem lê `conversations.last_outbound_at` é
+ * o chamador, e a decisão continua sem relógio escondido.
  *
  * ─── A decisão é PURA, e é o coração da fatia ───────────────────────────────
  *
@@ -30,7 +47,11 @@ import { opcaoPeloNumero, type MenuSemIa, type OpcaoDoMenu } from "./modelo";
 /** A chave do estado dentro de `conversations.metadata`. */
 export const CHAVE_NO_METADATA = "menu_de_atendimento";
 
-/** Depois disto, o menu em espera não vale mais — a conversa recomeça. */
+/**
+ * Depois disto, o menu em espera não vale mais COMO ESPERA: o que o cliente
+ * escreveu não é resposta a uma lista que ele não tem mais na tela. Não é o que
+ * decide se o menu volta — quem decide é `atendimentoJaComecou`.
+ */
 export const VALIDADE_DO_ESTADO_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -146,6 +167,14 @@ export interface EntradaDaDecisao {
   texto: string | null | undefined;
   /** A mensagem que chegou AGORA — comparada com a que criou o estado. */
   messageId?: string | null;
+  /**
+   * A empresa JÁ escreveu nesta conversa (`conversations.last_outbound_at`)?
+   *
+   * Obrigatório de propósito: um chamador novo que esqueça de dizer não compila,
+   * em vez de mandar o menu para todo mundo. `false` é "primeira mensagem" — a
+   * única situação em que o menu entra (#4636).
+   */
+  atendimentoJaComecou: boolean;
 }
 
 /**
@@ -161,9 +190,20 @@ export function decidirPassoDoMenu({
   estado,
   texto,
   messageId = null,
+  atendimentoJaComecou,
 }: EntradaDaDecisao): PassoDoMenu {
   if (!menu || menu.ativa !== true) return { kind: "fora_do_menu", motivo: "menu_desligado" };
-  if (estado === null) return { kind: "enviar_menu" };
+
+  // SEM ESTADO = "nunca recebeu o menu" OU "o estado venceu". Quem separa os
+  // dois é o ATENDIMENTO, não o relógio: enquanto a empresa não escreveu nada,
+  // esta é a primeira mensagem e o menu é a entrada; com qualquer saída
+  // anterior, o diálogo já começou e o menu NÃO volta — nem 24 h depois da
+  // escolha do arquivo, nem no dia em que o módulo é ligado numa conversa viva.
+  if (estado === null) {
+    return atendimentoJaComecou
+      ? { kind: "fora_do_menu", motivo: "atendimento_ja_comecou" }
+      : { kind: "enviar_menu" };
+  }
 
   // REENTREGA: o provedor reenvia o mesmo evento quando a resposta demora. Se o
   // estado foi criado por ESTA mensagem, ela já foi tratada — sem esta saída, a

@@ -147,12 +147,23 @@ function db(
     metadata?: Record<string, unknown>;
     escrita?: Record<string, unknown>;
     rpcResult?: DbOpts["rpcResult"];
+    /**
+     * As colunas do CONTATO (#4636): `force_human`, `ai_opt_out` e `tags` são o
+     * que o menu passou a ler. Sem declarar aqui, o contato do dublê não tem as
+     * marcas e o caso mediria o dublê em vez do runtime.
+     */
+    contato?: Record<string, unknown>;
+    /** Chaves a mais no `settings` da organização — as listas de etiqueta. */
+    settings?: Record<string, unknown>;
   } = {},
 ): Db {
+  const settings: Record<string, unknown> = {
+    ...(over.menu === null ? {} : { [CHAVE_NO_SETTINGS]: over.menu ?? MENU }),
+    ...(over.settings ?? {}),
+  };
   return makeDb({
-    organizationSettings:
-      over.menu === null ? {} : { [CHAVE_NO_SETTINGS]: over.menu ?? MENU },
-    contacts: [{ id: CONTATO, organization_id: ORG_ID }],
+    organizationSettings: settings,
+    contacts: [{ id: CONTATO, organization_id: ORG_ID, ...(over.contato ?? {}) }],
     conversas: [conversa({ metadata: over.metadata ?? {}, ...(over.escrita ?? {}) })],
     ...(over.rpcResult ? { rpcResult: over.rpcResult } : {}),
   });
@@ -416,5 +427,103 @@ describe("menu de atendimento sem IA na entrada (#4594)", () => {
 
     expect(enviados).toHaveLength(0);
     expect(despachouIA(registro)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. O CONTATO: "sempre humano" é trava, e o menu a respeita (#4636)
+  // -------------------------------------------------------------------------
+
+  it("⭐ contato marcado como sempre humano NÃO recebe menu e nada é gravado", async () => {
+    // "Marcar como sempre humano" (`/api/v1/contacts/[id]/always-human`) grava
+    // `force_human` e `ai_opt_out` no CONTATO e não silencia conversa nenhuma.
+    // O gate da IA trata a marca como trava irrevogável; o menu, que nunca lia
+    // `contacts`, mandava o menu assim mesmo — este caso é o vermelho de antes.
+    const registro = db({ contato: { force_human: true, ai_opt_out: true } });
+
+    await passar(registro, { texto: "bom dia" });
+
+    expect(menusEnviados()).toHaveLength(0);
+    expect(enviados).toHaveLength(0);
+    // Nada é gravado na conversa: o menu não é dono desta mensagem.
+    expect(registro.escritas.filter((e) => e.table === "conversations")).toHaveLength(0);
+    expect(estadoGravado(registro)).toBeNull();
+    // E a ingestão segue o caminho de hoje — quem barra a IA é o gate, não o menu.
+    expect(despachouIA(registro)).toBe(true);
+  });
+
+  it("⭐ contato interno da equipe NÃO recebe menu (as duas listas do gate)", async () => {
+    // A lista interna (#2353) é veto de CONTATO no gate; a da equipe (#3534) é
+    // o sócio que continua sendo atendido quando ESCREVE, mas não recebe
+    // automação. As duas são lidas pela MESMA régua do gate, com a mesma
+    // normalização (`Equipe`/`equipe` casam).
+    const interna = db({
+      contato: { tags: ["equipe"] },
+      settings: { crm: { internal_contact_tags: ["Equipe"] } },
+    });
+    await passar(interna, { texto: "bom dia" });
+    expect(menusEnviados()).toHaveLength(0);
+    expect(interna.escritas.filter((e) => e.table === "conversations")).toHaveLength(0);
+
+    enviados.length = 0;
+    const daEquipe = db({
+      contato: { tags: ["socio"] },
+      settings: { crm: { team_contact_tags: ["Socio"] } },
+    });
+    await passar(daEquipe, { texto: "bom dia" });
+    expect(menusEnviados()).toHaveLength(0);
+    expect(daEquipe.escritas.filter((e) => e.table === "conversations")).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // 4. O CRITÉRIO: "a primeira mensagem de uma conversa sem dono" (#4636)
+  // -------------------------------------------------------------------------
+
+  it("⭐ estado vencido há 25 h, concluido, com saída anterior: NÃO recebe menu de novo", async () => {
+    // Quem escolheu o arquivo e seguiu conversando recebia o menu outra vez 24 h
+    // depois da escolha: o estado vencia, virava `null` e `null` virava
+    // `enviar_menu`. O atendimento JÁ começou (há saída da empresa), então o
+    // menu não entra — e o estado não é regravado.
+    const vinteCincoHorasAtras = new Date(AGORA.getTime() - 25 * 60 * 60 * 1000).toISOString();
+    const registro = db({
+      escrita: { last_outbound_at: vinteCincoHorasAtras },
+      metadata: {
+        [CHAVE_NO_METADATA]: {
+          estado: "concluido",
+          atualizado_em: vinteCincoHorasAtras,
+          repeticao: 0,
+          desfecho: "arquivo:1",
+        },
+      },
+    });
+
+    await passar(registro, { messageId: "msg-9", texto: "e o prazo, como fica?" });
+
+    expect(menusEnviados()).toHaveLength(0);
+    expect(registro.escritas.filter((e) => e.table === "conversations")).toHaveLength(0);
+    // A conversa segue viva com a IA — o menu não a sequestra.
+    expect(despachouIA(registro)).toBe(true);
+  });
+
+  it("⭐ primeira mensagem de verdade RECEBE o menu", async () => {
+    // O estado de fábrica de uma conversa nova: sem saída e sem atendimento.
+    const registro = db({ escrita: { service_started_at: null, last_outbound_at: null } });
+
+    await passar(registro, { texto: "bom dia" });
+
+    expect(menusEnviados()).toHaveLength(1);
+    expect(estadoGravado(registro)?.estado).toBe("aguardando");
+
+    // E o estado REAL de uma conversa nova: `fn_service_inbound` carimba
+    // `service_started_at` no INSERT da PRIMEIRA mensagem do cliente
+    // (`supabase/baseline.sql:19805`) e a migração de reparo carimbou todas as
+    // conversas que existiam (`:20393`). Exigir o carimbo nulo nunca enviaria
+    // menu nenhum; o critério é a ausência de SAÍDA da empresa.
+    enviados.length = 0;
+    const comCarimboDoInbound = db({
+      escrita: { service_started_at: AGORA.toISOString(), last_outbound_at: null },
+    });
+    await passar(comCarimboDoInbound, { texto: "oi" });
+    expect(menusEnviados()).toHaveLength(1);
+    expect(estadoGravado(comCarimboDoInbound)?.estado).toBe("aguardando");
   });
 });

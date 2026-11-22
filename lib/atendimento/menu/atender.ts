@@ -31,6 +31,16 @@
  *    ingestão e responde, sem abrir o banco, "por que esta mensagem não teve
  *    menu" (`conversa_com_dono`, `menu_concluido`, `envio_falhou`…).
  *
+ * ─── As duas regras do #4636 (o pedido do mantenedor) ───────────────────────
+ *
+ * 1. **O menu respeita o CONTATO.** `force_human`/`ai_opt_out` ("sempre
+ *    atendimento humano") e as etiquetas de contato interno e da equipe vetam o
+ *    menu com as MESMAS réguas do gate da IA — ver `motivoDoVetoDoContato`.
+ * 2. **O menu é da PRIMEIRA mensagem.** Estado vencido não é convite para o menu
+ *    voltar: quem decide é o atendimento ainda não ter começado (nenhuma saída
+ *    da empresa na conversa). A validade de 24 h continua valendo para o estado
+ *    não ser lido como escolha — só não decide mais o reenvio.
+ *
  * ─── O que fica de fora desta fatia (declarado no PR) ───────────────────────
  *
  * Formulário conversacional (guardar a resposta do cliente num campo) e menus
@@ -41,8 +51,11 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { logger as loggerPadrao } from "@/lib/logger";
+import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
+import { ehContatoInterno } from "@/lib/contacts/tags-internas";
 import { moduloLigadoComMemo } from "@/lib/instalacao/modulos";
+import { logger as loggerPadrao } from "@/lib/logger";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 import {
   comEstadoDoMenu,
   decidirPassoDoMenu,
@@ -118,12 +131,73 @@ function erroCurto(erro: unknown): string {
   return (erro instanceof Error ? erro.message : String(erro)).slice(0, 160);
 }
 
-/** A linha da conversa que o menu lê — uma consulta, quatro decisões. */
+/** A linha da conversa que o menu lê — uma consulta, cinco decisões. */
 interface ConversaDoMenu {
   status?: string | null;
   assigned_to_user_id?: string | null;
   bot_silenced_until?: string | null;
   metadata?: unknown;
+  /**
+   * A última SAÍDA da empresa nesta conversa (#4636). `null` = a empresa nunca
+   * escreveu: é a primeira mensagem do cliente, e a única em que o menu entra.
+   *
+   * Não se usa `service_started_at` para isso, e a medição é o motivo: o
+   * `fn_service_inbound` carimba a coluna no INSERT da PRIMEIRA mensagem do
+   * cliente (`supabase/baseline.sql:19805`) e a migração de reparo carimbou
+   * todas as conversas que já existiam (`:20393`). Exigir o carimbo nulo nunca
+   * enviaria menu nenhum — inclusive no caso que este teste guarda.
+   */
+  last_outbound_at?: string | null;
+}
+
+/**
+ * O contato da conversa, nas colunas do gate de elegibilidade da IA.
+ *
+ * `force_human` e `ai_opt_out` são as duas marcas do "sempre atendimento
+ * humano"; `tags` é a entrada das duas listas de etiqueta da organização.
+ */
+interface ContatoDoMenu {
+  force_human?: boolean | null;
+  ai_opt_out?: boolean | null;
+  tags?: readonly string[] | null;
+}
+
+/** As duas listas de etiqueta da organização, lidas do `settings` já carregado. */
+interface EtiquetasDaOrg {
+  internas: readonly string[];
+  daEquipe: readonly string[];
+}
+
+/**
+ * POR QUE este contato NÃO recebe menu — ou `null`, se recebe.
+ *
+ * São as MESMAS réguas do gate da IA (`lib/ai/elegibilidade/gate.ts`), na mesma
+ * ordem e com os mesmos predicados, e não uma segunda escrita delas:
+ *
+ *   • `force_human` e `ai_opt_out` — as marcas que o gate veta antes de tudo
+ *     (`decidirElegibilidade`, motivos `force_human`/`ai_opt_out`). O botão
+ *     "Marcar como sempre humano" grava as duas no CONTATO e não silencia
+ *     conversa nenhuma; sem esta leitura, o menu ia para quem a empresa já
+ *     declarou que só atende com gente (#4636);
+ *   • `ehContatoInterno` (#2353) — o mesmo veto `contato_interno` do gate;
+ *   • `ehContatoDaEquipe` (#3534) — a etiqueta que deixa o sócio ser atendido
+ *     quando ele ESCREVE, mas não recebe automação da casa: é a régua que a
+ *     abordagem fria já usa (`lib/prospecting/guard.ts`) e vale aqui pelo mesmo
+ *     motivo — o menu é mensagem automática, não resposta de gente.
+ *
+ * Uma regra reescrita aqui divergiria do gate na primeira vez que alguém
+ * acrescentasse um veto lá; por isso as listas e a comparação vêm de
+ * `lib/schemas/settings` e de `lib/contacts/tags-*`.
+ */
+function motivoDoVetoDoContato(
+  contato: ContatoDoMenu,
+  etiquetas: EtiquetasDaOrg,
+): string | null {
+  if (contato.force_human === true) return "force_human";
+  if (contato.ai_opt_out === true) return "ai_opt_out";
+  if (ehContatoInterno(contato.tags, etiquetas.internas)) return "contato_interno";
+  if (ehContatoDaEquipe(contato.tags, etiquetas.daEquipe)) return "contato_da_equipe";
+  return null;
 }
 
 /** O cliente está no caminho errado? Silenciado ou com dono = não é menu. */
@@ -165,7 +239,10 @@ export async function atenderMenuSemIa(
     `menu-de-atendimento:${entrada.conversationId}:${entrada.messageId ?? "sem-mensagem"}:${sufixo}`;
 
   // ── 1 · A chave do menu, da empresa ──────────────────────────────────────
+  // O `settings` é lido uma vez só: dele saem a configuração do menu E as duas
+  // listas de etiqueta que o veto de contato usa (#4636).
   let menu: MenuSemIa | null = null;
+  let settings: unknown = null;
   try {
     const { data, error } = await admin
       .from("organizations")
@@ -173,7 +250,8 @@ export async function atenderMenuSemIa(
       .eq("id", entrada.organizationId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    menu = menuDeclarado((data as { settings?: unknown } | null)?.settings);
+    settings = (data as { settings?: unknown } | null)?.settings;
+    menu = menuDeclarado(settings);
   } catch (erro) {
     log.warn("[menu-de-atendimento] leitura da configuração falhou — ingestão segue o fluxo de hoje", {
       organization_id: entrada.organizationId,
@@ -200,12 +278,51 @@ export async function atenderMenuSemIa(
   }
   if (!instalado) return { tratado: false, motivo: "modulo_desligado" };
 
-  // ── 2 · A conversa: estado, dono e silêncio saem da MESMA linha ──────────
+  // ── 2 · O CONTATO: a trava do gate da IA, lida aqui ──────────────────────
+  // "Marcar como sempre humano" grava `force_human`/`ai_opt_out` no contato e
+  // não silencia conversa nenhuma: até esta leitura, o menu ia para quem a
+  // empresa já tinha declarado que só atende com gente (#4636). Os predicados
+  // são os do gate (`motivoDoVetoDoContato`, acima) — o menu não reescreve a
+  // regra, ele a respeita.
+  let contato: ContatoDoMenu | null = null;
+  try {
+    const { data, error } = await admin
+      .from("contacts")
+      .select("force_human, ai_opt_out, tags")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    contato = data as ContatoDoMenu | null;
+  } catch (erro) {
+    log.warn("[menu-de-atendimento] leitura do contato falhou — ingestão segue o fluxo de hoje", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: erroCurto(erro),
+    });
+    return { tratado: false, motivo: "erro_de_leitura" };
+  }
+  if (!contato) return { tratado: false, motivo: "contato_nao_encontrado" };
+
+  const vetoDoContato = motivoDoVetoDoContato(contato, {
+    internas: tagsInternasDaOrg(settings),
+    daEquipe: tagsDaEquipeDaOrg(settings),
+  });
+  if (vetoDoContato) {
+    log.info("[menu-de-atendimento] contato fora do menu automático", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      motivo: vetoDoContato,
+    });
+    return { tratado: false, motivo: vetoDoContato };
+  }
+
+  // ── 3 · A conversa: estado, dono, silêncio e saída na MESMA linha ────────
   let conversa: ConversaDoMenu | null = null;
   try {
     const { data, error } = await admin
       .from("conversations")
-      .select("status, assigned_to_user_id, bot_silenced_until, metadata")
+      .select("status, assigned_to_user_id, bot_silenced_until, metadata, last_outbound_at")
       .eq("organization_id", entrada.organizationId)
       .eq("id", entrada.conversationId)
       .maybeSingle();
@@ -230,6 +347,10 @@ export async function atenderMenuSemIa(
     estado,
     texto: entrada.texto,
     messageId: entrada.messageId,
+    // A empresa já escreveu? Então o atendimento começou e o menu não entra,
+    // mesmo com o estado vencido — é o critério do módulo ("a primeira mensagem
+    // de uma conversa sem dono"), e é o que impede o menu no meio do diálogo.
+    atendimentoJaComecou: (conversa.last_outbound_at ?? null) !== null,
   });
 
   /**
