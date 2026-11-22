@@ -267,9 +267,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     query = query.eq("assigned_to", responsavel);
   } else if (restrito) {
     // Sem filtro na requisição, o atendente restrito recebe a lista DELE: as
-    // tarefas atribuídas a si e a fila sem dono (que ele pode assumir). A
+    // tarefas atribuídas a si, as que ELE criou e a fila sem dono (que ele pode
+    // assumir). O par é o MESMO de `fn_can_view_task(organization_id,
+    // assigned_to, created_by)` — sem o `created_by` a lista escondia a tarefa
+    // que ele criou e entregou a um colega, que a RLS deixa ver (#4800). A
     // restrição é esta linha — a tela só reflete o que a rota já recorta.
-    query = query.or(`assigned_to.eq.${authz.actor.id},assigned_to.is.null`);
+    query = query.or(
+      `assigned_to.eq.${authz.actor.id},assigned_to.is.null,created_by.eq.${authz.actor.id}`,
+    );
   }
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 

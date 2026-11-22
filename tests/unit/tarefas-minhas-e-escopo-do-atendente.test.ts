@@ -26,7 +26,10 @@
  *      pelo id de um colega;
  *  (d) administrador não é afetado pela opção;
  *  (e) o filtro é lembrado no próximo carregamento, e o padrão do agent é
- *      "Minhas" — a régua pura e o fio da página até o componente.
+ *      "Minhas" — a régua pura e o fio da página até o componente;
+ *  (f) o escopo é o MESMO par da policy (`assigned_to` OU `created_by`) — a
+ *      tarefa que o atendente criou e entregou a um colega era 403 na rota e
+ *      liberada na RLS. É o defeito medido no #4800.
  */
 import { readFileSync } from "node:fs";
 
@@ -108,41 +111,70 @@ function eloAnotador(anotacoes: Array<[string, string, unknown]>, resultado: unk
 
 /**
  * A organização como a rota a lê: uma linha só, com o jsonb `settings`.
- * `escopoLigado` é a opção que a tela de Configurações grava.
+ * `escopoLigado` é a opção que a tela de Configurações grava; `visibilityMode`
+ * é "O que cada atendente enxerga", que a RLS (`fn_can_view_task`) já aplica
+ * por conta própria — a fixture o guarda porque é ele que decide o que a
+ * policy entrega quando a opção da #4737 está desligada.
  */
-function organizacaoCom(escopoLigado: boolean) {
+type ModoDeVisibilidade = "all" | "own_and_unassigned" | "own";
+
+function organizacaoCom(
+  escopoLigado: boolean,
+  visibilityMode: ModoDeVisibilidade = "own_and_unassigned",
+) {
   const elo: Record<string, unknown> = {};
   for (const metodo of ["select", "eq", "limit"]) elo[metodo] = () => elo;
   elo.then = (res: (v: unknown) => unknown) =>
     Promise.resolve({
-      data: [{ settings: { tarefas: { atendente_ve_so_as_proprias: escopoLigado } } }],
+      data: [
+        {
+          settings: {
+            visibility_mode: visibilityMode,
+            tarefas: { atendente_ve_so_as_proprias: escopoLigado },
+          },
+        },
+      ],
       error: null,
     }).then(res);
   return elo;
 }
 
 /** Dublê da LISTA: anota os filtros aplicados e as expressões `or`. */
-function listagemCom(escopoLigado: boolean) {
+function listagemCom(escopoLigado: boolean, visibilityMode: ModoDeVisibilidade = "own_and_unassigned") {
   const filtros: Array<[string, string, unknown]> = [];
   const expressoesOr: string[] = [];
   const elo = eloAnotador(filtros, { data: [], error: null }) as Record<string, unknown>;
   elo.or = (expressao: string) => (expressoesOr.push(expressao), elo);
   vi.mocked(createClient).mockResolvedValue({
-    from: (tabela: string) => (tabela === "organizations" ? organizacaoCom(escopoLigado) : elo),
+    from: (tabela: string) =>
+      tabela === "organizations" ? organizacaoCom(escopoLigado, visibilityMode) : elo,
   } as never);
   return { filtros, expressoesOr };
 }
 
-/** Dublê da tarefa única: a pré-leitura do PATCH/DELETE devolve esta linha. */
-function tarefaCom(escopoLigado: boolean, assignedTo: string | null) {
+/**
+ * Dublê da tarefa única: a pré-leitura do PATCH/DELETE devolve esta linha.
+ * `createdBy` existe porque a policy `crm_tasks_select` decide pelo PAR
+ * `(assigned_to, created_by)` — a fixture sem ele esconderia metade da régua.
+ */
+function tarefaCom(
+  escopoLigado: boolean,
+  assignedTo: string | null,
+  createdBy: string | null = null,
+  visibilityMode: ModoDeVisibilidade = "own_and_unassigned",
+) {
   const filtros: Array<[string, string, unknown]> = [];
   const elo = eloAnotador(filtros, { data: null, error: null }) as Record<string, unknown>;
-  elo.maybeSingle = async () => ({ data: { status: "pending", assigned_to: assignedTo }, error: null });
+  elo.maybeSingle = async () => ({
+    data: { status: "pending", assigned_to: assignedTo, created_by: createdBy },
+    error: null,
+  });
   // O UPDATE da tarefa (quando ele acontece) devolve uma linha qualquer: o que
   // os casos de (c)/(d) provam é que NÃO houve recusa de escopo, e não o corpo.
   elo.single = async () => ({ data: { id: TAREFA, status: "done", assigned_to: assignedTo }, error: null });
   vi.mocked(createClient).mockResolvedValue({
-    from: (tabela: string) => (tabela === "organizations" ? organizacaoCom(escopoLigado) : elo),
+    from: (tabela: string) =>
+      tabela === "organizations" ? organizacaoCom(escopoLigado, visibilityMode) : elo,
   } as never);
   return filtros;
 }
@@ -182,14 +214,16 @@ const codigo = async (res: Response) => ((await res.json()) as { error?: { code?
 // ─── (a) opção ligada: só as próprias e as sem responsável ──────────────────
 
 describe("(a) agent com a opção ligada lista só as próprias e as sem responsável", () => {
-  it("⭐ a consulta sai com `assigned_to = eu OR assigned_to is null`", async () => {
+  it("⭐ a consulta sai com `assigned_to = eu OR assigned_to is null OR created_by = eu`", async () => {
     sessao("agent");
     const { filtros, expressoesOr } = listagemCom(true);
 
     const res = await listar("?aberto=true");
 
     expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([`assigned_to.eq.${ANA},assigned_to.is.null`]);
+    expect(expressoesOr).toEqual([
+      `assigned_to.eq.${ANA},assigned_to.is.null,created_by.eq.${ANA}`,
+    ]);
     // E não vira um `eq` de responsável: seria "só as minhas", deixando de fora
     // a fila sem dono — que é justamente a que o atendente pode assumir.
     expect(filtros.filter(([, coluna]) => coluna === "assigned_to")).toEqual([]);
@@ -248,6 +282,109 @@ describe("(b) o agent restrito não abre a tarefa de um colega", () => {
     expect(tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO })).toBe(true);
     // E sem restrição, a regra não existe.
     expect(tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO })).toBe(false);
+  });
+});
+
+// ─── (f) o PAR da policy: dono atribuído OU criador ────────────────────────
+//
+// `crm_tasks_select` não decide por `assigned_to` sozinho: ela chama
+// `fn_can_view_task(organization_id, assigned_to, created_by)`, e a função
+// devolve `true` tanto para `p_assigned_to = auth.uid()` quanto para
+// `p_created_by = auth.uid()`. O recorte da #4737 olhava só o responsável —
+// então a tarefa que o atendente CRIOU e entregou a um colega era 403 na rota
+// e permitida no banco. É a mesma discordância que o revisor mediu no #4800.
+describe("(f) o escopo é o MESMO par da policy: `assigned_to` OU `created_by`", () => {
+  const CARLA = "77777777-7777-4777-8777-777777777777";
+
+  it("⭐ desligada, criada por mim e atribuída ao colega: não é fora do escopo, e o PATCH passa", async () => {
+    // A1. `restrito` é falso (a opção está desligada) e o desfecho tem de ser o
+    // de hoje: o par criador/dono é do banco, não da chave.
+    expect(
+      tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO, createdBy: ANA }),
+    ).toBe(false);
+
+    sessao("agent");
+    tarefaCom(false, BETO, ANA);
+    const res = await editar(TAREFA, { status: "done" });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("⭐ LIGADA, criada por mim e atribuída ao colega: 200 — o red-before era 403", async () => {
+    // A1-b: é ESTE o caso que o revisor mediu no #4800. Antes do conserto,
+    // `tarefaForaDoEscopo` olhava só `assigned_to` e a rota respondia
+    // 403 `forbidden_scope` para uma tarefa que a RLS deixa ver E editar
+    // (`p_created_by = auth.uid()`). O `created_by` vem da MESMA pré-leitura
+    // que já trazia `assigned_to` — nenhuma consulta nova.
+    sessao("agent");
+    tarefaCom(true, BETO, ANA);
+    const res = await editar(TAREFA, { status: "done" });
+
+    expect(res.status).toBe(200);
+
+    expect(
+      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO, createdBy: ANA }),
+    ).toBe(false);
+  });
+
+  it("⭐ LIGADA, a tarefa do colega (criada e atribuída a ele): 403 `forbidden_scope`", async () => {
+    // A2 — nada afrouxou. O par é `dono OU criador`: a tarefa do colega não é
+    // nem um nem outro, e continua sendo recusa NOMEADA.
+    expect(
+      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO, createdBy: BETO }),
+    ).toBe(true);
+
+    sessao("agent");
+    tarefaCom(true, BETO, BETO);
+    const res = await editar(TAREFA, { status: "done" });
+
+    expect(res.status).toBe(403);
+    expect(await codigo(res)).toBe("forbidden_scope");
+  });
+
+  it("⭐ terceiro sem relação: 403 nos dois modos de visibilidade da organização", async () => {
+    // A3. Nem dono nem criador — a recusa não depende de `visibility_mode`,
+    // porque com a opção LIGADA quem responde é a rota, antes da RLS.
+    for (const modo of ["own_and_unassigned", "own"] as const) {
+      expect(
+        tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: CARLA, createdBy: CARLA }),
+      ).toBe(true);
+
+      sessao("agent");
+      tarefaCom(true, CARLA, CARLA, modo);
+      const res = await editar(TAREFA, { status: "done" });
+
+      expect(res.status, `visibility_mode=${modo}`).toBe(403);
+      expect(await codigo(res), `visibility_mode=${modo}`).toBe("forbidden_scope");
+    }
+  });
+
+  it("a régua pura: criador e dono são o MESMO par, e a fila sem dono segue visível", () => {
+    expect(
+      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: ANA, createdBy: BETO }),
+    ).toBe(false);
+    expect(
+      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: null, createdBy: BETO }),
+    ).toBe(false);
+    expect(
+      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: null, createdBy: null }),
+    ).toBe(false);
+    // Sem restrição a regra não existe, nem para o criador nem para o dono.
+    expect(
+      tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO, createdBy: BETO }),
+    ).toBe(false);
+  });
+
+  it("a lista do restrito também traz o que ELE criou — o par inteiro, não meio", async () => {
+    sessao("agent");
+    const { expressoesOr } = listagemCom(true);
+
+    const res = await listar("?aberto=true");
+
+    expect(res.status).toBe(200);
+    expect(expressoesOr).toEqual([
+      `assigned_to.eq.${ANA},assigned_to.is.null,created_by.eq.${ANA}`,
+    ]);
   });
 });
 

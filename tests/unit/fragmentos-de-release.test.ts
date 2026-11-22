@@ -93,3 +93,99 @@ describe("os fragmentos de .changes/ estão em forma de chegar à tela", () => {
     expect(envolvido.titulo).toBe("o título inteiro entre aspas");
   });
 });
+
+// ═══ O fragmento da #4737 e a RLS (#4800) ═══════════════════════════════════
+//
+// A promessa do fragmento é o que o dono da VPS lê antes de atualizar. O da
+// #4737 dizia "Desligada, nada muda: o atendente vê a equipe inteira como
+// hoje" — e isso é FALSO: `crm_tasks_select` chama `fn_can_view_task`, que
+// recorta por `settings.visibility_mode`. Com a chave da #4737 desligada e a
+// visibilidade em "Os seus, mais os que ainda não têm dono" (o padrão) ou em
+// "Só os seus", a RLS já esconde a tarefa do colega.
+//
+// ⚠️ Nenhum caso aqui cita um fragmento pelo NOME: o corte de release apaga
+// `.changes/` por definição, e um teste amarrado a um arquivo nasce verde no PR
+// que o criou e fica vermelho no PR de release (é o que
+// `teste-nao-fixa-fragmento-de-release.test.ts` guarda). A regra é aplicada a
+// TODOS os fragmentos que anunciam esta opção — com `.changes/` vazio, ela não
+// tem o que julgar, e passa como as outras cercas genéricas.
+const OPCAO_DAS_TAREFAS = /atendente vê só as próprias tarefas/i;
+
+/** Os fragmentos que anunciam a opção da #4737 (hoje: um; no corte: nenhum). */
+function fragmentosDaOpcaoDasTarefas(): Array<{ arquivo: string; corpo: string }> {
+  return arquivos()
+    .map((arquivo) => ({
+      arquivo,
+      corpo: parseFragmento(arquivo, fs.readFileSync(path.join(DIR, arquivo), "utf8")).corpo,
+    }))
+    .filter((f) => OPCAO_DAS_TAREFAS.test(f.corpo));
+}
+
+/** Os parágrafos que começam falando da opção DESLIGADA. */
+function paragrafosDaChaveDesligada(corpo: string): string[] {
+  return corpo.split(/\n\s*\n/).filter((paragrafo) => /^\s*desligad/i.test(paragrafo));
+}
+
+/**
+ * O parágrafo que fala da opção DESLIGADA promete a equipe inteira sem dizer
+ * que "O que cada atendente enxerga" já recorta?
+ *
+ * `true` = mente. É o detector que os casos abaixo usam; ele é provado contra
+ * a frase ANTIGA, para não passar por acidente num texto que ninguém lê.
+ */
+function prometeEquipeInteiraSemCitarOVisibilidade(corpo: string): boolean {
+  return paragrafosDaChaveDesligada(corpo).some(
+    (paragrafo) => !/O que cada atendente enxerga|visibility_mode/.test(paragrafo),
+  );
+}
+
+describe("o fragmento da #4737 não promete o que a RLS não entrega (#4800)", () => {
+  it("a policy do baseline recorta por visibilidade e libera o CRIADOR — a premissa do texto", () => {
+    const baseline = fs.readFileSync(path.join(process.cwd(), "supabase/baseline.sql"), "utf8");
+
+    const daPolicy = baseline.slice(
+      baseline.indexOf("create policy crm_tasks_select on public.crm_tasks"),
+    );
+    // A leitura da tarefa é decidida pelo PAR (responsável, criador) — não só
+    // pelo responsável. É o que o fragmento passou a dizer.
+    expect(daPolicy.slice(0, 700)).toMatch(
+      /fn_can_view_task\(organization_id, assigned_to, created_by\)/,
+    );
+
+    const daFuncao = baseline.slice(
+      baseline.indexOf("create or replace function public.fn_can_view_task"),
+    );
+    const corpoDaFuncao = daFuncao.slice(0, 1200);
+    expect(corpoDaFuncao).toContain("when p_created_by = auth.uid() then true");
+    expect(corpoDaFuncao).toContain("when 'own_and_unassigned' then p_assigned_to is null");
+    // E o modo mais fechado: nada além do que é dele.
+    expect(corpoDaFuncao).toContain("else false");
+  });
+
+  it("⭐ o detector pega a frase antiga — e ela não está em nenhum fragmento", () => {
+    const antiga =
+      "Desligada, nada muda: o atendente vê a equipe inteira como hoje, e filtrar pelo id de um colega continua funcionando.";
+    // Controle: com o texto que o PR trazia, o detector acusa a mentira.
+    expect(prometeEquipeInteiraSemCitarOVisibilidade(antiga)).toBe(true);
+
+    for (const { arquivo, corpo } of fragmentosDaOpcaoDasTarefas()) {
+      expect(prometeEquipeInteiraSemCitarOVisibilidade(corpo), arquivo).toBe(false);
+      expect(corpo, arquivo).not.toMatch(/nada muda:\s*o atendente vê a equipe inteira/i);
+    }
+  });
+
+  it("⭐ desligada, o fragmento diz o que a RLS entrega nos TRÊS modos de visibilidade", () => {
+    for (const { arquivo, corpo } of fragmentosDaOpcaoDasTarefas()) {
+      const paragrafos = paragrafosDaChaveDesligada(corpo);
+      expect(paragrafos.length, `${arquivo}: não fala da opção desligada`).toBeGreaterThan(0);
+      // O fragmento é prosa com quebra de linha de 80 colunas: comparar com o
+      // texto corrido evita depender de onde a linha quebrou.
+      const texto = paragrafos.join(" ").replace(/\s+/g, " ");
+      // A ressalva que faltava: quem recorta é a visibilidade da organização.
+      expect(texto, arquivo).toMatch(/O que cada atendente enxerga/);
+      expect(texto, arquivo).toMatch(/Todos veem tudo/);
+      expect(texto, arquivo).toMatch(/Os seus, mais os que ainda não têm dono/);
+      expect(texto, arquivo).toMatch(/Só os seus/);
+    }
+  });
+});

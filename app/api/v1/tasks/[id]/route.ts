@@ -177,9 +177,14 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
+  //
+  // `created_by` vem na MESMA leitura porque é o outro lado do par que a policy
+  // `crm_tasks_select`/`crm_tasks_write` usa (`fn_can_view_task`): sem ele a
+  // rota recusava (403) a tarefa que o banco deixa ver e editar — a que o
+  // atendente criou e entregou a um colega (#4800).
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status, assigned_to")
+    .select("status, assigned_to, created_by")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -190,15 +195,19 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
   // ═══ #4737: a tarefa de um COLEGA é recusa NOMEADA ═══
   //
-  // O atendente restrito abre e altera as tarefas dele e as sem responsável.
-  // A de outro atendente recebe 403 com código próprio — e não 404 genérico,
-  // que faria a tela dizer "não existe" sobre uma tarefa que a colega vê.
-  // Tarefa SEM dono continua acessível: é a fila que ele pode assumir.
+  // O atendente restrito abre e altera as tarefas dele, as que ele criou e as
+  // sem responsável. A de outro atendente recebe 403 com código próprio — e não
+  // 404 genérico, que faria a tela dizer "não existe" sobre uma tarefa que a
+  // colega vê. Tarefa SEM dono continua acessível: é a fila que ele pode
+  // assumir. O par (`assigned_to` OU `created_by`) é o MESMO de
+  // `fn_can_view_task`: o criador alcança o que escreveu mesmo depois de
+  // entregar a um colega (#4800).
   if (
     tarefaForaDoEscopo({
       restrito,
       usuarioId: usuarioIdDaSessao,
       assignedTo: (antes as { assigned_to?: string | null } | null)?.assigned_to,
+      createdBy: (antes as { created_by?: string | null } | null)?.created_by,
     })
   ) {
     return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
@@ -331,10 +340,12 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   //
   // O DELETE não tem `where` que distinga dono, então a leitura vem antes —
   // e a recusa é NOMEADA (403), não o 404 de "não achei" que faria a tela
-  // concluir que a tarefa já não existia.
+  // concluir que a tarefa já não existia. `created_by` entra na leitura pelo
+  // mesmo motivo do PATCH: é o outro lado do par de `fn_can_view_task`, e sem
+  // ele o criador não conseguiria apagar o que escreveu (#4800).
   const { data: donaDaTarefa } = await supabase
     .from("crm_tasks")
-    .select("assigned_to")
+    .select("assigned_to, created_by")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -343,6 +354,7 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
       restrito,
       usuarioId: usuarioIdDaSessao,
       assignedTo: (donaDaTarefa as { assigned_to?: string | null } | null)?.assigned_to,
+      createdBy: (donaDaTarefa as { created_by?: string | null } | null)?.created_by,
     })
   ) {
     return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });

@@ -4,19 +4,46 @@
  *
  * ─── O que ela muda, e onde ────────────────────────────────────────────────
  *
- * LIGADA: quem tem papel `agent` lista e abre apenas as tarefas atribuídas a si
- * e as SEM responsável (a fila que ninguém pegou ainda — esconder dela deixaria
- * trabalho sem dono invisível para quem poderia pegar).
+ * LIGADA: quem tem papel `agent` lista e abre apenas as tarefas atribuídas a si,
+ * as que ELE criou e as SEM responsável (a fila que ninguém pegou ainda —
+ * esconder dela deixaria trabalho sem dono invisível para quem poderia pegar).
  *
- * DESLIGADA (o padrão de toda organização, e de quem atualiza o produto): tudo
- * como hoje — o atendente vê a organização inteira, e o filtro da tela é só
- * conveniência.
+ * DESLIGADA (o padrão de toda organização, e de quem atualiza o produto): esta
+ * opção não recorta nada — a rota não acrescenta filtro de responsável nem
+ * recusa. O que o atendente vê, então, é o que o BANCO já entrega: a policy
+ * `crm_tasks_select` do `supabase/baseline.sql` (ver o par, abaixo) e a opção
+ * "Atendentes podem mexer na agenda dos colegas", que quando ligada abre a
+ * equipe inteira. ⚠️ "Desligada" NÃO significa "vê a equipe inteira": com
+ * `settings.visibility_mode` em `own_and_unassigned` (o padrão) ou `own`, a RLS
+ * já recorta, mesmo com esta chave desligada. Foi o que o fragmento de release
+ * afirmava errado antes do #4800.
+ *
+ * ─── O PAR da RLS, e não metade dele ──────────────────────────────────────
+ *
+ * `crm_tasks_select` não decide por `assigned_to` sozinho: ela chama
+ * `fn_can_view_task(organization_id, assigned_to, created_by)`, e a função
+ * libera a linha quando `p_assigned_to = auth.uid()` OU quando
+ * `p_created_by = auth.uid()`. `crm_tasks_write` usa a MESMA função no `using`
+ * e no `with check`.
+ *
+ * Este arquivo olhava só o responsável — metade do par. Resultado medido no
+ * #4800: a tarefa que o atendente CRIOU e entregou a um colega, que a RLS deixa
+ * ver e editar, recebia `403 forbidden_scope` na rota. Duas regras discordando
+ * sobre a mesma linha é o pior tipo de defeito de permissão: uma delas está
+ * mentindo, e quem lê o 403 não sabe qual.
+ *
+ * Agora o recorte é o MESMO par: dono atribuído OU criador. O `created_by` vem
+ * da pré-leitura que a rota já fazia (nenhuma consulta nova), e o criador
+ * continua alcançando o que escreveu depois de entregar — contrato que o
+ * próprio baseline documenta: "com o criador enxergando o que criou, o agent
+ * continua podendo ENTREGAR trabalho a um colega".
  *
  * ⚠️ A RESTRIÇÃO VALE NA ROTA, não na tela. Esconder o seletor não é
  * restrição: qualquer pessoa com o token da sessão chama
  * `GET /api/v1/tasks` direto, e `app/api/v1/tasks/route.ts` é quem aplica o
- * `or(assigned_to = eu, assigned_to is null)`. A tela lê a MESMA função para
- * não oferecer um filtro que a rota recusaria (`app/app/tasks/page.tsx`).
+ * `or(assigned_to = eu, assigned_to is null, created_by = eu)`. A tela lê a
+ * MESMA função para não oferecer um filtro que a rota recusaria
+ * (`app/app/tasks/page.tsx`).
  *
  * ─── Quem NÃO é afetado ────────────────────────────────────────────────────
  *
@@ -143,6 +170,13 @@ export function atendenteRestrito(entrada: {
 /**
  * A tarefa é de OUTRA pessoa, na régua da restrição?
  *
+ * "De outra pessoa" = NÃO é a minha por nenhum dos dois lados do par que a
+ * policy usa: nem `assigned_to` (o dono atribuído), nem `created_by` (quem
+ * escreveu). É o MESMO par de `fn_can_view_task(organization_id, assigned_to,
+ * created_by)` — olhar só o responsável era metade da regra, e fazia a rota
+ * recusar (403) a tarefa que o banco deixa ver e editar: a que o atendente
+ * criou e entregou a um colega.
+ *
  * `assignedTo` nulo NÃO é "de outro": é a fila sem dono, que o atendente
  * restrito continua vendo e podendo assumir. Tratar `null` como alheio
  * esvaziaria a tela dele justamente nas tarefas que ninguém pegou.
@@ -151,8 +185,14 @@ export function tarefaForaDoEscopo(entrada: {
   restrito: boolean;
   usuarioId: string;
   assignedTo: string | null | undefined;
+  /** `crm_tasks.created_by` — o outro lado do par da policy. */
+  createdBy?: string | null;
 }): boolean {
   if (!entrada.restrito) return false;
+  // O criador alcança o que escreveu, mesmo depois de entregar a um colega —
+  // é o contrato declarado no baseline ("o agent continua podendo ENTREGAR
+  // trabalho a um colega") e o que `p_created_by = auth.uid()` libera.
+  if (entrada.createdBy && entrada.createdBy === entrada.usuarioId) return false;
   if (!entrada.assignedTo) return false;
   return entrada.assignedTo !== entrada.usuarioId;
 }
