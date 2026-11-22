@@ -14,15 +14,18 @@
  * O hook escuta `visibilitychange`: com o documento oculto o intervalo é
  * `false` (DESARMADO, não só "sem buscar"), e `refetchIntervalInBackground` é
  * declarado `false` para a garantia não depender de default de biblioteca. Ao
- * voltar, o React Query refaz pelo foco — o número volta atualizado sem polling
- * cego no meio.
+ * voltar, o intervalo é rearmado: o cliente da produção (`makeQueryClient`) tem
+ * `refetchOnWindowFocus: false`, então nada sai na hora, e a próxima contagem
+ * chega 30 s depois da volta.
  *
- * O que este teste mede é o NÚMERO DE REQUISIÇÕES, com relógio falso: 10
- * minutos de aba oculta não podem produzir uma chamada sequer.
+ * O que este teste mede é o NÚMERO DE REQUISIÇÕES, com relógio falso e com o
+ * MESMO cliente da produção: um `QueryClient` montado à mão ligaria o refetch
+ * por foco e provaria um caminho que a tela não percorre. 10 minutos de aba
+ * oculta não podem produzir uma chamada sequer.
  */
 import type { ReactNode } from "react";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,11 +39,10 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
+import { makeQueryClient } from "@/lib/query/client";
 
 function montar() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-  });
+  const queryClient = makeQueryClient();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -95,22 +97,20 @@ describe("#4325 — contagens com a aba do navegador oculta", () => {
 
     await act(async () => {
       visibilidade("hidden");
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    // O timer do intervalo não fica armado atrás de uma promessa de "não buscar":
-    // é desarmado, então nem dispara.
-    const armadosComAbaOculta = vi.getTimerCount();
-
-    await act(async () => {
       await vi.advanceTimersByTimeAsync(10 * 60_000);
     });
+    // O timer do intervalo não fica armado atrás de uma promessa de "não buscar":
+    // é desarmado. A contagem sai DEPOIS dos 10 minutos porque o cliente da
+    // produção arma dois timers de uso único (o `staleTime` de 30 s e o `gcTime`
+    // de 5 min), que já dispararam; um `setInterval` vivo sobraria aqui.
+    const armadosComAbaOculta = vi.getTimerCount();
 
     expect(h.get).toHaveBeenCalledTimes(depoisDaCarga);
     expect(armadosComAbaOculta).toBe(0);
     unmount();
   });
 
-  it("ao voltar para a aba, o número é refeito uma vez", async () => {
+  it("ao voltar para a aba, nada sai na hora e a próxima contagem chega aos 30 s", async () => {
     const { unmount } = montar();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -127,12 +127,13 @@ describe("#4325 — contagens com a aba do navegador oculta", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // Uma chamada ao voltar (refetch por foco), e o intervalo volta a valer.
-    expect(h.get.mock.calls.length).toBe(antesDeVoltar + 1);
+    // Nenhuma chamada na hora: `refetchOnWindowFocus` é `false` no cliente da
+    // produção, e a volta só rearma o intervalo.
+    expect(h.get.mock.calls.length).toBe(antesDeVoltar);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
-    expect(h.get.mock.calls.length).toBe(antesDeVoltar + 2);
+    expect(h.get.mock.calls.length).toBe(antesDeVoltar + 1);
     unmount();
   });
 });

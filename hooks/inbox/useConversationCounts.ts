@@ -92,8 +92,9 @@ export const INTERVALO_DAS_CONTAGENS_MS = 30_000;
  * `defaultOptions` global ligasse o refetch em segundo plano.
  *
  * Aqui a ocultação DESARMA o intervalo (`false`), porque ela re-renderiza o hook
- * e o React Query recalcula os timers. Ao voltar, o intervalo volta e o próprio
- * React Query refaz por foco — o número se atualiza sem polling cego no meio.
+ * e o React Query recalcula os timers. Ao voltar, o intervalo é rearmado e a
+ * próxima contagem sai 30 s depois: `refetchOnWindowFocus` é `false` no cliente
+ * global (`lib/query/client.ts`), então a volta não refaz na hora.
  */
 function assinarVisibilidade(aoMudar: () => void): () => void {
   if (typeof document === "undefined") return () => {};
