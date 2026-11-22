@@ -26,12 +26,14 @@ export interface ConversationCounts {
   /** A aba "Arquivadas" (#923). Opcional pelo mesmo motivo: cache antigo não tem. */
   archived?: number;
   /**
-   * As abas cujo número é ESTIMATIVA do planejador (#4325). Opcional pelo mesmo
-   * motivo dos de cima: um cache gravado antes deste deploy não tem o campo, e
-   * a tela não pode tratar "cache antigo" como "tudo exato" — sem o campo ela
-   * simplesmente não marca nada até a primeira resposta nova.
+   * As abas cujo número PAROU no teto de cem linhas (#4451). Opcional pelo
+   * mesmo motivo dos de cima: um cache gravado antes deste deploy não tem o
+   * campo, e a tela não pode tratar "cache antigo" como "tudo truncado" — sem o
+   * campo ela simplesmente não marca nada até a primeira resposta nova.
+   *
+   * Ausente = nenhuma aba bateu no teto, e todo número é exato (inclusive zero).
    */
-  aproximadas?: readonly ("closed" | "archived")[];
+  truncadas?: readonly ("closed" | "archived")[];
   /**
    * A aba "Pessoal" (#4434): o pessoal DESTE usuário, em qualquer status. Opcional
    * pelo mesmo motivo dos de cima — cache gravado antes deste deploy não tem o

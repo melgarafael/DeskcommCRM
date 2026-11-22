@@ -1,16 +1,15 @@
 /**
- * #4325 — a aba diz quando o número é APROXIMADO.
+ * #4451 — a aba do histórico diz quando o número PAROU no teto.
  *
- * A rota passou a contar "Fechadas" e "Arquivadas" pelo planejador do PostgREST
- * (`count: 'planned'`): custo previsível, número estimado. A troca seria uma
- * mentira nova se a tela continuasse estampando o valor com cara de exatidão —
- * o badge de uma pasta de histórico mostraria "3487" e ninguém saberia que o
- * número pode estar longe.
+ * A rota conta no máximo cem linhas das pastas de histórico ("Fechadas" e
+ * "Arquivadas"): abaixo do teto o número é exato (inclusive zero, que some do
+ * badge), no teto ele é "pelo menos cem" — e a tela tem de dizer isso com "+",
+ * não estampar um número com cara de total.
  *
- * Aqui se mede a única coisa que a tela precisa fazer: marcar o badge que a
- * rota declarou aproximado (`aproximadas`) e NÃO marcar os outros. As abas em
- * que alguém age continuam exatas, e um cache gravado antes deste deploy (sem
- * o campo) não ganha sufixo nenhum — a tela não inventa aviso.
+ * A troca seria uma mentira nova se a tela ignorasse `truncadas`: o badge de uma
+ * pasta com 8 mil conversas mostraria "99" seco. Aqui se mede a única coisa que
+ * a tela precisa fazer — marcar SÓ as abas que a rota declarou truncadas, e não
+ * inventar marcação para quem não declarou nada (cache gravado antes do deploy).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -45,9 +44,9 @@ const CONTAGENS = {
   automatico: 1,
   mine: 2,
   all: 9,
-  closed: 71,
-  archived: 29,
-  aproximadas: ["closed", "archived"] as const,
+  closed: 99,
+  archived: 12,
+  truncadas: ["closed"] as const,
 };
 
 function montar(contagens: Record<string, unknown> | undefined) {
@@ -60,41 +59,42 @@ const aba = (nome: RegExp) => screen.getByRole("tab", { name: nome }).textConten
 
 afterEach(cleanup);
 
-describe("#4325 — badge aproximado", () => {
-  it("Fechadas e Arquivadas avisam que o número é aproximado", async () => {
+describe("#4451 — badge das pastas de histórico", () => {
+  it("a aba truncada mostra 99+ e explica o corte", async () => {
     montar(CONTAGENS);
     // `depoisDeMontar` atrasa o badge um render (hidratação); findBy espera.
-    expect(await screen.findByText("71")).toBeTruthy();
-    expect(aba(/Fechadas/)).toContain("71");
-    expect(aba(/Fechadas/)).toContain("aprox.");
-    expect(aba(/Arquivadas/)).toContain("29");
-    expect(aba(/Arquivadas/)).toContain("aprox.");
+    expect(await screen.findByText("99+")).toBeTruthy();
+    expect(aba(/Fechadas/)).toContain("99+");
+    // O `title` diz POR QUE o número para: um "+" solto não explica nada.
+    const explicacoes = screen.getAllByTitle(/histórico inteiro/);
+    expect(explicacoes).toHaveLength(1);
+    expect(explicacoes[0]?.textContent).toBe("99+");
   });
 
-  it("as abas ACIONÁVEIS não ganham o aviso: elas continuam exatas", async () => {
+  it("a aba que NÃO bateu no teto mostra o número exato, sem `+`", async () => {
+    montar(CONTAGENS);
+    expect(await screen.findByText("12")).toBeTruthy();
+    expect(aba(/Arquivadas/)).toContain("12");
+    expect(aba(/Arquivadas/)).not.toContain("+");
+    expect(aba(/Arquivadas/)).not.toContain("aprox.");
+  });
+
+  it("as abas ACIONÁVEIS não ganham `+` nem aviso: ali o número é trabalho a fazer", async () => {
     montar(CONTAGENS);
     expect(await screen.findByText("9")).toBeTruthy();
     for (const nome of [/Fila/, /Todas/, /Minhas/, /Automático/]) {
       const texto = aba(nome);
-      expect(texto, `${nome} não deveria estar marcada como aproximada`).not.toContain("aprox.");
+      expect(texto, `${nome} não deveria estar marcada como truncada`).not.toContain("+");
+      expect(texto, `${nome} não deveria ter aviso nenhum`).not.toContain("aprox.");
     }
   });
 
-  it("cache antigo, sem o campo `aproximadas`, não inventa aviso", async () => {
+  it("cache antigo, sem o campo `truncadas`, não inventa `+`", async () => {
     // A tela lê o cache antes da primeira resposta nova. Sem o campo, ela não
-    // sabe que houve estimativa — e calar é melhor que marcar por adivinhação.
+    // sabe que houve corte — e calar é melhor que marcar por adivinhação.
     montar({ fila: 4, unassigned: 4, automatico: 1, mine: 2, all: 9, closed: 71, archived: 29 });
     expect(await screen.findByText("71")).toBeTruthy();
-    expect(aba(/Fechadas/)).not.toContain("aprox.");
-  });
-
-  it("o aviso explica o motivo, não só um símbolo solto", async () => {
-    montar(CONTAGENS);
-    expect(await screen.findByText("71")).toBeTruthy();
-    // O `title` é a explicação: a aba avisa que o número vem do histórico
-    // inteiro, em vez de um "≈" sem tradução. São duas abas estimadas, e só duas.
-    const explicacoes = screen.getAllByTitle(/histórico inteiro/);
-    expect(explicacoes).toHaveLength(2);
-    for (const explicacao of explicacoes) expect(explicacao.textContent).toContain("aprox.");
+    expect(aba(/Fechadas/)).toContain("71");
+    expect(aba(/Fechadas/)).not.toContain("+");
   });
 });

@@ -2358,10 +2358,11 @@ export const DICIONARIO: Traducoes = {
   // pasta do histórico. Sem entrada própria, a aba "Arquivadas" apareceria
   // traduzida como "Cerradas" para um operador hispanofalante.
   Arquivadas: { es: "Archivadas" },
-  // #4325: o badge dessas duas abas é ESTIMATIVA do planejador. O sufixo curto
-  // avisa na própria aba; o `title` diz por quê, para quem parar o mouse.
-  "Número aproximado: esta aba conta o histórico inteiro": {
-    es: "Número aproximado: esta pestaña cuenta el historial completo",
+  // #4451: o badge dessas duas abas PARA no teto de cem linhas. O `title` diz
+  // por que o número não é o total, para quem parar o mouse; o "+" ao lado do
+  // número é a marca curta, e não precisa de tradução.
+  "Mais de 99: esta aba conta o histórico inteiro": {
+    es: "Más de 99: esta pestaña cuenta el historial completo",
   },
   IA: { es: "IA" },
   "Sem mensagens": { es: "Sin mensajes" },
