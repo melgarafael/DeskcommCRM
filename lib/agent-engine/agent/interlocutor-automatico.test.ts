@@ -19,6 +19,12 @@
  *     aviso não grava, o silêncio NÃO é aplicado.
  *  5. **o teto do item 1 segue como está** — 20 respostas saem, a 21ª é vetada
  *     com `teto_de_respostas`, antes deste gate.
+ *  6. **cliente humano em rajada com pedido (#1044) → NÃO barra.** Três mensagens
+ *     em segundos, uma delas "me envie 2 orçamentos do kit completo", e a lista
+ *     numerada de pedido: era o falso positivo medido no head anterior
+ *     (`pistas=3 familias=menu,cadencia`). A cadência passou a medir o tempo de
+ *     resposta do contato à IA, e o menu deixou de casar com verbo de pedido +
+ *     quantidade.
  *
  * Pool/cliente falsos no molde de `teto-de-respostas.test.ts`: o que se
  * exercita é o runner de verdade (`runBeforeSend`), não o gate de mentira.
@@ -259,6 +265,114 @@ describe("um menu sozinho não pode calar uma loja", () => {
     expect(ehMenuNumerado("1 - vendas")).toBe(false);
     expect(ehMenuNumerado(MENU)).toBe(true);
     expect(ehMenuNumerado("Digite 1 para falar com o atendimento")).toBe(true);
+  });
+});
+
+describe("cliente humano em rajada (#1044)", () => {
+  // O mantenedor mediu no head anterior: "oi" / "bom dia, tudo bem?" / "me envie
+  // 2 orçamentos do kit completo por favor", em 0, 8 e 20 s, dava
+  // `pistas=3 familias=menu,cadencia` → veto e conversa silenciada no PRIMEIRO
+  // turno. Duas causas, as duas fechadas aqui: a cadência media o intervalo entre
+  // duas mensagens RECEBIDAS (rajada é gente digitando) e a instrução do menu
+  // casava com "envie 2 orçamentos" (verbo de pedido + número).
+
+  it("cliente humano em rajada com pedido", async () => {
+    const b = bancada({
+      amostra: [
+        recebida("oi", new Date(COMECO.getTime() - 20_000)),
+        recebida("bom dia, tudo bem?", new Date(COMECO.getTime() - 12_000)),
+        recebida("me envie 2 orcamentos do kit completo por favor", COMECO),
+      ],
+    });
+
+    // A régua, antes do runner: nada de pista, nada de família.
+    const quadro = avaliarInterlocutor(b.amostra);
+    expect(quadro.pistas).toBe(0);
+    expect(quadro.familias).toEqual([]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    const r = await resultado;
+    // Não veta e NÃO silencia: o turno segue e a mensagem sai.
+    expect(r.status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("lista numerada de pedido", async () => {
+    const b = bancada({
+      amostra: [
+        recebida("boa tarde", new Date(COMECO.getTime() - 25_000)),
+        recebida("quero fazer um pedido", new Date(COMECO.getTime() - 19_000)),
+        recebida("1 - camiseta preta P\n2 - bermuda jeans M", COMECO),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    expect(quadro.pistas).toBe(0);
+    expect(quadro.familias).toEqual([]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+    // Duas linhas numeradas são um PEDIDO; menu de URA se numera a partir de 3.
+    expect(ehMenuNumerado("1 - camiseta preta P\n2 - bermuda jeans M")).toBe(false);
+    expect(ehMenuNumerado("1 - camiseta P\n2 - bermuda M\n3 - cinto G")).toBe(true);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    const r = await resultado;
+    expect(r.status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("o incidente continua barrado", async () => {
+    // O retrato do #4590: o menu do banco repetido e a IA já respondendo no
+    // mesmo molde. O conserto do #1044 não pode afrouxar este caso.
+    const b = bancada({
+      amostra: [
+        recebida(MENU, new Date(COMECO.getTime() - 60_000)),
+        recebida(MENU, new Date(COMECO.getTime() - 45_000)),
+        respostaDaIa("Olá! Sou o assistente virtual e posso ajudar com o seu saldo agora", new Date(COMECO.getTime() - 40_000)),
+        respostaDaIa("Olá! Sou o assistente virtual e posso ajudar com o seu pedido hoje", new Date(COMECO.getTime() - 30_000)),
+        respostaDaIa("Olá! Sou o assistente virtual e posso ajudar com a sua conta aqui", new Date(COMECO.getTime() - 20_000)),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    expect(interlocutorEhAutomatico(quadro)).toBe(true);
+    expect(quadro.familias).toEqual(["menu", "molde_da_ia"]);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    const r = await resultado;
+    expect(r.status).toBe("vetoed");
+    if (r.status !== "vetoed") throw new Error("inalcançável");
+    expect(r.gate).toBe("interlocutor_automatico");
+    expect(r.code).toBe(CODIGO_DO_INTERLOCUTOR_AUTOMATICO);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("o pingue-pongue com a IA ainda conta como cadência — sozinho, não veta", () => {
+    // A medida nova: o contato responde à IA em ≤30 s, em 3 rodadas distintas.
+    // Aqui ela DISPARA (é o sinal de robô), mas cadência sozinha nunca veta —
+    // é o "2 famílias" fazendo o trabalho dele.
+    const quadro = avaliarInterlocutor([
+      respostaDaIa("Olá! Como posso ajudar você hoje?", new Date(COMECO.getTime() - 100_000)),
+      recebida("1", new Date(COMECO.getTime() - 82_000)),
+      respostaDaIa("Certo. Qual o valor da fatura?", new Date(COMECO.getTime() - 60_000)),
+      recebida("2", new Date(COMECO.getTime() - 42_000)),
+      respostaDaIa("Entendi. Confirma o pagamento agora?", new Date(COMECO.getTime() - 20_000)),
+      recebida("3", COMECO),
+    ]);
+    expect(quadro.familias).toEqual(["cadencia"]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+  });
+
+  it("três mensagens depois de UM 'em que posso ajudar?' são rajada, não cadência", () => {
+    // O coração do conserto: uma rodada só, três mensagens. Gente digitando.
+    const quadro = avaliarInterlocutor([
+      respostaDaIa("Bom dia! Em que posso ajudar?", new Date(COMECO.getTime() - 22_000)),
+      recebida("oi", new Date(COMECO.getTime() - 20_000)),
+      recebida("tudo bem?", new Date(COMECO.getTime() - 12_000)),
+      recebida("queria um orcamento do kit completo", COMECO),
+    ]);
+    expect(quadro.familias).toEqual([]);
+    expect(quadro.pistas).toBe(0);
   });
 });
 

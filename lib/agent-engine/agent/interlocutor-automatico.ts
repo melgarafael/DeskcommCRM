@@ -40,15 +40,41 @@
  *
  * As cinco famílias, cada uma ancorada num sinal que o autor da issue mediu:
  *
- *  - `menu` — menu numerado (`1 - …` + `2 - …`) ou "digite/responda/escolha N";
+ *  - `menu` — menu numerado de três itens ou mais (`1 - …`, `2 - …`, `3 - …`) ou
+ *    instrução de ESCOLHA ("digite 1", "responda com 2") — ver `ehMenuNumerado`;
  *  - `repeticao` — a MESMA mensagem recebida TRÊS vezes (texto idêntico depois
  *    de normalizar), com mínimo de 12 caracteres para "ok" não contar;
  *  - `molde` — 3+ mensagens recebidas com o mesmo começo (4 primeiras palavras)
  *    e tamanho parecido: é o "sempre com o mesmo molde" do relato;
- *  - `cadencia` — 3+ mensagens recebidas em sequência, cada uma a ≤ 30 s da
- *    anterior: robô responde em segundos, gente demora;
+ *  - `cadencia` — o contato respondeu à IA em ≤ 30 s em 3+ rodadas distintas: é
+ *    o tempo de reação de uma máquina ao estímulo, e é o sinal que o @jhometal
+ *    apontou na #4590. **Não** é o intervalo entre duas mensagens recebidas —
+ *    ver a nota abaixo, que é o defeito do #1044;
  *  - `molde_da_ia` — 3+ respostas da IA na mesma conversa com o mesmo molde: é
  *    o pingue-pongue já instalado, o retrato do incidente.
+ *
+ * ## Cadência: a resposta à IA, nunca a rajada (#1044)
+ *
+ * A primeira versão media o intervalo entre duas mensagens RECEBIDAS seguidas.
+ * Medido pelo mantenedor, isso barrava o cliente humano: "oi" / "bom dia, tudo
+ * bem?" / "me envie 2 orçamentos do kit completo por favor", em 0, 8 e 20 s, dava
+ * `pistas=3 familias=menu,cadencia`. Digitar em rajada é justamente como gente
+ * escreve no WhatsApp — a medida estava do lado errado da conversa.
+ *
+ * A medida agora é a do #4590: quanto tempo o contato leva para responder à
+ * mensagem da IA. O robô reage ao estímulo em segundos, sempre; a pessoa reage
+ * quando lê. E o que conta é o PINGUE-PONGUE, não a rajada: são 3+ mensagens da
+ * IA respondidas em ≤ 30 s cada, em rodadas DIFERENTES. Três mensagens humanas
+ * seguidas depois de UM "em que posso ajudar?" são uma rajada, não três rodadas
+ * — e por isso não contam. Sem mensagem da IA na amostra (primeiro contato) não
+ * há cadência nenhuma a medir.
+ *
+ * O que esta medida NÃO pega, e por que isso é aceitável: um robô que responde a
+ * uma pessoa da equipe (não à IA) ou que espera mais de 30 s para responder não
+ * entra por `cadencia` — entra por `menu`, `repeticao` ou `molde`, que não
+ * dependem de relógio. Ela também não distingue, sozinha, um humano que responde
+ * no celular em segundos: por isso continua valendo o "2 famílias", e `cadencia`
+ * sozinha nunca veta.
  *
  * ## Decisão de leitura: `messages`, sob o lock do número
  *
@@ -111,11 +137,41 @@ export const MINIMO_PARA_MOLDE = 24;
 /** Grupo de molde: quantas mensagens com o mesmo começo e tamanho já são template. */
 export const MINIMO_DO_GRUPO_DE_MOLDE = 3;
 
-/** Intervalo máximo entre duas mensagens recebidas para a cadência contar. */
+/**
+ * Itens numerados mínimos para uma lista ser MENU.
+ *
+ * Três, não dois: "1 - camiseta preta P / 2 - bermuda jeans M" é um PEDIDO de
+ * cliente numa linha só, e é o falso positivo que o #1044 mediu. Menu de URA se
+ * numera a partir de 3 porque precisa cobrir as opções (consultar, pagar, falar
+ * com atendente) — e o caso do incidente tem três. Um menu de dois itens deixou
+ * de contar sozinho, mas ainda é pego por `repeticao`, `molde` ou `cadencia`.
+ */
+export const MINIMO_DE_ITENS_DO_MENU = 3;
+
+/**
+ * Verbo de ESCOLHA de menu: o número é o OBJETO do verbo ("digite 1").
+ *
+ * "envie/informe" saíram daqui por serem verbos de PEDIDO comuns ("me envie 2
+ * orçamentos"): o número deles quantifica uma coisa, não escolhe uma opção.
+ */
+const VERBO_DE_MENU = /(?:digite|tecle|selecione|escolha|responda)\b/;
+
+/** Conectores que podem vir depois do número de uma opção ("digite 1 para falar"). */
+const CONECTOR_DE_OPCAO = /^(?:para|pra|pro|e|ou|que|ao|aos|se|no|na|hoje|agora)\b/;
+
+/** Intervalo máximo entre a mensagem da IA e a resposta do contato para a cadência contar. */
 export const JANELA_DE_CADENCIA_MS = 30_000;
 
-/** Mensagens em sequência, no intervalo acima, que já são cadência de robô. */
+/**
+ * Rodadas (mensagens da IA respondidas) que já são cadência de robô.
+ *
+ * Rodadas DISTINTAS, não mensagens: uma pessoa que responde "oi" / "tudo bem?" /
+ * "queria um orçamento" depois de um único "em que posso ajudar?" mandou três
+ * mensagens, mas respondeu a UM estímulo — é rajada, e rajada é gente digitando.
+ * O robô responde três estímulos, um atrás do outro, cada um em segundos.
+ */
 export const MINIMO_DE_CADENCIA = 3;
+
 
 /** Respostas da IA com o mesmo molde que já retratam o pingue-pongue. */
 export const MINIMO_DO_MOLDE_DA_IA = 3;
@@ -161,11 +217,16 @@ export function normalizarMensagem(texto: string): string {
 /**
  * Menu numerado — os dois formatos que o relato cita.
  *
- *  - lista numerada de verdade: uma linha começando em `1` e outra em `2`
- *    (`1 - vendas`, `1) suporte`, `1. financeiro`);
- *  - instrução explícita: "digite 1", "responda com 2", "escolha 1".
+ *  - lista numerada de verdade: TRÊS itens ou mais, cada um numa linha
+ *    (`1 - vendas`, `2) suporte`, `3. financeiro`). Duas linhas não bastam: um
+ *    pedido de cliente ("1 - camiseta preta P / 2 - bermuda jeans M") tem a
+ *    mesma forma, e foi o falso positivo medido no #1044;
+ *  - instrução de ESCOLHA: "digite 1", "responda com 2", "escolha 1 para falar
+ *    com o atendimento". O número tem de ser a OPÇÃO escolhida — quando vem um
+ *    substantivo logo depois, o número é QUANTIDADE de um pedido ("me envie 2
+ *    orçamentos", "me informe o valor de 10 unidades") e não casa.
  *
- * "1 - vendas" sozinho NÃO casa: o padrão exige as duas linhas. É o corte que
+ * "1 - vendas" sozinho NÃO casa: o padrão exige a lista inteira. É o corte que
  * impede a loja legítima de ser marcada pelo primeiro menu.
  */
 export function ehMenuNumerado(texto: string): boolean {
@@ -175,12 +236,29 @@ export function ehMenuNumerado(texto: string): boolean {
     .split('\n')
     .map((l) => normalizarMensagem(l))
     .filter((l) => l.length > 0);
-  const temUm = linhas.some((l) => /^1\s*[-–).:]\s*\S/.test(l));
-  const temDois = linhas.some((l) => /^2\s*[-–).:]\s*\S/.test(l));
-  const instrucao = /\b(digite|responda|envie|escolha|tecle|selecione|informe)\b[^.!?\n]{0,20}\b\d{1,2}\b/.test(
-    t,
-  );
-  return (temUm && temDois) || instrucao;
+  const numeros = new Set<string>();
+  for (const l of linhas) {
+    const item = /^(\d{1,2})\s*[-–).:]\s*\S/.exec(l);
+    if (item?.[1] !== undefined) numeros.add(item[1]);
+  }
+  if (numeros.size >= MINIMO_DE_ITENS_DO_MENU) return true;
+  return instrucaoDeEscolha(t);
+}
+
+/** Instrução de escolha: verbo de menu + número como OPÇÃO, não como quantidade. */
+function instrucaoDeEscolha(t: string): boolean {
+  // Cada verbo de menu, e o primeiro número que vem até 20 caracteres depois.
+  const re = new RegExp(`(?:${VERBO_DE_MENU.source})[^.!?\\n]{0,20}?\\b(\\d{1,2})\\b`, 'g');
+  for (const achado of t.matchAll(re)) {
+    const fimDoNumero = (achado.index ?? 0) + achado[0].length;
+    const depois = t.slice(fimDoNumero).trimStart();
+    // O número é a opção quando encerra a instrução, ou é seguido de pontuação
+    // ou de um conector de opção ("digite 1 para falar", "responda com 2, por
+    // favor"). "me envie 2 orçamentos" cai fora aqui: depois do 2 vem um
+    // substantivo, que é a QUANTIDADE pedida.
+    if (depois === '' || /^[.!?,;:)]/.test(depois) || CONECTOR_DE_OPCAO.test(depois)) return true;
+  }
+  return false;
 }
 
 /** As `n` primeiras palavras da mensagem normalizada. */
@@ -264,23 +342,39 @@ export function avaliarInterlocutor(
     }
   });
 
-  // ── cadência: 3+ recebidas em sequência, cada uma a ≤30 s da anterior ───────
-  let sequencia = 1;
-  for (let i = 1; i < recebidas.length; i += 1) {
-    const anterior = recebidas[i - 1];
-    const atual = recebidas[i];
-    if (
-      anterior !== undefined &&
-      atual !== undefined &&
-      atual.sentAt.getTime() - anterior.sentAt.getTime() <= JANELA_DE_CADENCIA_MS
-    ) {
-      sequencia += 1;
-      if (sequencia >= MINIMO_DE_CADENCIA) {
-        familias.add('cadencia');
-        for (let k = i - sequencia + 1; k <= i; k += 1) suspeitas.add(k);
+  // ── cadência: o contato responde À IA em ≤30 s, em 3+ rodadas distintas ────
+  //
+  // Mede o TEMPO DE RESPOSTA do contato à mensagem da IA (#4590 / #1044), não o
+  // intervalo entre duas recebidas: rajada é gente digitando, e a versão
+  // anterior silenciava o cliente por isso. Cada rodada é uma mensagem da IA;
+  // três mensagens atrás do MESMO estímulo são uma rodada só.
+  const respostasRapidasPorRodada = new Map<number, number[]>();
+  let rodadaDaIa: { numero: number; em: number } | null = null;
+  let proximaRodada = 0;
+  let indiceNaAmostra = -1;
+  for (const m of mensagens) {
+    const ehRecebida = m.direction === 'inbound' && normalizarMensagem(m.body ?? '').length > 0;
+    if (ehRecebida) indiceNaAmostra += 1;
+    if (m.direction === 'outbound') {
+      // Só a IA é estímulo: é o pingue-pongue do incidente, e resposta rápida a
+      // uma pessoa da equipe não é sinal de robô.
+      if (m.sentVia === 'ai' && normalizarMensagem(m.body ?? '').length > 0) {
+        proximaRodada += 1;
+        rodadaDaIa = { numero: proximaRodada, em: m.sentAt.getTime() };
       }
-    } else {
-      sequencia = 1;
+      continue;
+    }
+    if (rodadaDaIa === null || !ehRecebida) continue;
+    const intervalo = m.sentAt.getTime() - rodadaDaIa.em;
+    if (intervalo < 0 || intervalo > JANELA_DE_CADENCIA_MS) continue;
+    const lista = respostasRapidasPorRodada.get(rodadaDaIa.numero) ?? [];
+    lista.push(indiceNaAmostra);
+    respostasRapidasPorRodada.set(rodadaDaIa.numero, lista);
+  }
+  if (respostasRapidasPorRodada.size >= MINIMO_DE_CADENCIA) {
+    familias.add('cadencia');
+    for (const indices of respostasRapidasPorRodada.values()) {
+      indices.forEach((i) => suspeitas.add(i));
     }
   }
 
@@ -411,7 +505,8 @@ export const interlocutorAutomaticoGate: Gate = {
       // continua sendo um robô, então o veredito não mudaria.
       reason:
         'do outro lado parece um ATENDIMENTO AUTOMÁTICO: as mensagens recebidas têm menu ' +
-        'numerado, repetição, o mesmo molde ou cadência de robô. Não responda e não reescreva ' +
+        'numerado, repetição, o mesmo molde ou resposta em segundos a cada mensagem da IA. ' +
+        'Não responda e não reescreva ' +
         'esta mensagem — a conversa foi marcada para uma pessoa conferir. Encerre o turno.',
       detail: {
         pistas: quadro.pistas,
