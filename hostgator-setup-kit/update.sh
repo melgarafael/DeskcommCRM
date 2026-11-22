@@ -47,6 +47,57 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# ── 0--. O MESMO cadeado do agent.sh, durante TODA a atualização (#5116) ─────
+#
+# O `agent.sh` (cron de 5 min) segura `.update.lock` e, quando o app não
+# responde em dois healthchecks seguidos logo após uma atualização, volta a
+# versão sozinho. O `update.sh` rodado no TERMINAL não segurava nada: a vigília
+# pegava o cadeado, encontrava o app fora do ar — porque ESTA atualização o
+# derrubou — e rodava `update.sh --to <anterior> --force` em PARALELO, no meio
+# do build. Medido numa VPS real: 14:07 começou a atualização, 14:15 o agente
+# decidiu voltar, 14:17 a volta terminou (código na versão anterior, baseline
+# dela reaplicado sobre o banco da nova) e 14:24 o build da primeira falhou e
+# subiu o app na versão nova com o `.env` já regravado — o estado misturado do
+# relato (código antigo, .env e contêineres novos).
+#
+# Com o cadeado aqui, o cron sai em silêncio no `flock -n` dele (agent.sh) e o
+# watchdog não conta healthcheck de uma troca que o próprio update está
+# causando. O cadeado fica na mão até o processo sair: cobre imagem, `.env`,
+# baseline e a vigília.
+#
+# O caso que NÃO pode quebrar é o da atualização pelo botão da tela: aí o
+# `update.sh` é FILHO do `agent.sh`, que já segura o cadeado e espera este
+# processo terminar. Abrir o arquivo de novo criaria outra descrição de arquivo
+# e o `flock -n` perderia para o próprio pai. Por isso o agente exporta
+# `DESKCOMM_UPDATE_LOCK_HELD` e o fd herdado é conferido aqui antes de tentar.
+UPDATE_LOCK="${PROJECT_DIR}/.update.lock"
+if [ -n "${DESKCOMM_UPDATE_LOCK_HELD:-}" ] \
+   && [ "$(readlink "/proc/$$/fd/9" 2>/dev/null)" = "$UPDATE_LOCK" ]; then
+  : # cadeado herdado de quem me chamou (o agent.sh espera este processo)
+elif ! command -v flock >/dev/null 2>&1; then
+  # Sem `flock` (instalação sem util-linux) o cadeado não existe — e o
+  # watchdog só depende dele pelo mesmo binário, que também não roda. Seguir é
+  # melhor que recusar uma atualização inteira por causa disso.
+  c_ylw "⚠ 'flock' não encontrado: sigo sem o cadeado da atualização."
+else
+  exec 9>"$UPDATE_LOCK"
+  if flock -n 9; then
+    : # cadeado é meu até o processo sair
+  else
+    c_ylw "⚠ Já existe uma atualização em andamento nesta instalação."
+    c_ylw "  Não mexi em nada: nem imagem, nem .env, nem banco. O andamento está em .update.log"
+    c_ylw "  (o cadeado mora no processo: se ele não estiver rodando, o arquivo não trava nada)."
+    # O diagnóstico de saída é honesto sobre o que aconteceu: sem isto ele
+    # escreveria "concluído" para uma execução que não fez nada.
+    UPDATE_STATUS="recusada: outra atualização em andamento"
+    exit 0
+  fi
+fi
+# Os filhos desta execução (a troca da senha do cron, que abre o MESMO arquivo)
+# já estão cobertos por este cadeado: quem abrir o arquivo de novo perderia
+# para o pai, então eles leem esta marca em vez de pegar o `flock`.
+export DESKCOMM_UPDATE_LOCK_HELD=1
+
 # ── 0-. Esta cópia do repo é a dona dos contêineres? ─────────────────────────
 # Antes do cron e antes do git: uma segunda cópia que atualiza por cima recria o
 # parque com o .env DELA. Foi o que deixou o WhatsApp de uma VPS real três dias

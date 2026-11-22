@@ -231,7 +231,14 @@ cd "$PROJ" || exit 1
 # versionado. Versionado, toda escrita do kit nele antes do checkout (o par
 # VAPID nasce antes da decisão de versão) virava "alteração local" e a
 # atualização recusava — um defeito do fixture, não do produto.
-printf '.env*\n' > .gitignore
+#
+# `.update.lock` entrou pelo mesmo motivo, com o cadeado da #5116: agora TODO
+# `update.sh` cria esse arquivo no diretório do projeto (antes só o agent.sh
+# criava). No repositório de verdade ele já está no `.gitignore` — é marca de
+# execução, não código. Aqui o `.gitignore` é mínimo de propósito, e sem esta
+# linha o `git add -A` do caso 4 versiona o cadeado: a versão alvo passa a
+# "trazer" o arquivo, e a guarda de alterações locais recusa a atualização.
+printf '.env*\n.update.lock\n' > .gitignore
 git init --quiet
 git add -A
 git commit --quiet -m "v0.9.0"

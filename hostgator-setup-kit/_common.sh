@@ -2797,6 +2797,42 @@ completar_pin_ausente() {  # completar_pin_ausente [envfile]
   printf '%s' "${corrigidos# }"
 }
 
+# ── O pull_policy que VALE é o do .env que acabou de ser gravado (#5116) ────
+#
+# O Compose dá precedência à variável do AMBIENTE sobre a do `.env`
+# (docker-compose.prod.yml, `pull_policy: ${APP_PULL_POLICY:-missing}`), e o
+# `load_env` exporta o `.env` INTEIRO para o ambiente do processo no começo de
+# todo script do kit. As duas coisas juntas produzem o defeito medido numa VPS
+# real: o `.env` tinha `APP_PULL_POLICY=never` de uma correção de emergência
+# (imagem construída na VPS, como o runbook prevê), o `gravar_imagens` regravou
+# o `.env` com `missing` — e o ambiente do processo continuou com `never`, que é
+# quem o Compose lê. O `dc pull` registrou `Image ...:1.122.0 Skipped` só no app
+# (worker e scheduler foram baixados), o `up -d` falhou com "No such image", e o
+# script concluiu que as imagens da release "não servem para esta VPS" — foi
+# construir aqui e morreu no OOM do `pnpm build`.
+#
+# Reexportar com o valor que ACABOU de ser escrito fecha o buraco na origem:
+# quem decide o pull passa a ser o `.env` DESTA versão, não o export da
+# anterior. Lido do ARQUIVO, e não da variável `$politica` de quem chamou,
+# porque o arquivo é a fonte que o Compose usaria sem ambiente — a releitura é o
+# que garante que as duas fontes concordem (inclusive no dia em que a política
+# deixar de ser uma só para as quatro imagens).
+#
+# NÃO é "sempre puxa": o `never` do operador continua valendo em toda execução
+# que não grava imagem nenhuma — as saídas de "nada a atualizar", por exemplo.
+# Esta função só roda de dentro do `gravar_imagens`, que só é chamado quando há
+# versão nova para instalar (ou quando alguém pediu --force).
+reexportar_pull_policies() {  # reexportar_pull_policies <envfile>
+  local envfile="$1" chave valor
+  [ -f "$envfile" ] || return 0
+  for chave in APP_PULL_POLICY WORKER_PULL_POLICY SCHEDULER_PULL_POLICY VOICE_AGENT_PULL_POLICY; do
+    valor="$(sed -n "s/^${chave}=//p" "$envfile" 2>/dev/null | tail -1 | tr -d "\"'")"
+    [ -n "$valor" ] || continue
+    printf -v "$chave" '%s' "$valor"
+    export "$chave"
+  done
+}
+
 # Escreve no .env as três imagens da MESMA versão + o pull_policy que combina
 # com a mutabilidade da tag.
 #
@@ -2827,6 +2863,12 @@ gravar_imagens() {
   # não no `stable` móvel do default do compose.
   set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
   set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
+  # Os `*_PULL_POLICY` também, e AQUI dentro pela mesma razão do WAHA (abaixo):
+  # o `.env` acabou de mudar, mas o ambiente do processo ainda tem o valor do
+  # `load_env` — e é o ambiente que o Compose lê. Sem esta releitura, um
+  # `APP_PULL_POLICY=never` da execução anterior faz o `dc pull` pular o app
+  # justamente na atualização que troca a imagem dele (#5116).
+  reexportar_pull_policies "$envfile"
   # O WAHA de quem já roda em ARM mora AQUI, e não numa linha do update.sh: é
   # esta função que o update.sh ANTIGO chama depois de reler o kit, então é
   # assim que a troca chega já na atualização que a traz. O export vale porque
@@ -3353,8 +3395,14 @@ trocar_segredo_do_cron_vazado() {
   # Mesmo cadeado do agent.sh: nunca trocar com uma atualização pelo botão em
   # andamento (quem a dirige ainda fala com a senha velha), nem duas vezes ao
   # mesmo tempo (update.sh no terminal e agent.sh no cron).
+  #
+  # Mas quem JÁ está dentro do cadeado (#5116: o update.sh agora o segura do
+  # começo ao fim, e o agent.sh desde a seção 2) não abre um fd novo aqui: o
+  # `flock -n` de outra descrição de arquivo no MESMO processo perde para si
+  # mesmo, e a troca da senha vazada seria pulada em toda atualização — em
+  # silêncio, que é o pior desfecho para um conserto de segurança.
   local tem_cadeado=""
-  if command -v flock >/dev/null 2>&1; then
+  if [ -z "${DESKCOMM_UPDATE_LOCK_HELD:-}" ] && command -v flock >/dev/null 2>&1; then
     exec 8>"${dir}/.update.lock"
     flock -n 8 || { exec 8>&-; return 0; }
     tem_cadeado=1

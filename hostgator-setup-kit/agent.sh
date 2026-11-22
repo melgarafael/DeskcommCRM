@@ -366,6 +366,11 @@ PIN_FALTANDO="$(pin_incompleto .env)" || PIN_FALTANDO=""
 # e o próximo ciclo (5 minutos) pega.
 exec 9>"$LOCK"
 flock -n 9 || exit 0
+# O cadeado está na mão e o filho (`update.sh`) precisa saber disso: ele confere
+# este marcador e o fd 9 herdado antes de tentar o `flock` por conta própria.
+# Abrir o arquivo de novo criaria outra descrição, e o `flock -n` do filho
+# perderia para este pai — a atualização pelo botão recusaria a si mesma (#5116).
+export DESKCOMM_UPDATE_LOCK_HELD=1
 
 # ── 3. O app caiu logo após uma atualização? (#2757) ───────────────────────
 #
