@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   // `null` (e não `{ code: "", message: "" }`) porque a rota checa `if (error)`:
@@ -458,125 +458,100 @@ it("origem com sufixo de desenvolvimento não vira uma tag publicada no pedido d
 });
 
 /**
- * A SEGUNDA PORTA DO RUN (#4334, #4504): a janela de manutenção.
+ * A SEGUNDA PORTA DO RUN (#4334): a janela de manutenção.
  *
  * O defeito medido: com `SYSTEM_UPDATE_WINDOW` configurada, o clique das 10h
  * fica `dispatched` de propósito até a janela abrir — e o SEGUNDO clique das
  * 10h15 fechava aquele run como "Run abandonado: o agente do host não reportou
  * o desfecho a tempo", cancelando o agendamento da madrugada em silêncio.
  *
- * O segundo defeito (#4504) era o fuso: o app lia a janela no fuso do PROCESSO
- * (UTC no contêiner) e o `agent.sh` no relógio de parede do host (-03). Perto
- * da meia-noite os dois discordavam por três horas, e o pedido agendado podia
- * ser cancelado justamente na fresta entre "o app já liberou o prazo" e "o host
- * ainda não abriu a janela".
- *
- * O relógio é fixado e os instantes são escritos em `-03:00` (o fuso declarado
- * da janela): um teste que dependesse do fuso da máquina passaria na VPS em
- * -03 e falharia no CI em UTC.
+ * A hora agendada vem do agente do host (`scheduled_for`, o `run_scheduled` do
+ * #4350): o app não relê a janela, então o fuso do contêiner não entra na conta.
+ * Os instantes são absolutos (`Z`) pelo mesmo motivo.
  */
-describe("janela de manutenção da atualização (#4334, #4504)", () => {
-  const JANELA = "*/5 2-5 * * *";
-  const quando = (hora: number, minuto: number, dia = 12) => {
-    const hh = String(hora).padStart(2, "0");
-    const mm = String(minuto).padStart(2, "0");
-    const dd = String(dia).padStart(2, "0");
-    return new Date(`2026-11-${dd}T${hh}:${mm}:00-03:00`);
-  };
+describe("janela de manutenção da atualização (#4334)", () => {
+  const CLIQUE = "2026-11-12T13:00:00.000Z";
+  const JANELA_ABRE = "2026-11-13T05:00:00.000Z";
+  const depois = (iso: string, minutos: number) =>
+    new Date(Date.parse(iso) + minutos * 60 * 1000);
 
   function relogioEm(data: Date) {
     vi.useFakeTimers();
     vi.setSystemTime(data);
   }
 
-  function comJanela<T>(valor: string, corpo: () => Promise<T>): Promise<T> {
-    process.env.SYSTEM_UPDATE_WINDOW = valor;
-    return corpo().finally(() => {
-      delete process.env.SYSTEM_UPDATE_WINDOW;
-      vi.useRealTimers();
-    });
-  }
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   const clique = () => new NextRequest("http://localhost/api/v1/system/update", { method: "POST" });
 
-  it("o segundo clique das 10h15 NÃO fecha o pedido que espera a janela", async () => {
-    relogioEm(quando(10, 16));
-    await comJanela(JANELA, async () => {
-      comRuns({
-        id: "run-agendado",
-        status: "dispatched",
-        dispatched_at: quando(10, 0).toISOString(),
-      });
-
-      const res = await POST(clique());
-
-      expect(res.status).toBe(409);
-      const { error } = await res.json();
-      expect(error.code).toBe("state_conflict");
-      expect(error.message).toContain("janela de manutenção");
-      expect(error.message).toContain("continua de pé");
-      // O run NÃO foi fechado: é isso que o segundo clique fazia e deixou de fazer.
-      expect(mocks.updateRow).not.toHaveBeenCalled();
-      // E nenhum pedido novo foi gravado — o agendamento em voo continua sendo ele.
-      expect(mocks.insertRow).not.toHaveBeenCalled();
+  it("o segundo clique 16 min depois NÃO fecha o pedido que o agente agendou", async () => {
+    relogioEm(depois(CLIQUE, 16));
+    comRuns({
+      id: "run-agendado",
+      status: "dispatched",
+      dispatched_at: CLIQUE,
+      scheduled_for: JANELA_ABRE,
     });
+
+    const res = await POST(clique());
+
+    expect(res.status).toBe(409);
+    const { error } = await res.json();
+    expect(error.code).toBe("state_conflict");
+    expect(error.message).toContain("janela de manutenção");
+    expect(error.message).toContain("continua de pé");
+    // O run NÃO foi fechado: é isso que o segundo clique fazia e deixou de fazer.
+    expect(mocks.updateRow).not.toHaveBeenCalled();
+    // E nenhum pedido novo foi gravado — o agendamento em voo continua sendo ele.
+    expect(mocks.insertRow).not.toHaveBeenCalled();
   });
 
-  it("a janela que já abriu conta: 15 min depois da primeira oportunidade, o run é fechado", async () => {
-    // A primeira oportunidade é 02:00 (o passo `*/5` da janela inclui o minuto
-    // 0); 02:21 está além dos 15 min dela, então o run já é desfecho
-    // desconhecido e fechá-lo é o que impede o índice único parcial de travar
-    // todo pedido novo.
-    relogioEm(quando(2, 21, 13));
-    await comJanela(JANELA, async () => {
-      comRuns({
-        id: "run-agendado",
-        status: "dispatched",
-        dispatched_at: quando(10, 0).toISOString(),
-      });
-
-      const res = await POST(clique());
-
-      expect(res.status).toBe(200);
-      expect(mocks.updateRow).toHaveBeenCalledTimes(1);
-      const fechado = mocks.updateRow.mock.calls[0]?.[0] as { status?: string; log_tail?: string };
-      expect(fechado.status).toBe("failed");
-      expect(fechado.log_tail).toContain("Run abandonado");
+  it("a janela abriu há menos de 15 min: o pedido está em andamento, não agendado", async () => {
+    relogioEm(depois(JANELA_ABRE, 10));
+    comRuns({
+      id: "run-agendado",
+      status: "dispatched",
+      dispatched_at: CLIQUE,
+      scheduled_for: JANELA_ABRE,
     });
+
+    const res = await POST(clique());
+
+    expect(res.status).toBe(409);
+    const { error } = await res.json();
+    expect(error.message).toBe("Já existe uma atualização em andamento.");
+    expect(mocks.updateRow).not.toHaveBeenCalled();
   });
 
-  it("entre o prazo liberado e a abertura da janela, o segundo clique NÃO cancela o agendamento (#4504)", async () => {
-    // Clique às 23:00 de 19/11 em São Paulo (02:00Z de 20/11). Com a janela
-    // lida em UTC, o app achava que ela já estava aberta nesse instante e
-    // liberava o fechamento às 23:20 (02:20Z + 15 min); o host só abriria às
-    // 02:00 de São Paulo, ou seja 05:00Z. Nessa fresta de 2h40 — aqui medida às
-    // 23:40 — este mesmo clique fechava o pedido e o agendamento morria.
-    relogioEm(quando(23, 40, 19));
-    await comJanela(JANELA, async () => {
-      comRuns({
-        id: "run-agendado",
-        status: "dispatched",
-        dispatched_at: quando(23, 0, 19).toISOString(),
-      });
-
-      const res = await POST(clique());
-
-      expect(res.status).toBe(409);
-      const { error } = await res.json();
-      expect(error.code).toBe("state_conflict");
-      expect(error.message).toContain("janela de manutenção");
-      // O run segue `dispatched`: nada foi fechado e nada foi pedido de novo.
-      expect(mocks.updateRow).not.toHaveBeenCalled();
-      expect(mocks.insertRow).not.toHaveBeenCalled();
+  it("15 min depois da hora agendada sem desfecho, o run é fechado", async () => {
+    // Fechá-lo é o que impede o índice único parcial (migration 0090) de
+    // travar todo pedido novo.
+    relogioEm(depois(JANELA_ABRE, 16));
+    comRuns({
+      id: "run-agendado",
+      status: "dispatched",
+      dispatched_at: CLIQUE,
+      scheduled_for: JANELA_ABRE,
     });
+
+    const res = await POST(clique());
+
+    expect(res.status).toBe(200);
+    expect(mocks.updateRow).toHaveBeenCalledTimes(1);
+    const fechado = mocks.updateRow.mock.calls[0]?.[0] as { status?: string; log_tail?: string };
+    expect(fechado.status).toBe("failed");
+    expect(fechado.log_tail).toContain("Run abandonado");
   });
 
-  it("sem janela configurada, o comportamento de antes continua byte a byte", async () => {
-    relogioEm(quando(10, 16));
+  it("sem agendamento do agente, o comportamento de antes continua: 15 min após o clique", async () => {
+    relogioEm(depois(CLIQUE, 16));
     comRuns({
       id: "run-vencido",
       status: "dispatched",
-      dispatched_at: quando(10, 0).toISOString(),
+      dispatched_at: CLIQUE,
+      scheduled_for: null,
     });
 
     const res = await POST(clique());

@@ -39,8 +39,7 @@ import {
   newerOfficialRelease,
   supportsForcedUpdate,
 } from "@/lib/system/runtime-identity";
-import { ehVersaoPublicada, isRunStale, runAbandonado } from "@/lib/system/update-run";
-import { fusoDaJanela, normalizarJanela } from "@/lib/system/janela-de-manutencao";
+import { ehVersaoPublicada, isRunStale } from "@/lib/system/update-run";
 
 export const dynamic = "force-dynamic";
 
@@ -53,11 +52,10 @@ const RUN_IN_PROGRESS_MESSAGE = "Já existe uma atualização em andamento.";
  * não reportou o desfecho a tempo (agente parado ou travado)" — e o agendamento
  * morria em silêncio, com a tela culpando o servidor por um atraso que era o
  * desenho. A frase agora diz o que está acontecendo e o que NÃO aconteceu: o
- * pedido continua de pé. Ela nomeia a janela porque é ela que explica a espera,
- * e é a mesma linha do `.env` que o operador pode ajustar.
+ * pedido continua de pé.
  */
-const mensagemAguardandoJanela = (janela: string) =>
-  `A atualização está agendada para a janela de manutenção (${janela}). O pedido continua de pé e é executado quando a janela abrir — aguardar não o cancela.`;
+const MENSAGEM_AGUARDANDO_JANELA =
+  "A atualização está agendada para a janela de manutenção. O pedido continua de pé e é executado quando a janela abrir — aguardar não o cancela.";
 
 const SEM_FALHA_PARA_DESFAZER = "Não há nenhuma atualização com falha para desfazer agora.";
 const SEM_FALHA_PARA_FORCAR = "Não há nenhuma atualização com falha para forçar agora.";
@@ -273,25 +271,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data: running } = await db
     .from("system_update_runs")
-    .select("id, status, dispatched_at")
+    .select("id, status, dispatched_at, scheduled_for")
     .eq("status", "dispatched")
     .order("dispatched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // A janela de manutenção, lida UMA vez por requisição: a mesma leitura decide
-  // se o run pode ser fechado e o que a recusa diz (#4334). Ausente, vazia ou
-  // recusada → `null` → o comportamento de sempre.
-  const janela = normalizarJanela(process.env.SYSTEM_UPDATE_WINDOW);
-  // O fuso em que a janela é lida (#4504), também uma vez só: é o fuso do HOST
-  // — o mesmo `date +%H:%M` do `agent.sh` —, nunca o do processo. As duas
-  // leituras juntas mantêm o relógio do abandono no mesmo fuso de quem executa.
-  const fuso = fusoDaJanela();
-
   if (running) {
-    if (!isRunStale(running.dispatched_at, new Date())) {
-      return fail("state_conflict", RUN_IN_PROGRESS_MESSAGE, 409);
-    }
     // ── A SEGUNDA PORTA DO RUN (#4334) ──────────────────────────────────────
     //
     // O bloco abaixo fechava TODO run com mais de 15 min como "agente parado ou
@@ -300,18 +286,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     // das 10h15 cancelava o agendamento da madrugada em silêncio, culpando um
     // agente que ainda nem tinha tido a hora.
     //
-    // `runAbandonado` é o relógio certo: ele só considera o tempo em que a
-    // janela já esteve aberta desde a despacho. Sem janela configurada ele é
-    // `isRunStale`, byte a byte — a única mudança de comportamento é para quem
-    // configurou a janela.
-    if (!runAbandonado(running.dispatched_at, new Date(), janela, fuso)) {
-      logger.info("[system/update] run aguardando a janela de manutenção", {
-        runId: running.id,
-        dispatched_at: running.dispatched_at,
-        janela,
-        fuso,
-      });
-      return fail("state_conflict", mensagemAguardandoJanela(janela ?? ""), 409);
+    // A hora em que o pedido vai rodar quem diz é o agente do host
+    // (`scheduled_for`, gravado pelo `run_scheduled` do #4350 em epoch, sem fuso
+    // a interpretar). O app NÃO relê a janela: uma segunda leitura do cron, no
+    // fuso do contêiner, discordaria do `agent.sh` de quando ela abre. É a mesma
+    // régua da tela (`/system/version`) e da cerca das extensões (migration 9457).
+    const agora = new Date();
+    if (!isRunStale(running.dispatched_at, agora, running.scheduled_for)) {
+      const agendado = running.scheduled_for ? Date.parse(running.scheduled_for) : NaN;
+      if (agendado > agora.getTime()) {
+        logger.info("[system/update] run aguardando a janela de manutenção", {
+          runId: running.id,
+          dispatched_at: running.dispatched_at,
+          scheduled_for: running.scheduled_for,
+        });
+        return fail("state_conflict", MENSAGEM_AGUARDANDO_JANELA, 409);
+      }
+      return fail("state_conflict", RUN_IN_PROGRESS_MESSAGE, 409);
     }
     // Run "dispatched" vencido: a janela já abriu (ou não há janela) e o agente
     // do host não reportou o desfecho. Sem isto, o índice único parcial

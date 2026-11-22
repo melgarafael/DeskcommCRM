@@ -1,9 +1,4 @@
 import { failureSupersededByRuntime, type RuntimeIdentity } from "@/lib/system/runtime-identity";
-import {
-  fusoDaJanela,
-  normalizarJanela,
-  primeiraOportunidade,
-} from "@/lib/system/janela-de-manutencao";
 
 /**
  * Vocabulário e transições de uma atualização disparada pela UI.
@@ -50,57 +45,6 @@ export function isRunStale(dispatchedAt: string, now: Date, scheduledFor?: strin
   const agendado = scheduledFor ? Date.parse(scheduledFor) : NaN;
   const referencia = Number.isNaN(agendado) ? started : Math.max(started, agendado);
   return now.getTime() - referencia > RUN_STALE_AFTER_MS;
-}
-
-/**
- * O run pode ser declarado ABANDONADO — ou ele ainda está esperando a janela?
- *
- * ─── As duas mortes que o relógio sozinho confunde (#4334) ─────────────────
- * **(a) O agente morreu.** O host pegou o pedido e não voltou: crash, VPS
- * reiniciada, bug. Passados 15 min, o run é desfecho desconhecido e a rota
- * precisa fechá-lo — senão o índice único parcial (migration 0090) trava
- * qualquer pedido novo para sempre.
- *
- * **(b) O agente está esperando a janela.** Com `SYSTEM_UPDATE_WINDOW`
- * configurada, o `agent.sh` só EXECUTA dentro dela (seção 4.0): o clique das
- * 10h fica de pé até as 02h. Aos 10h15 o run tinha os MESMOS 15 minutos de
- * idade do caso (a) e nenhuma chance de rodar — e o segundo clique o fechava
- * como "Run abandonado", cancelando o agendamento em silêncio ao mesmo tempo em
- * que dizia que o agente estava travado.
- *
- * ─── O que separa: a janela já abriu desde a despacho? ─────────────────────
- * É a regra da própria issue ("o prazo de 15 min só começa a contar quando a
- * janela abre"), e ela é mensurável: `primeiraOportunidade` devolve o primeiro
- * minuto em que o agente PÔDE pegar o pedido. O relógio do abandono começa ali
- * — nunca antes da despacho, nunca no clique.
- *
- * Sem janela (ausente, vazia ou recusada) isto é `isRunStale` puro: o
- * comportamento de antes, byte a byte. Janela recusada é janela ABERTA, como no
- * shell — um erro de digitação não pode transformar todo run em "agendado".
- *
- * `fuso` é o da JANELA, não o do processo (#4504): ver o cabeçalho de
- * `janela-de-manutencao.ts`. Sem ele, vale o declarado (`fusoDaJanela()`), que
- * é o mesmo relógio de parede do `date +%H:%M` do `agent.sh`.
- */
-export function runAbandonado(
-  dispatchedAt: string,
-  now: Date,
-  janelaBruta?: string | null,
-  fuso: string = fusoDaJanela(),
-): boolean {
-  const janela = normalizarJanela(janelaBruta);
-  if (!janela) return isRunStale(dispatchedAt, now);
-
-  const inicio = Date.parse(dispatchedAt);
-  if (Number.isNaN(inicio)) return true;
-
-  const primeira = primeiraOportunidade(janela, new Date(inicio), fuso);
-  // Janela que não abre em 24 h: o pedido nunca vai rodar, mas fechá-lo como
-  // "agente travado" seria mentira — quem tem de falar aqui é quem configurou.
-  // Não fechar mantém o pedido de pé, que é o desfecho conservador.
-  if (!primeira) return false;
-
-  return now.getTime() - Math.max(inicio, primeira.getTime()) > RUN_STALE_AFTER_MS;
 }
 
 /**
