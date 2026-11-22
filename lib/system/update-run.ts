@@ -1,5 +1,9 @@
 import { failureSupersededByRuntime, type RuntimeIdentity } from "@/lib/system/runtime-identity";
-import { fusoDaJanela, normalizarJanela, primeiraOportunidade } from "@/lib/system/janela-de-manutencao";
+import {
+  fusoDaJanela,
+  normalizarJanela,
+  primeiraOportunidade,
+} from "@/lib/system/janela-de-manutencao";
 
 /**
  * Vocabulário e transições de uma atualização disparada pela UI.

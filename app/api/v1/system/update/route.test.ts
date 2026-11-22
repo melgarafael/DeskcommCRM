@@ -497,8 +497,7 @@ describe("janela de manutenção da atualização (#4334, #4504)", () => {
     });
   }
 
-  const clique = () =>
-    new NextRequest("http://localhost/api/v1/system/update", { method: "POST" });
+  const clique = () => new NextRequest("http://localhost/api/v1/system/update", { method: "POST" });
 
   it("o segundo clique das 10h15 NÃO fecha o pedido que espera a janela", async () => {
     relogioEm(quando(10, 16));

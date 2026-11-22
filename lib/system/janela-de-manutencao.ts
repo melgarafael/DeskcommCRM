@@ -109,7 +109,11 @@ const RELOGIOS = new Map<string, Intl.DateTimeFormat>();
 function relogioNoFuso(fuso: string): Intl.DateTimeFormat {
   const cacheado = RELOGIOS.get(fuso);
   if (cacheado) return cacheado;
-  const opcoes: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  const opcoes: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  };
   let relogio: Intl.DateTimeFormat;
   try {
     relogio = new Intl.DateTimeFormat("en-US", { timeZone: fuso, ...opcoes });

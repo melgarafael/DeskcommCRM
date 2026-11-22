@@ -110,20 +110,20 @@ describe("primeiraOportunidade", () => {
   });
 
   it("despacho dentro da janela: a próxima oportunidade é o ciclo seguinte", () => {
-    expect(
-      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString(),
-    ).toBe(emSaoPaulo("2026-11-12T02:05:00").toISOString());
+    expect(primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString()).toBe(
+      emSaoPaulo("2026-11-12T02:05:00").toISOString(),
+    );
   });
 
   it("o minuto da própria despacho não conta — o agente pega no ciclo seguinte", () => {
     // 01:59:59 → o primeiro minuto inteiro DEPOIS é 02:00, que já está na janela.
-    expect(
-      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T01:59:59"))?.toISOString(),
-    ).toBe(emSaoPaulo("2026-11-12T02:00:00").toISOString());
+    expect(primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T01:59:59"))?.toISOString()).toBe(
+      emSaoPaulo("2026-11-12T02:00:00").toISOString(),
+    );
     // 02:00:00 exato: 02:00 já passou, e 02:01 não casa o passo — 02:05.
-    expect(
-      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString(),
-    ).toBe(emSaoPaulo("2026-11-12T02:05:00").toISOString());
+    expect(primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString()).toBe(
+      emSaoPaulo("2026-11-12T02:05:00").toISOString(),
+    );
   });
 });
 
@@ -152,10 +152,14 @@ describe("fuso da janela (#4504)", () => {
       `const quando = primeiraOportunidade(${JSON.stringify(janela)}, new Date(${JSON.stringify(clique)}));`,
       `process.stdout.write(quando ? quando.toISOString() : "null");`,
     ].join("\n");
-    return execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", programa], {
-      env: { ...process.env, TZ: tz },
-      encoding: "utf8",
-    }).trim();
+    return execFileSync(
+      process.execPath,
+      ["--no-warnings", "--input-type=module", "-e", programa],
+      {
+        env: { ...process.env, TZ: tz },
+        encoding: "utf8",
+      },
+    ).trim();
   }
 
   it("o mesmo cron e o mesmo clique dão o MESMO instante com TZ=UTC e TZ=America/Sao_Paulo", () => {
@@ -191,7 +195,11 @@ describe("fuso da janela (#4504)", () => {
     // 23:15 de 19/11 em Lisboa (23:15Z, Lisboa é UTC+0 no inverno): a janela
     // das 2h às 5h59 abre 02:00Z do dia 20 — e não 02:00 de São Paulo (05:00Z).
     expect(
-      primeiraOportunidade(JANELA, new Date("2026-11-19T23:15:00.000Z"), "Europe/Lisbon")?.toISOString(),
+      primeiraOportunidade(
+        JANELA,
+        new Date("2026-11-19T23:15:00.000Z"),
+        "Europe/Lisbon",
+      )?.toISOString(),
     ).toBe("2026-11-20T02:00:00.000Z");
 
     // Lixo não vira fuso do processo: vira o padrão declarado.
