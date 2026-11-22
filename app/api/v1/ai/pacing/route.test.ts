@@ -56,7 +56,7 @@ function projetar(linha: Linha | null, colunas: string | null): Linha | null {
   const pedidas = colunas
     .split(",")
     .map((c) => c.trim().split(/\s+/)[0])
-    .filter(Boolean);
+    .filter((c): c is string => Boolean(c));
   const saida: Linha = {};
   for (const c of pedidas) if (c in linha) saida[c] = linha[c];
   return saida;
