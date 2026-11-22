@@ -449,6 +449,9 @@ export function applyPreviewPolicy(
           ...definition,
           execute: async (args: unknown) => {
             if (name === 'send_message') {
+              // #4663 — a cadeia de gates e a mensagem devolvida ao modelo mudam
+              // juntas com o modo; uma variável só mantém as duas decisões casadas.
+              const modoSandbox = p.kind === 'sandbox';
               const body =
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
@@ -615,7 +618,7 @@ export function applyPreviewPolicy(
                   semanticPromise,
                   factualClaim,
                 },
-                p.kind === 'sandbox' ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
+                modoSandbox ? gatesDoSandbox(avisos) : BEFORE_SEND_GATES,
               );
               if (result.veto) {
                 p.result.impediments.push({ code: result.veto.code, message: result.veto.message });
@@ -641,8 +644,19 @@ export function applyPreviewPolicy(
               });
               return {
                 ok: true,
-                status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
-                message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
+                status: modoSandbox ? 'simulated' : 'awaiting_approval',
+                // #4663 — o modelo lê esta mensagem como CONTRATO. "Encerre o turno"
+                // aqui fazia ele parar logo depois do rascunho, e a chamada de
+                // passagem que viria em seguida nunca acontecia: o rascunho aprovado
+                // saía prometendo "vou te passar para a equipe" sem a passagem. No
+                // Testar a frase continua a de hoje (nada sai e nada é aprovado); no
+                // rascunho assistido ela guarda o texto e manda chamar a ferramenta
+                // AGORA, antes de encerrar — que é a ordem do turno real.
+                message: modoSandbox
+                  ? 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.'
+                  : 'Rascunho guardado para aprovação; nenhuma mensagem foi enviada. Se a resposta ' +
+                    'promete passar o atendimento para uma pessoa ou abrir um caso, chame a ferramenta ' +
+                    'de passagem AGORA, antes de encerrar o turno.',
                 // Foto por URL: nada foi buscado nem enviado; `foto_prevista` diz o que o envio real faria.
                 ...(imagemPrevista !== undefined ? { foto_enviada: false, foto_prevista: imagemPrevista } : {}),
               };
