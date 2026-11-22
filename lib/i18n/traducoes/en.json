@@ -4044,6 +4044,8 @@
   "Esta tela ficar parada nesse tempo é normal": "It's normal for this screen to stay still during that time",
   " — ela se mexe sozinha assim que o servidor começar.": " — it moves on its own as soon as the server starts.",
   "Esperando há": "Waiting for",
+  "Atualização agendada para": "Update scheduled for",
+  "Este servidor só atualiza na janela de manutenção configurada, e o pedido roda sozinho quando ela abrir.": "This server only updates during its configured maintenance window, and the request runs on its own when the window opens.",
   "Pode fechar esta página: o pedido já está registrado e não se perde.": "You can close this page: the request is already recorded and won't be lost.",
   "terminou": "finished",
   "O servidor ainda não me confirmou em que versão ele voltou ao ar — a última versão que ele confirmou é a": "The server hasn't confirmed to me yet which version it came back online on — the last version it confirmed is",

@@ -905,6 +905,22 @@ describe("GET /api/v1/system/version", () => {
     const body = await (await GET(get())).json();
     expect(body.data.run.status).toBe("unknown");
   });
+
+  it("run agendado pela janela de manutenção não vira unknown e devolve a hora (#4334)", async () => {
+    const agendado = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+    runRow = {
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "dispatched",
+      last_step: null,
+      dispatched_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      scheduled_for: agendado,
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+    expect(body.data.run.status).toBe("dispatched");
+    expect(body.data.run.scheduled_for).toBe(agendado);
+  });
 });
 
 describe("POST /api/v1/system/update", () => {

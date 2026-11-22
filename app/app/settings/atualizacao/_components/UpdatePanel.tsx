@@ -116,8 +116,12 @@ export function UpdatePanel() {
   // Só faz poll rápido (5s) enquanto houver atualização em andamento (run despachado);
   // parado, usa o intervalo relaxado de 5 min do hook (#2235).
   const { data, isError } = useSystemVersion({
+    // Agendado pela janela (#4334): a espera é de horas, e o poll de 5 s não
+    // traria nada novo até ela abrir.
     refetchInterval: (query) =>
-      query.state.data?.run?.status === "dispatched" ? 5_000 : 5 * 60_000,
+      query.state.data?.run?.status === "dispatched" && !agendadoNoFuturo(query.state.data?.run)
+        ? 5_000
+        : 5 * 60_000,
   });
   const queryClient = useQueryClient();
   const [erro, setErro] = useState<string | null>(null);
@@ -260,10 +264,21 @@ export function UpdatePanel() {
      */
     const destinoDoPedido = semV(data.run?.to_version) || nova;
 
+    if (!data.run?.last_step && agendadoNoFuturo(data.run)) {
+      return (
+        <AgendadaParaAJanela
+          scheduledFor={data.run?.scheduled_for}
+          destino={destinoDoPedido}
+          semSmtp={semSmtp}
+        />
+      );
+    }
+
     if (!data.run?.last_step) {
       return (
         <AguardandoOServidor
-          dispatchedAt={data.run?.dispatched_at}
+          // A janela abriu: a espera conta da hora agendada, não do clique.
+          dispatchedAt={data.run?.scheduled_for ?? data.run?.dispatched_at}
           // O destino é o do RUN (#2757) — a mesma razão do título logo abaixo.
           destino={destinoDoPedido}
           semSmtp={semSmtp}
@@ -943,6 +958,44 @@ function AguardandoOServidor({
           {t("Esperando há")} {formataEspera(segundos)}.
         </p>
       )}
+      <p className="mt-3 text-sm text-muted-foreground">
+        {t("Pode fechar esta página: o pedido já está registrado e não se perde.")}
+      </p>
+    </Layout>
+  );
+}
+
+/**
+ * O pedido espera a janela de manutenção do servidor (#4334).
+ *
+ * Sem este estado a tela contava a espera como se o servidor estivesse prestes
+ * a pegar o pedido e, 15 minutos depois, dizia "perdi contato" e oferecia o
+ * botão de novo — e o pedido nem tinha começado. Aqui não há botão: o pedido já
+ * está registrado, e clicar de novo não o adianta.
+ */
+function agendadoNoFuturo(run: { scheduled_for?: string | null } | null | undefined): boolean {
+  const quando = run?.scheduled_for ? Date.parse(run.scheduled_for) : NaN;
+  return !Number.isNaN(quando) && quando > Date.now();
+}
+
+function AgendadaParaAJanela({
+  scheduledFor,
+  destino,
+  semSmtp,
+}: {
+  scheduledFor: string | null | undefined;
+  destino: string;
+  semSmtp?: boolean;
+}) {
+  const t = useT();
+  return (
+    <Layout semSmtp={semSmtp} titulo={`${t("Atualização agendada para")} ${horaCurta(scheduledFor)}`}>
+      <p className="text-sm" data-testid="atualizacao-agendada">
+        {t("Anotei o pedido de atualizar para a versão")} <strong>{destino}</strong>.{" "}
+        {t(
+          "Este servidor só atualiza na janela de manutenção configurada, e o pedido roda sozinho quando ela abrir.",
+        )}
+      </p>
       <p className="mt-3 text-sm text-muted-foreground">
         {t("Pode fechar esta página: o pedido já está registrado e não se perde.")}
       </p>

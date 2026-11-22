@@ -9136,6 +9136,11 @@ export const DICIONARIO: Traducoes = {
     es: " — avanza sola en cuanto el servidor empiece.",
   },
   "Esperando há": { es: "Esperando desde hace" },
+  // O pedido que espera a janela de manutenção do servidor (#4334).
+  "Atualização agendada para": { es: "Actualización programada para las" },
+  "Este servidor só atualiza na janela de manutenção configurada, e o pedido roda sozinho quando ela abrir.": {
+    es: "Este servidor solo se actualiza en la ventana de mantenimiento configurada, y la solicitud se ejecuta sola cuando se abra.",
+  },
   "Pode fechar esta página: o pedido já está registrado e não se perde.": {
     es: "Puedes cerrar esta página: la solicitud ya está registrada y no se pierde.",
   },

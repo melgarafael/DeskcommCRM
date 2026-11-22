@@ -89798,4 +89798,21 @@ comment on column public.crm_metas.alvo is
 comment on table public.crm_metas is
   'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
+-- ---- atualização agendada pela janela de manutenção (migration 9457) ----
+alter table public.system_update_runs
+  add column if not exists scheduled_for timestamptz;
+
+comment on column public.system_update_runs.scheduled_for is
+  'Quando o agent.sh vai executar este pedido, se ele espera a janela de manutenção (SYSTEM_UPDATE_WINDOW, #4334). Gravada pelo agente (run_scheduled) a cada ciclo de espera; nula = sem janela. A cerca das extensões e o "desfecho desconhecido" da tela contam os 15 min a partir do mais tarde entre dispatched_at e esta coluna.';
+
+-- `greatest` ignora o nulo: sem agendamento, é a régua de sempre (dispatched_at).
+create or replace function public.fn_extensions_core_update_in_progress()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from public.system_update_runs
+    where status='dispatched'
+      and greatest(dispatched_at, scheduled_for) > now() - interval '15 minutes');
+$$;
+
+revoke execute on function public.fn_extensions_core_update_in_progress() from public, anon, authenticated, service_role;
+
 notify pgrst, 'reload schema';

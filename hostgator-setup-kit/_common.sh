@@ -3421,7 +3421,17 @@ trocar_segredo_do_cron_vazado() {
 # `.update-agent.log`) e janela ABERTA, que é o de hoje: um erro de digitação
 # não pode deixar a instalação sem atualização para sempre, e o aviso diz
 # exatamente o que corrigir.
+#
+# O relógio da janela é o de parede do fuso `SYSTEM_UPDATE_WINDOW_TZ` (IANA),
+# `America/Sao_Paulo` quando ausente — nunca o fuso do sistema, que numa VPS
+# nova costuma ser UTC e deslocaria a janela em 3 horas sem ninguém ver. Quem
+# confere: `TZ=America/Sao_Paulo date`. Fuso desconhecido pelo `date` vira UTC
+# (é o `date`, não esta função, quem decide), então escreva o nome IANA exato.
 SYSTEM_UPDATE_WINDOW_PADRAO=''
+SYSTEM_UPDATE_WINDOW_TZ_PADRAO='America/Sao_Paulo'
+
+# O `date` no fuso da janela, numa chamada só (o formato vem de quem chama).
+_date_da_janela() { TZ="${SYSTEM_UPDATE_WINDOW_TZ:-$SYSTEM_UPDATE_WINDOW_TZ_PADRAO}" date "$@"; }
 
 # _item_cron <item> <min> <max> — analisa UM item de campo cron (`*`, `7`,
 # `2-5`, e o `/passo` opcional em qualquer um dos três) e deixa o resultado em
@@ -3524,6 +3534,14 @@ janela_normalizada() {  # janela_normalizada <valor>
   # Minuto (0-59) e hora (0-23): as duas que a janela usa, validadas por
   # inteiro — é o que impede `25:00` ou `*/0` de virarem janela que nunca abre.
   _campo_cron_valido "${campos[0]}" 0 59 || return 1
+  # O agente roda nos minutos múltiplos de 5 (`*/5`). Um campo de minuto que
+  # não cobre nenhum deles (`1`, `3-4`) é válido para o cron e é uma janela que
+  # NUNCA abre aqui: o pedido esperaria para sempre, em silêncio. Recusar.
+  local m multiplo_de_5=""
+  for ((m = 0; m < 60; m += 5)); do
+    _campo_cron_casa "${campos[0]}" "$m" 0 59 && { multiplo_de_5=1; break; }
+  done
+  [ -n "$multiplo_de_5" ] || return 1
   _campo_cron_valido "${campos[1]}" 0 23 || return 1
   # Dia, mês e dia-da-semana: só `*`. Está explicado no comentário do bloco.
   for campo in "${campos[@]:2}"; do
@@ -3557,10 +3575,43 @@ janela_aberta() {  # janela_aberta [valor]
   [ -n "$bruto" ] || return 0
   janela_normalizada "$bruto" >/dev/null 2>&1 || return 2
   normalizada="$(janela_normalizada "$bruto")" || return 2
-  agora="$(date +%H:%M)"
+  agora="$(_date_da_janela +%H:%M)"
   hora="${agora%%:*}"; minuto="${agora##*:}"
   if janela_contem "$normalizada" "$minuto" "$hora"; then return 0; fi
   return 1
+}
+
+# Puro: quantos minutos faltam, a partir de <hora>:<minuto>, para a próxima
+# rodada do agente (minuto múltiplo de 5) DENTRO da janela já normalizada.
+# Imprime 1..1440; devolve 1 se não houver nenhuma num dia (não acontece com
+# janela que passou pela `janela_normalizada`).
+# ponytail: minutos de parede, sem horário de verão (o Brasil não tem desde
+# 2019); num fuso com DST a hora prevista erra 1h na noite da troca.
+janela_minutos_ate_abrir() {  # janela_minutos_ate_abrir <expressao> <minuto> <hora>
+  local expressao="${1-}" agora k c
+  case "${2-}${3-}" in '' | *[!0123456789]*) return 1 ;; esac
+  agora=$((10#$3 * 60 + 10#$2))
+  for ((k = 5 - agora % 5; k <= 1440; k += 5)); do
+    c=$(((agora + k) % 1440))
+    if janela_contem "$expressao" "$((c % 60))" "$((c / 60))"; then
+      printf '%s\n' "$k"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Quando o pedido que espera vai rodar: o epoch (segundos, UTC) da próxima
+# rodada do agente dentro da janela. É o que o `agent.sh` conta ao painel
+# (`run_scheduled`), para a tela dizer "agendada para 02h00" e a cerca das
+# extensões saber que o pedido segue de pé (#4334). Devolve 1 sem imprimir
+# quando o valor não serve.
+janela_proxima_abertura() {  # janela_proxima_abertura <valor>
+  local normalizada hora minuto segundo epoch k
+  normalizada="$(janela_normalizada "${1-}")" || return 1
+  read -r hora minuto segundo epoch <<<"$(_date_da_janela '+%H %M %S %s')" || return 1
+  k="$(janela_minutos_ate_abrir "$normalizada" "$minuto" "$hora")" || return 1
+  printf '%s\n' "$((epoch - 10#$segundo + k * 60))"
 }
 
 # Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele

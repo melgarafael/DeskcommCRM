@@ -50,6 +50,10 @@
 #   (h) FORA da janela, mas a vigília da volta dispara: a volta acontece — a
 #       janela não segura a vigília, que é o motivo da reprovação do desenho
 #       anterior
+#   (i) a janela é lida no fuso `SYSTEM_UPDATE_WINDOW_TZ` (padrão
+#       America/Sao_Paulo), nunca no fuso do sistema
+#   (j) a próxima abertura: quantos minutos até a rodada do agente (múltiplo
+#       de 5) dentro da janela — é o "agendada para" que o painel mostra
 set -uo pipefail
 # O idioma canônico do próprio git: `git rev-parse --local-env-vars` lista as
 # variáveis que fazem o git resolver OUTRO repositório, e o `unset` as tira
@@ -135,7 +139,10 @@ for valor in \
   '70-80 2 * * *' \
   '5-3 2 * * *' \
   '*/5 2-5 * *' \
-  '*/5 08 * * *e'; do
+  '*/5 08 * * *e' \
+  '1 2 * * *' \
+  '3-4 * * * *' \
+  '1,2,3 2-5 * * *'; do
   rotulo="$(printf '%s' "$valor" | tr '\n' '|')"
   if recusada "$valor"; then
     printf '  ✓ (c) recusa %-45s sem imprimir nada\n' "'$rotulo'"
@@ -144,6 +151,43 @@ for valor in \
     FAILS=$((FAILS + 1))
   fi
 done
+
+# ── minuto que nunca cai numa rodada do agente (*/5) ────────────────────────
+# Os três últimos da lista acima são cron válido e janela que nunca abriria
+# aqui. Estes, ao lado, têm algum múltiplo de 5 e entram.
+check "(c) '1,5 2 * * *' entra (o 5 cai numa rodada)" \
+  igual "$(consulta janela_normalizada '1,5 2 * * *')" '1,5 2 * * *'
+check "(c) '*/7 2 * * *' entra (0 e 35 caem numa rodada)" \
+  igual "$(consulta janela_normalizada '*/7 2 * * *')" '*/7 2 * * *'
+
+# ── (j) a próxima abertura, em minutos (puro: hora e minuto dados) ─────────
+check "(j) às 09h01 com '*/5 2-5 * * *' faltam 1019 min (02h00 do dia seguinte)" \
+  igual "$(consulta janela_minutos_ate_abrir '*/5 2-5 * * *' 1 9)" 1019
+check "(j) às 02h03 faltam 2 min (02h05)" \
+  igual "$(consulta janela_minutos_ate_abrir '*/5 2-5 * * *' 3 2)" 2
+check "(j) às 05h58 a próxima é 02h00 de amanhã (1202 min)" \
+  igual "$(consulta janela_minutos_ate_abrir '*/5 2-5 * * *' 58 5)" 1202
+check "(j) com '1,5 2 * * *' às 01h59 a rodada é 02h05 (o 1 nunca cai)" \
+  igual "$(consulta janela_minutos_ate_abrir '1,5 2 * * *' 59 1)" 6
+
+# ── (i) o fuso da janela ────────────────────────────────────────────────────
+# Uma hora que é ESTA em UTC e não é em Tóquio (UTC+9, sem horário de verão):
+# a mesma janela abre num fuso e fica fechada no outro.
+H_UTC="$(TZ=UTC date +%H)"
+JANELA_UTC="* $((10#$H_UTC)),$(( (10#$H_UTC + 1) % 24 )) * * *"
+rc_janela() {
+  local rc=0
+  env SYSTEM_UPDATE_WINDOW_TZ="$1" bash "$WORK/consulta.sh" janela_aberta "$2" 2>/dev/null || rc=$?
+  printf '%s' "$rc"
+}
+check "(i) com SYSTEM_UPDATE_WINDOW_TZ=UTC a janela '$JANELA_UTC' está aberta" \
+  igual "$(rc_janela UTC "$JANELA_UTC")" 0
+check "(i) a MESMA janela no fuso Asia/Tokyo está fechada" \
+  igual "$(rc_janela Asia/Tokyo "$JANELA_UTC")" 1
+H_SP="$(TZ=America/Sao_Paulo date +%H)"
+JANELA_SP="* $((10#$H_SP)),$(( (10#$H_SP + 1) % 24 )) * * *"
+check "(i) sem a variável, vale America/Sao_Paulo" \
+  igual "$(rc_janela '' "$JANELA_SP")" 0
 
 # ════════════════════════════════════════════════════════════════════════════
 # PARTE 2 — a LINHA do cron: `*/5 * * * *`, com ou sem janela
@@ -386,7 +430,8 @@ vigia_rodou() { [ ! -e "$AG/.update-vigia-falhas" ] && [ -e "$AG/.update-vigia" 
 # Horas da janela, calculadas na hora do teste: `dentro` cobre esta hora e a
 # seguinte (para não quebrar se a rodada cruzar a virada da hora); `fora` é uma
 # hora três passos à frente, que uma rodada de teste não alcança.
-H_AGORA="$(date +%H)"
+# No fuso que o agente usa sem `SYSTEM_UPDATE_WINDOW_TZ` no `.env` (i).
+H_AGORA="$(TZ=America/Sao_Paulo date +%H)"
 H_DENTRO=$(( (10#$H_AGORA + 1) % 24 ))
 H_FORA=$(( (10#$H_AGORA + 3) % 24 ))
 JANELA_DENTRO="* $((10#$H_AGORA)),${H_DENTRO} * * *"
@@ -402,11 +447,18 @@ rodar_agente
 
 check "(f) anuncia: o heartbeat foi ao painel" anunciou
 check "(f) anuncia o pedido esperando a janela no log do host" \
-  log_contem "janela de manutenção (${JANELA_FORA}) está fechada"
+  log_contem "janela de manutenção (${JANELA_FORA}, fuso America/Sao_Paulo) está fechada"
 check "(f) vigia: a seção 3 rodou (a contagem foi zerada, a marca segue)" vigia_rodou
 check "(f) NÃO executa: o update.sh não foi chamado" [ "$(chamadas)" = 0 ]
 check "(f) e nenhum run_result de execução foi mandado ao painel" \
   bash -c '! grep -qF "\"kind\":\"run_result\"" "$POSTS_LOG"'
+# O recado do agendamento: o run do pedido e um horário no futuro, a menos de
+# um dia — é o que a tela mostra como "agendada para".
+AGENDADO="$(grep -oE '"scheduled_for_epoch":[0-9]+' "$POSTS_LOG" | head -1 | cut -d: -f2)"
+check "(f) conta ao painel que o pedido está agendado (run_scheduled do run)" \
+  grep -qF '"kind":"run_scheduled","run_id":"00000000-0000-4000-8000-000000000753"' "$POSTS_LOG"
+check "(f) para daqui a menos de um dia (e não para agora)" \
+  bash -c '[ -n "$1" ] && [ "$1" -gt "$(date +%s)" ] && [ "$1" -le $(( $(date +%s) + 86400 )) ]' _ "$AGENDADO"
 
 # ── (g) DENTRO da janela: executa ─────────────────────────────────────────
 preparar_agente "$JANELA_DENTRO"
@@ -414,6 +466,8 @@ rodar_agente
 check "(g) executa: o update.sh foi chamado UMA vez" [ "$(chamadas)" = 1 ]
 check "(g) com o alvo do pedido (--to v0.9.0)" chamou_ate v0.9.0
 check "(g) e o heartbeat foi junto (o caminho é o mesmo de sempre)" anunciou
+check "(g) e não conta agendamento (a janela está aberta)" \
+  bash -c '! grep -qF "\"kind\":\"run_scheduled\"" "$POSTS_LOG"'
 check "(g) sem aviso de janela recusada no log" \
   bash -c '! grep -qF "SYSTEM_UPDATE_WINDOW recusado" "$AG/.update-agent.log"'
 
