@@ -41,6 +41,10 @@ describe("FunilDeEntradaDoNumero — interruptor de negócio desligado (#5142)",
     renderizar({ channelId: "canal-1", criaNegocio: false });
 
     const botao = await screen.findByRole("button", { name: "Funil de entrada" });
+    // Espera a leitura do seletor terminar: a frase tem de sumir por causa do
+    // interruptor, não porque o cartão ainda está carregando.
+    await waitFor(() => expect(screen.queryByText("Carregando…")).not.toBeInTheDocument());
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/channel-sessions/canal-1/entrada");
     // A escolha CONTINUA na tela (é ali que o admin a edita quando religar),
     // mas não se apresenta como editável com efeito.
     expect(botao).toBeDisabled();
@@ -48,12 +52,6 @@ describe("FunilDeEntradaDoNumero — interruptor de negócio desligado (#5142)",
       "Sem efeito enquanto a opção acima estiver desligada",
     );
     expect(screen.queryByText(/Contatos novos entram/)).not.toBeInTheDocument();
-    // O dado do seletor foi lido: a frase some por causa do interruptor, não
-    // por o cartão ainda estar carregando.
-    await waitFor(() =>
-      expect(apiClient.get).toHaveBeenCalledWith("/api/v1/channel-sessions/canal-1/entrada"),
-    );
-    expect(screen.queryByText("Carregando…")).not.toBeInTheDocument();
   });
 
   it("criaNegocio=true: comportamento de hoje, com a frase e o botão habilitado", async () => {
