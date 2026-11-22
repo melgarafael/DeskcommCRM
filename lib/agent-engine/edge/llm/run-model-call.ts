@@ -67,7 +67,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
+import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoPorPassosComFaixaLonga, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { decidirCustoDaChamada, haUsoMedido } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
@@ -1796,9 +1796,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // preço da linha sai do catálogo da INSTALAÇÃO (`ai_models`/`ai_pricing`, as
   // mesmas tabelas que `lib/ai/cost.ts` e `lib/ai/runtime/cost.ts` já consultam).
   // Sem preço em nenhum dos dois o custo continua `null` — mas com aviso no log,
-  // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
-  // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
-  // primeiro, e só o `null` dele chega aqui.
+  // nunca calado, e nunca um 0 inventado. Modelos com faixa longa usam a
+  // mesma tabela por passo, pois a soma do turno não determina o preço.
   //
   // Na OpenRouter oficial, o número que vale é o que ELA cobrou (`usage.cost` de
   // cada passo, com a regra de BYOK em `custoInformadoPeloOpenRouter`): ela só
@@ -1807,8 +1806,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // número (campo ausente), vale a tabela, como antes. `config` já é a reserva
   // quando a assinatura cai nela. Gateway do operador NUNCA informa o próprio
   // custo: o critério é o endereço da chamada que de fato rodou.
-  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): as quatro
-  // entradas abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
+  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): os
+  // valores abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
   // marca é decidido num lugar só. Antes, três `??` encadeados aqui decidiam
   // em silêncio, e o mesmo modelo saía com custo numas linhas e nulo noutras
   // sem ninguém conseguir apontar a regra.
@@ -1820,13 +1819,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     config.provider === 'openrouter' && ehOpenRouterOficial(baseUrlDaChamadaEfetiva)
       ? custoInformadoPeloOpenRouter(result)
       : undefined;
-  const porPassosDoTerra = informado === undefined ? custoTerraPorPassos(model, result) : undefined;
   const daTabelaDoMotor =
-    informado === undefined && porPassosDoTerra === undefined
-      ? costCents(model, usage, cfg.cacheTtl ?? '1h')
+    informado === undefined
+      ? (custoPorPassosComFaixaLonga(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h'))
       : null;
   const doCatalogoDaInstalacao =
-    daTabelaDoMotor === null && informado === undefined && porPassosDoTerra === undefined
+    daTabelaDoMotor === null && informado === undefined
       ? await custoDoModeloForaDoMotor(db, {
           model,
           provider: config.provider,
@@ -1840,7 +1838,6 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // (preço × 0 token) — vira nulo com motivo `sem_uso`.
     temUso: haUsoMedido(usage),
     informadoPeloProvedor: informado,
-    porPassosDoTerra,
     daTabelaDoMotor,
     doCatalogoDaInstalacao,
   });

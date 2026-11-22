@@ -8,6 +8,8 @@ import {
   hostDeSite,
   MINIMO_CHARS_PAGINA_REAL,
   montarChecklist,
+  pontuarCompletudeDoSite,
+  vereditoPuro,
 } from "@/lib/prospecting/site-classify";
 
 describe("site-classify", () => {
@@ -52,11 +54,25 @@ describe("site-classify", () => {
       <link rel="icon" href="/f.ico"></head><body>
       <a href="https://wa.me/551199">zap</a><a href="tel:+551199">tel</a>
       <a href="mailto:a@b.com">mail</a><a href="https://instagram.com/x">ig</a>
-      <address>Rua X</address><img><img><img></body></html>`;
+      <address>Rua X</address><a href="https://maps.google.com/?q=x">Mapa</a><img><img><img></body></html>`;
     const checklist = montarChecklist(html);
     expect(checklist.falta).toEqual([]);
+    expect(checklist.tem).toContain("endereco");
     expect(checklist.tem).toContain("mapa");
+    const semEnderecoOuMapa = montarChecklist("<html><body>sem endereço</body></html>");
+    expect(semEnderecoOuMapa.falta).toContain("endereco");
+    expect(semEnderecoOuMapa.falta).toContain("mapa");
     expect(montarChecklist("<html><body>oi</body></html>").tem).toEqual([]);
+  });
+
+  it("pontua completude por itens encontrados, sem inferir intenção de compra", () => {
+    const score = pontuarCompletudeDoSite({
+      tem: ["tel", "mailto", "titulo", "description", "favicon"],
+      falta: ["whatsapp", "social", "endereco", "mapa", "fotos"],
+    });
+    expect(score).toEqual({ valor: 50, presentes: 5, total: 10 });
+    const semSite = vereditoPuro(null, "2026-10-28T12:00:00.000Z");
+    expect(pontuarCompletudeDoSite(semSite?.checklist)).toEqual({ valor: 0, presentes: 0, total: 10 });
   });
 
   it("página mínima válida cai em quase-vazia (limiar pinado)", () => {

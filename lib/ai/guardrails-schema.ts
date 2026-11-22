@@ -273,6 +273,7 @@ export type AgentPatch = z.infer<typeof agentPatchSchema>;
 
 export const agentCreateSchema = z
   .object({
+    channel: z.literal("whatsapp").optional(),
     name: z.string().min(2).max(120),
     description: z.string().max(500).nullable().optional(),
     model: agentModelSchema.optional(),
@@ -286,6 +287,14 @@ export const agentCreateSchema = z
   })
   .strict();
 export type AgentCreate = z.infer<typeof agentCreateSchema>;
+
+export const agenteDeVozCreateSchema = agentCreateSchema
+  .pick({ description: true, system_prompt: true })
+  .extend({
+    channel: z.literal("voice"),
+    name: z.string().trim().min(2).max(120),
+  })
+  .strict();
 
 // ---------------------------------------------------------------------------
 // Placeholders disponíveis no system prompt (helper UI)

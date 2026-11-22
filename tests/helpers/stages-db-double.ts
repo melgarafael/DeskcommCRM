@@ -145,6 +145,14 @@ export interface LeadRow {
   recurring_value_cents?: number | null;
   recurring_period?: string | null;
   tags?: string[];
+  /**
+   * #4191 — a classificação comercial, que o contrato do quadro passou a
+   * entregar para a ficha desenhar o bloco sem uma segunda consulta. Opcionais:
+   * a maioria dos casos do quadro não fala de negócio classificado.
+   */
+  nao_comercial_em?: string | null;
+  nao_comercial_motivo?: string | null;
+  nao_comercial_por?: string | null;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {

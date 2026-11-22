@@ -316,9 +316,11 @@ export async function sendTurnMessage(
       // A linha já tinha desfecho TERMINAL antes de chegarmos aqui — não há
       // síntese a fazer nem envio a tentar; o resultado É esse desfecho.
       if (err instanceof VozLedgerTerminalError) {
-        return err.kind === 'already_sent'
-          ? { kind: 'already_sent', idempotencyKey: err.key, crmMessageId: err.crmMessageId }
-          : { kind: 'blocked', idempotencyKey: err.key };
+        if (err.kind === 'already_sent')
+          return { kind: 'already_sent', idempotencyKey: err.key, crmMessageId: err.crmMessageId };
+        if (err.kind === 'failed_permanent')
+          return { kind: 'failed', idempotencyKey: err.key, crmMessageId: err.crmMessageId, permanente: true };
+        return { kind: 'blocked', idempotencyKey: err.key };
       }
       // ⚠️ ACHADO NA REVISÃO, ANTES DA FASE 7: isto já foi `throw err` — e
       // derrubava o TURNO INTEIRO (o cliente não recebia resposta nenhuma)

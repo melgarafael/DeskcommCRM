@@ -1,5 +1,6 @@
 import { protecaoAgendaSupabase, type ProtecaoAgenda } from "@/lib/agenda/protecao-followup";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { STATUS_QUE_MORREM } from "@/lib/followup/saida-da-etapa";
 import type { Role } from "@/lib/auth/types";
 /**
  * O RADAR DE RISCO, montado — a lista de demandas abertas que esfriaram.
@@ -19,6 +20,7 @@ import type { Role } from "@/lib/auth/types";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
+import { ehComercial } from "@/lib/leads/elegibilidade-comercial";
 
 import {
   classifyRisk,
@@ -178,7 +180,14 @@ export async function carregaRadarDeRisco(
       "id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id",
     )
     .eq("organization_id", organizationId)
-    .eq("status", "open");
+    .eq("status", "open")
+    // #4191 — negócio classificado como NÃO comercial sai do Radar comercial.
+    // O filtro é o PREDICADO CANÔNICO (`ehNaoComercial`), não uma lista de ids
+    // montada aqui: com ele, as duas listas derivadas de `rows` abaixo
+    // (propostas vencidas e propostas esperando revisão) caem junto, porque
+    // ambas cruzam `leadsValidos`. Filtrar só no frontend esconderia o card e
+    // deixaria a IA (`lib/mcp/tools/retencao.ts`) cobrando o mesmo negócio.
+    .is("nao_comercial_em", null);
   if (funisArquivados.length > 0) {
     consultaDeLeads = consultaDeLeads.not("pipeline_id", "in", `(${funisArquivados.join(",")})`);
   }
@@ -242,7 +251,7 @@ export async function carregaRadarDeRisco(
     // `.in()` em lotes: a lista cresce com a base (o quadro quebrou com 415
     // leads, e aqui são os contatos de todos os negócios abertos). Um `.in()`
     // único com 430 uuids já passa do teto de header do Node.
-    const [followups, convs, contacts] = await Promise.all([
+    const [followups, enrollments, convs, contacts] = await Promise.all([
       buscaEmLotes(contactIds, (lote) =>
         admin
           .from("cron_jobs")
@@ -251,6 +260,18 @@ export async function carregaRadarDeRisco(
           .eq("kind", "at")
           .eq("enabled", true)
           .gt("next_run_at", nowIso)
+          .in("contact_id", lote),
+      ),
+      buscaEmLotes(contactIds, (lote) =>
+        admin
+          .from("followup_enrollments")
+          .select("contact_id, next_eval_at")
+          .eq("organization_id", organizationId)
+          // Os status com um toque POR VIR (o `dormente` é a cadência de retorno,
+          // "volte a falar daqui a 28 dias"). STATUS_VIVOS é o predicado do índice
+          // anti-spam e deixa o `dormente` de fora: é outra pergunta.
+          .in("status", [...STATUS_QUE_MORREM])
+          .gt("next_eval_at", nowIso)
           .in("contact_id", lote),
       ),
       buscaEmLotes(contactIds, (lote) =>
@@ -272,10 +293,16 @@ export async function carregaRadarDeRisco(
     // follow-up", senão um negócio que a IA prometeu retomar entra como
     // abandono. Nome e conversa são cosméticos e seguem como antes.
     if (followups.error) throw new Error(`radar_followups_indisponiveis: ${followups.error.message}`);
+    if (enrollments.error) throw new Error(`radar_followups_indisponiveis: ${enrollments.error.message}`);
 
     for (const f of followups.data) {
       const prev = followupByContact.get(f.contact_id);
       if (!prev || f.next_run_at < prev) followupByContact.set(f.contact_id, f.next_run_at);
+    }
+    for (const e of enrollments.data) {
+      if (!e.next_eval_at) continue;
+      const prev = followupByContact.get(e.contact_id);
+      if (!prev || e.next_eval_at < prev) followupByContact.set(e.contact_id, e.next_eval_at);
     }
     for (const c of convs.data) {
       if (!convByContact.has(c.contact_id)) {
@@ -342,7 +369,7 @@ export async function carregaRadarDeRisco(
   // paridade sem necessidade; acrescentar não arrisca nada.
   let consultaDeDemandas = admin
     .from("demandas")
-    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name)")
+    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name), crm_leads!lead_id(nao_comercial_em)")
     .eq("organization_id", organizationId)
     .is("fechada_em", null)
     .is("proximo_passo", null);
@@ -351,7 +378,16 @@ export async function carregaRadarDeRisco(
     .order("aberta_em", { ascending: true })
     .limit(SCAN_CAP);
   if (demandaError) throw new Error(`radar_demandas_failed: ${demandaError.message}`);
-  let demandasVisiveis = semPasso ?? [];
+  // #4191 — LISTA AUXILIAR também respeita a classificação: a demanda continua
+  // aberta no banco (o atendimento aconteceu e o histórico fica), mas cobrar
+  // "próximo passo" de um golpe é o mesmo defeito do card no Radar. O negócio
+  // vem pelo join (`lead_id` nullable: demanda sem lead não tem classificação e
+  // fica), numa consulta só — nada de segunda leitura por demanda.
+  let demandasVisiveis = (semPasso ?? []).filter((d) => {
+    const rel = (d as { crm_leads?: unknown }).crm_leads;
+    const negocio = Array.isArray(rel) ? rel[0] : rel;
+    return ehComercial(negocio as { nao_comercial_em?: string | null } | null);
+  });
   // Mesmo corte dos leads: demanda presa a lead de funil arquivado sai.
   // Demanda sem lead não tem funil e fica.
   //

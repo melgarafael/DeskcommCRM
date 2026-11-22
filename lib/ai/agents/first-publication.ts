@@ -86,7 +86,9 @@ export async function publishFirstVersion(
   orgId: string,
   agent: AgenteDoOnboarding,
   systemPrompt: string,
-  userId: string,
+  // `null` quando quem publica é um token de integração: `created_by` aceita
+  // nulo, e id de token nunca vai para coluna de pessoa.
+  userId: string | null,
   selection?: { channelId: string; provider: string; model: string; credentialId: string | null },
 ): Promise<PublishOutcome> {
   // Já publicado numa passagem anterior: republicar colidiria com
