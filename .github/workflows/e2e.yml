@@ -1190,6 +1190,7 @@ jobs:
         inbox-tempo-real.spec.ts
         inbox-rotulo-de-origem.spec.ts
         troca-de-organizacao-tem-volta.spec.ts
+        convite-nao-cai-no-onboarding.spec.ts
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
