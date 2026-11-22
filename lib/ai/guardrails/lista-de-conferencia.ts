@@ -332,6 +332,7 @@ export const NUNCA_FAZ: Readonly<Record<string, string>> = {
   pacing: "Disparar mensagens sem espaçar o envio",
   messaging_window: "Furar a janela de 24 horas do WhatsApp",
   teto_de_respostas: "Responder sem parar a conversa que virou pingue-pongue",
+  interlocutor_automatico: "Conversar com robô como se fosse cliente",
   spinning: "Repetir o texto idêntico para todo mundo",
   promise: "Prometer preço ou prazo por conta própria",
   concessao_sem_lastro: "Confirmar condição que só o cliente citou",
