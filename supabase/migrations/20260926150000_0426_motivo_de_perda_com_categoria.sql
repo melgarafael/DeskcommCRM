@@ -80,7 +80,8 @@ begin
       new.lost_from_stage_id := coalesce(new.lost_from_stage_id, old.stage_id);
     end if;
   else
-    if tg_op = 'UPDATE' and old.status in ('won','lost') then
+    if tg_op = 'UPDATE' and old.status in ('won','lost')
+       and new.pipeline_id is not distinct from old.pipeline_id then
       new.status := 'open';
       new.closed_at := null;
       -- Reabriu: a origem da perda passada não pertence a um negócio aberto.
