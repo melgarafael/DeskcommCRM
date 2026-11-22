@@ -36,7 +36,7 @@ function montar() {
   return (
     <SetupAiForm
       capacidades={["Ver os clientes", "Mover o negócio no funil"]}
-      conferencias={["Respeitar quem pediu para parar"]}
+      conferencias={[{ nome: "stop", frase: "Insistir com quem pediu para parar", estado: null, ondeLigar: null }]}
     />
   );
 }
