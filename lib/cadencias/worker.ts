@@ -393,7 +393,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
     const proximo = proximoIrmao(cadencia.passos, passo.id);
     await avancar(admin, inscricao, {
       passoAtualId: proximo?.id ?? null,
-      proximoEm: avancarDiasUteis(agora, passo.diasUteis),
+      proximoEm: avancarDiasUteis(agora, passo.diasUteis, cadencia.configuracao.fuso),
       concluirSeSemProximo: proximo === null,
     });
     return { desfecho: "avancou" as const };
@@ -472,7 +472,7 @@ async function criarTarefaDoPasso(
   const { data, error } = await admin.rpc("fn_cadencia_criar_tarefa", {
     p_organization_id: inscricao.organization_id, p_enrollment_id: inscricao.id,
     p_processamento_id: inscricao.processamento_id, p_passo_id: passo.id, p_titulo: titulo,
-    p_due_date: avancarDiasUteis(agora, passo.prazoDias).toISOString(), p_assigned_to: ownerId,
+    p_due_date: avancarDiasUteis(agora, passo.prazoDias, configuracao.fuso).toISOString(), p_assigned_to: ownerId,
   });
   if (error || !data) throw new Error(error?.message === "cadencia_claim_lost" ? "cadencia_claim_lost" : "cadencia_task_create_failed");
   if (!data.criada_agora || !data.tarefa) return;

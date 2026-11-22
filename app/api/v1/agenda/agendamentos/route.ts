@@ -22,6 +22,10 @@ import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-esc
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import {
+  RECUSA_DO_COMPARECIMENTO,
+  tokenTemEscopoDoComparecimento,
+} from "@/lib/agenda/comparecimento";
 import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { chaveDaRequisicao } from "@/lib/api/idempotency";
@@ -31,6 +35,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -125,6 +130,7 @@ const convidadosDaEquipe = z
   .optional();
 
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
@@ -181,6 +187,14 @@ const alterarSchema = z
      * que o cliente tinha mandado um campo.
      */
     title: tituloDoCompromisso.optional(),
+    /**
+     * A duração que a pessoa escolheu (#4450) — a segunda porta do campo da
+     * #3709. Sem esta linha o PATCH DESCARTAVA o número em silêncio: a tela
+     * mandaria a duração, o handler responderia "alterado", e o bloco ficaria
+     * com o comprimento de antes. A faixa é a mesma da criação, e o handler
+     * confere de novo porque a ferramenta MCP o chama sem passar por aqui.
+     */
+    duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   })
   .refine(
     (c) =>
@@ -190,7 +204,8 @@ const alterarSchema = z
       c.notes !== undefined ||
       c.guest_email !== undefined ||
       c.team_guest_user_ids !== undefined ||
-      c.title !== undefined,
+      c.title !== undefined ||
+      c.duration_minutes !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },
@@ -421,7 +436,14 @@ async function despachar<T>(
   schema: z.ZodType<T>,
   handler: (
     supabase: Awaited<ReturnType<typeof createClient>>,
-    ctx: { organization_id: string; actor: Actor; requestId: string; idempotencyKey?: string },
+    ctx: {
+      organization_id: string;
+      actor: Actor;
+      requestId: string;
+      idempotencyKey?: string;
+      /** Escopos do Bearer, só no modo token — o desfecho os lê (#4515). */
+      escoposDoToken?: readonly string[];
+    },
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
@@ -464,6 +486,31 @@ async function despachar<T>(
     });
   }
 
+  /**
+   * O DESFECHO PEDE UM ESCOPO PRÓPRIO NO TOKEN (#4515).
+   *
+   * `mcp:write` continua valendo para marcar, remarcar, cancelar e editar — o
+   * contrato que as integrações já usam não muda. O que muda é o que o CRM
+   * sempre tratou como decisão de gente: dizer que a pessoa VEIO ou FALTOU. Um
+   * token sem `agenda:attendance` recebe 403 com o nome do escopo, e o handler
+   * nem roda — recusar depois da escrita não seria recusa.
+   *
+   * A sessão de navegador não tem escopo (`authz.via === "session"`) e passa
+   * direto: a tela é o caminho de sempre.
+   */
+  const pedeDesfecho =
+    typeof parsed.data === "object" &&
+    parsed.data !== null &&
+    ((parsed.data as { status?: unknown }).status === "completed" ||
+      (parsed.data as { status?: unknown }).status === "no_show");
+  if (authz.via === "token" && pedeDesfecho && !tokenTemEscopoDoComparecimento(authz.scopes)) {
+    // Sem `t()`: a frase é a MESMA que o handler e a ferramenta devolvem, e
+    // `t()` sobre chave montada em runtime sai em português de qualquer jeito
+    // (`i18n-espanhol-cobre-a-tela` proíbe a forma). Traduzir de verdade pede
+    // a frase no dicionário, como qualquer outra mensagem de erro.
+    return fail("forbidden_role", RECUSA_DO_COMPARECIMENTO, 403, { requestId });
+  }
+
   try {
     const resultado = await handler(
       supabase,
@@ -473,6 +520,9 @@ async function despachar<T>(
         organization_id: organizationId,
         actor,
         requestId,
+        // Os escopos só existem no ramo de token; é o que o handler lê para
+        // decidir o desfecho (#4515). Sessão fica sem o campo, de propósito.
+        ...(authz.via === "token" ? { escoposDoToken: authz.scopes } : {}),
         ...(idempotencyKey !== null ? { idempotencyKey } : {}),
       },
       parsed.data,

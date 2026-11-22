@@ -30,12 +30,14 @@ const estado = vi.hoisted(() => ({
   rodada: 0,
 }));
 
-function cadeia(tabela: string): Record<string, unknown> {
+function cadeia(tabela: string, dados: unknown[] = []): Record<string, unknown> {
   estado.consultas[tabela] = (estado.consultas[tabela] ?? 0) + 1;
-  const resposta = { data: [], error: null };
+  const resposta = { data: dados, error: null };
   const passo: Record<string, unknown> = {};
   for (const verbo of ["select", "eq", "neq", "in", "is", "lt", "lte", "gt", "gte", "order", "limit", "update", "delete"]) {
-    passo[verbo] = () => cadeia(tabela);
+    // A cadeia carrega o DADO consigo: o `.in("chave", …)` do `platform_config`
+    // precisa ver a linha que o `from()` entregou, senão o módulo leria vazio.
+    passo[verbo] = () => cadeia(tabela, dados);
   }
   passo.maybeSingle = async () => ({ data: null, error: null });
   passo.single = async () => ({ data: null, error: null });
@@ -47,7 +49,14 @@ function cadeia(tabela: string): Record<string, unknown> {
 }
 
 const clienteFalso = {
-  from: (tabela: string) => cadeia(tabela),
+  from: (tabela: string) =>
+    // #4871: a batida da `proposta-travada` pergunta o módulo `propostas` antes de
+    // varrer. Este arquivo mede o PISO ocioso, não o módulo: a instalação aqui está
+    // com o módulo LIGADO, senão a rodada sairia antes da varredura e o caso
+    // "ligado: varre as propostas" mediria a saída do módulo, não a do portão.
+    tabela === "platform_config"
+      ? cadeia(tabela, [{ chave: "MODULO_PROPOSTAS", valor: "ligado" }])
+      : cadeia(tabela),
   rpc: (fn: string) => {
     estado.rpcs.push(fn);
     return Promise.resolve({ data: 0, error: null });

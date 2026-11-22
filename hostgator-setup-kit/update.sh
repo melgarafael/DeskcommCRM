@@ -102,6 +102,16 @@ setup_update_agent_cron
 PAR_VAPID_CRIADO=""
 PAR_LIGADO_AGORA=""
 completar_par_vapid .env
+
+# ── 0++. O consentimento de telemetria de quem já disse "sim" (#4936) ───────
+# Antes desta versão, o "sim" do install.sh virava `SENTRY_DSN=""` no .env. A
+# partir dela, vazio significa DESLIGADO e o aceite é `SENTRY_DSN=comunidade`.
+# Converter aqui é o que impede a atualização de apagar, em silêncio, o
+# consentimento de quem já havia aceitado — e sem pedir edição manual do .env,
+# que a doutrina de empacotamento proíbe (docs/doctrine/packaging.md).
+# Fica junto do par VAPID, ANTES das saídas de "nada a atualizar": aquelas saem
+# do script sem passar pelo `up -d`, e a conversão precisa ter acontecido.
+migrar_consentimento_de_telemetria .env
 subir_para_ler_o_par() {
   [ -n "$PAR_VAPID_CRIADO" ] || return 0
   PAR_VAPID_CRIADO=""
@@ -328,6 +338,12 @@ step "Baixando o código novo"
 if ! git checkout --quiet "$TARGET_TAG" 2>&1; then
   die "Não consegui trocar para a versão $TARGET_TAG (parece haver mudanças locais que divergem).
      Rode 'git status' pra ver, ou peça ajuda. NÃO mexi no banco — está tudo como estava."
+fi
+# Ida para frente: guarda de onde saiu. É para lá, e só para lá, que o agente
+# do host aceita voltar quando o pedido vem do app (ver agent.sh). Volta e
+# reinstalação da mesma versão não regravam: a origem continua a da última ida.
+if [ -z "$VOLTA_NO_TEMPO" ] && [ -z "$MESMA_TAG" ] && [ -n "$CURRENT_TAG" ]; then
+  printf '%s\n' "$CURRENT_TAG" > "$PROJECT_DIR/${ORIGEM_DA_ATUALIZACAO_ARQUIVO:-.update-de-onde-vim}" 2>/dev/null || true
 fi
 
 # As funções do kit são carregadas na linha 16, ANTES deste checkout — então,

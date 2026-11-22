@@ -74,7 +74,10 @@ const CONTATO = {
   email: "ana@exemplo.com",
   phone_number: "+5511999998888",
   updated_at: "2026-09-19T10:00:00Z",
-  custom_fields: { cor_favorita: "azul", link_instagram: "instagram.com/loja" } as Record<string, unknown>,
+  custom_fields: { cor_favorita: "azul", link_instagram: "instagram.com/loja" } as Record<
+    string,
+    unknown
+  >,
 };
 
 /** O candidato a PARTICIPANTE que a busca do dossiê oferece (#3083 F1). */
@@ -121,8 +124,16 @@ describe("ContatoNoCard", () => {
       />,
     );
 
-    expect(screen.getByText("+5511999998888")).toBeInTheDocument();
-    expect(screen.getByText("ana@exemplo.com")).toBeInTheDocument();
+    const telefone = screen.getByText("+5511999998888");
+    expect(telefone).toBeInTheDocument();
+    expect(telefone.className).toContain("shrink-0");
+    const email = screen.getByText("ana@exemplo.com");
+    expect(email).toBeInTheDocument();
+    expect(email).toHaveAttribute("title", "ana@exemplo.com");
+    expect(email.className).toContain("min-w-0");
+    expect(email.className).toContain("overflow-hidden");
+    expect(email.className).toContain("text-ellipsis");
+    expect(email.className).toContain("whitespace-nowrap");
 
     const instagram = screen.getByRole("link", { name: "Abrir Instagram" });
     expect(instagram).toHaveAttribute("href", "https://www.instagram.com/loja");
@@ -365,8 +376,10 @@ describe("a fiação — quem usa a regra a chama", () => {
     expect(inicio, "a etapa dos marcadores sumiu da rota").toBeGreaterThan(-1);
     const etapa = rota.slice(inicio, fim);
 
-    expect(etapa, "a consulta não traz telefone, e-mail e custom_fields").toMatch(
-      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized"\s*\)/,
+    // `avatar_storage_path` entra na MESMA consulta (a foto do card): nenhuma
+    // leitura nova de `contacts` por quadro.
+    expect(etapa, "a consulta não traz telefone, e-mail, custom_fields e a foto").toMatch(
+      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized, avatar_storage_path"\s*\)/,
     );
     expect(etapa, "anexarDadosDoContato não é chamada na etapa").toMatch(
       /anexarDadosDoContato\(\s*leadsDoQuadro,\s*linhas\s*\)/,

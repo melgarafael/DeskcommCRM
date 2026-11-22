@@ -8,6 +8,7 @@ vi.mock("@/lib/plataformas-de-anuncio/google/token", () => ({ renovarToken: mock
 
 const {
   classificarRecusa,
+  conferirContaDeRelatorio,
   criarAcaoDeConversao,
   listarAcoesDeConversao,
   lerCampanhas,
@@ -28,6 +29,10 @@ beforeEach(() => {
 });
 
 describe("recusas do Google em linguagem de quem opera", () => {
+  it("indica o projeto Cloud quando falta acesso a anunciantes de produção", () => {
+    expect(classificarRecusa(403, { error: { message: "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION" } }).falha)
+      .toBe("projeto_sem_acesso");
+  });
   it("escopo insuficiente pede reconexão", () => {
     expect(
       classificarRecusa(403, {
@@ -139,13 +144,35 @@ describe("ações de conversão", () => {
 });
 
 describe("campanhas e recursos de mensagem", () => {
-  it("converte custo de micros para reais e recusa período malformado sem chamar o Google", async () => {
+  it("consulta a conta com OAuth sem developer token e encaminha o MCC somente quando informado", async () => {
+    mocks.config.mockReturnValue({ clientId: "c", clientSecret: "s", developerToken: "" });
+    const http = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ results: [] }));
+    expect(await lerCampanhas(conexao, { de: "2026-01-01", ate: "2026-01-02" })).toEqual({ ok: true, dados: [] });
+    expect(mocks.config).toHaveBeenCalledWith("relatorio");
+    expect(http.mock.calls[0]?.[1]?.headers).toEqual({
+      "content-type": "application/json", authorization: "Bearer AT", "login-customer-id": conexao.loginCustomerId,
+    });
+    http.mockResolvedValueOnce(Response.json({ results: [{ customer: { id: conexao.customerId } }] }));
+    expect(await conferirContaDeRelatorio("novo", conexao.customerId, null)).toMatchObject({ ok: true });
+    const [url, init] = http.mock.calls[1]!;
+    expect(String(url)).toContain("/customers/1234567890/googleAds:search");
+    expect(init?.headers).toEqual({ "content-type": "application/json", authorization: "Bearer novo" });
+    expect(JSON.parse(String(init?.body)).query).toContain("FROM customer");
+  });
+  it.each([{ id: "1111111111" }, { id: "1234567890", manager: true }])(
+    "recusa autorizar uma conta diferente ou gerenciadora", async (customer) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json({ results: [{ customer }] }));
+      expect(await conferirContaDeRelatorio("novo", conexao.customerId, null)).toMatchObject({ ok: false, falha: "sem_permissao" });
+    },
+  );
+  it("converte micros na moeda retornada pela conta e recusa período malformado sem chamar o Google", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
           results: [
             {
               campaign: { id: "7", name: "Busca", status: "ENABLED" },
+              customer: { currencyCode: "EUR", timeZone: "Europe/Madrid" },
               metrics: {
                 impressions: "1000",
                 clicks: "50",
@@ -165,6 +192,8 @@ describe("campanhas e recursos de mensagem", () => {
           id: "7",
           nome: "Busca",
           status: "ENABLED",
+          moeda: "EUR",
+          fuso: "Europe/Madrid",
           impressoes: 1000,
           cliques: 50,
           custo: 12.345,

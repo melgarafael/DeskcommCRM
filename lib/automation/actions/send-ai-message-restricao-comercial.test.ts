@@ -20,10 +20,10 @@
  * Dublar a decisão provaria só que a ação chama uma função — o que um `void`
  * satisfaz.
  *
- * O orquestrador do CRM (`triggerHandoff`) É dublê: o que se prova aqui é que a
- * ação o aciona, com que vocabulário (motivo `low_confidence`, origem
- * `runtime_nativo`, o mesmo texto da cadeia) e ANTES de qualquer envio — não que
- * ele grava a passagem, o que é dele e já tem teste próprio.
+ * Spec 34: a automação dispara por regra, então o cliente NÃO perguntou nada. Barrado,
+ * o texto é reescrito UMA vez (a segunda geração recebe o trecho que a trava
+ * apontou) e a conversa NÃO passa para a equipe. O orquestrador do CRM
+ * (`triggerHandoff`) segue dublê só para provar que NUNCA é chamado.
  *
  * ═══ O que este arquivo NÃO prova ═══
  *
@@ -35,22 +35,12 @@
  *   - o envio real ao canal: `sendMessageHandler` é dublê, como no vizinho
  *     `send-ai-message.test.ts`.
  *
- * ═══ Sabotagem medida ═══
+ * ═══ Sabotagem medida (Spec 34) ═══
  *
- *   apagar a régua inteira de `send-ai-message.ts`
- *     → previsto 3 vermelhos, observado 4.
- *
- *       Os três previstos: o caso 1 (camada ligada + texto comercial), o 4
- *       (falha fechada) e o 5 (passagem recusada). O quarto é o caso 3, e a
- *       lição fica escrita porque a previsão errou: ele prova que a camada
- *       DESLIGADA mantém o comportamento de hoje, e para isso mede a LEITURA da
- *       camada (`idas`). Sem a régua não há leitura nenhuma — o caso fica
- *       vermelho por uma razão que não é a do defeito. Quem apagar a régua vê
- *       quatro, não três.
- *
- *       O único verde nas duas direções é o caso 2 (camada ligada + texto
- *       neutro), que existe justamente para impedir que uma ação que nunca envia
- *       nada satisfaça este arquivo.
+ *   devolver o `triggerHandoff` ao ramo barrado → previsto 2 vermelhos (os dois
+ *   casos em que o texto é barrado); tirar a segunda geração → previsto 1
+ *   vermelho (o caso "primeira barrada, segunda limpa"). O caso do texto neutro
+ *   é o que impede que uma ação que nunca envia nada satisfaça este arquivo.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -114,7 +104,11 @@ interface LeituraNoBanco {
  * leitura estoura — o caso da falha fechada). Toda ida ao banco entra em `idas`,
  * para o teste afirmar o que NÃO foi lido nem escrito.
  */
-function bancoFalso(camadaComercial: boolean | "falha") {
+function bancoFalso(
+  camadaComercial: boolean | "falha",
+  /** O que a última mensagem da conversa é: do cliente (esperando), nossa, ou a leitura estoura. */
+  ultimaMensagem: "inbound" | "outbound" | "falha" = "outbound",
+) {
   const idas: LeituraNoBanco[] = [];
   const from = (tabela: string) => {
     let operacao: "select" | "update" = "select";
@@ -132,6 +126,11 @@ function bancoFalso(camadaComercial: boolean | "falha") {
         return camadaComercial === "falha"
           ? { data: null, error: { message: "offline" } }
           : { data: { enabled: camadaComercial }, error: null };
+      }
+      if (tabela === "messages") {
+        return ultimaMensagem === "falha"
+          ? { data: null, error: { message: "offline" } }
+          : { data: { direction: ultimaMensagem }, error: null };
       }
       if (tabela === "conversations") return { data: { channel_session_id: CANAL }, error: null };
       if (tabela === "organizations") return { data: { settings: {} }, error: null };
@@ -187,13 +186,6 @@ function corpoEnviado(): string | undefined {
   return (chamada?.[2] as { body?: string } | undefined)?.body;
 }
 
-/** O que a ação entregou ao orquestrador da passagem. */
-function pedidoDaPassagem(): Record<string, unknown> {
-  const chamada = triggerHandoff.mock.calls[0];
-  if (!chamada) throw new Error("triggerHandoff não foi chamado");
-  return chamada[0] as Record<string, unknown>;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_NEUTRO });
@@ -202,43 +194,49 @@ beforeEach(() => {
   triggerHandoff.mockResolvedValue({ triggered: true, reason: "low_confidence", aviso: { avisado: true } });
 });
 
+/** Texto limpo que a IA escreve na segunda tentativa. */
+const TEXTO_REESCRITO = "Claro! Posso te explicar como funciona. Em que bairro você procura o atendimento?";
+
 describe("send_ai_message × camada comercial LIGADA", () => {
-  it("texto com preço NÃO sai e vira passagem para a equipe, com o vocabulário da cadeia", async () => {
+  it("a primeira versão barrada é reescrita uma vez e a segunda sai — sem passar à equipe", async () => {
+    gerarAbordagemDeFormulario
+      .mockResolvedValueOnce({ ok: true, texto: TEXTO_COMERCIAL })
+      .mockResolvedValueOnce({ ok: true, texto: TEXTO_REESCRITO });
+    const { cliente } = bancoFalso(true);
+
+    const r = await executar(cliente);
+
+    expect(r.status).toBe("success");
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(2);
+    // A segunda geração sabe o que foi barrado e por quê.
+    const segunda = gerarAbordagemDeFormulario.mock.calls[1]?.[2] as {
+      tentativaBarrada?: { texto: string; trecho: string | null };
+    };
+    expect(segunda.tentativaBarrada?.texto).toBe(TEXTO_COMERCIAL);
+    expect(typeof segunda.tentativaBarrada?.trecho).toBe("string");
+    expect(corpoEnviado()).toBe(TEXTO_REESCRITO);
+    expect(triggerHandoff).not.toHaveBeenCalled();
+    expect(r.detail?.texto_gerado).toBe(TEXTO_REESCRITO);
+    expect(r.detail?.veto_anterior).toMatchObject({ texto_barrado: TEXTO_COMERCIAL });
+  });
+
+  it("as duas versões barradas: nada sai, a conversa NÃO passa à equipe e o detalhe guarda os dois textos e o trecho", async () => {
     gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
     const { cliente } = bancoFalso(true);
 
     const r = await executar(cliente);
 
-    // 1. Não saiu — e parou ANTES do espaçamento anti-banimento, que é o último
-    //    passo antes do handler.
     expect(sendMessageHandler).not.toHaveBeenCalled();
     expect(espacarEnvio).not.toHaveBeenCalled();
-    // 2. O desfecho é o do veto da cadeia, não um código novo.
-    expect(r).toEqual({
-      type: "send_ai_message",
-      status: "skipped",
-      detail: {
-        reason: "commercial_requires_human",
-        conversation_id: "conversa-1",
-        passagem_para_a_equipe: true,
-      },
-    });
-    // 3. A equipe foi acionada: MESMO motivo e MESMO texto que o turno do agente
-    //    usa quando a cadeia veta (`inbound-turn.ts`, `passarComercialParaEquipe`).
-    expect(triggerHandoff).toHaveBeenCalledTimes(1);
-    expect(pedidoDaPassagem()).toMatchObject({
-      conversationId: "conversa-1",
-      organizationId: ORG,
-      reason: "low_confidence",
-      origem: "runtime_nativo",
-      motivoTexto: "Resposta comercial barrada; valores e negociação são exclusivos da equipe.",
-      leadId: null,
-      metadata: { source: "automation_rule", acao: "send_ai_message", rule_id: "regra-1" },
-    });
-    expect(pedidoDaPassagem().serviceBoundary).toMatchObject({
-      organization_id: ORG,
+    expect(triggerHandoff).not.toHaveBeenCalled();
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(2);
+    expect(r.status).toBe("skipped");
+    expect(r.detail).toMatchObject({
+      reason: "commercial_requires_human_duas_tentativas",
       conversation_id: "conversa-1",
+      textos_barrados: [TEXTO_COMERCIAL, TEXTO_COMERCIAL],
     });
+    expect(typeof r.detail?.trecho).toBe("string");
   });
 
   it("texto NEUTRO sai normalmente — e a camada nem é lida (o detector vem primeiro)", async () => {
@@ -247,6 +245,7 @@ describe("send_ai_message × camada comercial LIGADA", () => {
     const r = await executar(cliente);
 
     expect(r.status).toBe("success");
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(1);
     expect(sendMessageHandler).toHaveBeenCalledTimes(1);
     expect(corpoEnviado()).toBe(TEXTO_NEUTRO);
     expect(triggerHandoff).not.toHaveBeenCalled();
@@ -257,17 +256,17 @@ describe("send_ai_message × camada comercial LIGADA", () => {
 });
 
 describe("send_ai_message × camada comercial DESLIGADA", () => {
-  it("texto com preço continua saindo igual a hoje — byte a byte", async () => {
+  it("texto com preço continua saindo igual a hoje — byte a byte, sem segunda geração", async () => {
     gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
     const { cliente, idas } = bancoFalso(false);
 
     const r = await executar(cliente);
 
-    // A camada FOI lida (o corpo tem cara de preço) e disse não: o envio segue
-    // com o MESMO corpo e o MESMO desfecho de antes desta entrega.
     expect(idas.filter((i) => i.tabela === "org_guardrail_layers")).toHaveLength(1);
     expect(r.status).toBe("success");
     expect(r.detail?.texto_gerado).toBe(TEXTO_COMERCIAL);
+    expect(r.detail?.veto_anterior).toBeUndefined();
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(1);
     expect(sendMessageHandler).toHaveBeenCalledTimes(1);
     expect(corpoEnviado()).toBe(TEXTO_COMERCIAL);
     expect(triggerHandoff).not.toHaveBeenCalled();
@@ -275,7 +274,7 @@ describe("send_ai_message × camada comercial DESLIGADA", () => {
 });
 
 describe("send_ai_message × leitura da camada que FALHA", () => {
-  it("falha FECHADA: não envia e passa para a equipe", async () => {
+  it("falha FECHADA: não envia, escreve de novo, e sem passar à equipe", async () => {
     gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
     const { cliente } = bancoFalso("falha");
 
@@ -283,26 +282,72 @@ describe("send_ai_message × leitura da camada que FALHA", () => {
 
     expect(sendMessageHandler).not.toHaveBeenCalled();
     expect(r.status).toBe("skipped");
-    expect(r.detail?.reason).toBe("commercial_requires_human");
-    expect(triggerHandoff).toHaveBeenCalledTimes(1);
+    expect(r.detail?.reason).toBe("commercial_requires_human_duas_tentativas");
+    expect(triggerHandoff).not.toHaveBeenCalled();
   });
+});
 
-  it("passagem recusada pelo orquestrador NÃO vira envio: o silêncio é preferível ao preço", async () => {
-    // A conversa pode não ser elegível (gate `allowlist`, já em handoff…). O
-    // desfecho registra a recusa, mas o que não pode acontecer é a mensagem sair
-    // porque a passagem não deu certo.
+describe("send_ai_message × cliente com mensagem esperando (message.received)", () => {
+  it("texto barrado: NÃO reescreve, nada sai e a conversa passa à equipe com o motivo restricao_comercial", async () => {
     gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
-    triggerHandoff.mockResolvedValue({ triggered: false, reason: "nao_elegivel:sem_autorizacao" });
-    const { cliente } = bancoFalso(true);
+    const { cliente } = bancoFalso(true, "inbound");
 
     const r = await executar(cliente);
 
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(1);
     expect(sendMessageHandler).not.toHaveBeenCalled();
-    // E o motivo NÃO é o da passagem feita: a frase de `commercial_requires_human`
-    // na aba Atividade diz que a conversa passou para a equipe, o que aqui é falso.
-    expect(r.detail).toMatchObject({
-      reason: "commercial_requires_human_sem_passagem",
-      passagem_para_a_equipe: false,
+    expect(triggerHandoff).toHaveBeenCalledTimes(1);
+    expect(triggerHandoff.mock.calls[0]?.[0]).toMatchObject({
+      reason: "restricao_comercial",
+      conversationId: "conversa-1",
+      organizationId: ORG,
     });
+    expect(r.status).toBe("skipped");
+    expect(r.detail).toMatchObject({ reason: "commercial_requires_human", passagem_para_a_equipe: true });
+  });
+
+  it("a passagem recusada pelo orquestrador vira o motivo _sem_passagem — a tela não afirma o que não houve", async () => {
+    gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
+    triggerHandoff.mockResolvedValue({ triggered: false, reason: "conversation_not_found" });
+    const { cliente } = bancoFalso(true, "inbound");
+
+    const r = await executar(cliente);
+
+    expect(r.detail).toMatchObject({ reason: "commercial_requires_human_sem_passagem", passagem_para_a_equipe: false });
+  });
+
+  it("não deu para ler a última mensagem: vale o piso de antes — passa à equipe, nunca o silêncio", async () => {
+    gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
+    const { cliente } = bancoFalso(true, "falha");
+
+    await executar(cliente);
+
+    expect(triggerHandoff).toHaveBeenCalledTimes(1);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("texto neutro com cliente esperando sai normalmente, sem passagem", async () => {
+    const { cliente } = bancoFalso(true, "inbound");
+
+    const r = await executar(cliente);
+
+    expect(r.status).toBe("success");
+    expect(triggerHandoff).not.toHaveBeenCalled();
+  });
+});
+
+describe("a aba Atividade ainda sabe traduzir as execuções antigas", () => {
+  it("a chave commercial_requires_human_sem_passagem continua no dicionário, e a frase atual não diz que a conversa passou à equipe", async () => {
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync("app/app/webhooks/_components/ActivityTab.tsx", "utf8");
+    expect(fonte).toContain("commercial_requires_human_sem_passagem:");
+    const m = /commercial_requires_human:\s*"([^"]+)"/.exec(fonte);
+    expect(m?.[1]).toBeDefined();
+    // A frase antiga continua afirmando a passagem à equipe (é o que as execuções
+    // antigas e o cliente-esperando fazem); o desfecho de duas tentativas tem código próprio.
+    expect(m![1]).toMatch(/passou para o atendimento humano/);
+    const duas = /commercial_requires_human_duas_tentativas:\s*"([^"]+)"/.exec(fonte);
+    expect(duas?.[1]).toBeDefined();
+    expect(duas![1]).not.toMatch(/passou para o atendimento humano/);
   });
 });

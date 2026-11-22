@@ -3,8 +3,12 @@ import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { supportWriteError } from "@/lib/impersonate/support";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
+import { ROTULO_DO_CANAL as ROTULO_DO_ROBO } from "@/lib/channels/bot/connect";
 import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +28,8 @@ export default async function ConnectionsPage() {
     process.env.WAHA_API_BASE_URL && key && key !== "dev_plaintext_change_me",
   );
   const wacallsConfigured = Boolean(process.env.WACALLS_API_BASE_URL);
+  // Doc 216 (A): o robô de mensagens é módulo opcional, ligado em /admin/sistema.
+  const roboLigado = await moduloLigado(createAdminClient(), "canal_bot");
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -39,7 +45,11 @@ export default async function ConnectionsPage() {
       <ConexoesShell
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
+        podeCriarAgenteDeVoz={
+          ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin && !supportWriteError(user.support, activeOrg.orgId)
+        }
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
+        bot={roboLigado ? { label: ROTULO_DO_ROBO } : null}
       />
     </div>
   );

@@ -70,6 +70,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supabase = await createClient();
   // Estreitados aqui: dentro de `pagar()` o TypeScript não carrega o `if` de cima.
   const orgId = authz.org.orgId;
+  const atorId = authz.user.id;
   const corpo = lido.data;
 
   /**
@@ -89,6 +90,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     const parcelaPaga = data as ParcelaPaga;
     await audit({
       action: "honorarios.parcela_paga",
+      actorUserId: atorId,
+      organizationId: orgId,
       resourceType: "honorarios_parcela",
       resourceId: parcelaId,
       requestId,

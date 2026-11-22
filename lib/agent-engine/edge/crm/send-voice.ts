@@ -62,13 +62,18 @@ export async function resolverCaminhoDeVoz(
   const hash = bodyHash(input.textoFalado);
   const resolucao = await resolverChaveDoLedger(input.store, intent, hash);
 
-  if (resolucao.kind === "already_sent" || resolucao.kind === "blocked") {
+  if (
+    resolucao.kind === "already_sent" ||
+    resolucao.kind === "blocked" ||
+    resolucao.kind === "failed_permanent"
+  ) {
     // O chamador (sendTurnMessage) decide o que fazer com isto — aqui só se
-    // recusa a pagar uma síntese para um envio que já terminou ou foi vetado.
+    // recusa a pagar uma síntese para um envio que já terminou, foi vetado ou
+    // que o canal já recusou em definitivo com este mesmo texto.
     throw new VozLedgerTerminalError(
       resolucao.kind,
       resolucao.key,
-      resolucao.kind === "already_sent" ? resolucao.crmMessageId : null,
+      resolucao.kind === "blocked" ? null : resolucao.crmMessageId,
     );
   }
 
@@ -181,7 +186,7 @@ export function registrarCustoDeVoz(params: {
 
 export class VozLedgerTerminalError extends Error {
   constructor(
-    public readonly kind: "already_sent" | "blocked",
+    public readonly kind: "already_sent" | "blocked" | "failed_permanent",
     public readonly key: string,
     public readonly crmMessageId: string | null,
   ) {

@@ -19,20 +19,34 @@ import type { ValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 
 export interface MetaDoMes {
   id: string;
-  escopo: "empresa" | "funil";
+  /** #4796: a meta do vendedor é a mais estreita das três. */
+  escopo: "empresa" | "funil" | "vendedor";
+  /** #4796: `vendas_ganhas` (contagem) ou `valor_vendido` (centavos). */
+  indicador: "vendas_ganhas" | "valor_vendido";
   pipeline_id: string | null;
   pipeline_nome: string | null;
+  /** #4796: dono da meta individual; `null` na meta da empresa/funil. */
+  vendedor_id: string | null;
+  /** #4796: moeda do alvo em valor; `null` na meta por quantidade. */
+  moeda: string | null;
   alvo: number;
   realizado: number;
   percentual: number;
   falta: number;
   atingida: boolean;
+  /** #4796: projeção até o fim da janela no ritmo medido; `null` sem o que projetar. */
+  projecao: number | null;
+  /** #4796: em valor, a soma veio de leitura paginada e pode ser um piso. */
+  realizado_truncado: boolean;
 }
 
 export interface MetasDoMes {
   window: { from: string; to: string };
   periodo: string;
-  indicador: string;
+  /** Só quando todas as metas do mês têm o mesmo indicador; senão `null`. */
+  indicador: string | null;
+  /** #4796: os indicadores presentes no mês. */
+  indicadores: string[];
   metas: MetaDoMes[];
   /**
    * As DUAS parcelas do período (fatia 2, item 1, da #3602): vendido único ×

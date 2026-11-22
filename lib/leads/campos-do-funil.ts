@@ -36,6 +36,89 @@ export function camposPorEscopo(
 }
 
 /**
+ * Os campos de um escopo em TODOS os funis, unidos por CHAVE (#4929).
+ *
+ * O CONTATO não tem funil próprio: a ficha lê o funil padrão (`useDefaultPipeline`)
+ * e o lapis da lista não tem funil nenhum para ler. O servidor já resolve isso
+ * perguntando a todos os funis (`defsDoPadraoDaOrg`, que é o que o PATCH usa para
+ * julgar o `custom_fields`), então a tela precisa do MESMO conjunto — senão o
+ * diálogo esconde um campo que a gravação conhece.
+ *
+ * A união é por CHAVE, nunca por rótulo: dois funis podem ter o mesmo rótulo em
+ * campos diferentes (dois "Código"), e juntá-los por rótulo apagaria um deles. A
+ * PRIMEIRA definição de cada chave vence, na ordem em que os funis chegam — a
+ * mesma ordem de `defsDoPadraoDaOrg` (`created_at`), para que a definição exibida
+ * seja a primeira que o servidor julga quando a chave aparece em dois funis.
+ */
+export function camposPorEscopoDosFunis(
+  settingsDosFunis: readonly unknown[],
+  escopo: EscopoDoCampo,
+): CustomFieldDef[] {
+  const vistos = new Set<string>();
+  const out: CustomFieldDef[] = [];
+  for (const settings of settingsDosFunis) {
+    // `settings` de funil é jsonb livre: lixo vira lista vazia, nunca exceção.
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) continue;
+    for (const campo of camposPorEscopo(camposDoFunil(settings as Record<string, unknown>), escopo)) {
+      if (vistos.has(campo.key)) continue;
+      vistos.add(campo.key);
+      out.push(campo);
+    }
+  }
+  return out;
+}
+
+/**
+ * O campo está liberado para o MODELO? (issue #4669)
+ *
+ * Só o `true` EXPLÍCITO libera. A ausência da marca — toda definição que já
+ * existe, e o que a tela grava quando a caixa está desmarcada — é DESMARCADO:
+ * o valor fica no card e não vai ao modelo. A régua mora aqui, e não em cada
+ * caminho, porque são vários (`negocio-do-followup.ts` e toda resposta de
+ * negócio no turno, em `lib/mcp/tools/leads.ts`) e cópias divergiriam no dia em
+ * que uma delas mudasse.
+ */
+export function campoLiberadoParaIa(
+  campo: Pick<CustomFieldDef, "ia_pode_ler">,
+): boolean {
+  return campo.ia_pode_ler === true;
+}
+
+/** Os campos de um escopo que a IA pode ler — a lista que o prompt recebe. */
+export function camposLiberadosParaIa(
+  campos: CustomFieldDef[],
+  escopo: EscopoDoCampo = "negocio",
+): CustomFieldDef[] {
+  return camposPorEscopo(campos, escopo).filter(campoLiberadoParaIa);
+}
+
+/**
+ * O recorte de `custom_fields` que a IA pode ler (issue #4669) — o que as
+ * ferramentas de negócio devolvem DENTRO de um turno de agente.
+ *
+ * Chave que o funil não declara não tem marca, e sem marca não há autorização:
+ * fica de fora, igual à leitura do bloco do follow-up ("sem rótulo não há como
+ * o modelo saber o que o valor significa"). `custom_fields` que não é objeto
+ * volta como veio — o filtro não inventa nem apaga a forma da ficha.
+ */
+export function filtrarCamposLegiveisPelaIa(
+  settings: Record<string, unknown> | null | undefined,
+  custom: unknown,
+): Record<string, unknown> | null {
+  if (!custom || typeof custom !== "object" || Array.isArray(custom)) {
+    return (custom as Record<string, unknown> | null | undefined) ?? null;
+  }
+  const liberadas = new Set(
+    camposLiberadosParaIa(camposDoFunil(settings)).map((campo) => campo.key),
+  );
+  const out: Record<string, unknown> = {};
+  for (const [chave, valor] of Object.entries(custom as Record<string, unknown>)) {
+    if (liberadas.has(chave)) out[chave] = valor;
+  }
+  return out;
+}
+
+/**
  * O embed `crm_pipelines(settings)` do PostgREST vem objeto (FK to-one) ou,
  * se a relação vacilar, array. Os dois caem aqui — lixo vira `null`.
  */

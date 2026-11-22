@@ -18,6 +18,7 @@
  * dentro, e é o que separa esta chamada de um vazamento entre organizações.
  */
 import { z } from "zod";
+import { AMIGO_CONTEXT_REQUIRED } from "@/lib/amigo/agenda";
 
 import {
   horariosLivresDaOrg,
@@ -34,6 +35,11 @@ import {
   cancelarAgendamentoHandler,
   marcarAgendamentoHandler,
 } from "@/app/api/v1/agenda/agendamentos/_handler";
+import { negociosDoCompromisso } from "@/lib/agenda/negocios-do-compromisso";
+import {
+  podeRegistrarComparecimento,
+  RECUSA_DO_COMPARECIMENTO,
+} from "@/lib/agenda/comparecimento";
 import { ApiError } from "@/lib/api/types";
 import { SITUACOES_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { contatoDoNegocio } from "@/lib/operacao/modelos-de-mensagem";
@@ -125,6 +131,7 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
       return { tipos: [], motivo: r.codigo, mensagem: r.motivoParaCliente };
     }
     return {
+      ...(r.provider === "amigo" ? { provider: r.provider, provider_context: r.provider_context } : {}),
       tipos: r.tipos.map((t) => ({
         // O SLUG vem primeiro, e o `id` NÃO vem: o slug existe para dar à IA um
         // handle que ela não alucina, e devolver o uuid ao lado convidaria o
@@ -136,7 +143,17 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // Traduzido: `in_person` é vocabulário de banco e o modelo repassa o que
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
+        // O preço que a RECEPÇÃO cobra por este tipo, em CENTAVOS e cru: é a
+        // MESMA coluna (`calendar_event_types.default_price_cents`) que a
+        // comanda lê para sugerir o valor. Formatar em reais aqui faria o
+        // modelo repassar o texto formatado e errar a conta em qualquer
+        // reajuste; `null` é "a clínica não definiu preço", e zero seria um
+        // preço — grátis — que ninguém cadastrou.
+        preco_padrao_cents: t.precoPadraoCents ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
+        ...(t.external_provider
+          ? { external_provider: t.external_provider, external_id: t.external_id, external_connection_id: t.external_connection_id }
+          : {}),
         ...(t.servico ? { servico: t.servico } : {}),
       })),
     };
@@ -372,6 +389,7 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
       return {
         horarios: [],
         motivo: consulta.codigo,
+        ...(consulta.provider ? { provider: consulta.provider, provider_context: consulta.provider_context } : {}),
         // A face do CLIENTE, nunca a do operador: `motivoParaOperador` nomeia
         // campo e pessoa, e o modelo repassa o que recebe (DECISÃO 20).
         mensagem: consulta.motivoParaCliente,
@@ -566,6 +584,9 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         quando: rotuloLocal(new Date(a.iniciaEm), a.fuso),
         fim_quando: rotuloLocal(new Date(a.terminaEm), a.fuso),
         situacao: a.situacao,
+        ...(a.authority && a.authority !== "local"
+          ? { authority: a.authority, external_status: a.external_status, external_connection_id: a.external_connection_id }
+          : {}),
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
@@ -616,12 +637,16 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
     "esse atendimento ainda não tem responsável definido. Não invente horários: avise que alguém da equipe confirma.",
   agenda_disponibilidade_invalida:
     "não consigo ler a agenda desse atendente agora. Não ofereça horários e não diga que está sem vaga — avise que alguém da equipe confirma.",
+  agenda_autoridade_externa:
+    "esse compromisso é gerido em outro sistema da equipe e não se muda por aqui. Não tente de novo: avise que alguém da equipe confirma.",
+  agenda_tipo_de_sistema_externo:
+    "esse atendimento é marcado pela equipe em outro sistema. Não ofereça horários: avise que alguém da equipe confirma.",
   agenda_ja_cancelado:
     "esse compromisso já estava desmarcado. Não é erro: siga sem desmarcar de novo.",
   agenda_ainda_nao_aconteceu:
     "esse compromisso ainda não começou, então não há desfecho a registrar. Se a pessoa avisou que " +
     "não vem, use `crm_cancel_appointment`; se ela quer outro dia, `crm_reschedule_appointment`.",
-  not_found: "não encontrei esse compromisso. Confirme com `crm_list_appointments` antes de tentar de novo.",
+  not_found: "não encontrei esse compromisso nesta empresa: ele não existe ou é de outra organização. Confirme com `crm_list_appointments` antes de tentar de novo.",
   internal_error: "não consegui completar agora. Avise que alguém da equipe confirma, e não repita a tentativa.",
 };
 
@@ -637,8 +662,19 @@ async function semDerrubarOTurno<T>(
     return {
       [chave]: false,
       motivo: e.code,
+      ...(e.code === "agenda_amigo_unconfirmed"
+        ? {
+            resultado_incerto: true,
+            ...(typeof e.details?.operation_id === "string" ? { operation_id: e.details.operation_id } : {}),
+            provider: "amigo",
+          }
+        : {}),
       mensagem:
-        ENSINO_POR_CODIGO[e.code] ??
+        (e.code === "agenda_amigo_context_required"
+          ? AMIGO_CONTEXT_REQUIRED
+          : e.code === "agenda_amigo_unconfirmed"
+            ? "A operação no Amigo precisa de conferência humana. Não confirme a marcação ao paciente nem repita: avise que a equipe confere."
+            : ENSINO_POR_CODIGO[e.code]) ??
         "não consegui completar agora. Avise que alguém da equipe confirma o horário.",
     };
   }
@@ -774,6 +810,11 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
         {
           organization_id: ctx.organizationId,
           actor: ctx.actor,
+          // O domínio do Amigo lê o papel; ele vem do contexto autenticado do MCP,
+          // nunca dos argumentos.
+          amigoRole: ctx.role,
+          amigoAgentExecution: Boolean(ctx.contatoDoTurno),
+          amigoAgentToolIds: ctx.amigoAgentToolIds,
           requestId: ctx.requestId,
           meetingBooking: ctx.meetingBooking,
           ...(ctx.idempotencyKey !== undefined ? { idempotencyKey: ctx.idempotencyKey } : {}),
@@ -976,6 +1017,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
         marcado: false,
         horarios: [],
         motivo: consulta.codigo,
+        ...(consulta.provider ? { provider: consulta.provider, provider_context: consulta.provider_context } : {}),
         // A face do CLIENTE, nunca a do operador (DECISÃO 20).
         mensagem: consulta.motivoParaCliente,
       };
@@ -1122,7 +1164,7 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     semDerrubarOTurno("remarcado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds: ctx.amigoAgentToolIds },
         {
           id: input.appointment_id,
           starts_at: input.new_starts_at,
@@ -1161,7 +1203,7 @@ export const crmCancelAppointment: McpToolDefinition<typeof cancelarShape> = {
     semDerrubarOTurno("cancelado", async () => {
       const r = await cancelarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds: ctx.amigoAgentToolIds },
         { id: input.appointment_id, reason: input.reason },
       );
       return { cancelado: true, compromisso: compromissoComHorarioLocal(r) };
@@ -1192,7 +1234,7 @@ export const crmConfirmAppointment: McpToolDefinition<typeof confirmarShape> = {
     semDerrubarOTurno("confirmado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds: ctx.amigoAgentToolIds },
         {
           id: input.appointment_id,
           status: "confirmed",
@@ -1214,27 +1256,64 @@ const desfechoShape = {
 export const crmSetAppointmentOutcome: McpToolDefinition<typeof desfechoShape> = {
   name: "crm_set_appointment_outcome",
   description:
-    "Propõe à equipe registrar comparecimento ou falta depois do início do compromisso. " +
-    "A presença exige confirmação humana na Agenda; texto interpretado pelo assistente não é autorização. " +
-    "Se a pessoa avisou que não vem, use crm_cancel_appointment para o cancelamento operacional.",
+    "Registra comparecimento ou falta depois do início do compromisso. Pela tela é humano; " +
+    "por token exige o escopo `agenda:attendance`. Devolve o negócio vinculado. " +
+    "Se a pessoa avisou que não vem, use crm_cancel_appointment.",
   inputSchema: desfechoShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("registrado", async () => {
-      if (ctx.actor.type !== "user") return { registrado: false, requer_confirmacao_humana: true,
-        orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
-        href: `/app/agenda?compromisso=${input.appointment_id}` };
+      /**
+       * #4515 — O DESFECHO POR TOKEN.
+       *
+       * A pessoa da equipe continua registrando pela Agenda, e o agente de IA
+       * continua PROPONDO: `requer_confirmacao_humana` é a resposta de sempre, e
+       * ela existe porque texto interpretado por modelo não é testemunho. O que
+       * muda é o token emitido com `agenda:attendance`: ele foi autorizado por
+       * quem emite token, e é o caminho da integração que já viu o atendimento
+       * acontecer.
+       *
+       * Sem o escopo, o token recebe recusa NOMEADA — nunca a de agente, que
+       * mandaria a pessoa clicar na tela sem dizer por quê.
+       */
+      if (!podeRegistrarComparecimento(ctx.actor, ctx.tokenScopes)) {
+        if (ctx.actor.type === "api_token") {
+          return { registrado: false, motivo: "escopo_ausente", mensagem: RECUSA_DO_COMPARECIMENTO };
+        }
+        return { registrado: false, requer_confirmacao_humana: true,
+          orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
+          href: `/app/agenda?compromisso=${input.appointment_id}` };
+      }
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+          amigoAgentExecution: Boolean(ctx.contatoDoTurno),
+          amigoAgentToolIds: ctx.amigoAgentToolIds,
+          // O escopo é do TOKEN; sem ele o handler recusa. Passar aqui é o que
+          // faz a tool e a rota usarem a MESMA decisão (#4515).
+          escoposDoToken: ctx.tokenScopes,
+        },
         {
           id: input.appointment_id,
           status: input.outcome,
           ...(input.notes ? { notes: input.notes } : {}),
         },
       );
-      return { registrado: true, compromisso: compromissoComHorarioLocal(r) };
+      // O desfecho JÁ foi gravado. A leitura do vínculo é enriquecimento: se
+      // falhar, a resposta perde o card e não a marcação — desfazer não é opção.
+      let negocio: { id: string; titulo: string } | null = null;
+      try {
+        negocio =
+          (await negociosDoCompromisso(ctx.supabase, ctx.organizationId, input.appointment_id))[0] ??
+          null;
+      } catch {
+        negocio = null;
+      }
+      return { registrado: true, compromisso: compromissoComHorarioLocal(r), negocio };
     }),
 };

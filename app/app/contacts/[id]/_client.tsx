@@ -34,6 +34,10 @@ import {
   useMarkAlwaysHumanContact,
   useUnmarkAlwaysHumanContact,
 } from "@/hooks/contacts/useAlwaysHumanContact";
+import { useDesfazerSemInteresse } from "@/hooks/contacts/useSemInteresse";
+import { BotaoMarcarSemInteresse } from "@/components/contacts/BotaoMarcarSemInteresse";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
+import { lerRecusaSemInteresse } from "@/lib/lgpd/sem-interesse";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -46,6 +50,7 @@ import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { JuntarComOutraFicha } from "@/components/contacts/JuntarComOutraFicha";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
+import { NiveisDaOrigem } from "@/components/contacts/NiveisDaOrigem";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
@@ -54,11 +59,16 @@ import { nomeDoContato, rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-conta
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
+import { DocumentoDaFicha } from "@/components/contacts/DocumentoDaFicha";
+import { PAIS_PADRAO, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { EmpresaDaProspeccao } from "@/components/crm-b2b/EmpresaDaProspeccao";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
+import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
 interface Props {
   contactId: string;
@@ -70,23 +80,6 @@ interface Props {
   b2b?: boolean;
 }
 
-/**
- * Um nível da origem, ou nada.
- *
- * Escondido quando não há valor, em vez de mostrar "—": quatro travessões
- * seguidos leem como cadastro quebrado, e não como "este contato não veio de
- * campanha". O rótulo chega já traduzido porque `t()` com argumento não literal
- * escapa do guardião de espanhol.
- */
-function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null }) {
-  if (!valor) return null;
-  return (
-    <div>
-      <dt className="text-xs uppercase text-muted-foreground">{rotulo}</dt>
-      <dd className="mt-1 break-words">{valor}</dd>
-    </div>
-  );
-}
 
 export function ContactDetailClient({
   contactId,
@@ -126,6 +119,9 @@ export function ContactDetailClient({
   // efeito que o Inbox enxerga.
   const marcarSempreHumano = useMarkAlwaysHumanContact(contactId);
   const desmarcarSempreHumano = useUnmarkAlwaysHumanContact(contactId);
+  // "Não tem interesse" (decisão D3): o desfazer da aba LGPD. O marcar mora em
+  // `BotaoMarcarSemInteresse`, o mesmo do painel da conversa.
+  const desfazerSemInteresse = useDesfazerSemInteresse(contactId);
 
   /*
     Pede o nome da campanha SÓ quando há um anúncio e ainda não há nome.
@@ -142,7 +138,8 @@ export function ContactDetailClient({
   const temAnuncio =
     typeof metadataDoContato.ad_id === "string" && metadataDoContato.ad_id.trim() !== "";
   const jaTemNome = typeof metadataDoContato.campaign_name === "string";
-  const hierarquia = useHierarquiaDoAnuncio(contactId, temAnuncio && !jaTemNome);
+  const origemGoogle = (metadataDoContato.ad_platform ?? q.data?.data.source) === "google_ads";
+  const hierarquia = useHierarquiaDoAnuncio(contactId, !origemGoogle && temAnuncio && !jaTemNome);
 
   if (q.isLoading) {
     return (
@@ -162,6 +159,9 @@ export function ContactDetailClient({
   }
 
   const contact = q.data.data;
+  // O documento do titular é o do PAÍS da organização (CPF, NIF): o rótulo da
+  // linha e a máscara saem do perfil, a mesma régua do cadastro.
+  const perfilDoPaisDaOrg = perfilDoPais(activeOrg?.country);
   const linksDoContato = linksParaExibir(contact.custom_fields);
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
@@ -178,6 +178,18 @@ export function ContactDetailClient({
   // aparecia como "Sem nome" aqui e com o número no inbox.
   const displayName = rotuloParaAEquipe(contact, t);
 
+  // A recusa de ofertas, lida do `consent` com a MESMA régua das guardas de envio
+  // (`recusaRegistrada`). O botão some quando já há recusa de qualquer origem: gravar
+  // outra por cima apagaria a data e a origem da primeira.
+  // A forma gravada é lida pelo módulo que a grava (`lerRecusaSemInteresse`), nunca pelo
+  // caminho do jsonb aqui na tela.
+  const recusaDeOfertas = lerRecusaSemInteresse(contact.consent);
+  const semInteresse = recusaDeOfertas !== null;
+  const recusouOfertas = recusaRegistrada(contact.consent, "marketing");
+  const podeMarcarSemInteresse =
+    (user.is_platform_admin && !user.support) ||
+    Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
+
   // Os quatro níveis que quem opera tráfego lê. O jsonb já os recebia dos dois
   // caminhos de entrada — site e clique-para-WhatsApp — e nenhuma tela o abria.
   //
@@ -186,7 +198,7 @@ export function ContactDetailClient({
   // `adset_name`, `ad_name`) são exatamente as que `origemDoContato` já lê, no
   // degrau abaixo da UTM. Uma regra de precedência só, e ela já estava escrita.
   const origem = origemDoContato(
-    hierarquia.data
+    !origemGoogle && hierarquia.data
       ? { ...(contact.source_metadata ?? {}), ...hierarquia.data }
       : contact.source_metadata,
     contact.source,
@@ -239,6 +251,7 @@ export function ContactDetailClient({
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
             {contact.ai_opt_out && <Badge variant="secondary">{t("Sempre atendimento humano")}</Badge>}
+            {semInteresse && <Badge variant="secondary">{t("Sem interesse em ofertas")}</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
@@ -377,6 +390,9 @@ export function ContactDetailClient({
                 </span>
               </Button>
             )}
+            {/* SEM INTERESSE (decisão D3): quem ouviu o "não" registra. Confirma antes,
+                porque só um administrador desfaz (aba LGPD). Não bloqueia o contato. */}
+            {!recusouOfertas && podeMarcarSemInteresse && <BotaoMarcarSemInteresse contactId={contactId} />}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
             {podeJuntar && (
               <Button
@@ -413,7 +429,8 @@ export function ContactDetailClient({
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="timeline">{t("Linha do tempo")}</TabsTrigger>
+          <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
 
@@ -439,9 +456,22 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Email</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Email")}</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
+              {/*
+                O documento do titular (CPF no Brasil). Cadastrado e nunca visto
+                era o defeito: a ficha só recebia `cpf_available`. O número não
+                vem no payload — "Mostrar" pede ao servidor, que confere papel
+                (gerente ou acima) e audita a leitura.
+              */}
+              <DocumentoDaFicha
+                contatoId={contact.id}
+                temDocumento={contact.cpf_available}
+                rotulo={perfilDoPaisDaOrg.documento.rotulo}
+                podeVer={Boolean(activeOrg && roleAtLeast(activeOrg.role, "manager"))}
+                mascararComoCpf={perfilDoPaisDaOrg.codigo === PAIS_PADRAO}
+              />
               {/*
                 Os telefones da ficha (Spec 31). Sem extra, a linha segue como hoje
                 ("Telefone", com o tipo ao lado); com extra, "Telefones" lista o
@@ -505,20 +535,7 @@ export function ContactDetailClient({
                   </dd>
                 )}
               </div>
-              <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
-              <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
-              <NivelDaOrigem rotulo={t("Anúncio")} valor={origem.anuncio} />
-              <NivelDaOrigem rotulo={t("Posicionamento")} valor={origem.posicionamento} />
-              {origem.semPosicionamentoDeAnuncio && (
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">
-                    {t("Posicionamento")}
-                  </dt>
-                  <dd className="mt-1 text-sm text-muted-foreground">
-                    {t("A plataforma não informa o posicionamento de cada clique em anúncio.")}
-                  </dd>
-                </div>
-              )}
+              <NiveisDaOrigem origem={origem} />
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Última atividade")}</dt>
                 <dd className="mt-1">
@@ -554,7 +571,7 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Tags</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Tags")}</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
                   {contact.tags.length === 0
                     ? "—"
@@ -580,10 +597,20 @@ export function ContactDetailClient({
                 )}
                 podeCriarPessoa={Boolean(
                   (user.is_platform_admin && !user.support) ||
-                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />
+              {/* #3198, fatia 3: o contato que veio da prospecção vira Empresa. */}
+              <div className="mt-4">
+                <EmpresaDaProspeccao
+                  contactId={contactId}
+                  podeCriar={Boolean(
+                    (user.is_platform_admin && !user.support) ||
+                      (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                  )}
+                />
+              </div>
             </div>
           )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
@@ -629,10 +656,72 @@ export function ContactDetailClient({
           <TimelineView contactId={contactId} />
         </TabsContent>
 
+        {/* Os dados da EMPRESA que a prospecção usa (segmento, CNPJ, links,
+            diagnóstico e oferta). Lidos e gravados só pelo esquema central,
+            lib/contacts/diagnostico-do-contato.ts. */}
+        <TabsContent value="diagnostico" className="mt-4">
+          <DiagnosticoDoContato
+            key={contact.updated_at}
+            contato={contact}
+            usuarioId={user.id}
+            podeEditar={podeEditarDiagnostico(contact, user, activeOrg?.role)}
+          />
+        </TabsContent>
+
         {isAdmin && (
           <TabsContent value="lgpd" className="mt-4 space-y-4">
             {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
             {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
+            {/* A volta da recusa "sem interesse" (decisão D3). Só a que o produto gravou:
+                a revogação vinda da captação não se desfaz por aqui. */}
+            {semInteresse && (
+              <Card className="space-y-4 p-4" data-testid="recusa-de-ofertas">
+                <div>
+                  <h2 className="text-lg font-semibold">{t("Recusa de ofertas")}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {/* Sem data legível (`declinedAt: null`), a frase perde o "em" e a vírgula:
+                        "Recusa registrada pela equipe.", nunca "Recusa registrada em, pela equipe." */}
+                    {recusaDeOfertas?.declinedAt
+                      ? `${t("Recusa registrada em")} ${format(new Date(recusaDeOfertas.declinedAt), "dd/MM/yyyy", { locale: localeDaData })}, `
+                      : `${t("Recusa registrada")} `}
+                    {recusaDeOfertas?.origem === "conversa_de_prospeccao"
+                      ? t("na conversa da prospecção")
+                      : t("pela equipe")}
+                    {". "}
+                    {t("Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.")}
+                  </p>
+                </div>
+                {/* Só administrador desfaz (a rota cobra `requireRole("admin")`): a aba
+                    LGPD inteira já só aparece para `isAdmin`. */}
+                {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={desfazerSemInteresse.isPending}
+                        data-testid="desfazer-sem-interesse"
+                      >
+                        {t("Desfazer recusa")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("Desfazer a recusa de ofertas?")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: os negócios que ela levou para Perdido continuam lá e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => desfazerSemInteresse.mutate()}>
+                          {t("Desfazer recusa")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </Card>
+            )}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>
@@ -667,6 +756,7 @@ export function ContactDetailClient({
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        funilDosCampos={pipelineQuery.data?.pipeline ?? null}
         vocabulario={vocabularioDeEtiquetas.data}
         canonicalTags={canonicalTags}
       />

@@ -16,6 +16,13 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.require
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/i18n/dicionario", () => ({ traduzir: mocks.traduzir }));
+// `resolveAuthDual` (ramo de sessão) cria o cliente de sessão; o token não é usado aqui.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 import { GET, POST } from "./route";
 
@@ -94,7 +101,7 @@ describe("GET /api/v1/settings/proposal-templates", () => {
 
   it("como viewer devolve 8 itens quando o banco não tem cópia", async () => {
     montarMundo({ papel: "viewer" });
-    const res = await GET();
+    const res = await GET(new Request("http://x") as never);
     expect(res.status).toBe(200);
     expect(((await corpo(res)).data as unknown[])).toHaveLength(8);
   });

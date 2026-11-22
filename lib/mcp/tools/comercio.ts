@@ -13,6 +13,10 @@ import { z } from "zod";
 
 import type { McpToolDefinition } from "../types";
 import { buscarComRelaxamento } from "@/lib/catalogo/busca";
+import { INSTRUCOES_DE_SERVICO, vitrineDeServicos } from "@/lib/catalogo/servicos-na-busca";
+import { MODULO_SERVICOS, todosOsDetalhes } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigadoComMemo } from "@/lib/instalacao/modulos";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { formatCents } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
@@ -250,7 +254,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
+          "id, codigo, nome, descricao, marca, categoria, capacidade, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -289,20 +293,49 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       descricao: string | null;
       marca: string | null;
       categoria: string | null;
+      capacidade: string | null;
       preco_cents: number;
       moeda: string;
       controla_estoque: boolean;
       quantidade: number;
+      ativo: boolean;
       fotos: string[] | null;
     };
 
-    const { achados, ignorados } = buscarComRelaxamento((data ?? []) as Linha[], input.termo);
+    // Desligada na empresa, a capacidade guardada não pontua nem sai na resposta.
+    const capacidadeLigada = (await capacidadesDaOrganizacao(ctx.supabase, ctx.organizationId)).includes(
+      "capacidade_do_produto",
+    );
+    const produtos: Linha[] = capacidadeLigada
+      ? (data as Linha[])
+      : (data as Linha[]).map((linha) => ({ ...linha, capacidade: null }));
+
+    // ─── O catálogo de serviços (módulo opcional, doc 212) ──────────────────
+    //
+    // Desligado: nada muda — nem consulta, nem resposta. Ligado: os detalhes do
+    // módulo decidem quem a IA pode oferecer, a variação responde pelo
+    // principal, e o serviço ganha o bloco `servico`. Sem conseguir ler os
+    // detalhes, a busca FALHA (lança), como já falha sem ler o catálogo: tratar
+    // o erro como "não é serviço" devolveria à conversa o item que a equipe
+    // tirou dela (`ia_oferece = false`).
+    const vitrine = (await moduloLigadoComMemo(ctx.supabase, MODULO_SERVICOS))
+      ? vitrineDeServicos(produtos, await todosOsDetalhes(ctx.supabase, ctx.organizationId), {
+          familiaParcial: varreduraParcial,
+        })
+      : null;
+
+    const busca = buscarComRelaxamento(vitrine ? vitrine.visiveis : produtos, input.termo);
+    const { ignorados } = busca;
+    const achados = vitrine ? vitrine.principalNoLugar(busca.achados) : busca.achados;
+    // Serviço não tem prateleira: a tela de produtos e a planilha podem marcar
+    // `controla_estoque` num item de serviço, e ele não some por "sem estoque".
+    const temEstoque = (p: Linha) => vitrine?.ehServico(p.id) || !p.controla_estoque || p.quantidade > 0;
 
     // `controla_estoque` é o conserto de uma armadilha da versão anterior, que
     // filtrava por quantidade sempre: numa loja que não conta estoque (decant de
     // perfume, item sob encomenda) o catálogo INTEIRO ficava invisível.
     const disponiveis = input.somente_disponiveis
-      ? achados.filter((a) => !a.produto.controla_estoque || a.produto.quantidade > 0)
+      ? achados.filter((a) => temEstoque(a.produto))
       : achados;
 
     const topo = disponiveis.slice(0, input.limite);
@@ -351,6 +384,10 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     const empate = topo.length > 1 && topo[0]!.nota === topo[1]!.nota;
 
     const mensagem = avisosDaBusca({ empate, ignorados });
+    const servicos = new Map(topo.flatMap(({ produto }) => {
+      const s = vitrine?.descricao(produto.id);
+      return s ? [[produto.id, s] as const] : [];
+    }));
 
     return {
       produtos: topo.map(({ produto }) => ({
@@ -360,12 +397,20 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
         preco_cents: produto.preco_cents,
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
-        disponivel: !produto.controla_estoque || produto.quantidade > 0,
+        ...(produto.capacidade ? { capacidade: produto.capacidade } : {}),
+        // Serviço não tem prateleira: `temEstoque` também pergunta à vitrine.
+        disponivel: temEstoque(produto),
         // Quantas fotos, e não quais: o caminho é vocabulário interno e a URL
         // assinada expira. Quem manda a foto é o `send_message` do agente, com
         // `produto_codigo` — ele acha as fotos pelo código (migration 0390).
         ...(produto.fotos && produto.fotos.length > 0 ? { fotos: produto.fotos.length } : {}),
+        // Serviço (#3372, módulo ligado): tipo, "a partir de", variações com
+        // preço e sinal, prazo e as instruções internas MARCADAS.
+        ...(servicos.has(produto.id) ? { servico: servicos.get(produto.id) } : {}),
       })),
+      // A orientação viaja com o dado, e só quando há serviço: a descrição da
+      // ferramenta é a mesma com o módulo ligado ou desligado.
+      ...(servicos.size > 0 ? { instrucoes_servico: INSTRUCOES_DE_SERVICO } : {}),
       empate,
       // Relaxamento é o irmão do empate: nos dois a busca sabe que a resposta
       // NÃO é exatamente o que foi pedido, e nos dois quem decide é a pessoa.

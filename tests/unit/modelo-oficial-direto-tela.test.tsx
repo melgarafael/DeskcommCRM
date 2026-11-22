@@ -104,6 +104,9 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
 import { TemplatesClient } from "@/components/connections/TemplatesClient";
 import { ApiError } from "@/lib/api/types";
 
+// Record the editor's scheduled scroll, which jsdom does not implement.
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
 // Cada caso mede a PRÓPRIA chamada: sem isto, o `calls[0]` de um caso é a
 // chamada do anterior e a asserção passa (ou falha) pelo motivo errado.
 beforeEach(() => {
@@ -190,6 +193,9 @@ describe("tela do canal oficial direto — gestão de modelo", () => {
     const form = document.querySelector('[data-formulario-do-modelo="editar"]') as HTMLElement;
     const salvar = within(form).getByRole("button", { name: "Salvar e enviar para revisão" });
 
+    await waitFor(() =>
+      expect(form.scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" }),
+    );
     expect(within(form).getByText(/A variável 1 do corpo está sem exemplo/)).toBeTruthy();
     expect((salvar as HTMLButtonElement).disabled).toBe(true);
 
