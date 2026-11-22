@@ -23,8 +23,9 @@ minuto que nunca cai numa rodada do agente (que roda em :00, :05, :10…): `1 2 
 
 Enquanto o pedido espera, ele é reconhecido como **agendado**: a tela de
 atualização diz "Atualização agendada para 02h00", sem o botão de pedir de novo
-e sem o falso "perdi contato com o servidor" depois de 15 minutos; e a
-instalação, atualização e publicação de extensões continuam bloqueadas até a
+e sem o falso "perdi contato com o servidor" depois de 15 minutos; um segundo
+pedido feito enquanto isso (de outra aba ou pela API) recebe a resposta de que o
+agendamento segue de pé, em vez de cancelá-lo; e a instalação, atualização e publicação de extensões continuam bloqueadas até a
 atualização rodar, como já eram durante uma atualização em curso.
 
 A janela é lida no relógio do fuso `SYSTEM_UPDATE_WINDOW_TZ` (nome IANA), com
@@ -32,6 +33,6 @@ A janela é lida no relógio do fuso `SYSTEM_UPDATE_WINDOW_TZ` (nome IANA), com
 numa VPS nova costuma ser UTC. Para conferir a hora que vale:
 `TZ=America/Sao_Paulo date`.
 
-Contribuição de @webtecnica (#4334). O estado agendado, o fuso e a recusa do
+Contribuição de @webtecnica (#4334, #4504). O estado agendado, o fuso e a recusa do
 minuto fora das rodadas foram feitos pelos mantenedores, sobre o desenho de
 @webtecnica.
