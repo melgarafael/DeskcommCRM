@@ -92,7 +92,7 @@ export function PainelDosTiposDeLink({ tiposIniciais }: { tiposIniciais: TipoDeL
                 type="checkbox"
                 checked={marcados.has(tipo.id)}
                 onChange={() => alternar(tipo.id)}
-                className="h-4 w-4 rounded border-border"
+                className="h-4 w-4 rounded-md border-border"
               />
               {t(tipo.rotulo)}
             </label>
