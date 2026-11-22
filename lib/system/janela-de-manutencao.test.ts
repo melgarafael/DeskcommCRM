@@ -237,16 +237,27 @@ describe("fuso da janela (#4504)", () => {
     });
   });
 
-  it("o compose declara o MESMO fuso padrão do código", () => {
-    // Duas declarações do mesmo fuso é uma a mais do que o ideal; se elas
-    // divergirem, a janela muda de significado em produção sem nenhum teste
-    // vermelho. Esta é a cerca.
+  it("o serviço `app` do compose NÃO declara o fuso: a fonte é o código, e o `.env` chega inteiro", () => {
+    // O serviço `app` recebe o `.env` por `env_file: .env`, então quem declara
+    // `SYSTEM_UPDATE_WINDOW_TZ` já o vê no app, e o padrão mora em
+    // `FUSO_PADRAO_DA_JANELA`. Uma linha no compose é uma SEGUNDA fonte do
+    // mesmo padrão — e `TZ: UTC` em `environment:` passaria por cima de um `TZ`
+    // que o operador tivesse posto no `.env`, mudando comportamento de quem
+    // atualiza. Esta é a cerca: o fuso da janela não volta para o `app`.
+    //
+    // O recorte é do SERVIÇO, não do arquivo: o `scheduler` declara `TZ: UTC`
+    // de propósito (é o cron do contêiner), e proibi-lo ali seria outra coisa.
     const compose = readFileSync(
       fileURLToPath(new URL("../../docker-compose.prod.yml", import.meta.url)),
       "utf8",
     );
-    expect(compose).toContain(
-      `SYSTEM_UPDATE_WINDOW_TZ: \${SYSTEM_UPDATE_WINDOW_TZ:-${FUSO_PADRAO_DA_JANELA}}`,
-    );
+    const inicio = compose.search(/^  app:\s*$/m);
+    expect(inicio, "serviço `app` não encontrado no compose").toBeGreaterThan(-1);
+    const doApp = compose.slice(inicio + 1);
+    const proximoServico = doApp.search(/^  [a-zA-Z0-9_-]+:\s*$/m);
+    const blocoDoApp = proximoServico === -1 ? doApp : doApp.slice(0, proximoServico);
+
+    expect(blocoDoApp).not.toContain("SYSTEM_UPDATE_WINDOW_TZ");
+    expect(blocoDoApp).not.toMatch(/^\s+TZ:/m);
   });
 });
