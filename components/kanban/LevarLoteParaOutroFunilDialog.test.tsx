@@ -119,7 +119,7 @@ describe("LevarLoteParaOutroFunilDialog", () => {
     }
   });
 
-  it("ao fechar depois de uma falha parcial, diz quais negócios já têm cópia no destino", async () => {
+  it("ao fechar depois de uma falha parcial, limpa a seleção: o negócio já tem cópia no destino", async () => {
     const pipeline = {
       id: "p2",
       name: "Pós-venda",
@@ -156,16 +156,17 @@ describe("LevarLoteParaOutroFunilDialog", () => {
 
       await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
 
-      // Só o negócio cuja cópia existe no destino sai da seleção; o outro
-      // (recusado sem cópia) continua selecionado para a pessoa tentar de novo.
+      // Qualquer cópia criada no destino conta como efeito: a seleção inteira
+      // é limpa (mesma regra de antes, agora também para quem falhou depois do
+      // clone nascer). Sem isso, o "Levar" seguinte recriava o negócio.
       expect(onConcluido).toHaveBeenCalledTimes(1);
-      expect(onConcluido).toHaveBeenCalledWith(["a"]);
+      expect(onConcluido).toHaveBeenCalledWith();
     } finally {
       post.mockRestore();
     }
   });
 
-  it("ao fechar depois de levar todos, entrega todos os que foram levados", async () => {
+  it("ao fechar depois de levar todos, limpa a seleção", async () => {
     const pipeline = {
       id: "p2",
       name: "Pós-venda",
@@ -195,7 +196,8 @@ describe("LevarLoteParaOutroFunilDialog", () => {
 
       await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
 
-      expect(onConcluido).toHaveBeenCalledWith(["a", "b"]);
+      expect(onConcluido).toHaveBeenCalledTimes(1);
+      expect(onConcluido).toHaveBeenCalledWith();
     } finally {
       post.mockRestore();
     }

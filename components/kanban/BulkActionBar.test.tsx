@@ -286,9 +286,6 @@ describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (
         pipelineId="p-1"
         tagsExistentes={[]}
         onClear={() => setSelecionados([])}
-        onRemoverDaSelecao={(levados) =>
-          setSelecionados((antes) => antes.filter((id) => !levados.includes(id)))
-        }
       />
     );
   }
@@ -313,7 +310,7 @@ describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (
     } as never);
   });
 
-  it("o negócio cuja cópia já foi criada sai da seleção e não é levado de novo", async () => {
+  it("a falha parcial com cópia criada limpa a seleção e não sobra negócio para um segundo Levar", async () => {
     const cloneId = "c0a1b2c3-1111-4111-8111-111111111111";
     post.mockImplementation(async (url: string) => {
       // lead-1: a cópia nasceu no destino, o vínculo falhou (500 com o id).
@@ -344,14 +341,12 @@ describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (
 
     await levarSelecionados();
 
-    // Só o que ficou sem cópia continua selecionado.
-    expect(document.querySelector('[data-lote-selecionados="1"]')).toBeTruthy();
+    // A cópia criada no destino (mesmo com a resposta sem sucesso) conta como
+    // efeito: a seleção é limpa, e não sobra nada para um segundo "Levar".
+    expect(screen.queryByRole("button", { name: "Mover para…" })).not.toBeInTheDocument();
 
-    await levarSelecionados();
-
-    // O segundo Levar NÃO repete o negócio que já tem cópia no destino.
     const chamadas = post.mock.calls.map(([url]) => String(url));
     expect(chamadas.filter((url) => url.includes("lead-1"))).toHaveLength(1);
-    expect(chamadas.filter((url) => url.includes("lead-2"))).toHaveLength(2);
+    expect(chamadas.filter((url) => url.includes("lead-2"))).toHaveLength(1);
   });
 });
