@@ -174,6 +174,16 @@ export interface GateContext {
      * só distingue resposta de retomada por follow-up.
      */
     resposta?: boolean;
+    /**
+     * Este envio é a 1ª mensagem a uma pessoa nova (abordagem)? Só o canal com
+     * `tetoSoAbordagem` ligado lê o campo (#3851): ligado, o teto conta e barra
+     * a abordagem e deixa passar o follow-up de quem já foi abordado.
+     *
+     * Omitido = `true` (conservador) no motor. O runner declara só com a opção
+     * ligada (consulta o `send_ledger` DESTE número) ou na resposta (`false`);
+     * a ausência do dado nunca vira "pessoa já abordada" e abre o teto.
+     */
+    abordagem?: boolean;
   };
   spinning: {
     knobs: SpinningKnobs;
@@ -1211,6 +1221,7 @@ export const pacingGate: Gate = {
       crmDailyLimit: ctx.pacing.crmDailyLimit,
       banRisk,
       resposta: ctx.pacing.resposta,
+      ...(ctx.pacing.abordagem !== undefined ? { abordagem: ctx.pacing.abordagem } : {}),
       rng: ctx.pacing.rng,
     });
     if (!decision.allow) {
@@ -1886,10 +1897,24 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
     // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05) e
     // pelo gate LGPD (F4-09). Só consulta o ledger se ALGUM dos dois precisa (senão no-op).
+    // A conta é da ORGANIZAÇÃO, como sempre foi: a base legal da LGPD é da empresa
+    // (controladora), e a opção do teto (#3851) não muda quem se apresenta.
     const isFirstOutbound =
       disclosure !== null || args.lgpd !== undefined
         ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
         : false;
+    // ABORDAGEM (#3851/#4063): só o canal com `tetoSoAbordagem` ligado lê o campo, e só
+    // ele paga a consulta. Ali "já recebeu" é DESTE número (`channelSessionId`): a pessoa
+    // abordada pelo número A é abordagem nova para o B, senão um número novo herdaria a
+    // base do outro como follow-up. Resposta nunca é abordagem (a pessoa veio até nós).
+    // Desligado, fica INDEFINIDO: o motor não lê, e a linha do ledger nasce `true`.
+    const tetoSoAbordagem = pacingCfg.knobs.tetoSoAbordagem === true;
+    const abordagem: boolean | undefined =
+      args.resposta === true
+        ? false
+        : tetoSoAbordagem
+          ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId, args.channelSessionId)) === 0
+          : undefined;
 
     const lastInboundAt = await readLastInboundAt(
       client,
@@ -1913,6 +1938,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         crmDailyLimit: args.crmDailyLimit,
         rng: args.rng,
         ...(args.resposta !== undefined ? { resposta: args.resposta } : {}),
+        ...(abordagem !== undefined ? { abordagem } : {}),
       },
       spinning: { knobs: spinningKnobs, window },
       ...(respostasDaConversa !== undefined ? { tetoDeRespostas: respostasDaConversa } : {}),
@@ -2037,6 +2063,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     if (outcome.kind === 'sent') {
       await recordSend(client, args.tenantId, args.channelSessionId, args.now, {
         resposta: tipoDeEnvio(args.resposta) === 'resposta',
+        ...(abordagem !== undefined ? { abordagem } : {}),
       });
       // Simetria com o gate desarmado: quem não é julgado pela janela não entra
       // nela. Ver `GateContext.spinningEnforced`.

@@ -45,6 +45,14 @@ import { empresasComModuloDesligado, moduloLigado } from "@/lib/instalacao/modul
 import { CanalReconectandoError, ProspectingError } from "./provider";
 import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
+import {
+  janelaDa,
+  janelaDaCampanhaAberta,
+  pausarCampanhasForaDaJanela,
+  proximaAberturaDaJanelaDaCampanha,
+  retomarCampanhasNaJanela,
+} from "./janela-da-campanha";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import {
@@ -108,6 +116,22 @@ const TETO_DE_BOLHAS_DA_ABORDAGEM = 3;
  */
 export const TETO_DO_ADIAMENTO_MS = 30 * 60_000;
 
+/**
+ * O FUSO DA JANELA DA CAMPANHA é o da ORGANIZAÇÃO (#4830) — não o do número.
+ *
+ * Quem opera pensa no horário da empresa ("de manhã é 7h às 12h"), e a
+ * `organizations.timezone` é a régua que o resto do produto já usa para
+ * "hoje". A coluna não tem CHECK: `fusoUtilizavel` degrada para o padrão em vez
+ * de lançar — a mesma doutrina de `lib/propostas/data-no-fuso.ts`.
+ */
+async function fusoDaOrganizacaoNoBanco(db: pg.PoolClient, org: string): Promise<string> {
+  const { rows } = await db.query<{ timezone: string | null }>(
+    "select timezone from organizations where id=$1",
+    [org],
+  );
+  return fusoUtilizavel(rows[0]?.timezone);
+}
+
 export async function sendNextCandidate(
   pool: pg.Pool,
   db: pg.PoolClient,
@@ -165,6 +189,22 @@ export async function sendNextCandidate(
       [c.organization_id, c.id, nextWindow],
     );
     return;
+  }
+  // A JANELA DA CAMPANHA (#4830, saída 1) — a SEGUNDA régua, e não um substituto
+  // da do número: só dispara onde as DUAS estão abertas. Fora dela, nada sai —
+  // nem tentativa, nem quota, nem candidato marcado; a fila espera a próxima
+  // abertura, pelo mesmo `next_send_at` que já serve à janela do número.
+  // (Sem `janela` no config, este bloco não custa nem uma query.)
+  const janelaPropria = janelaDa(c.config);
+  if (janelaPropria) {
+    const fuso = await fusoDaOrganizacaoNoBanco(db, c.organization_id);
+    if (!janelaDaCampanhaAberta(now, janelaPropria, fuso)) {
+      await db.query(
+        "update prospecting_campaigns set next_send_at=$3,updated_at=now() where organization_id=$1 and id=$2",
+        [c.organization_id, c.id, proximaAberturaDaJanelaDaCampanha(now, janelaPropria, fuso)],
+      );
+      return;
+    }
   }
   const pacingState = await loadPacingState(db, c.organization_id, canal, {
     now,
@@ -908,7 +948,7 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   // e bloqueio próprio. Dentro do bloqueio elas seguravam a organização por
   // minutos (409 na tela) com 100+ leads; fora, o envio e a tela não esperam.
   const { rows: organizations } = await pool.query<{ organization_id: string }>(
-    "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
+    "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running') or pc.pausada_pela_janela) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
   // Segunda consulta, à parte (a primeira não muda): quem só tem rascunho/pausada.
   // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
@@ -976,6 +1016,15 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
         }
         // (Nada de fetch de site aqui dentro: a verificação e a prévia são do
         // `prepararCandidatos`, depois deste bloco e fora do bloqueio.)
+        // A JANELA DA CAMPANHA (#4830): PAUSA quem fechou, RETOMA quem abriu —
+        // nesta ordem, e antes da seleção de envio, porque é essa ordem que
+        // libera o número para a campanha do horário seguinte no MESMO tick. Os
+        // dois caminhos são os da tela (`status='paused'` e `assertCanalLivre`),
+        // e a marca `pausada_pela_janela` é o que autoriza a volta automática.
+        const fuso = await fusoDaOrganizacaoNoBanco(db, org);
+        const agoraDaJanela = new Date();
+        await pausarCampanhasForaDaJanela(db, org, agoraDaJanela, fuso);
+        await retomarCampanhasNaJanela(db, org, agoraDaJanela, fuso);
         // TODAS as campanhas `running` da organização, em ordem determinística
         // (#3896). Antes era `.rows[0]` SEM `order by`: com duas campanhas em
         // números diferentes, só UMA enviava por rodada — e qual delas não era
@@ -1106,7 +1155,7 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
           }
         }
         await db.query(
-          "update prospecting_campaigns set updated_at=now() where organization_id=$1 and (status='running' or search_status='running')",
+          "update prospecting_campaigns set updated_at=now() where organization_id=$1 and (status='running' or search_status='running' or pausada_pela_janela)",
           [org],
         );
         processed++;

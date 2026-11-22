@@ -370,6 +370,16 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
     const next = tabs[tabs.indexOf(value.tab) + direction];
     if (next) onChange(comAba(value, next));
   };
+  /**
+   * As abas cujo número PAROU no teto de cem linhas (#4451).
+   *
+   * "Fechadas" e "Arquivadas" são as pastas do histórico — o conjunto que cresce
+   * sem limite com a idade da instalação. A rota conta ATÉ cem linhas e para:
+   * abaixo do teto o número é EXATO (a pasta vazia mostra zero, e o badge some);
+   * no teto ele é "pelo menos cem", e o "+" é o que separa um badge honesto de
+   * um número que se apresenta como total sem ser. O `title` explica o corte.
+   */
+  const contagensTruncadas = counts?.truncadas ?? [];
   const countFor: Partial<Record<InboxTab, number>> = {
     // `fila` é o nome novo; `unassigned` é o alias que a rota versionada mantém.
     // O `??` cobre a janela em que a página ainda lê um cache de react-query
@@ -929,6 +939,8 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
             {tabs.map((tab) => {
               const meta = INBOX_TABS.find((t) => t.value === tab)!;
               const count = countFor[tab];
+              const truncada =
+                (tab === "closed" || tab === "archived") && contagensTruncadas.includes(tab);
               return (
                 <TabsTrigger
                   key={tab}
@@ -937,7 +949,19 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao, abasI
                 >
                   {t(meta.label)}
                   {depoisDeMontar && typeof count === "number" && count > 0 && (
-                    <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                    <span
+                      className="text-[11px] tabular-nums text-text-subtle"
+                      title={
+                        truncada
+                          ? t("Mais de 99: esta aba conta o histórico inteiro")
+                          : undefined
+                      }
+                    >
+                      {/* `99+` e não `100`: no teto o total não foi contado, e um
+                          número com cara de exato seria a mesma mentira do
+                          `count: planned` por outra porta (#4451). */}
+                      {truncada ? `${count}+` : count}
+                    </span>
                   )}
                 </TabsTrigger>
               );

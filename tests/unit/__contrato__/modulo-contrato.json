@@ -354,6 +354,7 @@
     ],
     "negocios": [
       "DELETE /api/v1/leads/[id]/attachments",
+      "DELETE /api/v1/leads/[id]/classificacao-comercial",
       "DELETE /api/v1/leads/[id]/contatos-relacionados",
       "DELETE /api/v1/proposals/[id]",
       "GET /api/v1/lead-captures",
@@ -385,6 +386,7 @@
       "POST /api/v1/leads",
       "POST /api/v1/leads/[id]/attachments",
       "POST /api/v1/leads/[id]/checklist/[id]",
+      "POST /api/v1/leads/[id]/classificacao-comercial",
       "POST /api/v1/leads/[id]/clone",
       "POST /api/v1/leads/[id]/contact",
       "POST /api/v1/leads/[id]/contatos-relacionados",
@@ -941,7 +943,7 @@
         {
           "nome": "pacingKnobsUpdateSchema",
           "origem": "@/lib/ai/pacing-knobs",
-          "hash": "f777500f9c95c198"
+          "hash": "6527814232d1f88a"
         }
       ],
       "resposta": []

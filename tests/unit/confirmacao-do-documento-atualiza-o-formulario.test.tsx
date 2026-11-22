@@ -20,6 +20,7 @@ vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
   useApagarVenda: () => ({ mutate: () => {}, isPending: false }),
 }));
 vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => null }));
+vi.mock("@/components/kanban/ClassificacaoComercial", () => ({ ClassificacaoComercial: () => null }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
