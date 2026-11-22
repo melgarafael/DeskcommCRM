@@ -94,6 +94,10 @@ export function useMessagesRealtime(
    * mensagem), e pedir a mesma recarga por dois canais era metade da carga que
    * a issue mediu.
    */
+  // Campos primitivos nas dependências: o objeto `autor` é recriado a cada
+  // render do `ChatThread`, e o `onChange` do canal não precisa ser.
+  const autorId = autor?.id ?? null;
+  const autorNome = autor?.nome ?? null;
   const onChange = useCallback(
     (payload: unknown) => {
       if (!conversationId) return;
@@ -104,12 +108,13 @@ export function useMessagesRealtime(
         void qc.invalidateQueries({ queryKey: ["messages", conversationId] });
         return;
       }
+      const autorAtual = autorId ? { id: autorId, nome: autorNome } : null;
       qc.setQueryData<InfiniteData<PaginaDeMensagens>>(
         ["messages", conversationId],
-        (dados) => aplicarEventoNoFio(dados, evento, { autorAtual: autor }) ?? dados,
+        (dados) => aplicarEventoNoFio(dados, evento, { autorAtual }) ?? dados,
       );
     },
-    [qc, conversationId, autor?.id, autor?.nome],
+    [qc, conversationId, autorId, autorNome],
   );
 
   const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({
