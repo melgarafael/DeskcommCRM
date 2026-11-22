@@ -2486,6 +2486,12 @@ export const DICIONARIO: Traducoes = {
   // pasta do histórico. Sem entrada própria, a aba "Arquivadas" apareceria
   // traduzida como "Cerradas" para um operador hispanofalante.
   Arquivadas: { es: "Archivadas" },
+  // #4451: o badge dessas duas abas PARA no teto de cem linhas. O `title` diz
+  // por que o número não é o total, para quem parar o mouse; o "+" ao lado do
+  // número é a marca curta, e não precisa de tradução.
+  "Mais de 99: esta aba conta o histórico inteiro": {
+    es: "Más de 99: esta pestaña cuenta el historial completo",
+  },
   IA: { es: "IA" },
   "Sem mensagens": { es: "Sin mensajes" },
   "Nenhuma conversa": { es: "Sin conversaciones" },
@@ -10717,11 +10723,20 @@ export const DICIONARIO: Traducoes = {
   "O que vale para qualquer atendimento aqui. Pode deixar em branco agora e escrever depois — ele aprende com você ao longo do tempo.": {
     es: "Lo que aplica en cualquier atención de tu empresa. Puedes dejarlo en blanco por ahora y escribirlo después: con el tiempo aprende de ti.",
   },
-  "Ele já vem sabendo": { es: "Ya sabe desde el inicio" },
-  "E nunca vai fazer": { es: "Y nunca va a hacer" },
-  "Essas conferências acontecem antes de cada mensagem sair, e não têm interruptor.": {
-    es: "Estas verificaciones se hacen antes de que salga cada mensaje y no se pueden desactivar.",
+  "O que ele já sabe fazer": { es: "Lo que ya sabe hacer" },
+  "O que ele nunca faz": { es: "Lo que nunca hace" },
+  "Essas conferências rodam antes de cada mensagem sair. As que dependem de um interruptor aparecem com o estado desta empresa e o caminho para ligar; as demais rodam sempre.": {
+    es: "Estas verificaciones corren antes de que salga cada mensaje. Las que dependen de un interruptor aparecen con el estado de esta empresa y el camino para activarlas; las demás corren siempre.",
   },
+  "desligada nesta organização — ligue em": {
+    es: "desactivada en esta organización: actívala en",
+  },
+  "ligada nesta organização": { es: "activada en esta organización" },
+  "ligada, mas só anota: ainda não barra nenhuma mensagem": {
+    es: "activada, pero solo anota: todavía no bloquea ningún mensaje",
+  },
+  "IA › Agentes › Confere antes de enviar": { es: "IA › Agentes › Verifica antes de enviar" },
+  "IA › Provedores de IA › cartão do Jev": { es: "IA › Proveedores de IA › tarjeta del Jev" },
   "O atendente foi criado, mas as": { es: "El agente se creó, pero las" },
   "regras da casa": { es: "reglas de la casa" },
   "não foram gravadas. Copie o que você escreveu antes de sair — e salve de novo em": {
@@ -11052,7 +11067,7 @@ export const DICIONARIO: Traducoes = {
   "Loja — online ou de rua": { es: "Tienda en línea o física" },
   "Outro tipo de negócio": { es: "Otro tipo de negocio" },
 
-  // ─── Onboarding: tool catalog (capacidades) usadas em "Ele já vem sabendo" ───
+  // ─── Onboarding: tool catalog (capacidades) usadas em "O que ele já sabe fazer" ───
   "Listar oportunidades do funil": { es: "Listar oportunidades del embudo" },
   "Ver uma oportunidade": { es: "Ver una oportunidad" },
   "Listar funis": { es: "Listar embudos" },
@@ -11066,21 +11081,44 @@ export const DICIONARIO: Traducoes = {
   "Ver ficha do cliente": { es: "Ver ficha del cliente" },
   "Ver as etapas de um funil": { es: "Ver las etapas de un embudo" },
 
-  // ─── Onboarding: conferências de saída (guardrails), "E nunca vai fazer" ───
+  // ─── Onboarding: conferências de saída (guardrails), painel do agente ───
   "Respeitar quem pediu para parar": { es: "Respetar a quien pidió parar" },
   "Respeitar dados apagados e a base legal": { es: "Respetar datos borrados y la base legal" },
   "Segurar o ritmo de envio": { es: "Controlar el ritmo de envío" },
   "Respeitar a janela do WhatsApp": { es: "Respetar la ventana de WhatsApp" },
   "Variar o texto das mensagens iguais": { es: "Variar el texto de los mensajes iguales" },
   "Não prometer preço ou prazo por conta própria": { es: "No prometer precio o plazo por cuenta propia" },
+  "Não confirmar condição que só o cliente citou": { es: "No confirmar una condición que solo citó el cliente" },
   "Conferir promessas em texto livre": { es: "Verificar promesas en texto libre" },
   "Não fazer afirmação clínica": { es: "No hacer afirmaciones clínicas" },
   "Barra a mensagem em que o assistente diz o que a pessoa tem, indica remédio ou dose, garante resultado ou afirma que uma lesão é câncer.": { es: "Bloquea el mensaje en el que el asistente dice lo que la persona tiene, indica un medicamento o una dosis, garantiza un resultado o afirma que una lesión es cáncer." },
   "Não custa nada e reconhece frases em português e espanhol. Só serve para saúde: em outros negócios pode barrar frases normais, como \"passe o creme hidratante\".": { es: "No cuesta nada y reconoce frases en portugués y español. Solo sirve para salud: en otros negocios puede bloquear frases normales, como \"aplica la crema hidratante\"." },
   "Não prometer atendimento humano que não existe": { es: "No prometer atención humana que no existe" },
   "Não falar a nossa língua com o seu cliente": { es: "No hablar nuestro idioma con tu cliente" },
+  "Só oferecer horário que a agenda devolveu": { es: "Ofrecer solo horarios que devolvió la agenda" },
+  "Conferir a escrita antes de afirmar registro": { es: "Verificar la escritura antes de afirmar un registro" },
   "Dizer que é um assistente quando perguntam": { es: "Decir que es un asistente cuando preguntan" },
   "Detectar tentativa de manipular o assistente": { es: "Detectar intento de manipular al asistente" },
+
+  // ─── Onboarding: a coluna "O que ele nunca faz" (NUNCA_FAZ) ───
+  "Insistir com quem pediu para parar": { es: "Insistir con quien pidió parar" },
+  "Escrever para contato apagado ou sem base legal": { es: "Escribir a un contacto borrado o sin base legal" },
+  "Disparar mensagens sem espaçar o envio": { es: "Enviar mensajes sin espaciar el envío" },
+  "Furar a janela de 24 horas do WhatsApp": { es: "Saltarse la ventana de 24 horas de WhatsApp" },
+  "Responder sem parar a conversa que virou pingue-pongue": { es: "Responder sin parar en la conversación que se volvió un ping-pong" },
+  "Repetir o texto idêntico para todo mundo": { es: "Repetir el mismo texto para todos" },
+  "Prometer preço ou prazo por conta própria": { es: "Prometer precio o plazo por cuenta propia" },
+  "Confirmar condição que só o cliente citou": { es: "Confirmar una condición que solo citó el cliente" },
+  "Deixar passar promessa escrita em texto livre": { es: "Dejar pasar una promesa escrita en texto libre" },
+  "Afirmar fato que o material consultado não tem": { es: "Afirmar un dato que el material consultado no tiene" },
+  "Prometer atendimento humano sem abrir chamado": { es: "Prometer atención humana sin abrir un caso" },
+  "Falar a nossa língua com o seu cliente": { es: "Hablar nuestro idioma con tu cliente" },
+  "Fazer afirmação clínica": { es: "Hacer afirmaciones clínicas" },
+  "Negociar valores no lugar da equipe": { es: "Negociar valores en lugar del equipo" },
+  "Prometer checar a agenda sem checar de verdade": { es: "Prometer revisar la agenda sin revisarla de verdad" },
+  "Oferecer horário que a agenda não devolveu": { es: "Ofrecer un horario que la agenda no devolvió" },
+  "Afirmar registro que a ferramenta não confirmou": { es: "Afirmar un registro que la herramienta no confirmó" },
+  "Esconder que é um assistente quando perguntam": { es: "Ocultar que es un asistente cuando preguntan" },
 
   // ─── Onboarding: welcome/_form.tsx — cidades do fuso horário ───
   "São Paulo, Rio, Brasília, Sul e Sudeste": { es: "São Paulo, Río, Brasilia, Sur y Sudeste" },
@@ -12633,8 +12671,8 @@ export const DICIONARIO: Traducoes = {
   "Senha deve ter pelo menos uma letra": { es: "La contraseña debe tener al menos una letra" },
   "Senha deve ter pelo menos um número": { es: "La contraseña debe tener al menos un número" },
   "Senha deve ter pelo menos um símbolo": { es: "La contraseña debe tener al menos un símbolo" },
-  "Senha longa demais: o limite é de 72 bytes": {
-    es: "La contraseña es demasiado larga: el límite es de 72 bytes",
+  "A senha deve ter no máximo 72 caracteres (acentos e emojis contam mais de um)": {
+    es: "La contraseña debe tener como máximo 72 caracteres (los acentos y emojis cuentan como más de uno)",
   },
   "As senhas não coincidem": { es: "Las contraseñas no coinciden" },
 
@@ -13875,6 +13913,47 @@ export const DICIONARIO: Traducoes = {
   "Não há agenda do Google conectada para esta pessoa.": { es: "Esta persona no tiene un Google Calendar conectado." },
   "Não há proposta pendente para este negócio.": { es: "No hay una propuesta pendiente para este negocio." },
   "Negócio não encontrado.": { es: "Negocio no encontrado." },
+  // #4191 — classificação não comercial (mensagens da rota; o motivo e a
+  // timeline são texto do usuário e canônico em português, traduzidos na
+  // leitura). As duas com número vêm dos tetos de
+  // `lib/leads/elegibilidade-comercial.ts`: mudar o teto pede mudar a chave.
+  "Informe o motivo da classificação como não comercial.": { es: "Informe el motivo de la clasificación como no comercial." },
+  "O motivo precisa de pelo menos 3 caracteres.": { es: "El motivo necesita al menos 3 caracteres." },
+  "O motivo passa de 200 caracteres; resuma o que decide o caso.": { es: "El motivo supera los 200 caracteres; resuma lo que decide el caso." },
+  "Só um negócio aberto pode ser classificado como não comercial. Este já tem desfecho (ganho ou perda).": { es: "Solo un negocio abierto puede clasificarse como no comercial. Este ya tiene desenlace (ganancia o pérdida)." },
+  "Este negócio já foi classificado por outra pessoa com outro motivo. Reveja antes de mudar a classificação.": { es: "Este negocio ya fue clasificado por otra persona con otro motivo. Revise antes de cambiar la clasificación." },
+  "Este negócio foi classificado por outra pessoa enquanto você decidia. Reveja antes de mudar a classificação.": { es: "Este negocio fue clasificado por otra persona mientras decidía. Revise antes de cambiar la clasificación." },
+  // #4191, item 1 — a TELA da classificação (bloco na ficha do negócio). As
+  // chaves são as frases portuguesas do componente
+  // `components/kanban/ClassificacaoComercial.tsx`; o teste
+  // `classificacao-comercial-chama-a-rota` cobra que a tela use `t()` e que
+  // cada chave daqui tenha espanhol.
+  "Classificação comercial": { es: "Clasificación comercial" },
+  "Comercial": { es: "Comercial" },
+  "Não comercial": { es: "No comercial" },
+  "Classificar como não comercial": { es: "Clasificar como no comercial" },
+  "Restaurar como comercial": { es: "Volver a marcar como comercial" },
+  "Confirmar classificação": { es: "Confirmar clasificación" },
+  "Motivo da classificação": { es: "Motivo de la clasificación" },
+  "Motivo apagado pela anonimização": { es: "Motivo borrado por la anonimización" },
+  "O negócio não será ganho, perdido nem apagado. A classificação pode ser desfeita.": {
+    es: "El negocio no será ganado, perdido ni eliminado. La clasificación puede deshacerse.",
+  },
+  "Restaurar não retoma follow-ups antigos. Uma demanda nova precisa ser iniciada pela equipe.": {
+    es: "Restaurar no retoma seguimientos antiguos. La demanda nueva tiene que iniciarla el equipo.",
+  },
+  "Histórico preservado. Este negócio fica fora do Radar e das métricas comerciais, e os follow-ups dele não enviam.": {
+    es: "Historial conservado. Este negocio queda fuera del Radar y de las métricas comerciales, y sus seguimientos no envían.",
+  },
+  "Este contato foi anonimizado. A classificação não pode ser restaurada.": {
+    es: "Este contacto fue anonimizado. La clasificación no puede restaurarse.",
+  },
+  "Escreva o que decide o caso (golpe, spam, contato sem finalidade comercial…).": {
+    es: "Escriba lo que decide el caso (estafa, spam, contacto sin finalidad comercial…).",
+  },
+  "Não foi possível confirmar o resultado. Recarregue antes de tentar novamente.": {
+    es: "No fue posible confirmar el resultado. Recargue antes de intentarlo de nuevo.",
+  },
   "Nenhuma conexão de parceiro ativa.": { es: "No hay ninguna conexión de partner activa." },
   "nenhuma organização ativa": { es: "no hay ninguna organización activa" },
   "Nenhuma organização ativa.": { es: "No hay ninguna organización activa." },

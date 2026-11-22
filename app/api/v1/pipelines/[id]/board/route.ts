@@ -606,6 +606,12 @@ const COLUNAS_DO_QUADRO = [
   "description",
   "status",
   "lost_reason",
+  // #4191: a ficha do negócio desenha a classificação comercial a partir do
+  // card que o quadro já entregou — sem estas três, a ficha pediria uma
+  // segunda consulta só para saber se o negócio está classificado.
+  "nao_comercial_em",
+  "nao_comercial_motivo",
+  "nao_comercial_por",
   "position_in_stage",
   "value_cents",
   "recurring_value_cents",
