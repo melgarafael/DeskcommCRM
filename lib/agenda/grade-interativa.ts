@@ -220,6 +220,85 @@ export function minutoSobY(entrada: {
   return entrada.primeiraHora * 60 + (entrada.y / entrada.alturaDaHoraPx) * 60;
 }
 
+/**
+ * ─── A BORDA DE BAIXO: mudar o tempo puxando o card (#4450) ──────────────
+ *
+ * A régua da borda é de 15 minutos ALINHADA AO RELÓGIO (:00, :15, :30, :45) —
+ * é a linha que o olho vê na grade, e é o "como no Google" que a issue pede. A
+ * régua da marcação (meia hora, horários publicados) não serve aqui: o fim de
+ * um atendimento não é um horário que a agenda oferece, é quanto ele durou.
+ *
+ * Duas regras que não podem se perder:
+ *
+ * - **O fim ORIGINAL é sempre um ponto de parada.** Um compromisso de 09:20 a
+ *   09:52 não está na régua; sem esta regra, encostar na alça e soltar
+ *   "arredondaria" o registro para 09:45 ou 10:00 sem ninguém pedir.
+ * - **Não encurta o que a grade não desenha.** A grade termina às 22:00; um
+ *   compromisso até 22:20 (ou que vira a noite) tem o fim original como teto, e
+ *   não 22:00.
+ */
+export const PASSO_DA_BORDA_MIN = 15;
+
+/** O menor intervalo que a borda produz: um passo. O fim original pode ser menor. */
+export const DURACAO_MINIMA_DA_BORDA_MIN = 15;
+
+/**
+ * Os fins possíveis, em minutos desde a meia-noite do dia do INÍCIO (podem
+ * passar de 1440 quando o original vira a noite), em ordem crescente.
+ *
+ * O mais curto é o primeiro quarto de hora em ou depois de `inicio + 15`: de
+ * 09:20 o primeiro é 09:45 (e não 09:30, que daria 10 minutos — menos que um
+ * passo da própria régua).
+ */
+export function paradasDoFim(entrada: {
+  inicioMin: number;
+  fimOriginalMin: number;
+  /** O fim da grade desenhada, em minutos do dia (22:00 = 1320). */
+  limiteMin: number;
+  passoMin?: number;
+}): number[] {
+  const passo = entrada.passoMin ?? PASSO_DA_BORDA_MIN;
+  const primeiro =
+    Math.ceil((entrada.inicioMin + DURACAO_MINIMA_DA_BORDA_MIN) / passo) * passo;
+  const paradas = new Set<number>([entrada.fimOriginalMin]);
+  for (let m = primeiro; m <= entrada.limiteMin; m += passo) paradas.add(m);
+  return [...paradas].sort((a, b) => a - b);
+}
+
+/** A parada mais perto de um minuto apontado. Empate fica com a mais CEDO, como no arraste. */
+export function paradaMaisProxima(paradas: readonly number[], minutoAlvo: number): number {
+  let escolhida = paradas[0] ?? minutoAlvo;
+  let melhor = Number.POSITIVE_INFINITY;
+  for (const p of paradas) {
+    const d = Math.abs(p - minutoAlvo);
+    if (d < melhor) {
+      melhor = d;
+      escolhida = p;
+    }
+  }
+  return escolhida;
+}
+
+/** A parada seguinte (ou anterior) — o passo do teclado. Sem vizinha, fica onde está. */
+export function paradaVizinha(paradas: readonly number[], atual: number, direcao: 1 | -1): number {
+  const ordenadas = direcao === 1 ? paradas : [...paradas].reverse();
+  return ordenadas.find((p) => (p - atual) * direcao > 0) ?? atual;
+}
+
+/**
+ * Por que um fim novo NÃO pode ser gravado — ou `""` quando pode.
+ *
+ * A mesma ordem de `razaoDoBloco` (passado antes de ocupado), e as mesmas
+ * frases, para a grade falar uma língua só. "Ocupado" aqui é o que o servidor
+ * recusaria (`exigeSemSobreposicao`): só o MESMO responsável, e quem faltou ou
+ * cancelou não ocupa (`LIBERAM_O_HORARIO` em `lib/agenda/ocupados.ts`).
+ */
+export function razaoDoFim(entrada: { passado: boolean; ocupado: boolean }): string {
+  if (entrada.passado) return "este horário já passou";
+  if (entrada.ocupado) return "já há um compromisso neste horário";
+  return "";
+}
+
 /** O começo da célula de meia hora que contém um minuto do dia. */
 export function celulaQueContem(
   minuto: number,

@@ -10,6 +10,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import type { Sector } from "@/hooks/team/useSectors";
 import { COR_DA_PRIORIDADE, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
+import { SeloDeSetor } from "./SeloDeSetor";
 import {
   agrupaPorPrazo,
   calcularUrgenciaDoPrazo,
@@ -36,12 +37,13 @@ interface Props {
    */
   mostrarNegocio?: boolean;
   /**
-   * O setor de cada responsável, para o chip da tarefa. Quem monta é a tela de
-   * Tarefas, que já busca setores e equipe — e só com o módulo opcional ligado
-   * (doc 213). Ausente = sem chip: a lista do painel do inbox e a do dossiê não
-   * pedem setores a ninguém.
+   * Os setores por id, para dar NOME ao que o servidor decidiu (#4883): a
+   * tarefa chega com `setor: { id, origem }`, e é aqui que o id vira chip.
+   * Quem monta é a tela de Tarefas, que já busca setores e equipe — e só com o
+   * módulo opcional ligado (doc 213). Ausente = sem chip: a lista do painel do
+   * inbox e a do dossiê não pedem setores a ninguém.
    */
-  setorDoResponsavel?: ReadonlyMap<string, Sector>;
+  setores?: ReadonlyMap<string, Sector>;
 }
 
 function Linha({
@@ -52,7 +54,7 @@ function Linha({
   aoApagar,
   mostrarNegocio,
   nomeDoResponsavel,
-  setor,
+  setores,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
@@ -62,7 +64,7 @@ function Linha({
   mostrarNegocio: boolean;
   /** Já resolvido por quem monta a lista; `null` = sem responsável conhecido. */
   nomeDoResponsavel: string | null;
-  setor?: Sector | null;
+  setores: ReadonlyMap<string, Sector>;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
@@ -136,6 +138,16 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
+          {/* A ROTINA (#4595): a série e cada ocorrência que ela gerou levam o
+              mesmo selo, e é por ele que se vê que são a mesma rotina sem abrir
+              uma por uma. A próxima herda `recurrence_source_id`, e a série é a
+              linha que carrega a regra — as duas condições são o mesmo "faz
+              parte de uma rotina", e por isso o mesmo selo. */}
+          {tarefa.recurrence || tarefa.recurrence_source_id ? (
+            <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">
+              {t("Rotina")}
+            </span>
+          ) : null}
           <span
             className={cn(
               "flex items-center gap-1",
@@ -160,18 +172,7 @@ function Linha({
               {nomeDoResponsavel}
             </span>
           ) : null}
-          {setor ? (
-            <span
-              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border"
-              style={{
-                backgroundColor: setor.color ? `${setor.color}18` : undefined,
-                color: setor.color ?? undefined,
-                borderColor: setor.color ? `${setor.color}35` : undefined,
-              }}
-            >
-              {setor.name}
-            </span>
-          ) : null}
+          <SeloDeSetor setor={tarefa.setor} setores={setores} />
           {mostrarNegocio && tarefa.lead ? (
             <Link
               href={`/app/leads/${tarefa.lead.id}`}
@@ -239,7 +240,7 @@ export function ListaDeTarefas({
   aoEditar,
   aoApagar,
   mostrarNegocio = true,
-  setorDoResponsavel = SEM_SETOR,
+  setores = SEM_SETOR,
 }: Props) {
   const t = useT();
   const usuario = useUser();
@@ -299,7 +300,7 @@ export function ListaDeTarefas({
                 aoApagar={aoApagar}
                 mostrarNegocio={mostrarNegocio}
                 nomeDoResponsavel={nomeDoResponsavel(tarefa)}
-                setor={tarefa.assigned_to ? setorDoResponsavel.get(tarefa.assigned_to) : null}
+                setores={setores}
               />
             ))}
           </div>

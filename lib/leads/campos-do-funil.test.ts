@@ -5,6 +5,7 @@ import {
   camposDeDataDoNegocio,
   camposDoFunil,
   camposPorEscopo,
+  camposPorEscopoDosFunis,
   escopoDoCampo,
   settingsDoEmbed,
 } from "./campos-do-funil";
@@ -115,5 +116,56 @@ describe("camposDeDataDoNegocio: o que o gatilho por data pode usar (achado na p
     // Chave não declarada é livre no custom_fields do negócio, e a varredura a lê.
     expect(campoEhDoContato(settings, "nao_declarada")).toBe(false);
     expect(campoEhDoContato(null, "nascimento")).toBe(false);
+  });
+});
+
+// Issue #4929 — o lápis da lista abre o diálogo da ficha, e a lista não tem funil:
+// o conjunto é a união dos campos de CONTATO de todos os funis, a mesma que o
+// PATCH valida. A união é por CHAVE — dois funis podem ter rótulos iguais em
+// campos diferentes, e juntar por rótulo apagaria um deles.
+describe("camposPorEscopoDosFunis", () => {
+  const funilVendas = {
+    fields: [
+      { key: "codigo_parceiro", label: "Código do parceiro", type: "text", escopo: "contato" },
+      { key: "valor_da_venda", label: "Valor da venda", type: "currency" },
+      { key: "aniversario", label: "Aniversário", type: "date", escopo: "contato" },
+    ],
+  };
+  const funilSuporte = {
+    fields: [
+      // A MESMA chave, com outro rótulo: uma definição só, a primeira na ordem.
+      { key: "codigo_parceiro", label: "Parceiro", type: "text", escopo: "contato" },
+      // O MESMO rótulo, com outra chave: são dois campos, e os dois aparecem.
+      { key: "codigo_do_chamado", label: "Código do parceiro", type: "text", escopo: "contato" },
+      { key: "sla", label: "SLA", type: "number" },
+    ],
+  };
+
+  it("junta os campos do contato de todos os funis e deixa o negócio de fora", () => {
+    expect(
+      camposPorEscopoDosFunis([funilVendas, funilSuporte], "contato").map((c) => c.key),
+    ).toEqual(["codigo_parceiro", "aniversario", "codigo_do_chamado"]);
+  });
+
+  it("desempata por CHAVE, nunca por rótulo: a primeira definição da chave vence", () => {
+    const codigos = camposPorEscopoDosFunis([funilVendas, funilSuporte], "contato").filter(
+      (c) => c.key === "codigo_parceiro",
+    );
+    expect(codigos).toHaveLength(1);
+    expect(codigos[0]?.label).toBe("Código do parceiro");
+    // Rótulos iguais em chaves diferentes sobrevivem os dois.
+    expect(
+      camposPorEscopoDosFunis([funilVendas, funilSuporte], "contato").filter(
+        (c) => c.label === "Código do parceiro",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("lê o escopo do negócio pela mesma função, e lixo não derruba a lista", () => {
+    expect(
+      camposPorEscopoDosFunis([funilVendas, funilSuporte], "negocio").map((c) => c.key),
+    ).toEqual(["valor_da_venda", "sla"]);
+    expect(camposPorEscopoDosFunis([null, "x", [1], undefined, funilVendas], "contato")).toHaveLength(2);
+    expect(camposPorEscopoDosFunis([], "contato")).toEqual([]);
   });
 });

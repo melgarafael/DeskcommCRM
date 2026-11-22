@@ -84,6 +84,9 @@ When finishing an epic:
      update not asking for manual file editing. **No bump may require the VPS
      operator to edit anything by hand** — if it does, open an issue with a migration plan instead of a PR
    - Docs updated if the contract changed (PRD/spec)
+   - For behavior changes, write the title and body of the `.changes/` fragment in Brazilian
+     Portuguese. Operators read these notes on the update screen. See the
+     [fragment format and example](docs/doctrine/versionamento.md#o-fragmento).
    - `pnpm test:e2e` (relevant subset) — **optional if you contribute from outside**, see below
 4. Open a PR against `main`. The description must reference the epic and list evidence (logs/screenshots of the tests).
 5. **Touched an authority document?** Fix the state claims **of that** document —

@@ -28,14 +28,27 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * ordem de quem divide a MESMA posição (duas respostas criadas ao mesmo tempo).
  * Título, corpo, atalho e `midias` também não são tocados: reordenar não muda
  * conteúdo.
+ *
+ * ─── Sessão OU token ────────────────────────────────────────────────────────
+ *
+ * Aceita sessão de navegador OU Bearer `dsk_…` (`config:write`, papel admin via
+ * `tokenRole`). A sessão segue pelo `requireRole` (é ele quem traz o papel
+ * efetivo). No token o cliente é o admin (sem RLS) e não há pessoa: a lista, o
+ * vizinho, a renumeração e a releitura filtram a organização à mão e só enxergam
+ * as respostas COMPARTILHADAS (`owner_user_id` nulo). A renumeração relativa
+ * acontece só entre elas; as pessoais não são lidas nem renumeradas.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { roleAtLeast } from "@/lib/auth/types";
+import { roleAtLeast, type Role } from "@/lib/auth/types";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { moverTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -62,10 +75,43 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  // Dois portões, um corpo (ver o cabeçalho). `papel` é nulo no token: o
+  // `tokenRole: "admin"` já barrou quem está abaixo.
+  let orgId: string;
+  let userId: string | null;
+  let apiTokenId: string | null;
+  let papel: Role | null;
+  let idioma: Idioma;
+  let supabase: SupabaseClient;
+  const viaToken = extractBearer(req.headers.get("authorization")) !== null;
+  if (viaToken) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "message_templates",
+      role: "agent",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "message_templates.ordem", requestId);
+    if (teto) return teto;
+    orgId = authz.organizationId;
+    userId = authz.actor.type === "user" ? authz.actor.id : null;
+    apiTokenId = authz.apiTokenId ?? null;
+    papel = null;
+    idioma = authz.idioma ?? IDIOMA_PADRAO;
+    supabase = authz.supabase;
+  } else {
+    const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+    if (!authz.ok) return authz.response;
+    orgId = authz.org.orgId;
+    userId = authz.user.id;
+    apiTokenId = null;
+    papel = authz.org.role;
+    idioma = authz.user.idioma;
+    supabase = await createClient();
+  }
+  const t = (texto: string) => traduzir(texto, idioma);
   const { id } = await params;
 
   const parsed = moverTemplateSchema.safeParse(await req.json().catch(() => null));
@@ -77,16 +123,18 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   }
   const { depois_de } = parsed.data;
 
-  const supabase = await createClient();
   // A lista VISÍVEL da organização ativa, na ordem em que a tela a mostra: RLS
   // limita a compartilhados + próprios, e o desempate é o mesmo da listagem
   // (`updated_at desc`, depois `id`) — a rota precisa enxergar os empates do
   // jeito que a tela enxerga, senão calcula a posição entre um par que na tela
   // não é par.
-  const { data: lista, error: erroLista } = await supabase
+  let consultaDaLista = supabase
     .from("message_templates")
     .select("id, ordem, owner_user_id")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId);
+  // No token só o compartilhado: sem pessoa, a pessoal não faz parte da lista.
+  if (viaToken) consultaDaLista = consultaDaLista.is("owner_user_id", null);
+  const { data: lista, error: erroLista } = await consultaDaLista
     .order("ordem", { ascending: true })
     .order("updated_at", { ascending: false })
     .order("id", { ascending: true });
@@ -137,12 +185,14 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
    * linha — o vizinho e o seguinte ficam byte a byte como estavam.
    */
   if (nova !== null) {
-    const { data, error } = await supabase
+    let mover = supabase
       .from("message_templates")
       // Sem `updated_at`: reordenar não é editar (ver o cabeçalho).
       .update({ ordem: nova })
       .eq("id", id)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", orgId);
+    if (viaToken) mover = mover.is("owner_user_id", null);
+    const { data, error } = await mover
       .select("id")
       .maybeSingle();
     if (error) {
@@ -178,8 +228,11 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
    * meio do laço deixaria as linhas anteriores já renumeradas e responderia 409.
    */
   const gravavel = (linha: Linha) =>
-    linha.owner_user_id === user.id ||
-    (linha.owner_user_id === null && roleAtLeast(org.role, "manager"));
+    // No token a lista já é só de compartilhadas e o papel é admin.
+    viaToken
+      ? linha.owner_user_id === null
+      : linha.owner_user_id === userId ||
+        (linha.owner_user_id === null && papel !== null && roleAtLeast(papel, "manager"));
   if (!atual.every(gravavel)) {
     return fail(
       "conflict",
@@ -191,11 +244,13 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   const ids = semAlvo.map((linha) => linha.id);
   ids.splice(indice, 0, id);
   for (let i = 0; i < ids.length; i++) {
-    const { data, error } = await supabase
+    let renumerar = supabase
       .from("message_templates")
       .update({ ordem: ordemDaRenumeracao(i) })
       .eq("id", ids[i]!)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", orgId);
+    if (viaToken) renumerar = renumerar.is("owner_user_id", null);
+    const { data, error } = await renumerar
       .select("id")
       .maybeSingle();
     if (error) {
@@ -229,19 +284,21 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   async function finalizar(renumerada: boolean, ordem: number): Promise<Response> {
     void audit({
       action: "template.reordered",
-      actorUserId: user.id,
-      organizationId: org.orgId,
+      actorUserId: userId,
+      actorApiTokenId: apiTokenId,
+      organizationId: orgId,
       resourceType: "message_template",
       resourceId: id,
       requestId,
       metadata: { depois_de, ordem, renumerada },
     });
-    const { data, error } = await supabase
+    let releitura = supabase
       .from("message_templates")
       .select(COLS)
       .eq("id", id)
-      .eq("organization_id", org.orgId)
-      .maybeSingle();
+      .eq("organization_id", orgId);
+    if (viaToken) releitura = releitura.is("owner_user_id", null);
+    const { data, error } = await releitura.maybeSingle();
     if (error || !data) {
       return fail("not_found", t("Template não encontrado."), 404, { requestId });
     }

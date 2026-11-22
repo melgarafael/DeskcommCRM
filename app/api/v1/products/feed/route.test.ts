@@ -68,6 +68,11 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso }));
 vi.mock("@/lib/instalacao/modulos", () => ({
+  // Pergunta de instalação E de empresa: a rota passou a chamar `moduloLigado`
+  // duas vezes (#4871), a segunda com o `orgId` do cookie. Aqui o duplo ignora o
+  // terceiro argumento de propósito — os cinco casos da camada por empresa, com a
+  // decisão de VERDADE e `organization_modules` falso, ficam em
+  // `tests/unit/empresa-desligada-fecha-o-feed-do-catalogo.test.ts`.
   moduloLigado: vi.fn(async (_db: unknown, modulo: string) => modulo === "catalogo_por_feed" && estado.moduloLigado),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
