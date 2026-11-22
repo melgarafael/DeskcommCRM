@@ -118,6 +118,15 @@ function enviados() {
   });
 }
 
+async function uploadFile({ file }: { file: File }) {
+  return {
+    kind: file.type.startsWith("audio/") ? "audio" : "image",
+    storage_path: `${ORG}/conv/${file.name}`,
+    media_mime: file.type,
+    media_size_bytes: file.size,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   getMock.mockResolvedValue({ data: [], meta: { has_more: false } });
@@ -126,12 +135,7 @@ beforeEach(() => {
     blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: "application/octet-stream" }),
   });
   vi.stubGlobal("fetch", fetchMock);
-  uploadMock.mockImplementation(async ({ file }: { file: File }) => ({
-    kind: file.type.startsWith("audio/") ? "audio" : "image",
-    storage_path: `${ORG}/conv/${file.name}`,
-    media_mime: file.type,
-    media_size_bytes: file.size,
-  }));
+  uploadMock.mockImplementation(uploadFile);
   sendMock.mockImplementation((_dados: unknown, opcoes?: { onSuccess?: () => void }) => {
     opcoes?.onSuccess?.();
   });
@@ -169,6 +173,37 @@ describe("Composer: a legenda vai só com o anexo que a leva (#3151)", () => {
     expect(enviados()).toEqual([
       { type: "audio", body: undefined },
       { type: "image", body: "Segue a tabela" },
+    ]);
+  });
+
+  it("keeps the edited caption when an image upload fails after sending audio", async () => {
+    uploadMock
+      .mockImplementationOnce(uploadFile)
+      .mockRejectedValueOnce(new Error("Simulated image upload failure"));
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /áudio e tabela/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Legenda"), {
+      target: { value: "Segue a tabela revisada" },
+    });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Enviar" }));
+    });
+
+    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(enviados()).toEqual([{ type: "audio", body: undefined }]);
+    const remaining = screen.getByRole("dialog");
+    expect(within(remaining).getByLabelText("Legenda")).toHaveValue("Segue a tabela revisada");
+
+    await act(async () => {
+      fireEvent.click(within(remaining).getByRole("button", { name: "Enviar" }));
+    });
+
+    expect(enviados()).toEqual([
+      { type: "audio", body: undefined },
+      { type: "image", body: "Segue a tabela revisada" },
     ]);
   });
 

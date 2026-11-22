@@ -7,7 +7,10 @@ import { SetupAiForm } from "./_form";
 import { InteligenciaDele } from "./_inteligencia";
 import { capacidadesPadraoDoOnboarding } from "@/lib/ai/agents/capacidades-padrao";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
-import { CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { NUNCA_FAZ, itensDaColuna } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { estadoEfetivoDasCamadas } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { lerConfigDoJev } from "@/lib/ai/decisao/config";
+import { estadoEfetivoDaTarefa, TAREFA_DA_AFIRMACAO_DE_FATO } from "@/lib/ai/decisao/tarefas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +44,38 @@ export default async function SetupAiPage() {
     .filter((r): r is string => Boolean(r))
     .map((r) => traduzir(r, idioma));
 
-  const conferencias = CONFERENCIAS_DE_SAIDA.map((c) => traduzir(c.rotulo, idioma));
+  /*
+    O ESTADO REAL DE CADA CONFERÊNCIA (#1041).
+
+    A coluna dizia "nunca faz" para todos os itens sem distinguir os que
+    rodam sempre das quatro que dependem de um interruptor — e numa organização
+    recém-criada as quatro vêm desligadas. Prometer proteção que não roda é pior
+    do que não listá-la.
+
+    A leitura é a MESMA que o motor faz: a linha de `org_guardrail_layers`
+    quando existe, o padrão do ambiente quando não existe
+    (`estadoEfetivoDasCamadas` → `camadaLigada`); e, para a conferência de fato,
+    a tarefa do Jev (`estadoEfetivoDaTarefa`), que é quem decide aquela camada.
+    Falha de leitura devolve `[]`/`null` e cai no padrão do ambiente — é o que o
+    motor faz de verdade num clone que atualizou o código antes do schema.
+  */
+  const [{ data: linhasDasCamadas }, { data: orgRow }] = await Promise.all([
+    supabase.from("org_guardrail_layers").select("layer, enabled").eq("organization_id", activeOrg.orgId),
+    supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
+  ]);
+  const itens = itensDaColuna({
+    painel: estadoEfetivoDasCamadas(linhasDasCamadas ?? []),
+    afirmacaoDeFato: estadoEfetivoDaTarefa(lerConfigDoJev(orgRow?.settings), TAREFA_DA_AFIRMACAO_DE_FATO),
+  });
+
+  // `Object.values(NUNCA_FAZ)` e não `itens`: a frase continua saindo da tabela
+  // como literal resolvível — é o que o gate de espanhol varre. A ordem é a
+  // mesma (o teste `onboarding-frases-do-novo-tenant` reprova se deixar de ser),
+  // e o índice só junta a fala traduzida ao estado lido do motor.
+  const frases = Object.values(NUNCA_FAZ).map((frase) => traduzir(frase, idioma));
+  // `?? item.frase`: com as duas listas do mesmo tamanho o índice sempre existe;
+  // se um dia não existir, a fala sai em português em vez de vazia.
+  const conferencias = itens.map((item, i) => ({ ...item, frase: frases[i] ?? item.frase }));
 
   return (
     <div className="space-y-6">

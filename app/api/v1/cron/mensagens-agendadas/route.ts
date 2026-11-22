@@ -17,7 +17,7 @@ import type { NextRequest } from "next/server";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
+import { ehOperante, STATUS_OPERANTE, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   autorAindaTemAcesso,
@@ -49,20 +49,21 @@ async function handle(req: NextRequest): Promise<Response> {
   const agora = new Date();
   const { data: candidatas, error } = await admin
     .from("mensagens_agendadas")
-    .select("id, organization_id")
+    .select("id, organizations:organization_id!inner(status)")
     .eq("status", "agendada")
+    // Exclude paused organizations before applying the batch limit.
+    .eq("organizations.status", STATUS_OPERANTE)
     .lte("scheduled_at", agora.toISOString())
     .order("scheduled_at", { ascending: true })
     .limit(LOTE);
   if (error) return fail("internal_error", "Erro ao ler as mensagens devidas.", 500, { requestId });
 
-  const paradas = new Set(await idsDeOrgsParadas(admin));
   const resumo = { processadas: 0, encaminhadas: 0, falhas: 0, canceladas: 0, esperando: 0 };
 
   const soltar = (id: string) => admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", id);
 
   for (const candidata of candidatas ?? []) {
-    if (paradas.has(candidata.organization_id)) continue;
+    if (!ehOperante(statusDaOrgEmbutida(candidata.organizations))) continue;
     const trava = new Date(agora.getTime() + TRAVA_S * 1000).toISOString();
     const { data: reservada } = await admin
       .from("mensagens_agendadas")

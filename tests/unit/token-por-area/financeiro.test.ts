@@ -313,6 +313,12 @@ const CASOS: readonly Caso[] = [
     params: { id: CONTRATO_A },
     linhas: {
       ...ORGS,
+      // A rota confere o CONTRATO contra a empresa antes de ler as parcelas:
+      // sem o contrato da A aqui, nem o token da própria A o alcançaria.
+      honorarios_contratos: [
+        { id: CONTRATO_A, organization_id: ORG_A, lead_id: null, modelo: "fixo", valor_fixo_cents: 100, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
+        { id: CONTRATO_B, organization_id: ORG_B, lead_id: null, modelo: "fixo", valor_fixo_cents: 200, percentual_exito: null, repasse_advogado_pct: null, created_at: "2026-11-01T10:00:00.000Z" },
+      ],
       honorarios_parcelas: [
         { id: PARCELA_A, organization_id: ORG_A, contrato_id: CONTRATO_A, numero: 1, vencimento: "2026-12-01", valor_cents: 100, currency: "BRL", financial_entry_id: null, status: "pendente" },
         { id: PARCELA_B, organization_id: ORG_B, contrato_id: CONTRATO_B, numero: 1, vencimento: "2026-12-01", valor_cents: 200, currency: "BRL", financial_entry_id: null, status: "pendente" },
@@ -323,7 +329,9 @@ const CASOS: readonly Caso[] = [
     recurso: "honorarios_parcelas",
     recursoDoTeto: "honorarios_parcelas_listar",
     status: 200,
-    paraB: "lista_vazia",
+    // Contrato de outra empresa responde o MESMO 404 do inexistente (a regra
+    // do #4859), em vez de 200 com lista vazia: o 404 não confirma que o id existe.
+    paraB: "404",
     colecao: { daA: PARCELA_A, daB: PARCELA_B },
   },
 ];

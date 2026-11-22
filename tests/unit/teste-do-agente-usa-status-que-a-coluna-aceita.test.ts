@@ -36,7 +36,7 @@ function statusAceitosPelaColuna(): string[] {
 
 function statusEscritosPelaRota(): string[] {
   const rota = readFileSync(
-    join(RAIZ, "app", "api", "v1", "ai", "agents", "[id]", "versions", "[vid]", "test", "route.ts"),
+    join(RAIZ, "lib", "ai", "agents", "teste-da-versao.ts"),
     "utf8",
   );
   // `status: "x"` em objeto de escrita. O `status` do payload de RESPOSTA (que é

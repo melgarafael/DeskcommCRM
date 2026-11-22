@@ -21,6 +21,8 @@ export interface RascunhoDoAvisoDeAgendamento {
   ligado: boolean;
   /** Também lembrar antes de cada horário (migration 9326). Opcional: ausente = desligado. */
   lembrarAntes?: boolean;
+  /** O resumo das 7h só sai em dia com agendamento (migration 9434). Opcional: ausente = desligado. */
+  resumoSoComAgendamento?: boolean;
 }
 
 /** O aviso de caso como a tela o vê; `null` quando ainda não tem número. */

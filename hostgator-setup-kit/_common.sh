@@ -2099,7 +2099,9 @@ relatar_saude_do_app() {
 wait_app_healthy() {
   local tentativas="${1:-20}" intervalo="${2:-3}" saida='' status='' corpo='' i=0
   while [ "$i" -lt "$tentativas" ]; do
-    saida="$(app_health_probe)"
+    # A stalled Docker exec must leave room for the next attempt. Use the
+    # same per-probe deadline as the standalone healthcheck.
+    saida="$(app_health_probe 30)"
     status="$(printf '%s\n' "$saida" | head -1 | tr -d '\r')"
     corpo="$(printf '%s\n' "$saida" | tail -n +2)"
     case "$status" in
@@ -2842,6 +2844,11 @@ gravar_imagens() {
   # acima: é a função que o update.sh antigo chama depois de reler o kit, então
   # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
   completar_par_vapid "$envfile"
+  # A conversão do consentimento de telemetria (#4936) mora aqui pelo mesmo
+  # motivo: a chamada no corpo do update.sh só existe a partir da versão que a
+  # traz, e quem atualiza roda o corpo ANTIGO. Sem esta linha, quem aceitou
+  # perderia a telemetria na atualização que traz a mudança.
+  migrar_consentimento_de_telemetria "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
@@ -2913,6 +2920,80 @@ gerar_par_vapid() {
   priv="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | head -c 39 | tail -c 32 | _b64url)" || return 1
   [ "${#pub}" -eq 87 ] && [ "${#priv}" -eq 43 ] || return 1
   printf '%s %s\n' "$pub" "$priv"
+}
+
+# marcar_consentimento_de_telemetria <arquivo> — a marca de "a conversão do
+# consentimento já passou por aqui". Só é criada quando a decisão ficou tomada:
+# nas saídas em que não dá para escrever, ela não nasce, e a próxima atualização
+# tenta de novo. Falhar ao criá-la não derruba nada (devolve 0).
+marcar_consentimento_de_telemetria() {
+  ( umask 077; printf '%s\n' "# Gerado pelo kit (#4948): a conversão do consentimento de telemetria já rodou nesta instalação. Não apague." > "$1" ) 2>/dev/null || true
+}
+
+# migrar_consentimento_de_telemetria [envfile] — usada pelo update.sh (#4936).
+#
+# Antes desta versão, `SENTRY_DSN` VAZIO significava "aceito o Sentry do
+# projeto": era o que o install.sh gravava quando a pessoa respondia "sim".
+# Agora vazio significa DESLIGADO e o aceite é o token `comunidade`
+# (lib/sentry/dsn.ts). Sem esta conversão, quem já havia aceitado perderia a
+# telemetria em silêncio depois de atualizar — e o remédio seria editar o `.env`
+# à mão, que a doutrina de empacotamento proíbe exigir.
+#
+# Converte SÓ a chave DECLARADA e VAZIA. Três casos ficam intocados:
+#   - chave ausente: quem nunca decidiu; ausência já é "desligado", e gravá-la
+#     seria consentir por alguém;
+#   - `off`/`false`/`0`: escolha escrita de quem não quer telemetria;
+#   - um DSN literal: quem aponta para o próprio Sentry.
+# Sempre devolve 0: telemetria não derruba atualização. Deixa
+# TELEMETRIA_CONVERTIDA=1 quando converter (o `up -d` de lá já recria o app com
+# o `.env` novo, então não há nada a reiniciar por conta disto).
+migrar_consentimento_de_telemetria() {
+  local envfile="${1:-.env}" declarado tmp marca
+  TELEMETRIA_CONVERTIDA=""
+  [ -f "$envfile" ] || return 0
+  # UMA VEZ por instalação (#4948). Depois desta versão, vazio é "desligado": quem
+  # esvazia a chave de propósito, ou o `install.sh --yes` com SENTRY_DSN vazio no
+  # ambiente, não pode ser religado pela atualização seguinte. A marca fica num
+  # arquivo ao lado (o nome casa com `.env*`, como o `.env.cron-drain`, e o
+  # `.gitignore` já o deixa de fora), para não mexer no `.env` de quem nunca
+  # decidiu. O install.sh novo a cria: instalação nova nunca é convertida.
+  marca="$(dirname -- "$envfile")/.env.consentimento-de-telemetria"
+  [ -e "$marca" ] && return 0
+  # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
+  # elas também contam como a chave declarada (mesma régua do `completar_par_vapid`).
+  declarado="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+  if [ -n "$declarado" ]; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" 2>/dev/null; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if [ ! -w "$envfile" ]; then
+    # Montagem somente-leitura ou permissão errada: quem opera precisa saber que
+    # a conversão NÃO aconteceu, senão a telemetria some sem explicação.
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo.")"
+    return 0
+  fi
+
+  # Escrita atômica, como no `set_env_var`: o tmp nasce 600 e o `mv` troca o
+  # arquivo de uma vez, para uma queda no meio não deixar `.env` pela metade.
+  tmp="${envfile}.tmp.$$"
+  if ! ( umask 077
+         { { grep -vE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" || true; } \
+           && printf 'SENTRY_DSN=%s\n' "comunidade"; } > "$tmp" ) \
+     || ! chmod 600 "$tmp" || ! mv "$tmp" "$envfile"; then
+    rm -f "$tmp"
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria no .env; a telemetria segue como estava. Para converter à mão: SENTRY_DSN=comunidade.")"
+    return 0
+  fi
+  # O ambiente também: o `load_env` já exportou o vazio, e é dele que o Compose
+  # lê o que interpola.
+  SENTRY_DSN="comunidade"; export SENTRY_DSN
+  TELEMETRIA_CONVERTIDA=1
+  marcar_consentimento_de_telemetria "$marca"
+  c_grn "$(t "✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)")"
 }
 
 # completar_par_vapid [envfile] — usada pelo install.sh (depois de escrever o

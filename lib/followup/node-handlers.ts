@@ -61,6 +61,12 @@ export interface EnrollmentRow {
   pointer_id: string;
   version_id: string;
   contact_id: string;
+  /**
+   * #4191: o negócio DONO desta inscrição. `null`/ausente = inscrição de antes
+   * da coluna (ou fluxo que não declara negócio) — a guarda de cobrança trata
+   * como legado e NÃO cala o contato por falta de vínculo.
+   */
+  lead_id?: string | null;
   conversation_id: string | null;
   current_node_id: string;
   status: EnrollmentStatus;

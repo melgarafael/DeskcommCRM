@@ -117,6 +117,47 @@ export function estaDePlantao(
   return input.isAvailable && isWithinSchedule(input.schedule ?? null, now);
 }
 
+/**
+ * A JORNADA **ABRIU AGORA**? — a porta 3 do roteamento (#3916).
+ *
+ * ─── O defeito que esta pergunta existe para consertar ──────────────────────
+ *
+ * A jornada é DERIVADA na leitura (`estaDePlantao`): ninguém escreve nada quando
+ * a janela vira, e por isso ninguém AVISA o roteamento de que ela virou. Uma
+ * conversa que não achou elegível volta para o `event_log` com backoff
+ * (`requeued_no_eligible`) e só é tentada de novo quando o backoff vence (até
+ * 15 minutos, ou mais com `backoff_seconds` alto). Numa fila que ABRIU agora
+ * não chega evento nenhum: o atendente entra de plantão, a conversa espera a
+ * próxima tentativa, e a tela mostra os dois disponíveis.
+ *
+ * A conta é a mesma de `isWithinSchedule`, feita nos DOIS instantes que
+ * interessam: o de um `janelaMs` atrás e o de agora. "Estava fora e passou para
+ * dentro" é a abertura.
+ *
+ * ─── Por que ela é idempotente SEM coluna de estado ─────────────────────────
+ *
+ * Não existe "já avisei" gravado em lugar nenhum — e não precisa: passado o
+ * primeiro tick dentro da janela, o instante de trás também está dentro e a
+ * resposta é `false` por CONSTRUÇÃO. Gravar a abertura exigiria uma coluna, uma
+ * migration e um cron para limpá-la; a derivação não tem estado para divergir.
+ *
+ * A `janelaMs` é a cadência de quem pergunta (o `routing-worker` roda `* * * * *`,
+ * então 60 s): com ela, exatamente UM tick por abertura responde `true`. Janela
+ * maior daria dois acordes na virada de um minuto para o outro; menor perderia a
+ * abertura quando o tick atrasa — e o atraso de um tick é o normal de um crond.
+ *
+ * `windows` vazio (24/7) NUNCA abre: sem restrição não há virada a avisar, e
+ * `isWithinSchedule` já responde `true` nos dois lados da conta.
+ */
+export function abriuOHorario(
+  schedule: Pick<AvailabilitySchedule, "timezone" | "windows"> | null | undefined,
+  agora: Date,
+  janelaMs: number,
+): boolean {
+  const antes = new Date(agora.getTime() - janelaMs);
+  return !isWithinSchedule(schedule, antes) && isWithinSchedule(schedule, agora);
+}
+
 export interface AttendantEligibilityInput {
   isAvailable: boolean;
   capacity: number;

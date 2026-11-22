@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { CampanhaGoogle } from "@/lib/plataformas-de-anuncio/google/api-google-ads";
 import type { LinhaPainelGoogle } from "@/lib/plataformas-de-anuncio/google/painel";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import type { ContaDeRelatorio } from "@/lib/plataformas-de-anuncio/google/contas-de-relatorio";
+import { ConexoesDeRelatorio, type RemoverConta } from "./ConexoesDeRelatorio";
 
 export type ResumoMidiaGoogle =
   | { ok: true; contaId: string; campanhas: CampanhaGoogle[] }
@@ -14,7 +15,11 @@ export type ResumoMidiaGoogle =
 type Periodo = { de: string; ate: string };
 type Props = {
   hoje: string;
-  carregar: (periodo: Periodo) => Promise<ResumoMidiaGoogle>;
+  carregar: (periodo: Periodo, customerId?: string) => Promise<ResumoMidiaGoogle>;
+  contas: ContaDeRelatorio[];
+  podeGerenciar: boolean;
+  remover: RemoverConta;
+  contaInicial?: string;
   atribuicao?: { linhas: LinhaPainelGoogle[]; fuso: string };
 };
 
@@ -43,7 +48,7 @@ function ganhosDasCampanhas(
   return ganhos;
 }
 
-export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
+export function MidiaGoogleAds({ hoje, carregar, atribuicao, contas, podeGerenciar, remover, contaInicial }: Props) {
   const t = useT();
   const locale = useTagDeIdioma();
   const numero = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
@@ -54,20 +59,27 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
     timeZone: "UTC",
   });
   const [dias, setDias] = useState(30);
+  const [escolha, setEscolha] = useState(contaInicial);
+  const conta = contas.find((item) => item.customerId === escolha) ?? contas[0];
+  const customerId = conta?.customerId;
   const [revisao, setRevisao] = useState(0);
   const [retorno, setRetorno] = useState<{ chave: string; dados: ResumoMidiaGoogle } | null>(null);
   const inicio = new Date(hoje + "T12:00:00Z");
   inicio.setUTCDate(inicio.getUTCDate() - dias + 1);
   const de = inicio.toISOString().slice(0, 10);
-  const chave = [de, hoje, revisao].join("/");
+  const chave = [customerId, conta?.propria, de, hoje, revisao].join("/");
   const resultado = retorno?.chave === chave ? retorno.dados : undefined;
 
   useEffect(() => {
+    if (!customerId) return;
     let vigente = true;
     async function ler() {
       let dados: ResumoMidiaGoogle;
       try {
-        dados = await carregar({ de, ate: hoje });
+        dados = await carregar({ de, ate: hoje }, customerId);
+        if (dados.ok && dados.contaId !== customerId) {
+          dados = { ok: false, detalhe: "O Google retornou dados de outra conta. Atualize o relatório." };
+        }
       } catch {
         dados = {
           ok: false,
@@ -80,7 +92,7 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
     return () => {
       vigente = false;
     };
-  }, [carregar, de, hoje, chave]);
+  }, [carregar, customerId, de, hoje, chave]);
 
   const campanhas = resultado?.ok ? resultado.campanhas : [];
   const totais = campanhas.reduce(
@@ -105,9 +117,25 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:mt-1 [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-muted-foreground">
         <div>
           <h2>{t("Desempenho das campanhas")}</h2>
-          <p>{t("Investimento e resultados informados pelo Google para a conta conectada.")}</p>
+          <p>{t("Investimento e resultados informados pelo Google para a conta selecionada.")}</p>
         </div>
         <div className="flex flex-wrap items-end gap-2 [&_label]:grid [&_label]:gap-1 [&_label]:text-xs [&_label]:text-muted-foreground">
+          {conta && (
+            <label>
+              <span>{t("Conta de anúncios")}</span>
+              <select
+                className="min-h-9 max-w-full cursor-pointer rounded-md border border-border-strong bg-surface px-3 py-1 text-[13px] text-text"
+                value={customerId}
+                onChange={(e) => setEscolha(e.target.value)}
+              >
+                {contas.map((item) => (
+                  <option value={item.customerId} key={item.customerId}>
+                    {item.propria ? item.label : t("Conta de conversões")} · {item.customerId.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             <span>{t("Período")}</span>
             <select
@@ -132,7 +160,13 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
           </button>
         </div>
       </div>
-      {!resultado && (
+      {podeGerenciar && <ConexoesDeRelatorio key={customerId + "/" + conta?.propria} conta={conta} remover={remover} />}
+      {!conta && (
+        <p className="m-0 rounded-lg border border-border bg-surface p-[18px] text-sm">
+          {podeGerenciar ? t("Conecte uma conta de leitura para consultar as campanhas.") : t("Peça a um administrador que conecte uma conta de leitura ao painel.")}
+        </p>
+      )}
+      {conta && !resultado && (
         <p
           className="m-0 rounded-lg border border-border bg-surface p-[18px] text-sm"
           role="status"
@@ -143,25 +177,7 @@ export function MidiaGoogleAds({ hoje, carregar, atribuicao }: Props) {
       {resultado && !resultado.ok && (
         <p className="m-0 rounded-lg border border-border bg-surface p-[18px] text-sm" role="alert">
           {t(resultado.detalhe)}
-          {resultado.abrirConfiguracoes === true && (
-            <>
-              {" "}
-              <Link
-                className="font-medium text-accent underline underline-offset-2 hover:text-accent-hover"
-                href="/app/settings/conversoes"
-              >
-                {t("Abrir configurações de conversões")}
-              </Link>
-            </>
-          )}
-          {resultado.abrirConfiguracoes === false && (
-            <>
-              {" "}
-              {t(
-                "Peça a um administrador da organização que revise a conexão do Google Ads em Configurações → Conversões.",
-              )}
-            </>
-          )}
+          {resultado.abrirConfiguracoes === false && " " + t("Peça a um administrador que revise a autorização de leitura desta conta.")}
         </p>
       )}
       {resultado?.ok && (

@@ -32,6 +32,29 @@ const PROVEDORES = ["anthropic", "openai", "google"] as const;
  */
 const SEM_PRECO_NO_MOTOR_CONHECIDOS = new Set(["gpt-5", "gpt-5-mini"]);
 
+/**
+ * DIVERGÊNCIA DECLARADA entre o banco e o motor — sem migration nesta onda.
+ *
+ * `gemini-3.5-flash` está em `ai_pricing` com 150/900 (migration 0101, preço
+ * inventado: a página oficial nunca teve seção dele). O endpoint foi aposentado
+ * em 19/05/2026 e encaminha ao 3.6 Flash, então o motor cobra a tarifa do 3.6:
+ * 75/375 na promo até 31/12/2026 e 150/750 depois (aistudio.google.com/docs/
+ * deprecations e /docs/pricing, lidas em 18/11/2026). Enquanto a linha do banco
+ * não for corrigida: saída 900 contra 750 (20% acima) e, durante a promo, entrada
+ * em dobro. Trocar 150/900 por 150/750 no `baseline.sql` é trabalho de migration
+ * — a próxima que tocar `ai_pricing` traz este par e APAGA a entrada desta lista.
+ */
+const DIVERGENCIA_DE_BANCO: Record<
+  string,
+  { banco: { prompt: number; completion: number }; motor: { input: number; output: number }; em: Date }
+> = {
+  "gemini-3.5-flash": {
+    banco: { prompt: 150, completion: 900 },
+    motor: { input: 150, output: 750 },
+    em: new Date("2027-01-01T00:00:00.000Z"),
+  },
+};
+
 const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
 const segmentos = baseline.split(/\ninsert into /).slice(1);
 
@@ -95,6 +118,20 @@ describe("o catálogo e a tabela de preço do motor", () => {
       expect.soft(t, `${id} sem linha em ai_pricing`).toBeDefined();
       if (!t) continue;
       const vazio = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+      const divergente = DIVERGENCIA_DE_BANCO[id];
+      if (divergente) {
+        // Declarada, medida e com data de validade: banco no preço velho, motor no
+        // preço oficial do modelo que de fato atende a chamada.
+        expect.soft(t.prompt, `${id}: entrada em ai_pricing`).toBe(divergente.banco.prompt);
+        expect.soft(t.completion, `${id}: saída em ai_pricing`).toBe(divergente.banco.completion);
+        expect
+          .soft(costCents(id, { ...vazio, inputTokens: 1_000_000 }, "1h", divergente.em), `${id}: entrada`)
+          .toBeCloseTo(divergente.motor.input, 6);
+        expect
+          .soft(costCents(id, { ...vazio, outputTokens: 1_000_000 }, "1h", divergente.em), `${id}: saída`)
+          .toBeCloseTo(divergente.motor.output, 6);
+        continue;
+      }
       // 3.6/3.7/3.8 Flash: a tabela só cabe um preço (PK em `model`) e guarda a
       // tarifa de 2027. O motor só a aplica a partir de 2027-01-01T00:00:00Z;
       // comparar com `new Date()` ficaria vermelho até lá e verde depois, sem mudança.

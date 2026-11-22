@@ -38,8 +38,11 @@ import {
   blocosDeAgendaResidentes,
   blocosDeInteresseExternoResidentes,
   blocosDoSistemaDoTurno,
+  comEvidenciaDoCadastroDaAgenda,
+  temFerramentaDeAgenda,
   type BlocosDoSistemaDoTurno,
 } from './inbound-turn';
+import { criarEvidenciasComerciaisDoTurno } from '../guardrails/promise/evidencias-comerciais';
 import { diretivaDeIdioma } from './idioma-do-turno';
 import { composeSystemPrompt } from './org-memory';
 import { BLOCO_DA_RESPOSTA_FALADA } from './voz-do-turno';
@@ -284,5 +287,40 @@ describe('no pedido que o provedor recebe (serialização canônica)', () => {
     // título — nenhum byte de TEXTO do agente entra antes do fim do prefixo.
     expect(comum.length - soPlataforma.length).toBeLessThanOrEqual(5);
     expect(comum).toContain('=== system ===');
+  });
+});
+
+/**
+ * #4927 — a duração do tipo de atendimento ("a consulta dura 1h30") vem de
+ * `crm_list_event_types`, que fica fora de `AGENDA_TOOL_NAMES`. Sem o ramo
+ * próprio no loop das tools MCP, o retorno nunca chegava à conferência de
+ * promessa e a frase seguia vetada em produção.
+ */
+describe('o cadastro da agenda vira evidência do turno (#4927)', () => {
+  const TIPOS = { tipos: [{ nome: 'Consulta', slug: 'consulta', duracao_minutos: 90 }] };
+
+  it('o retorno de crm_list_event_types chega à evidência com a duração falada', async () => {
+    const evidencias = criarEvidenciasComerciaisDoTurno([]);
+    const descartes: number[][] = [];
+    const embrulhada = comEvidenciaDoCadastroDaAgenda(
+      'crm_list_event_types',
+      { execute: async () => TIPOS },
+      evidencias,
+      (t) => descartes.push(t),
+    );
+    expect(embrulhada).not.toBeNull();
+    // O modelo recebe o retorno intacto.
+    expect(await (embrulhada!.execute as () => Promise<unknown>)()).toBe(TIPOS);
+    const conteudos = evidencias.ler('a consulta dura 1h30').map((e) => e.conteudo);
+    expect(conteudos.some((c) => c.includes('90 minutos (1h30)'))).toBe(true);
+    expect(descartes).toEqual([]);
+  });
+
+  it('não é ramo das tools que checam a agenda, e listar os tipos não arma o agendaStallGate', () => {
+    const evidencias = criarEvidenciasComerciaisDoTurno([]);
+    const tool = { execute: async () => ({}) };
+    expect(comEvidenciaDoCadastroDaAgenda('crm_find_free_slots', tool, evidencias, () => {})).toBeNull();
+    expect(comEvidenciaDoCadastroDaAgenda('crm_list_event_types', {}, evidencias, () => {})).toBeNull();
+    expect(temFerramentaDeAgenda(['crm_list_event_types'])).toBe(false);
   });
 });
