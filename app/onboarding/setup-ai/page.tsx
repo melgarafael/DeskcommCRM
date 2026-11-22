@@ -47,7 +47,7 @@ export default async function SetupAiPage() {
   /*
     O ESTADO REAL DE CADA CONFERÊNCIA (#1041).
 
-    A coluna dizia "nunca faz" para dezessete itens sem distinguir os treze que
+    A coluna dizia "nunca faz" para todos os itens sem distinguir os que
     rodam sempre das quatro que dependem de um interruptor — e numa organização
     recém-criada as quatro vêm desligadas. Prometer proteção que não roda é pior
     do que não listá-la.
