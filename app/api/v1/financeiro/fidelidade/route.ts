@@ -166,6 +166,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,

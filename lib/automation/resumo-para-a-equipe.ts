@@ -23,7 +23,15 @@
  * do WhatsApp do cliente). O atalho e o valor já identificam o negócio.
  *
  * O que sai: regra, primeiro nome do cliente, telefone E.164, valor (centavos
- * + moeda ISO) e a pontuação NUMÉRICA, mais o atalho para a ficha.
+ * + moeda ISO), a pontuação NUMÉRICA, o RESPONSÁVEL pelo negócio e o FUNIL,
+ * mais o atalho para a ficha.
+ *
+ * Responsável e funil (#4802, "quem vendeu" no aviso de venda): os dois são
+ * nomes que a PRÓPRIA organização escreveu — o nome do membro da equipe e o
+ * nome do funil —, da mesma natureza do nome da regra, que já sai aqui. Nenhum
+ * dos dois vem do que o cliente digitou. Passam pela mesma limpeza do nome do
+ * cliente (sem link, com teto) e depois pela porta do corpo.
+ *
  * Campo novo aqui tem de ter forma fixa; texto livre da conversa não passa
  * nesta porta, nem saneado (o teste de propriedade
  * `resumo-sem-texto-livre.test.ts` reprova).
@@ -75,6 +83,13 @@ export interface EntradaDoResumo {
   pontuacao?: number | null;
   /** O atalho absoluto para a ficha, já montado pelo servidor; `null` sem URL pública. */
   link?: string | null;
+  /**
+   * Quem responde pelo negócio: o nome do membro da equipe, ou o rótulo do
+   * agente de IA. `null` quando não há responsável ou o nome não foi resolvido.
+   */
+  responsavel?: string | null;
+  /** `crm_pipelines.name` do funil do negócio. */
+  funil?: string | null;
 }
 
 /**
@@ -105,6 +120,13 @@ export function montarResumoParaAEquipe(entrada: EntradaDoResumo): string {
   // Mesma fronteira do CHECK `contacts_phone_e164_format`: fora dela, omite.
   if (PHONE_REGEX.test(telefone)) linhas.push(`${t("Telefone")}: ${telefone}`);
   if (valor) linhas.push(`${t("Valor")}: ${valor}`);
+
+  // Nomes escritos pela organização (membro da equipe, funil). Vazio não vira
+  // linha: "Responsável: " em branco afirmaria que não há ninguém.
+  const responsavel = sanitizarTextoDoLead(entrada.responsavel ?? null, TETOS_DO_TEXTO_DO_LEAD.title);
+  if (responsavel) linhas.push(`${t("Responsável")}: ${responsavel}`);
+  const funil = sanitizarTextoDoLead(entrada.funil ?? null, TETOS_DO_TEXTO_DO_LEAD.title);
+  if (funil) linhas.push(`${t("Funil")}: ${funil}`);
 
   // `0` é afirmação, não ausência: testar por truthiness esconderia o piso.
   const pontuacao = entrada.pontuacao;

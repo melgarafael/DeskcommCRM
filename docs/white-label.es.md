@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@120e11feaad1 -->
+<!-- traduzido-de: docs/white-label.md@b4c1c13cdced -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -40,7 +40,17 @@ Ejemplo:
 }
 ```
 
-**Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda). Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, etcétera. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
+**Color por sección del menú lateral.** El menú tiene clases estables, pensadas para este CSS. Todo grupo lleva `nav-grupo`, y cada uno lleva también la suya: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` y `nav-grupo-organizacao` (la del pie, con Configuración y Ayuda), más `nav-grupo-modulos` en el grupo Módulos, que solo aparece cuando la organización tiene un módulo conectado activo. Cada destino tiene la suya: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (el enlace "Ver todo en CRM") y así sucesivamente. El ítem de la pantalla abierta — y solo él — lleva también `nav-item-ativo`. Estas clases forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
+
+`nav-item-ativo` es lo que resuelve el contraste del ítem abierto: es el único que ya tiene fondo en el color de destaque, y una regla que pinta el menú entero (`.nav-grupo-crm .rounded-md:hover`) también lo alcanza. Como el validador no acepta selector por atributo ni `:not()`, usa la clase: dale al ítem abierto un color propio, o repite en él el fondo neutro del menú.
+
+```css
+.nav-grupo .rounded-md { background-color: #f4f1ea; }
+.nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
+```
+
+Empieza el selector del ítem abierto por `.nav-grupo`, como en la regla del grupo: con el mismo peso, gana la regla que viene después; `.nav-item-ativo` solo pierde ante `.nav-grupo .rounded-md`, y el ítem abierto queda con texto blanco sobre el fondo neutro.
 
 **Color por sección del contenido.** El contenedor del contenido de toda pantalla lleva `tela-secao` y, cuando la ruta está en el registro de navegación, también la de la sección: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` y `tela-secao-organizacao` — con ella, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale solo en las pantallas de CRM. Una ruta fuera del registro queda solo con `tela-secao`.
 

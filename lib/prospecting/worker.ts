@@ -30,19 +30,18 @@ import {
   assertProspectingDelivery,
   vetoDoContatoAntesDaVaga,
 } from "./guard";
-import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
-import { temContextoDaEquipe } from "./contexto-da-equipe";
+import { entradasDaAbordagem, estrategiaDoCandidato } from "./estrategia-site";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
   LIMITE_TENTATIVAS,
   siteEfetivo,
 } from "./site-efetivo";
-import { previaDoAgente } from "./previa";
+import { previaAprovadaDoAgente, previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
-import { campaignConfigSchema, usaFichaDigital, type OfertaDaCampanha } from "./schema";
+import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
-import { moduloLigado } from "@/lib/instalacao/modulos";
+import { empresasComModuloDesligado, moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
 import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
@@ -262,6 +261,29 @@ export async function sendNextCandidate(
     );
     return;
   }
+  // Aprovação da prévia é OPÇÃO da campanha, desligada por padrão: campanha sem
+  // a chave (inclusive as que já rodavam antes dela existir) envia como sempre.
+  if (
+    cfg.exigir_aprovacao_da_previa &&
+    (queued.automatic_sends ?? 0) === 0 &&
+    !previaAprovadaDoAgente(queued.data, cfg.agent_id, cfg.briefing_editado_em, cfg.fonte_da_abordagem ?? "estrategia")
+  ) {
+    const pause = await db.query(
+      "update prospecting_campaigns set status='paused',error='A primeira abordagem aguarda revisão e aprovação humana da prévia.',updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",
+      [c.organization_id, c.id],
+    );
+    if ((pause.rowCount ?? 0) > 0) {
+      await audit({
+        action: "prospecting.approval_required",
+        organizationId: c.organization_id,
+        resourceType: "prospecting",
+        resourceId: c.id,
+        metadata: { candidateId: queued.id },
+        requestId: randomUUID(),
+      });
+    }
+    return;
+  }
   // A checagem do canal olha o telefone desta empresa (modo de teste, lista liberada) e vem
   // ANTES de qualquer criação: se ela recusar, a campanha pausa sem ter deixado contato,
   // negócio nem conversa para trás — que é exatamente o que o modo `on_send` quer evitar.
@@ -382,11 +404,9 @@ export async function sendNextCandidate(
     // de outro agente (a do padrão da organização), o envio escreve do zero.
     const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
     const site = siteEfetivo(p.data, new Date().toISOString());
-    // A campanha SEM ficha digital (#4829) não recebe os fatos da ficha: o veredito
-    // do site não vira ângulo de venda, e a prévia guardada de uma campanha que ainda
-    // usava a ficha não entra como rascunho. A estratégia continua sendo calculada —
-    // ela é o diagnóstico que a TELA mostra —, mas não sobe para a instrução.
-    const semFichaDigital = !usaFichaDigital(cfg);
+    // A estratégia continua sendo calculada — ela é o diagnóstico que a TELA mostra. Quem
+    // decide se ela sobe para a instrução (sem ficha digital, #4829, ou pelo prompt do
+    // agente, não sobe) é `entradasDaAbordagem`.
     const estrategia = site
       ? estrategiaDoCandidato(p.data, site, {
           ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
@@ -397,31 +417,25 @@ export async function sendNextCandidate(
       : null;
     // Modo "saída na 2ª": a 1ª mensagem só cumprimenta, então nada de ângulo de
     // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
-    // dados), que o prompt frio deixa citar "como o motivo do contato".
-    const soCumprimenta = cfg.exit_offer !== "first_message";
-    // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
-    const dados = soCumprimenta
-      ? montarDadosDeAbordagem(p.data, null, null, { soCumprimenta, semFichaDigital })
-      : montarDadosDeAbordagem(
-          p.data,
-          semFichaDigital ? null : site,
-          semFichaDigital ? null : previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em),
-          { semFichaDigital },
-        );
-    // Medido nos dados JÁ filtrados pelo modo; o mesmo valor vai à instrução e ao modo.
-    const comContextoDaEquipe = temContextoDaEquipe(dados);
+    // dados), que o prompt frio deixa citar "como o motivo do contato". Sem ficha
+    // digital, nem os fatos da ficha nem a prévia guardada. Pelo prompt do agente,
+    // sem estratégia nem auditoria. A decisão mora em `entradasDaAbordagem`, a MESMA
+    // que a prévia chama. A prévia guardada só entra se for da MESMA fonte e do texto
+    // ATUAL da campanha (`briefing_editado_em`).
+    const fonte = cfg.fonte_da_abordagem ?? "estrategia";
+    const { instrucao, dados, comContextoDaEquipe, semFichaDigital } = entradasDaAbordagem({
+      config: cfg,
+      data: p.data,
+      site,
+      estrategia,
+      voz: blocoVozVendedor(personalizacao),
+      previa: previaDoAgente(p.data, cfg.agent_id, cfg.briefing_editado_em, fonte),
+    });
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: instrucaoDeAbordagemFria(
-        cfg.instruction,
-        cfg.qualification,
-        blocoVozVendedor(personalizacao) || undefined,
-        semFichaDigital ? null : estrategia,
-        soCumprimenta,
-        comContextoDaEquipe,
-      ),
+      instrucao,
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
@@ -842,14 +856,44 @@ const ORGS_COM_PREPARO_PENDENTE =
   // (c) WhatsApp por conferir (`whatsapp.ts`): telefone sem veredito, e uma conexão
   // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`, ou vazio
   // com o módulo `conferir_whatsapp` desligado). Sem ela a organização NÃO entra —
-  // senão voltaria toda rodada para nada.
+  // senão voltaria toda rodada para nada. Pela mesma razão, $2 = as empresas que
+  // desligaram o módulo (#4871): o preparo delas não confere, e a pendência nunca sumiria.
   "or (nullif(trim(c.data->>'phone'), '') is not null and c.data->'whatsapp' is null " +
+  "and not (pc.organization_id = any($2::uuid[])) " +
   "and exists (select 1 from channel_sessions s where s.organization_id=pc.organization_id " +
   "and s.provider = any($1::text[]) and s.status='WORKING' and s.archived_at is null)))) " +
   "group by pc.organization_id order by min(pc.updated_at) limit 20";
 
 /** Teto de tempo do preparo de UMA organização dentro do tick. */
 const PRAZO_DO_PREPARO_MS = 100_000;
+
+/**
+ * Quem CONFERE WhatsApp nesta rodada (#4871) — decidido POR EMPRESA, mesmo num
+ * tick que percorre até 20 organizações de uma vez.
+ *
+ * O cron não tem "a empresa do request": o tick é GLOBAL e a pergunta certa é
+ * "esta empresa ainda confere?", respondida aqui. A ordem é a da camada por
+ * empresa, e ela é a MESMA de `lib/instalacao/modulos.ts`:
+ *
+ *   1. instalação desligada VENCE — nem a linha `ligado` da empresa liga;
+ *   2. a linha `desligado` da empresa tira a empresa;
+ *   3. sem linha, a empresa herda a instalação;
+ *   4. `desligadas === null` é leitura que falhou, e falha de leitura não
+ *      confere o número de ninguém (fecha, não abre).
+ *
+ * Puro de propósito: a rodada lê `organization_modules` UMA vez
+ * (`empresasComModuloDesligado`) e esta função responde por cada empresa sem
+ * tocar no banco — o teste prova as combinações sem dublê da decisão.
+ */
+export function confereWhatsapp(
+  instalacaoLigada: boolean,
+  desligadas: ReadonlySet<string> | null,
+  organizacaoId: string,
+): boolean {
+  if (!instalacaoLigada) return false;
+  if (desligadas === null) return false;
+  return !desligadas.has(organizacaoId);
+}
 
 export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
@@ -869,12 +913,24 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   // Segunda consulta, à parte (a primeira não muda): quem só tem rascunho/pausada.
   // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
   let apenasPreparo: string[] = [];
+  // O TETO da instalação, como antes: desligado, ninguém confere WhatsApp.
+  let conferirNaInstalacao = false;
+  // #4871 — a camada POR EMPRESA, lida UMA vez para a rodada inteira (o tick é
+  // global). `null` = a leitura falhou: ninguém confere nesta rodada.
+  let semConferencia: ReadonlySet<string> | null = null;
   try {
-    // Módulo desligado (o padrão): lista vazia, e o ramo (c) não seleciona ninguém.
-    const conferir = await moduloLigado(admin, "conferir_whatsapp");
+    conferirNaInstalacao = await moduloLigado(admin, "conferir_whatsapp");
+    // A empresa que desligou o módulo não precisa ser lida quando a instalação já
+    // negou a todos: a instalação vence, e a leitura extra não mudaria resposta.
+    semConferencia = conferirNaInstalacao
+      ? await empresasComModuloDesligado(admin, "conferir_whatsapp")
+      : new Set<string>();
+    // Módulo desligado na instalação OU leitura ilegível (o padrão): lista vazia,
+    // e o ramo (c) não seleciona ninguém.
     apenasPreparo = (
       await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
-        conferir ? provedoresQueConferemNumero() : [],
+        conferirNaInstalacao && semConferencia !== null ? provedoresQueConferemNumero() : [],
+        [...(semConferencia ?? [])],
       ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {
@@ -1082,6 +1138,14 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
         org,
         requestId ?? randomUUID(),
         Math.min(deadline, Date.now() + PRAZO_DO_PREPARO_MS),
+        {
+          // #4871: a decisão da rodada, em memória e POR EMPRESA — a empresa
+          // desligada não tem o número dos leads conferido, e a ligada é preparada
+          // na MESMA execução, sem uma leitura de módulos por organização. O resto
+          // das dependências continua sendo o padrão do preparo.
+          conferirWhatsapp: async (_admin, organizacaoId) =>
+            confereWhatsapp(conferirNaInstalacao, semConferencia, organizacaoId),
+        },
       );
     } catch (error) {
       logger.error("[prospecting] preparo automático falhou", {

@@ -76,6 +76,7 @@ vi.mock("./PropostasDoNegocio", () => ({ PropostasDoNegocio: () => null }));
 vi.mock("./ConversaNoDossie", () => ({ ConversaNoDossie: () => null }));
 vi.mock("./ScoreSlot", () => ({ ScoreSlot: () => null }));
 vi.mock("./OwnerBadge", () => ({ OwnerBadge: () => null }));
+vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => <div data-peca="vendas" /> }));
 vi.mock("./LeadTimeline", () => ({
   LeadTimeline: ({ itens }: { itens: Array<{ id: string; type: string }> }) => (
     <ul data-peca="linha-do-tempo">
@@ -155,17 +156,17 @@ describe("a ordem das seções do dossiê (#3181)", () => {
     linhaDoTempo.itens = seisAtividades();
   });
 
-  it("⭐ a ordem padrão é Contato, Dados do negócio, Linha do tempo", () => {
+  it("⭐ a ordem padrão é Contato, Dados do negócio, Vendas, Linha do tempo", () => {
     montarDossie();
 
-    expect(ordemDasSecoes()).toEqual(["contato", "dados-do-negocio", "linha-do-tempo"]);
+    expect(ordemDasSecoes()).toEqual(["contato", "dados-do-negocio", "vendas", "linha-do-tempo"]);
 
     // A mesma ordem pelo TEXTO que o atendente lê, e não só pelos ids: o id
     // poderia estar certo com o título trocado de lugar. O seletor pega o
     // primeiro `<span>` do cabeçalho — o segundo é o sinal `+`/`−`, que é
     // `aria-hidden` mas continua no `textContent` do `<h3>`.
     const titulos = ordemDasSecoes().map((id) => secao(id).querySelector("h3 button span")?.textContent);
-    expect(titulos).toEqual(["Contato", "Dados do negócio", "Linha do tempo"]);
+    expect(titulos).toEqual(["Contato", "Dados do negócio", "Vendas", "Linha do tempo"]);
 
     // E os campos do negócio vêm ANTES de a linha do tempo começar: era
     // exatamente isso que a ordem antiga não entregava.
@@ -176,10 +177,10 @@ describe("a ordem das seções do dossiê (#3181)", () => {
     expect(campos!.compareDocumentPosition(timeline!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("as três seções nascem ABERTAS — sem preferência salva, ninguém esconde conteúdo", () => {
+  it("as seções nascem ABERTAS — sem preferência salva, ninguém esconde conteúdo", () => {
     montarDossie();
 
-    for (const id of ["contato", "dados-do-negocio", "linha-do-tempo"]) {
+    for (const id of ["contato", "dados-do-negocio", "vendas", "linha-do-tempo"]) {
       expect(secao(id).getAttribute("data-recolhida")).toBe("nao");
       const cabecalho = within(secao(id)).getByRole("button");
       expect(cabecalho, `a seção ${id} não se anuncia aberta`).toHaveAttribute("aria-expanded", "true");

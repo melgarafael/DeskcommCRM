@@ -592,6 +592,18 @@ function wrapMcpTool(
               ? { tipo: "ambiguo" as const, quantos: r.candidateIds.length }
               : { tipo: "sem_lead" as const };
           },
+          /** O negócio GRAVADO na tarefa — para `funil_vem_da_tarefa`. */
+          resolveLeadDaTarefa: async (taskId) => {
+            const { data, error } = await input.supabase
+              .from("crm_tasks")
+              .select("lead_id")
+              .eq("organization_id", input.ctx.organizationId)
+              .eq("id", taskId)
+              .maybeSingle();
+            if (error) throw new Error(error.message);
+            if (!data) return null;
+            return { leadId: (data as { lead_id: string | null }).lead_id ?? null };
+          },
         });
 
         if (!veredito.permitido) {

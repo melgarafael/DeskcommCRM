@@ -384,6 +384,22 @@ beforeEach(() => {
   } as unknown as Awaited<ReturnType<typeof generateObject>>);
 });
 
+it("com apenas um agente de voz ativo, não mede o clima de mensagens", async () => {
+  const cenario = { credenciais: [credencial(CRED_OPENAI, "openai", "sk-openai-da-tela")] };
+  const banco = montarBanco(cenario);
+  Object.assign(banco.ai_agents![0]!, {
+    channel: "voice",
+    kind: "rag_bot",
+    published_version_id: null,
+  });
+
+  const { resultado } = await rodar(cenario, banco);
+
+  expect(resultado).toEqual({ skipped: true, reason: "nenhum_agente_no_ar" });
+  expect(generateObject).not.toHaveBeenCalled();
+  expect(banco.llm_calls).toHaveLength(0);
+});
+
 describe("D12 — o clima roda com a chave colada pela tela", () => {
   it("chave da Anthropic cadastrada em Credenciais, .env vazio: o clima é medido", async () => {
     const { resultado, banco } = await rodar({

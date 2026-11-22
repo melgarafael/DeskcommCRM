@@ -143,7 +143,7 @@ function bancoDoResolvedor(linhas: {
   contacts?: Linha[];
   contact_phones?: Linha[];
   channel_sessions?: Linha[];
-} = {}) {
+} = {}, conversaResolvida?: string) {
   const tabelas: Record<string, Linha[]> = {
     contacts: linhas.contacts ?? [
       // A de FORA primeiro: ver o comentário de `TELEFONE`.
@@ -221,6 +221,11 @@ function bancoDoResolvedor(linhas: {
    * `fn_service_begin` devolve a fronteira do atendimento. A conversa carrega o
    * CONTATO de quem ela é: é por isso que a asserção de organização alheia
    * consegue dizer "abriu a conversa da ficha errada" sem olhar tabela nenhuma.
+   *
+   * `conversaResolvida` existe para o caso que compara os DOIS modos de envio:
+   * ali a conversa precisa ser um uuid de verdade, porque o modo por
+   * `conversation_id` a valida como uuid — e `conversa-de-<id>` é só um rótulo
+   * legível para as asserções.
    */
   const rpc = async (nome: string, args: Record<string, unknown> = {}) => {
     rpcs.push({ nome, args });
@@ -228,7 +233,7 @@ function bancoDoResolvedor(linhas: {
       data: {
         organization_id: args.p_org,
         contact_id: args.p_contact,
-        conversation_id: conversaDe(args.p_contact),
+        conversation_id: conversaResolvida ?? conversaDe(args.p_contact),
         service_revision: 1,
         demanda_id: null,
         demanda_revision: null,
@@ -245,9 +250,9 @@ function bancoDoResolvedor(linhas: {
 let idempotencia = bancoDaIdempotencia();
 let resolvedor = bancoDoResolvedor();
 
-function autenticado() {
+function autenticado(opcoes: { conversaResolvida?: string } = {}) {
   idempotencia = bancoDaIdempotencia();
-  resolvedor = bancoDoResolvedor();
+  resolvedor = bancoDoResolvedor({}, opcoes.conversaResolvida);
   mockedAdmin.mockImplementation(() => resolvedor.db as never);
   mockedAuth.mockResolvedValue({
     ok: true,
@@ -347,6 +352,34 @@ describe("POST /api/v1/messages — só `phone_number`: a porta nova (#4513)", (
       coluna: "organization_id",
       valor: ORG,
     });
+  });
+});
+
+describe("POST /api/v1/messages — os dois modos devolvem o MESMO recibo (#4513)", () => {
+  it("telefone da organização e `conversation_id` resolvido entregam o mesmo envio e o mesmo corpo", async () => {
+    // A conversa que o telefone resolve — uuid de verdade, porque o segundo
+    // pedido a manda de volta como `conversation_id`, que o schema valida.
+    const RESOLVIDA = "55555555-5555-4555-8555-555555555555";
+    autenticado({ conversaResolvida: RESOLVIDA });
+    // O dublê do handler ECOA a conversa que recebeu: sem isso os dois modos
+    // devolveriam o mesmo id fixo e a igualdade abaixo não provaria nada.
+    mockedSend.mockImplementation(
+      async (_db: unknown, _ctx: unknown, entrada: { conversation_id: string }) =>
+        ({ id: "m1", status: "sent", conversation_id: entrada.conversation_id }) as never,
+    );
+
+    const porTelefone = await POST(pedido(POR_TELEFONE));
+    const porConversa = await POST(
+      pedido({ conversation_id: RESOLVIDA, type: "text", body: POR_TELEFONE.body }),
+    );
+
+    // O que o handler vê é o MESMO corpo nos dois modos: a porta por telefone
+    // não inventa campo, não muda default e não deixa `phone_number` passar.
+    expect(mockedSend.mock.calls[0]![2]).toEqual(mockedSend.mock.calls[1]![2]);
+    // E o recibo na rede é o mesmo: mesmo status, mesmo corpo.
+    expect(porTelefone.status).toBe(201);
+    expect(porConversa.status).toBe(201);
+    expect(await porTelefone.json()).toEqual(await porConversa.json());
   });
 });
 
