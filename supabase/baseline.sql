@@ -70641,6 +70641,9 @@ notify pgrst, 'reload schema';
 
 -- ---- modulo conectado: atraso do módulo (migration 9446) ----
 -- Espelho idempotente da 9446 (racional no arquivo da migration): `fn_extensions_events_lag`.
+-- A 9452 redefiniu a função (rótulo estável por hash do id e fuso da organização, #5097): o corpo
+-- abaixo é o da 9452, a última da cadeia — quem aplica a cadeia e quem aplica este baseline recebem
+-- o mesmo. `md5` está no `pg_catalog` e sobrevive ao `search_path = ''`.
 
 create or replace function public.fn_extensions_events_lag(p_installation uuid)
 returns jsonb language sql stable security invoker set search_path = '' as $$
@@ -70651,7 +70654,7 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
     select c.organization_id from public.extension_module_cursors c
       where c.installation_id = p_installation
   ), linhas as (
-    select o.organization_id, c.last_event_id, c.last_read_at,
+    select o.organization_id, g.timezone, c.last_event_id, c.last_read_at,
            (select count(*) from public.extension_module_events v
               where v.organization_id = o.organization_id and v.id > coalesce(c.last_event_id, 0)
                 and (v.kind <> 'module_disabled' or v.installation_id = p_installation)) as lag,
@@ -70662,10 +70665,12 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
               where v.organization_id = o.organization_id and v.id > coalesce(c.last_event_id, 0)
                 and (v.kind <> 'module_disabled' or v.installation_id = p_installation)) as oldest_unread_at
       from orgs o
+      join public.organizations g on g.id = o.organization_id
       left join public.extension_module_cursors c
         on c.installation_id = p_installation and c.organization_id = o.organization_id
   )
   select coalesce(jsonb_agg(jsonb_build_object(
+           'rotulo', substr(md5(l.organization_id::text), 1, 6), 'fuso', l.timezone,
            'last_event_id', l.last_event_id, 'last_read_at', l.last_read_at, 'lag', l.lag,
            'contacts_pending', l.contacts_pending, 'oldest_unread_at', l.oldest_unread_at
          ) order by l.lag desc, l.last_read_at nulls first), '[]'::jsonb)
