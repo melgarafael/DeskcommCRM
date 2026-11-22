@@ -97,7 +97,18 @@ describe("a atualização preserva o consentimento de quem já havia aceitado", 
     // As saídas de "já está na versão mais recente" morrem num `exit 0` sem
     // passar pelo `up -d`: se a chamada ficar depois delas, quem está em dia —
     // o caso mais comum de quem atualiza — nunca é convertido.
-    const primeiroExit = linhas.findIndex((linha) => linha.trim() === "exit 0");
+    //
+    // A saída medida é a de "Nada a atualizar" (a mensagem e o `exit 0` logo
+    // depois dela), e NÃO o primeiro `exit 0` do arquivo: o cadeado da
+    // atualização (#5116) recusa uma segunda execução concorrente com `exit 0`
+    // antes da conversão, de propósito — essa saída não toca em imagem, `.env`
+    // nem banco, então não há consentimento a converter nela. Medir "o primeiro
+    // `exit 0`" fazia o teste acusar o cadeado em vez da ordem que ele guarda.
+    const nadaAAtualizar = linhas.findIndex((linha) => linha.includes("Nada a atualizar"));
+    expect(nadaAAtualizar).toBeGreaterThan(0);
+    const primeiroExit = linhas.findIndex(
+      (linha, i) => i > nadaAAtualizar && linha.trim() === "exit 0",
+    );
     expect(chamada).toBeGreaterThan(0);
     expect(primeiroExit).toBeGreaterThan(chamada);
   });
