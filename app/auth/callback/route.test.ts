@@ -208,6 +208,12 @@ describe("GET /auth/callback", () => {
 
     const res = await GET(requisicao("code=abc&next=%2Fapp%2Finbox"));
 
+    // O destino sozinho NÃO distingue a ponte do 302 — os dois levam ao mesmo
+    // `/login/mfa`. O que separa um do outro é a entrega: documento same-origin
+    // com 200, sem `Location`. Sem esta linha o caso continuava verde com o 302
+    // de volta (issue #4335).
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.status).toBe(200);
     expect(await destino(res)).toBe("/login/mfa?factor=factor-1&next=%2Fapp%2Finbox");
     expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
   });
