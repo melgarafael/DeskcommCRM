@@ -27,14 +27,35 @@ import type { TrechoDeBusca } from "@/lib/types/messaging";
  * como enxergar uma conversa que a pessoa não abre. O que prova isso contra o
  * banco é `tests/invariants/busca-em-mensagens-respeita-visibilidade.test.ts`.
  *
- * ─── O custo, medido (200.000 mensagens, 1 org, Postgres 15) ────────────────
- * Sem índice, `body ILIKE '%termo%'` é seq scan: 77 ms para um termo raro.
- * Com o índice GIN de trigrama (`idx_messages_body_trgm`, migration 9349):
- * 0,62 ms no termo raro e 22 ms no termo que casa 10% da tabela. O índice ocupa
- * 14 MB para uma tabela de 71 MB (20%) e a escrita paga ~8% (28,3 s contra
- * 26,3 s para 20.000 inserts). Full-text (`tsvector`) responderia a palavra
- * inteira, não a substring, e exigiria coluna + trigger de manutenção — o
- * trigrama já está no schema (`pg_trgm` em três índices) e resolve o caso.
+ * ─── O custo, medido (200.000 mensagens, 5.000 conversas, 1 org, Postgres 15) ─
+ * A primeira versão deste módulo lia `messages` direto, com `.ilike("body")`.
+ * Sem índice é seq scan: 77 ms para um termo raro, como dono da tabela. Com o
+ * índice GIN de trigrama (`idx_messages_body_trgm`, migration 9349) o MESMO
+ * papel cai para 0,42 ms — mas esse par NÃO é o que a rota vê.
+ *
+ * Sob `authenticated` (a rota usa o client da sessão) o plano é outro: o
+ * `ilike` não é `leakproof`, e com RLS na tabela o planejador não pode usá-lo
+ * como condição de índice antes de avaliar a política. Medido com a MESMA
+ * predicate de hoje: `Seq Scan` sobre as 200.000 linhas, 197.753 avaliações de
+ * `messages_select`, **2.110 ms** para devolver 3 mensagens (e 2.077 ms no
+ * termo que casa 10%). O número "0,62 ms" que este cabeçalho já exibiu era o
+ * do dono da tabela, não o da busca; fica corrigido aqui.
+ *
+ * O conserto (migration 9458) é o mesmo molde da busca de contatos (#4326): o
+ * casamento de texto sai de dentro da RLS. `fn_mensagens_da_busca` —
+ * `security definer` — confere a organização contra `fn_user_org_ids()`, repete
+ * `organization_id`/`revoked_at`/`crm_hidden_at` e devolve só IDS, do mais
+ * recente para o mais antigo; este módulo relê as linhas com o client da
+ * SESSÃO por `id in (...)`, e igualdade de uuid é `leakproof`, então a RLS
+ * continua decidindo o que a pessoa vê. Medido como `authenticated`: **4,3 ms**
+ * no termo raro (mediana de 5; 4,2–6,7) e **39,2 ms** no termo que casa 10% —
+ * dos quais 0,04 ms são o GIN e o resto é a leitura por id sob a política.
+ *
+ * O índice ocupa 24 MB para um heap de 49 MB (49%) e a escrita paga ~8%
+ * (28,3 s contra 26,3 s para 20.000 inserts, medido na fatia do índice).
+ * Full-text (`tsvector`) responderia a palavra inteira, não a substring, e
+ * exigiria coluna + trigger de manutenção — o trigrama já está no schema
+ * (`pg_trgm` em três índices) e resolve o caso.
  */
 
 /**
@@ -56,10 +77,14 @@ export const TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS = 40;
  * Quantas mensagens a consulta lê para preencher o teto acima.
  *
  * Uma conversa pode ter dezenas de mensagens casando o mesmo termo; sem folga,
- * o `limit` do teto seria consumido por uma só. 5x é a folga medida: o custo é
- * uma consulta indexada de poucas centenas de linhas.
+ * o `limit` do teto seria consumido por uma só. 150 é a folga medida (3,75x o
+ * teto de conversas), e o número tem um segundo dono: os ids voltam da função
+ * e viajam na requisição de leitura, `id=in.(…)`. Cada uuid custa 36 B mais o
+ * separador (`%2C`, 3 B); 150 cabem em ~5,9 kB, sob o muro de 8.192 B que a
+ * querystring do PostgREST tem — 200 passariam de 7,8 kB e ficariam a menos de
+ * 300 B da borda. Era 200 quando a consulta era uma só.
  */
-const MENSAGENS_LIDAS_POR_BUSCA = TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS * 5;
+const MENSAGENS_LIDAS_POR_BUSCA = 150;
 
 /** Quantos caracteres do corpo viram trecho na tela. */
 const LARGURA_DO_TRECHO = 120;
@@ -169,10 +194,12 @@ export function partesDoTrecho(
  * As conversas cujo TEXTO de alguma mensagem casa o termo, com o trecho da
  * mensagem mais recente de cada uma.
  *
- * ⚠️ O filtro de organização é manual e obrigatório: a rota usa o client da
- * sessão, mas o MCP (`crm_list_conversations`) passa o admin client, que
- * bypassa a RLS. Sem o `.eq("organization_id")` a busca do agente varreria a
- * base inteira.
+ * ⚠️ O filtro de organização é manual e obrigatório — e agora mora na função.
+ * A rota usa o client da sessão, mas o MCP (`crm_list_conversations`) passa o
+ * admin client, que bypassa a RLS: sem o `organization_id`, a busca do agente
+ * varreria a base inteira. `fn_mensagens_da_busca` repete o filtro nas DUAS
+ * pontas (a guarda de `fn_user_org_ids()` para quem tem sessão e o `where
+ * organization_id` da consulta), e a leitura por id continua sob RLS.
  *
  * Mensagem oculta no CRM (`metadata->>crm_hidden_at`) e mensagem revogada
  * (`revoked_at`) ficam FORA: o fio já não as mostra, e achar o texto delas pela
@@ -197,15 +224,44 @@ export async function buscarConversasPorTextoDeMensagem(
   // última mensagem, como antes da #1355.
   if (!palavrasDoTermo(termo).some((p) => p.length >= 3)) return new Map();
 
+  // ─── 1. O CASAMENTO DE TEXTO, FORA DA RLS ──────────────────────────────────
+  //
+  // `ilike` não é `leakproof`: com RLS em `messages` o planejador não pode
+  // usá-lo como condição de índice antes de avaliar a política, e a consulta
+  // virava varredura da organização (2.110 ms por 200.000 mensagens). A função
+  // é `security definer`, confere a organização contra `fn_user_org_ids()`,
+  // repete os filtros de hoje e devolve SÓ ids — não amplia visibilidade, só
+  // acelera QUAIS ids podem casar. O `*` vira `%` aqui porque é o que o
+  // PostgREST fazia no `ilike`; sem isso um termo de duas palavras não casaria.
+  const { data: achados, error: erroDaBusca } = await supabase.rpc(
+    "fn_mensagens_da_busca",
+    {
+      p_org: organizationId,
+      p_termo: termo.replace(/\*/g, "%"),
+      p_limite: MENSAGENS_LIDAS_POR_BUSCA,
+    },
+  );
+
+  if (erroDaBusca || !achados) return new Map();
+  const ids = (achados as unknown as Array<{ message_id: string }>).map(
+    (linha) => linha.message_id,
+  );
+  if (ids.length === 0) return new Map();
+
+  // ─── 2. A LEITURA, SOB A RLS DE SEMPRE ─────────────────────────────────────
+  //
+  // O client é o da sessão e o filtro é por igualdade de id — `leakproof`, logo
+  // o índice da PK entra e é `messages_select` que decide linha a linha. É o
+  // que mantém a régua: a função diz quais ids PODEM casar; a política diz
+  // quais a pessoa vê. Revogada e oculta continuam fora aqui também, além de já
+  // saírem da função: o filtro repetido é barato e sobrevive a uma mudança lá.
   const { data, error } = await supabase
     .from("messages")
     .select("id, conversation_id, body, sent_at")
-    .eq("organization_id", organizationId)
-    .ilike("body", `%${termo}%`)
+    .in("id", ids)
     .is("revoked_at", null)
     .is("metadata->>crm_hidden_at", null)
-    .order("sent_at", { ascending: false })
-    .limit(MENSAGENS_LIDAS_POR_BUSCA);
+    .order("sent_at", { ascending: false });
 
   if (error || !data) return new Map();
 

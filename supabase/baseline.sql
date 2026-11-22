@@ -68530,11 +68530,61 @@ notify pgrst, 'reload schema';
 -- ---- busca no TEXTO das mensagens (migration 9349, #1355 fatia 1) ----
 -- A busca do Inbox deixa de alcançar só `last_message_preview` (a última
 -- mensagem) e passa a casar `body`. O índice é o que tira o `ILIKE '%termo%'`
--- do seq scan: 77 ms → 0,62 ms num termo raro, com 200.000 mensagens (heap de
--- 71 MB, índice de 14 MB). Trigrama e não full-text: o caso é SUBSTRING, e
--- `pg_trgm` já é a fundação do schema. Cabeçalho completo na 9349.
+-- do seq scan: como dono da tabela, 77 ms → 0,42 ms num termo raro, com 200.000
+-- mensagens (heap de 49 MB, índice de 24 MB). ⚠️ Esse par NÃO é o que a rota
+-- vê: sob `authenticated` o `ilike` não vira condição de índice (não é
+-- `leakproof`) e a mesma consulta custa 2.110 ms — quem faz o índice ser usado
+-- no caminho de verdade é `fn_mensagens_da_busca` (migration 9458), que levou o
+-- termo raro a 4,3 ms como `authenticated`. Trigrama e não full-text: o caso é
+-- SUBSTRING, e `pg_trgm` já é a fundação do schema. Cabeçalho completo na 9349.
 create index if not exists idx_messages_body_trgm
   on public.messages using gin (body public.gin_trgm_ops);
+
+-- ---- o casamento de texto da busca sai de dentro da RLS (migration 9458) ----
+-- `ilike`/`like`/regex não são `leakproof`, e com RLS na tabela o planejador
+-- não pode usá-los como condição de índice: a busca pagava a política linha por
+-- linha (2.110 ms para devolver 3 mensagens em 200.000). A função roda como
+-- dono (fora da política), confere a organização contra `fn_user_org_ids()`,
+-- repete `organization_id`/`revoked_at`/`crm_hidden_at` e devolve SÓ ids; o
+-- módulo relê as linhas sob RLS por `id in (...)` (igualdade de uuid é
+-- `leakproof`), então a visibilidade continua sendo a da policy. Medido como
+-- `authenticated`: 4,3 ms no termo raro e 39,2 ms no termo que casa 10%.
+-- Cabeçalho completo na 9458.
+create or replace function public.fn_mensagens_da_busca(
+  p_org uuid,
+  p_termo text default null,
+  p_limite integer default 200
+) returns table (message_id uuid)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer := greatest(1, least(coalesce(p_limite, 200), 1000));
+  v_padrao text;
+begin
+  if p_org is null or coalesce(p_termo, '') = '' then
+    return;
+  end if;
+  if auth.uid() is not null and p_org not in (select public.fn_user_org_ids()) then
+    return;
+  end if;
+  v_padrao := '%' || p_termo || '%';
+  return query
+    select m.id
+      from public.messages m
+     where m.organization_id = p_org
+       and m.body ilike v_padrao
+       and m.revoked_at is null
+       and m.metadata->>'crm_hidden_at' is null
+     order by m.sent_at desc
+     limit v_limite;
+end;
+$$;
+
+revoke all on function public.fn_mensagens_da_busca(uuid, text, integer) from public, anon;
+grant execute on function public.fn_mensagens_da_busca(uuid, text, integer) to authenticated, service_role;
 
 -- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
 --
