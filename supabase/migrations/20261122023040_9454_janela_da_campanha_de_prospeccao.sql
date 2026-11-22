@@ -1,5 +1,5 @@
 -- manifest: **A campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1).** Até aqui a janela de disparo era só do NÚMERO (`channel_knobs.prospeccao_dias` + horas de disparo): quem usa um número para dois nichos — um de manhã, outro à tarde — pausava e retomava a mão a cada troca. A janela nova é da CAMPANHA (`config.janela`: dias 0..6, hora de início e de fim, no fuso da organização) e as duas se CRUZAM, não se substituem. A trava de uma campanha `running` por número continua valendo (`prospecting_one_running_canal`, #3896) — a saída 2 da issue é decisão de produto e não entra. A coluna `pausada_pela_janela` é o que separa a pausa AUTOMÁTICA (volta sozinha na abertura) da pausa de quem opera (não volta nunca): pausa manual, arquivamento e início a limpam. O índice parcial serve à varredura do tick, que hoje só via organizações com campanha `running`. Aditiva e idempotente; espelhada no `baseline.sql`.
--- 9411: a campanha de prospecção ganha janela própria (issue #4830, saída 1).
+-- 9454: a campanha de prospecção ganha janela própria (issue #4830, saída 1).
 --
 -- Sem migration de dados: a janela mora em `config.janela` (jsonb), e campanha
 -- que não a tem continua com o comportamento de hoje — nada a preencher.
