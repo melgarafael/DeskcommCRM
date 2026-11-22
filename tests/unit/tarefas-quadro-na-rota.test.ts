@@ -97,16 +97,6 @@ function duble(respostas: Resposta[]) {
   let i = 0;
   const from = (tabela: string) => {
     tabelas.push(tabela);
-    // A leitura de `organizations` (a opção do escopo do atendente, #4737) não
-    // consome a resposta posicional: ela é uma linha de configuração, não o
-    // dado da tarefa que este dublê enfileira.
-    if (tabela === "organizations") {
-      const elo: Record<string, unknown> = {};
-      for (const m of ["select", "eq"]) elo[m] = () => elo;
-      elo.then = (res: (v: unknown) => unknown) =>
-        Promise.resolve({ data: [], error: null }).then(res);
-      return elo;
-    }
     const r = respostas[Math.min(i++, respostas.length - 1)] ?? {};
     const devolve = () => Promise.resolve({ data: r.data ?? null, error: r.error ?? null });
     const elo: Record<string, unknown> = {};

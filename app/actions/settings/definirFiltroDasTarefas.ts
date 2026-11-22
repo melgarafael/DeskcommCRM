@@ -33,9 +33,9 @@ import { createClient } from "@/lib/supabase/server";
 import { CHAVE_DO_FILTRO_DAS_TAREFAS } from "@/lib/tarefas/preferencia-do-filtro";
 
 /**
- * O que a tela pode gravar: as três escolhas fixas e o id de um membro. `todos`
- * entra na lista porque é a escolha de quem NÃO está restrito — a action não
- * decide restrição (isso é da organização, lida na rota); ela recusa lixo.
+ * O que a tela pode gravar: as três escolhas fixas e o id de um membro. A
+ * action não decide o que a pessoa vê (isso é da RLS de `crm_tasks`); ela
+ * recusa lixo, e a leitura saneia o resto (`lerFiltroDoResponsavel`).
  */
 const filtroSchema = z.union([
   z.literal("todos"),

@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { metadadosDaSessao, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { atendenteRestrito, lerEscopoDoAtendente } from "@/lib/tarefas/escopo-do-atendente";
+import { escopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
 import { filtroInicialDaTela } from "@/lib/tarefas/preferencia-do-filtro";
 
 import { TarefasClient } from "./_components/TarefasClient";
@@ -44,10 +43,10 @@ export const metadata: Metadata = { title: "Tarefas" };
  *     da Agenda (`lib/tarefas/preferencia-do-filtro.ts`). `?assigned_to=me`
  *     continua ganhando de tudo: é o endereço que o lembrete abre.
  *
- * A opção da organização "Atendente vê só as próprias tarefas" também é lida
- * aqui — mas só para a tela não oferecer um filtro que a API recusaria. QUEM
- * RESTRINGE É A ROTA (`app/api/v1/tasks/route.ts`): esconder o seletor não é
- * restrição, e o token da sessão não passa por esta página.
+ * QUEM RESTRINGE É O BANCO: a policy `crm_tasks_select`, com "Atendentes podem
+ * mexer na agenda dos colegas" e "O que cada atendente enxerga". A página só
+ * lê a mesma régua (`escopoDaTelaDeTarefas`) para a tela dizer o recorte e não
+ * oferecer um colega cuja lista viria pela metade.
  */
 export default async function TarefasPage({
   searchParams,
@@ -74,26 +73,23 @@ export default async function TarefasPage({
     .eq("is_archived", false)
     .order("position");
 
-  // A opção da ORGANIZAÇÃO, lida pela MESMA régua que a rota aplica
-  // (`lerEscopoDoAtendente` + `atendenteRestrito`): a tela não pode oferecer
-  // "Todos" a quem a API responderia com a lista recortada.
+  // O recorte que a RLS aplica a esta pessoa, lido das MESMAS opções que a
+  // policy consulta. Não autoriza nada: a lista já chega recortada pelo banco.
   const { data: organizacao } = await supabase
     .from("organizations")
     .select("settings")
     .eq("id", activeOrg.orgId)
-    .limit(1);
-  const escopoProprio = atendenteRestrito({
+    .maybeSingle();
+  const escopoProprio = escopoDaTelaDeTarefas({
     papel: activeOrg.role,
-    administraEmpresa: podeAdministrarEmpresa(user, activeOrg),
-    escopoLigado: lerEscopoDoAtendente(
-      (organizacao?.[0] as { settings?: unknown } | undefined)?.settings,
-    ),
+    platformAdmin: user.is_platform_admin,
+    settings: organizacao?.settings,
   });
 
   // O padrão do papel: atendente abre em "Minhas"; o resto continua em "Todos".
   const filtroInicial = filtroInicialDaTela(await metadadosDaSessao(), {
     padrao: activeOrg.role === "agent" ? "eu" : "todos",
-    restritoAoProprio: escopoProprio,
+    restritoAoProprio: escopoProprio !== null,
     pedidoNoEndereco: assigned_to ?? null,
   });
 

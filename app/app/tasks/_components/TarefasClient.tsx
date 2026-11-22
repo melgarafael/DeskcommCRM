@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { EscopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
@@ -40,7 +41,7 @@ export interface FunilDoFiltro {
 export function TarefasClient({
   podeEditar,
   filtroInicial = "todos",
-  escopoProprio = false,
+  escopoProprio = null,
   funis = [],
   setoresLigados = false,
 }: {
@@ -53,12 +54,14 @@ export function TarefasClient({
    */
   filtroInicial?: FiltroDeResponsavel;
   /**
-   * A organização ligou "Atendente vê só as próprias tarefas" e esta pessoa é
-   * atendente. A tela deixa de oferecer "Todos" e os colegas: não porque
-   * esconder seja restrição (a rota é que recorta a lista), mas porque oferecer
-   * um filtro que a API responde com 403 seria mentira na cara.
+   * O recorte que a RLS aplica a esta pessoa (`escopoDaTelaDeTarefas`), ou
+   * `null` quando ela vê a equipe. Com recorte, a tela diz o que a lista traz
+   * e não oferece os colegas: o banco entregaria só as tarefas deles que esta
+   * pessoa criou, e o filtro pareceria a lista inteira do colega. "Todos" fica,
+   * porque é exatamente o que a policy entrega — inclusive a tarefa que ela
+   * criou e entregou a alguém.
    */
-  escopoProprio?: boolean;
+  escopoProprio?: EscopoDaTelaDeTarefas;
   funis?: FunilDoFiltro[];
   /** Módulo opcional de setores (doc 213), lido no servidor pela página. Ausente = desligado. */
   setoresLigados?: boolean;
@@ -196,7 +199,9 @@ export function TarefasClient({
           </p>
           {escopoProprio && (
             <p className="mt-1 text-xs text-muted-foreground" data-testid="tarefas-escopo-proprio">
-              {t("Sua empresa mostra aqui as suas tarefas e as que ainda não têm responsável.")}
+              {escopoProprio === "own"
+                ? t("Sua empresa mostra aqui as suas tarefas e as que você criou.")
+                : t("Sua empresa mostra aqui as suas tarefas, as que você criou e as que ainda não têm responsável.")}
             </p>
           )}
         </div>
@@ -255,10 +260,9 @@ export function TarefasClient({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {/* Com a organização restringindo o atendente, "Todos" e os
-                  colegas não aparecem: a rota recusaria o pedido, e oferecer
-                  uma opção que responde 403 é mentira na cara. */}
-              {!escopoProprio && <SelectItem value="todos">{t("Todos")}</SelectItem>}
+              {/* Com o recorte do banco, os colegas não aparecem: a lista de
+                  um colega viria só com o que esta pessoa criou para ele. */}
+              <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
               {!escopoProprio &&
                 (membros ?? [])

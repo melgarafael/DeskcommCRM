@@ -34,10 +34,6 @@ import { portaDaAplicacao } from "@/lib/db";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import {
-  atendenteRestritoNaOrganizacao,
-  tarefaForaDoEscopo,
-} from "@/lib/tarefas/escopo-do-atendente";
-import {
   anexarNegocioDaTarefa,
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
@@ -131,15 +127,6 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   }
 
   const supabase = authz.supabase;
-  // A pessoa da sessão. No ramo do TOKEN `restrito` é sempre `false`, e esta
-  // string nunca entra numa comparação — o token não é ninguém na fila.
-  const usuarioIdDaSessao = authz.actor.type === "user" ? authz.actor.id : "";
-  const restrito = await atendenteRestritoNaOrganizacao(supabase, {
-    organizationId,
-    papel: authz.role,
-    administraEmpresa: authz.administraEmpresa,
-    via: authz.via,
-  });
 
   if (doToken) {
     // Na sessão a RLS esconde o negócio de outra organização; a service role não.
@@ -179,42 +166,20 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     }
   }
 
+  // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
+  // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
+  // timeline do negócio — e a segunda seria mentira.
   // A situação E a série ANTES da edição: a primeira decide se esta é a vez em
   // que a tarefa fechou, e a segunda diz de qual rotina a próxima nasce (#4595).
-  //
-  // `created_by` entra na MESMA leitura porque é o outro lado do par que a
-  // policy `crm_tasks_select`/`crm_tasks_write` usa (`fn_can_view_task`): sem
-  // ele a rota recusava (403) a tarefa que o banco deixa ver e editar — a que o
-  // atendente criou e entregou a um colega (#4800).
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status, assigned_to, created_by, recurrence_source_id, due_date")
+    .select("status, recurrence_source_id, due_date")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (erroDaLeitura) {
     return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
-  }
-
-  // ═══ #4737: a tarefa de um COLEGA é recusa NOMEADA ═══
-  //
-  // O atendente restrito abre e altera as tarefas dele, as que ele criou e as
-  // sem responsável. A de outro atendente recebe 403 com código próprio — e não
-  // 404 genérico, que faria a tela dizer "não existe" sobre uma tarefa que a
-  // colega vê. Tarefa SEM dono continua acessível: é a fila que ele pode
-  // assumir. O par (`assigned_to` OU `created_by`) é o MESMO de
-  // `fn_can_view_task`: o criador alcança o que escreveu mesmo depois de
-  // entregar a um colega (#4800).
-  if (
-    tarefaForaDoEscopo({
-      restrito,
-      usuarioId: usuarioIdDaSessao,
-      assignedTo: (antes as { assigned_to?: string | null } | null)?.assigned_to,
-      createdBy: (antes as { created_by?: string | null } | null)?.created_by,
-    })
-  ) {
-    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
   }
 
   // ═══ A SÉRIE: desligar é gravar `null` (#4595) ═══
@@ -355,38 +320,6 @@ export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response>
   const organizationId = authz.organizationId;
 
   const supabase = authz.supabase;
-  const usuarioIdDaSessao = authz.actor.type === "user" ? authz.actor.id : "";
-  const restrito = await atendenteRestritoNaOrganizacao(supabase, {
-    organizationId,
-    papel: authz.role,
-    administraEmpresa: authz.administraEmpresa,
-    via: authz.via,
-  });
-
-  // ═══ #4737: não se apaga a tarefa de um COLEGA ═══
-  //
-  // O DELETE não tem `where` que distinga dono, então a leitura vem antes —
-  // e a recusa é NOMEADA (403), não o 404 de "não achei" que faria a tela
-  // concluir que a tarefa já não existia. `created_by` entra na leitura pelo
-  // mesmo motivo do PATCH: é o outro lado do par de `fn_can_view_task`, e sem
-  // ele o criador não conseguiria apagar o que escreveu (#4800).
-  const { data: donaDaTarefa } = await supabase
-    .from("crm_tasks")
-    .select("assigned_to, created_by")
-    .eq("id", id)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (
-    tarefaForaDoEscopo({
-      restrito,
-      usuarioId: usuarioIdDaSessao,
-      assignedTo: (donaDaTarefa as { assigned_to?: string | null } | null)?.assigned_to,
-      createdBy: (donaDaTarefa as { created_by?: string | null } | null)?.created_by,
-    })
-  ) {
-    return fail("forbidden_scope", t("Esta tarefa é de outro atendente."), 403, { requestId });
-  }
-
   // `.select()` no delete para saber se ALGUMA linha saiu. Sem isso, apagar uma
   // tarefa de outra organização devolveria 200 — e a tela sumiria com a linha
   // do próprio usuário na próxima recarga, sem que nada tivesse sido apagado.

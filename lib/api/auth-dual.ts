@@ -31,7 +31,6 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import type { Actor } from "@/lib/api/handlers/types";
 import { fail } from "@/lib/api/wrappers";
 import { autorizarModulo, MENSAGEM_DA_RECUSA_DO_MODULO } from "@/lib/auth/modulo-autorizado";
-import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { requireRole } from "@/lib/auth/require-role";
 import type { Role } from "@/lib/auth/types";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -75,25 +74,6 @@ export type AuthDual =
       scopes?: string[];
       /** Id da linha do token (`api_tokens.id`) — o `actor_api_token_id` do audit. */
       apiTokenId?: string;
-      /**
-       * O papel EFETIVO na organização, já resolvido no banco (`fn_user_role_in_org`
-       * pela sessão, a linha do token pelo Bearer).
-       *
-       * `requireRole` confere o rank mínimo e DESCARTA o papel; quem precisa da
-       * régua EXATA — "é atendente?", e não "atende pelo menos viewer?" — leria
-       * o banco de novo. Aqui ele viaja junto, e é o MESMO valor que deixou a
-       * requisição entrar: não há segunda verdade sobre o papel.
-       */
-      role?: Role;
-      /**
-       * O atalho "administra esta empresa" (`podeAdministrarEmpresa`): platform
-       * admin com scope `full`, fora do suporte, ou papel >= admin.
-       *
-       * Vem pronto porque depende de `AuthUser`/`ActiveOrg`, que só o ramo da
-       * sessão tem. No ramo do token é sempre `false`: token não administra
-       * empresa, e quem lê isto precisa poder confiar nessa resposta.
-       */
-      administraEmpresa?: boolean;
       /** Só token de módulo com JWT de contexto válido: a pessoa (`sub`) de quem a tela agiu. */
       pessoaDoModulo?: string;
       /**
@@ -246,8 +226,6 @@ export async function resolveAuthDual(
       via: "token",
       scopes: auth.scopes,
       apiTokenId: auth.apiTokenId,
-      role: auth.role,
-      administraEmpresa: false,
       ...(pessoaDoModulo ? { pessoaDoModulo } : {}),
       ...(contatoVisivel !== undefined ? { contatoVisivel } : {}),
     };
@@ -258,12 +236,10 @@ export async function resolveAuthDual(
   return {
     ok: true,
     organizationId: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id, role: authz.org.role },
+    actor: { type: "user", id: authz.user.id },
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
-    role: authz.org.role,
-    administraEmpresa: podeAdministrarEmpresa(authz.user, authz.org),
   };
 }
 

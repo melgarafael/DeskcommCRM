@@ -1,525 +1,190 @@
 /**
- * TAREFAS: ABRIR EM "MINHAS", LEMBRAR O FILTRO E O ESCOPO DO ATENDENTE (#4737).
+ * TAREFAS: ABRIR EM "MINHAS", LEMBRAR O FILTRO E MOSTRAR O RECORTE DO BANCO (#4737).
  *
- * ─── O que a issue pede, e por que a API é o lugar da prova ─────────────────
+ * ─── O que cada bloco prende ───────────────────────────────────────────────
  *
- * Duas partes, na mesma entrega:
- *
- *  1. **A tela.** Quem tem papel de atendente abre em "Minhas", e o último
- *     filtro escolhido volta no próximo carregamento — no MESMO mecanismo da
- *     camada de datas da Agenda (`raw_user_meta_data` da pessoa).
- *  2. **A opção da organização** "Atendente vê só as próprias tarefas (e as sem
- *     responsável)". Ligada, o atendente lista e abre apenas as dele e as sem
- *     dono.
- *
- * A parte 2 SÓ É RESTRIÇÃO SE VALER NA ROTA: esconder o seletor na tela não
- * impede ninguém de chamar `GET /api/v1/tasks` com o token da sessão. Por isso
- * os casos (a)–(d) batem na ROTA, e não no componente — é a sabotagem "esconder
- * só na tela" que este arquivo precisa derrubar.
- *
- * ─── O que cada caso prende ────────────────────────────────────────────────
- *
- *  (a) opção LIGADA + agent: a consulta só traz as dele e as sem responsável;
- *  (b) a tarefa de um COLEGA é recusa NOMEADA (403 `forbidden_scope`), não
- *      lista vazia nem 404 genérico;
- *  (c) opção DESLIGADA: comportamento idêntico ao de hoje, inclusive filtrar
- *      pelo id de um colega;
- *  (d) administrador não é afetado pela opção;
- *  (e) o filtro é lembrado no próximo carregamento, e o padrão do agent é
- *      "Minhas" — a régua pura e o fio da página até o componente;
- *  (f) o escopo é o MESMO par da policy (`assigned_to` OU `created_by`) — a
- *      tarefa que o atendente criou e entregou a um colega era 403 na rota e
- *      liberada na RLS. É o defeito medido no #4800.
+ *  (a) o filtro é lembrado, o do atendente abre em "Minhas" e, com o banco
+ *      recortando, o id de um colega gravado antes não volta;
+ *  (b) a régua da TELA (`escopoDaTelaDeTarefas`) espelha a policy
+ *      `crm_tasks_select`: a matriz das duas opções que já existem × papel;
+ *  (c) a ROTA não tem régua própria: sem filtro na requisição, a consulta sai
+ *      só com a organização, para qualquer papel. É a metade "rota" do pedido
+ *      de @webtecnica no #4800 (comparar a rota com a policy no caso
+ *      criador→colega); a metade "policy" está em
+ *      `tests/invariants/visibilidade-na-agenda-e-nas-tarefas.test.ts`.
+ *  (d) o fio da página até o componente.
  */
 import { readFileSync } from "node:fs";
 
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { fail } from "@/lib/api/wrappers";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
-import { portaDaAplicacao } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
-import { tarefaForaDoEscopo } from "@/lib/tarefas/escopo-do-atendente";
+import { escopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
 import {
   CHAVE_DO_FILTRO_DAS_TAREFAS,
   filtroInicialDaTela,
   lerFiltroDoResponsavel,
 } from "@/lib/tarefas/preferencia-do-filtro";
 
-// A rota entra por `resolveAuthDual` (sessão OU token, Spec 33): a identidade
-// do teste é a MESMA forma que a rota consome, inclusive o papel EFETIVO —
-// que é o que a régua de escopo lê.
 vi.mock("@/lib/api/auth-dual", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/auth-dual")>()),
   resolveAuthDual: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/audit", () => ({
-  audit: vi.fn(async () => undefined),
-  isServiceRoleConfigured: () => true,
-}));
-vi.mock("@/lib/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/db")>()),
-  portaDaAplicacao: vi.fn(),
-}));
-vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/impersonate/support")>()),
-  requireSupportWrite: vi.fn(async () => null),
-}));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const ANA = "11111111-1111-4111-8111-111111111111";
 const BETO = "66666666-6666-4666-8666-666666666666";
-const TAREFA = "55555555-5555-4555-8555-555555555555";
 
-function sessao(papel: Role = "agent", isPlatformAdmin = false) {
-  vi.mocked(resolveAuthDual).mockImplementation(async (req, { role: min }) => {
-    if (ROLE_RANK[papel] < ROLE_RANK[min]) {
-      return { ok: false as const, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) };
-    }
-    void req;
-    return {
-      ok: true as const,
-      organizationId: ORG,
-      actor: { type: "user" as const, id: ANA, role: papel },
-      // O client da rota vem daqui agora: o dublê de `createClient` é o do
-      // caso, e `sessao()` só o repassa — como o `resolveAuthDual` de verdade.
-      supabase: await createClient(),
-      idioma: "pt-BR" as const,
-      via: "session" as const,
-      // O papel EFETIVO e o atalho "administra a empresa", os dois que o
-      // `resolveAuthDual` resolve e a régua de escopo consome.
-      role: papel,
-      administraEmpresa: isPlatformAdmin || ROLE_RANK[papel] >= ROLE_RANK.admin,
-    };
-  });
-}
+// ─── (a) a preferência ─────────────────────────────────────────────────────
 
-/** Um elo de PostgREST que ANOTA o que a rota pediu — e devolve o que se mandar. */
-function eloAnotador(anotacoes: Array<[string, string, unknown]>, resultado: unknown) {
-  const elo: Record<string, unknown> = {};
-  for (const metodo of ["select", "order", "limit", "in", "gte", "lte", "update", "delete"]) {
-    elo[metodo] = () => elo;
-  }
-  elo.eq = (coluna: string, valor: unknown) => (anotacoes.push(["eq", coluna, valor]), elo);
-  elo.is = (coluna: string, valor: unknown) => (anotacoes.push(["is", coluna, valor]), elo);
-  elo.then = (res: (v: unknown) => unknown) => Promise.resolve(resultado).then(res);
-  return elo;
-}
-
-/**
- * A organização como a rota a lê: uma linha só, com o jsonb `settings`.
- * `escopoLigado` é a opção que a tela de Configurações grava; `visibilityMode`
- * é "O que cada atendente enxerga", que a RLS (`fn_can_view_task`) já aplica
- * por conta própria — a fixture o guarda porque é ele que decide o que a
- * policy entrega quando a opção da #4737 está desligada.
- */
-type ModoDeVisibilidade = "all" | "own_and_unassigned" | "own";
-
-function organizacaoCom(
-  escopoLigado: boolean,
-  visibilityMode: ModoDeVisibilidade = "own_and_unassigned",
-) {
-  const elo: Record<string, unknown> = {};
-  for (const metodo of ["select", "eq", "limit"]) elo[metodo] = () => elo;
-  elo.then = (res: (v: unknown) => unknown) =>
-    Promise.resolve({
-      data: [
-        {
-          settings: {
-            visibility_mode: visibilityMode,
-            tarefas: { atendente_ve_so_as_proprias: escopoLigado },
-          },
-        },
-      ],
-      error: null,
-    }).then(res);
-  return elo;
-}
-
-/** Dublê da LISTA: anota os filtros aplicados e as expressões `or`. */
-function listagemCom(escopoLigado: boolean, visibilityMode: ModoDeVisibilidade = "own_and_unassigned") {
-  const filtros: Array<[string, string, unknown]> = [];
-  const expressoesOr: string[] = [];
-  const elo = eloAnotador(filtros, { data: [], error: null }) as Record<string, unknown>;
-  elo.or = (expressao: string) => (expressoesOr.push(expressao), elo);
-  vi.mocked(createClient).mockResolvedValue({
-    from: (tabela: string) =>
-      tabela === "organizations" ? organizacaoCom(escopoLigado, visibilityMode) : elo,
-  } as never);
-  return { filtros, expressoesOr };
-}
-
-/**
- * Dublê da tarefa única: a pré-leitura do PATCH/DELETE devolve esta linha.
- * `createdBy` existe porque a policy `crm_tasks_select` decide pelo PAR
- * `(assigned_to, created_by)` — a fixture sem ele esconderia metade da régua.
- */
-function tarefaCom(
-  escopoLigado: boolean,
-  assignedTo: string | null,
-  createdBy: string | null = null,
-  visibilityMode: ModoDeVisibilidade = "own_and_unassigned",
-) {
-  const filtros: Array<[string, string, unknown]> = [];
-  const elo = eloAnotador(filtros, { data: null, error: null }) as Record<string, unknown>;
-  elo.maybeSingle = async () => ({
-    data: { status: "pending", assigned_to: assignedTo, created_by: createdBy },
-    error: null,
-  });
-  // O UPDATE da tarefa (quando ele acontece) devolve uma linha qualquer: o que
-  // os casos de (c)/(d) provam é que NÃO houve recusa de escopo, e não o corpo.
-  elo.single = async () => ({ data: { id: TAREFA, status: "done", assigned_to: assignedTo }, error: null });
-  vi.mocked(createClient).mockResolvedValue({
-    from: (tabela: string) =>
-      tabela === "organizations" ? organizacaoCom(escopoLigado, visibilityMode) : elo,
-  } as never);
-  return filtros;
-}
-
-async function listar(qs: string) {
-  const { GET } = await import("@/app/api/v1/tasks/route");
-  return GET(new NextRequest(`http://localhost/api/v1/tasks${qs}`));
-}
-
-async function editar(id: string, corpo: Record<string, unknown>) {
-  const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
-  return PATCH(
-    new NextRequest(`http://localhost/api/v1/tasks/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(corpo),
-      headers: { "Content-Type": "application/json" },
-    }),
-    { params: Promise.resolve({ id }) } as never,
-  );
-}
-
-beforeEach(() => {
-  // O PATCH bem-sucedido registra a atividade na timeline do negócio; o pool é
-  // dublê porque o que este arquivo prova é a REGRA de escopo, não a escrita.
-  vi.mocked(portaDaAplicacao).mockReturnValue({
-    async query() {
-      return [];
-    },
-    async queryOne() {
-      return null as never;
-    },
-  } as never);
-});
-
-const codigo = async (res: Response) => ((await res.json()) as { error?: { code?: string } }).error?.code;
-
-// ─── (a) opção ligada: só as próprias e as sem responsável ──────────────────
-
-describe("(a) agent com a opção ligada lista só as próprias e as sem responsável", () => {
-  it("⭐ a consulta sai com `assigned_to = eu OR assigned_to is null OR created_by = eu`", async () => {
-    sessao("agent");
-    const { filtros, expressoesOr } = listagemCom(true);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([
-      `assigned_to.eq.${ANA},assigned_to.is.null,created_by.eq.${ANA}`,
-    ]);
-    // E não vira um `eq` de responsável: seria "só as minhas", deixando de fora
-    // a fila sem dono — que é justamente a que o atendente pode assumir.
-    expect(filtros.filter(([, coluna]) => coluna === "assigned_to")).toEqual([]);
-    expect(filtros).toContainEqual(["eq", "organization_id", ORG]);
-  });
-
-  it("`assigned_to=ninguem` continua trazendo a fila sem dono para o restrito", async () => {
-    sessao("agent");
-    const { filtros } = listagemCom(true);
-
-    const res = await listar("?assigned_to=ninguem");
-
-    expect(res.status).toBe(200);
-    expect(filtros).toContainEqual(["is", "assigned_to", null]);
-  });
-
-  it("`?assigned_to=me` (o link do lembrete) continua funcionando", async () => {
-    sessao("agent");
-    const { filtros } = listagemCom(true);
-
-    const res = await listar("?assigned_to=me");
-
-    expect(res.status).toBe(200);
-    expect(filtros).toContainEqual(["eq", "assigned_to", ANA]);
-  });
-});
-
-// ─── (b) a tarefa de um colega é recusa NOMEADA ─────────────────────────────
-
-describe("(b) o agent restrito não abre a tarefa de um colega", () => {
-  it("⭐ PATCH na tarefa de outra pessoa responde 403 `forbidden_scope`, não lista vazia", async () => {
-    sessao("agent");
-    tarefaCom(true, BETO);
-
-    const res = await editar(TAREFA, { status: "done" });
-
-    expect(res.status).toBe(403);
-    expect(await codigo(res)).toBe("forbidden_scope");
-  });
-
-  it("a lista também recusa NOMEADAMENTE o filtro pelo id de um colega", async () => {
-    sessao("agent");
-    listagemCom(true);
-
-    const res = await listar(`?assigned_to=${BETO}`);
-
-    expect(res.status).toBe(403);
-    expect(await codigo(res)).toBe("forbidden_scope");
-  });
-
-  it("a tarefa SEM responsável NÃO é tratada como de outro dono", async () => {
-    // A régua pura, e é ela que a sabotagem "tratar sem responsável como de
-    // outro" derruba: `null` é a fila que o atendente pode assumir.
-    expect(tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: null })).toBe(false);
-    expect(tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: ANA })).toBe(false);
-    expect(tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO })).toBe(true);
-    // E sem restrição, a regra não existe.
-    expect(tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO })).toBe(false);
-  });
-});
-
-// ─── (f) o PAR da policy: dono atribuído OU criador ────────────────────────
-//
-// `crm_tasks_select` não decide por `assigned_to` sozinho: ela chama
-// `fn_can_view_task(organization_id, assigned_to, created_by)`, e a função
-// devolve `true` tanto para `p_assigned_to = auth.uid()` quanto para
-// `p_created_by = auth.uid()`. O recorte da #4737 olhava só o responsável —
-// então a tarefa que o atendente CRIOU e entregou a um colega era 403 na rota
-// e permitida no banco. É a mesma discordância que o revisor mediu no #4800.
-describe("(f) o escopo é o MESMO par da policy: `assigned_to` OU `created_by`", () => {
-  const CARLA = "77777777-7777-4777-8777-777777777777";
-
-  it("⭐ desligada, criada por mim e atribuída ao colega: não é fora do escopo, e o PATCH passa", async () => {
-    // A1. `restrito` é falso (a opção está desligada) e o desfecho tem de ser o
-    // de hoje: o par criador/dono é do banco, não da chave.
-    expect(
-      tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO, createdBy: ANA }),
-    ).toBe(false);
-
-    sessao("agent");
-    tarefaCom(false, BETO, ANA);
-    const res = await editar(TAREFA, { status: "done" });
-
-    expect(res.status).toBe(200);
-  });
-
-  it("⭐ LIGADA, criada por mim e atribuída ao colega: 200 — o red-before era 403", async () => {
-    // A1-b: é ESTE o caso que o revisor mediu no #4800. Antes do conserto,
-    // `tarefaForaDoEscopo` olhava só `assigned_to` e a rota respondia
-    // 403 `forbidden_scope` para uma tarefa que a RLS deixa ver E editar
-    // (`p_created_by = auth.uid()`). O `created_by` vem da MESMA pré-leitura
-    // que já trazia `assigned_to` — nenhuma consulta nova.
-    sessao("agent");
-    tarefaCom(true, BETO, ANA);
-    const res = await editar(TAREFA, { status: "done" });
-
-    expect(res.status).toBe(200);
-
-    expect(
-      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO, createdBy: ANA }),
-    ).toBe(false);
-  });
-
-  it("⭐ LIGADA, a tarefa do colega (criada e atribuída a ele): 403 `forbidden_scope`", async () => {
-    // A2 — nada afrouxou. O par é `dono OU criador`: a tarefa do colega não é
-    // nem um nem outro, e continua sendo recusa NOMEADA.
-    expect(
-      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: BETO, createdBy: BETO }),
-    ).toBe(true);
-
-    sessao("agent");
-    tarefaCom(true, BETO, BETO);
-    const res = await editar(TAREFA, { status: "done" });
-
-    expect(res.status).toBe(403);
-    expect(await codigo(res)).toBe("forbidden_scope");
-  });
-
-  it("⭐ terceiro sem relação: 403 nos dois modos de visibilidade da organização", async () => {
-    // A3. Nem dono nem criador — a recusa não depende de `visibility_mode`,
-    // porque com a opção LIGADA quem responde é a rota, antes da RLS.
-    for (const modo of ["own_and_unassigned", "own"] as const) {
-      expect(
-        tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: CARLA, createdBy: CARLA }),
-      ).toBe(true);
-
-      sessao("agent");
-      tarefaCom(true, CARLA, CARLA, modo);
-      const res = await editar(TAREFA, { status: "done" });
-
-      expect(res.status, `visibility_mode=${modo}`).toBe(403);
-      expect(await codigo(res), `visibility_mode=${modo}`).toBe("forbidden_scope");
-    }
-  });
-
-  it("a régua pura: criador e dono são o MESMO par, e a fila sem dono segue visível", () => {
-    expect(
-      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: ANA, createdBy: BETO }),
-    ).toBe(false);
-    expect(
-      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: null, createdBy: BETO }),
-    ).toBe(false);
-    expect(
-      tarefaForaDoEscopo({ restrito: true, usuarioId: ANA, assignedTo: null, createdBy: null }),
-    ).toBe(false);
-    // Sem restrição a regra não existe, nem para o criador nem para o dono.
-    expect(
-      tarefaForaDoEscopo({ restrito: false, usuarioId: ANA, assignedTo: BETO, createdBy: BETO }),
-    ).toBe(false);
-  });
-
-  it("a lista do restrito também traz o que ELE criou — o par inteiro, não meio", async () => {
-    sessao("agent");
-    const { expressoesOr } = listagemCom(true);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([
-      `assigned_to.eq.${ANA},assigned_to.is.null,created_by.eq.${ANA}`,
-    ]);
-  });
-});
-
-// ─── (c) opção desligada: igual a hoje ─────────────────────────────────────
-
-describe("(c) com a opção desligada, o comportamento é o de hoje", () => {
-  it("⭐ sem filtro na requisição, a consulta não recorta por responsável", async () => {
-    sessao("agent");
-    const { filtros, expressoesOr } = listagemCom(false);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([]);
-    expect(filtros.filter(([, coluna]) => coluna === "assigned_to")).toEqual([]);
-  });
-
-  it("filtrar pelo id de um colega continua funcionando", async () => {
-    sessao("agent");
-    const { filtros } = listagemCom(false);
-
-    const res = await listar(`?assigned_to=${BETO}`);
-
-    expect(res.status).toBe(200);
-    expect(filtros).toContainEqual(["eq", "assigned_to", BETO]);
-  });
-
-  it("abrir a tarefa de um colega continua permitido", async () => {
-    sessao("agent");
-    tarefaCom(false, BETO);
-
-    const res = await editar(TAREFA, { status: "done" });
-    // 200: passou da régua de escopo e foi ao UPDATE. O que este caso prova é
-    // que NÃO houve a recusa de 403 que existe com a opção ligada.
-    expect(res.status).toBe(200);
-  });
-});
-
-// ─── (d) administrador intocado ────────────────────────────────────────────
-
-describe("(d) a opção não vale para administrador", () => {
-  it("⭐ admin com a opção LIGADA continua recebendo a lista inteira", async () => {
-    sessao("admin");
-    const { filtros, expressoesOr } = listagemCom(true);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([]);
-    expect(filtros.filter(([, coluna]) => coluna === "assigned_to")).toEqual([]);
-  });
-
-  it("manager também não é restringido — é quem distribui as tarefas", async () => {
-    sessao("manager");
-    const { expressoesOr } = listagemCom(true);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([]);
-  });
-
-  it("platform admin atendendo como suporte continua vendo tudo", async () => {
-    sessao("agent", true);
-    const { expressoesOr } = listagemCom(true);
-
-    const res = await listar("?aberto=true");
-
-    expect(res.status).toBe(200);
-    expect(expressoesOr).toEqual([]);
-  });
-});
-
-// ─── (e) o filtro é lembrado e o padrão do agent é "Minhas" ─────────────────
-
-describe("(e) o filtro escolhido é lembrado, e o do agent abre em Minhas", () => {
+describe("(a) o filtro escolhido é lembrado, e o do atendente abre em Minhas", () => {
   it("⭐ quem nunca escolheu abre no PADRÃO do papel: `eu` para agent, `todos` para o resto", () => {
     expect(lerFiltroDoResponsavel({}, { padrao: "eu" })).toBe("eu");
     expect(lerFiltroDoResponsavel({}, { padrao: "todos" })).toBe("todos");
-    // Sem metadata nenhum (sessão nova, `user_metadata` nulo): o padrão, não erro.
     expect(lerFiltroDoResponsavel(null, { padrao: "eu" })).toBe("eu");
     expect(lerFiltroDoResponsavel(undefined, { padrao: "eu" })).toBe("eu");
   });
 
   it("⭐ a última escolha volta no próximo carregamento", () => {
-    const metadata = { [CHAVE_DO_FILTRO_DAS_TAREFAS]: "ninguem" };
-
-    expect(lerFiltroDoResponsavel(metadata, { padrao: "eu" })).toBe("ninguem");
-    expect(
-      lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: BETO }, { padrao: "eu" }),
-    ).toBe(BETO);
-    // A escolha gravada ganha do padrão do papel — é o ponto do item 1.
-    expect(
-      lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: "todos" }, { padrao: "eu" }),
-    ).toBe("todos");
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: "ninguem" }, { padrao: "eu" })).toBe("ninguem");
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: BETO }, { padrao: "eu" })).toBe(BETO);
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: "todos" }, { padrao: "eu" })).toBe("todos");
   });
 
   it("`?assigned_to=me` do endereço ganha da preferência — é o que o lembrete abre", () => {
     const metadata = { [CHAVE_DO_FILTRO_DAS_TAREFAS]: "todos" };
-
     expect(filtroInicialDaTela(metadata, { padrao: "eu", pedidoNoEndereco: "me" })).toBe("eu");
     expect(filtroInicialDaTela(metadata, { padrao: "eu" })).toBe("todos");
   });
 
-  it("escolha torta ou de membro que saiu volta ao padrão, sem tela vazia", () => {
+  it("escolha torta volta ao padrão, sem tela vazia", () => {
     for (const torto of ["mariana", "", "  ", 42, null, { x: 1 }, ["eu"]]) {
-      expect(
-        lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: torto }, { padrao: "eu" }),
-      ).toBe("eu");
+      expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: torto }, { padrao: "eu" })).toBe("eu");
     }
   });
 
-  it("com a opção ligada, `todos` gravado antes NÃO abre a tela num filtro proibido", () => {
-    const metadata = { [CHAVE_DO_FILTRO_DAS_TAREFAS]: "todos" };
+  it("⭐ com o banco recortando, o id de um colega gravado antes volta ao padrão — e o resto continua valendo", () => {
+    const restrito = { padrao: "eu" as const, restritoAoProprio: true };
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: BETO }, restrito)).toBe("eu");
+    // "Todos" fica: é exatamente o que a policy entrega a esta pessoa.
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: "todos" }, restrito)).toBe("todos");
+    expect(lerFiltroDoResponsavel({ [CHAVE_DO_FILTRO_DAS_TAREFAS]: "ninguem" }, restrito)).toBe("ninguem");
+  });
+});
 
-    expect(lerFiltroDoResponsavel(metadata, { padrao: "eu", restritoAoProprio: true })).toBe("eu");
-    // E as escolhas que o restrito PODE fazer continuam valendo.
-    expect(
-      lerFiltroDoResponsavel(
-        { [CHAVE_DO_FILTRO_DAS_TAREFAS]: "ninguem" },
-        { padrao: "eu", restritoAoProprio: true },
-      ),
-    ).toBe("ninguem");
+// ─── (b) a régua da tela espelha a policy ──────────────────────────────────
+
+describe("(b) a tela lê as MESMAS opções que a policy `crm_tasks_select`", () => {
+  const settings = (colegas: boolean | undefined, modo: string | undefined) => ({
+    ...(colegas === undefined ? {} : { colegas_podem_mexer_na_agenda: colegas }),
+    ...(modo === undefined ? {} : { visibility_mode: modo }),
   });
 
-  it("o fio da página até o componente: o papel decide o padrão e a escolha é gravada", () => {
+  it("⭐ a matriz: opção da agenda × O que cada atendente enxerga × papel", () => {
+    const casos: Array<[boolean | undefined, string | undefined, Role, ReturnType<typeof escopoDaTelaDeTarefas>]> = [
+      // Ligada (ou ausente, o padrão): a equipe inteira, qualquer modo.
+      [undefined, undefined, "agent", null],
+      [true, "own", "agent", null],
+      [true, "own_and_unassigned", "agent", null],
+      // Desligada: vale o modo — ausente é `own_and_unassigned`, como o `coalesce`.
+      [false, "all", "agent", null],
+      [false, "own_and_unassigned", "agent", "own_and_unassigned"],
+      [false, undefined, "agent", "own_and_unassigned"],
+      [false, "own", "agent", "own"],
+      [false, "qualquer-coisa", "agent", "own"],
+      // viewer, manager e admin veem tudo na policy, em qualquer combinação.
+      [false, "own", "viewer", null],
+      [false, "own", "manager", null],
+      [false, "own", "admin", null],
+      [false, "own_and_unassigned", "manager", null],
+    ];
+    for (const [colegas, modo, papel, esperado] of casos) {
+      expect(
+        escopoDaTelaDeTarefas({ papel, platformAdmin: false, settings: settings(colegas, modo) }),
+        `${String(colegas)} × ${String(modo)} × ${papel}`,
+      ).toBe(esperado);
+    }
+  });
+
+  it("platform admin vê tudo — é o `fn_is_platform_admin()` da policy", () => {
+    expect(escopoDaTelaDeTarefas({ papel: "agent", platformAdmin: true, settings: settings(false, "own") })).toBeNull();
+  });
+
+  it("settings torto não derruba a tela: cai na leitura que o banco faria (opção ligada)", () => {
+    for (const torto of [null, undefined, "x", 3, ["a"]]) {
+      expect(escopoDaTelaDeTarefas({ papel: "agent", platformAdmin: false, settings: torto })).toBeNull();
+    }
+  });
+});
+
+// ─── (c) a rota não tem régua própria ──────────────────────────────────────
+
+function sessao(papel: Role) {
+  vi.mocked(resolveAuthDual).mockImplementation(async (_req, { role: min }) => {
+    if (ROLE_RANK[papel] < ROLE_RANK[min]) {
+      return { ok: false as const, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) };
+    }
+    return {
+      ok: true as const,
+      organizationId: ORG,
+      actor: { type: "user" as const, id: ANA },
+      supabase: await createClient(),
+      idioma: "pt-BR" as const,
+      via: "session" as const,
+    };
+  });
+}
+
+/** Dublê da lista: anota TODO filtro, inclusive `or`, e as tabelas lidas. */
+function listagem() {
+  const filtros: Array<[string, string, unknown]> = [];
+  const tabelas: string[] = [];
+  const elo: Record<string, unknown> = {};
+  for (const metodo of ["select", "order", "limit"]) elo[metodo] = () => elo;
+  for (const metodo of ["eq", "is", "in", "gte", "lte"]) {
+    elo[metodo] = (coluna: string, valor: unknown) => (filtros.push([metodo, coluna, valor]), elo);
+  }
+  elo.or = (expressao: string) => (filtros.push(["or", expressao, null]), elo);
+  elo.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res);
+  vi.mocked(createClient).mockResolvedValue({
+    from: (tabela: string) => (tabelas.push(tabela), elo),
+  } as never);
+  return { filtros, tabelas };
+}
+
+describe("(c) a rota devolve o que a policy entrega — sem segunda régua", () => {
+  it.each(["agent", "manager", "admin"] as const)(
+    "⭐ %s sem filtro: a consulta sai só com a organização, em `crm_tasks` e em nada mais",
+    async (papel) => {
+      sessao(papel);
+      const { filtros, tabelas } = listagem();
+      const { GET } = await import("@/app/api/v1/tasks/route");
+
+      const res = await GET(new NextRequest("http://localhost/api/v1/tasks"));
+
+      expect(res.status).toBe(200);
+      expect(tabelas).toEqual(["crm_tasks"]);
+      expect(filtros).toEqual([["eq", "organization_id", ORG]]);
+    },
+  );
+});
+
+// ─── (d) o fio da página até o componente ──────────────────────────────────
+
+describe("(d) o fio da página até o componente", () => {
+  it("o papel decide o padrão, a página lê a régua da policy e a escolha é gravada", () => {
     const pagina = readFileSync("app/app/tasks/page.tsx", "utf8");
-    // O padrão do papel, no SERVIDOR — a tela não adivinha o papel.
     expect(pagina).toMatch(/padrao: activeOrg\.role === "agent" \? "eu" : "todos"/);
     expect(pagina).toMatch(/filtroInicialDaTela\(await metadadosDaSessao\(\),/);
+    expect(pagina).toMatch(/escopoDaTelaDeTarefas\(\{/);
     expect(pagina).toMatch(/escopoProprio=\{escopoProprio\}/);
 
     const tela = readFileSync("app/app/tasks/_components/TarefasClient.tsx", "utf8");
-    // A escolha é GRAVADA — sem isto o filtro volta ao padrão na recarga, que
-    // era exatamente o defeito relatado na issue.
     expect(tela).toMatch(/await definirFiltroDasTarefas\(novo\)/);
     expect(tela).toMatch(/useState<FiltroDeResponsavel>\(filtroInicial\)/);
   });

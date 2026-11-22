@@ -15,8 +15,8 @@
  *      abriria "Todos" no celular — e o pedido é que a escolha acompanhe a
  *      pessoa, não o aparelho.
  *   2. `organizations.settings` seria por ORGANIZAÇÃO: o filtro de um viraria
- *      o de todo mundo. A decisão da empresa é OUTRA coisa, e é a parte 2 desta
- *      mesma entrega (`lib/tarefas/escopo-do-atendente.ts`).
+ *      o de todo mundo. O que a empresa decide é OUTRA coisa, e já mora no
+ *      banco (`lib/tarefas/escopo-do-atendente.ts` explica a régua).
  *   3. Tabela nova com migration seria mais peso do que a escolha pede: o
  *      metadata já é escrito pela própria pessoa (`auth.updateUser`), lido no
  *      RSC da página e invalidado pelo cache curto de sessão.
@@ -30,9 +30,9 @@
  * novo. A tela abre na lista certa em vez de abrir vazia, mentindo "nenhuma
  * tarefa sua" por causa de um id órfão.
  *
- * `todos` também cai no padrão quando a organização restringe o atendente às
- * próprias tarefas (parte 2): a tela não pode abrir num filtro que a API
- * recusa — e recusar em silêncio, devolvendo a lista inteira, seria o defeito.
+ * O id de um COLEGA também cai no padrão quando o banco recorta o que esta
+ * pessoa vê: a tela não oferece colegas nesse caso, e abrir num filtro que não
+ * está no seletor mostraria uma fração das tarefas dele como se fosse tudo.
  */
 import type { FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 
@@ -50,9 +50,8 @@ export interface ContextoDoFiltro {
    */
   padrao: FiltroDeResponsavel;
   /**
-   * A organização ligou "Atendente vê só as próprias tarefas" e esta pessoa é
-   * atendente. `todos` deixa de ser uma escolha possível: cair nele abriria a
-   * tela num filtro que a rota responde com lista vazia ou 403.
+   * O banco recorta o que esta pessoa vê (`escopoDaTelaDeTarefas` não é
+   * `null`). O id de um colega deixa de ser uma escolha possível.
    */
   restritoAoProprio?: boolean;
 }
@@ -75,10 +74,9 @@ export function lerFiltroDoResponsavel(
   if (typeof cru !== "string") return padrao;
   const valor = cru.trim();
 
-  if (valor === "eu" || valor === "ninguem") return valor;
-  // `todos` é a única escolha que a restrição da organização tira da mesa.
-  if (valor === "todos") return contexto.restritoAoProprio ? padrao : "todos";
-  if (UUID.test(valor)) return valor;
+  if (valor === "eu" || valor === "ninguem" || valor === "todos") return valor;
+  // O colega é a única escolha que o recorte do banco tira da mesa.
+  if (UUID.test(valor)) return contexto.restritoAoProprio ? padrao : valor;
 
   // Qualquer outra coisa — vazio, `mariana`, o id de um funil — volta ao padrão.
   return padrao;

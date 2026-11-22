@@ -296,20 +296,7 @@ function fazerSupabaseSobre(linhas: Array<Record<string, unknown>>) {
     }
     return Promise.resolve({ data: saida.slice(0, teto), error: null }).then(res);
   };
-  /**
-   * A rota lê `organizations.settings` desde a #4737 — a opção "atendente vê só
-   * as próprias tarefas". Um elo para ela, com `settings` vazio (opção
-   * desligada), é o que separa essa leitura da consulta de TAREFAS: no elo
-   * único, o `eq("id", …)` da organização ficaria anotado e a consulta das
-   * tarefas passaria a filtrar `id = ORG`, devolvendo nada.
-   */
-  const eloDaOrganizacao: Record<string, unknown> = {};
-  for (const metodo of ["select", "eq"]) eloDaOrganizacao[metodo] = () => eloDaOrganizacao;
-  eloDaOrganizacao.then = (res: (v: unknown) => unknown) =>
-    Promise.resolve({ data: [{ settings: {} }], error: null }).then(res);
-  vi.mocked(createClient).mockResolvedValue({
-    from: (tabela: string) => (tabela === "organizations" ? eloDaOrganizacao : elo),
-  } as never);
+  vi.mocked(createClient).mockResolvedValue({ from: () => elo } as never);
 }
 
 describe("sonda do contador no menu — caso x esperado x obtido", () => {
