@@ -14011,6 +14011,7 @@ export type Database = {
           passada_do_banco: number | null;
           requested_by: string | null;
           retentativas_do_banco: number | null;
+          scheduled_for: string | null;
           status: string;
           to_version: string;
         };
@@ -14027,6 +14028,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14042,6 +14044,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };

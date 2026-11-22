@@ -83380,6 +83380,25 @@ update public.crm_leads l
  where l.id = s.lead_id
    and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
 
+-- ---- atualização agendada pela janela de manutenção (migration 9457) ----
+alter table public.system_update_runs
+  add column if not exists scheduled_for timestamptz;
+
+comment on column public.system_update_runs.scheduled_for is
+  'Quando o agent.sh vai executar este pedido, se ele espera a janela de manutenção (SYSTEM_UPDATE_WINDOW, #4334). Gravada pelo agente (run_scheduled) a cada ciclo de espera; nula = sem janela. A cerca das extensões e o "desfecho desconhecido" da tela contam os 15 min a partir do mais tarde entre dispatched_at e esta coluna.';
+
+-- `greatest` ignora o nulo: sem agendamento, é a régua de sempre (dispatched_at).
+create or replace function public.fn_extensions_core_update_in_progress()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from public.system_update_runs
+    where status='dispatched'
+      and greatest(dispatched_at, scheduled_for) > now() - interval '15 minutes');
+$$;
+
+revoke execute on function public.fn_extensions_core_update_in_progress() from public, anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -89840,5 +89859,3 @@ do $followup_daily_cap$ begin
       check (followup_daily_cap is null or followup_daily_cap > 0);
   end if;
 end $followup_daily_cap$;
-
-notify pgrst, 'reload schema';

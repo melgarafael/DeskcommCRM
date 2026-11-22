@@ -33,11 +33,18 @@ export function canTransition(from: RunStatus, to: RunStatus): boolean {
 /**
  * `unknown` é DERIVADO na leitura, nunca gravado: um agente morto não consegue
  * anunciar a própria morte.
+ *
+ * Pedido que espera a janela de manutenção (#4334): o agente conta quando vai
+ * rodar (`scheduled_for`), e o prazo passa a contar dessa hora — a MESMA régua
+ * da cerca das extensões no banco (`fn_extensions_core_update_in_progress`,
+ * migration 9457): o mais tarde entre o despacho e o agendamento.
  */
-export function isRunStale(dispatchedAt: string, now: Date): boolean {
+export function isRunStale(dispatchedAt: string, now: Date, scheduledFor?: string | null): boolean {
   const started = Date.parse(dispatchedAt);
   if (Number.isNaN(started)) return true;
-  return now.getTime() - started > RUN_STALE_AFTER_MS;
+  const agendado = scheduledFor ? Date.parse(scheduledFor) : NaN;
+  const referencia = Number.isNaN(agendado) ? started : Math.max(started, agendado);
+  return now.getTime() - referencia > RUN_STALE_AFTER_MS;
 }
 
 /**
