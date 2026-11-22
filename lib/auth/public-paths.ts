@@ -272,9 +272,11 @@ export const PUBLIC_PATHS: RegExp[] = [
   // TÚNEL DO SENTRY (`tunnelRoute` em `next.config.ts`, issue #5091). É um
   // rewrite do Next para o ingest do Sentry, e o proxy roda antes dele: sem
   // esta linha o envelope de erro do navegador recebia 307 para `/login` e
-  // nenhum erro de tela chegava ao Sentry, nem os do próprio `/login`. Não há
-  // dado nosso atrás: o destino é o Sentry, que confere o DSN do envelope.
-  // Âncora `$`: nenhum sub-path nasce público de carona.
+  // nenhum erro de tela chegava ao Sentry, nem os do próprio `/login`. Público
+  // não é aberto: antes desta lista o `proxy.ts` passa pela guarda de
+  // `lib/sentry/tunel.ts` (só o projeto do DSN desta instalação, só POST, teto
+  // de tamanho e de frequência por IP). Âncora `$`: nenhum sub-path nasce
+  // público de carona.
   /^\/monitoring$/,
   /^\/team\/accept-invite\/.+$/,
   // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de
