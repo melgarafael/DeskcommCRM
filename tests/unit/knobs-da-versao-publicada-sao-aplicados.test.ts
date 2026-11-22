@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const RAIZ = process.cwd();
 const CONFIG = path.join("lib", "agent-engine", "agent", "agent-config.ts");
@@ -54,35 +54,44 @@ function camposDaConfig(): string[] {
   return [...src.slice(ini, fim).matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]!);
 }
 
-/** Arquivos que leem o campo, fora do próprio módulo que o carrega. */
-function consumidoresDe(campo: string): string[] {
-  try {
-    const saida = execFileSync(
-      "git",
-      ["grep", "-l", "-e", `agentConfig.${campo}`, "-e", `agentConfig?.${campo}`, "--", "lib", "workers", "app"],
-      { cwd: RAIZ, encoding: "utf8" },
-    );
-    return saida.split("\n").filter((f) => f !== "" && !f.includes("agent-config"));
-  } catch {
-    // `git grep` sai com 1 quando não encontra nada — ausência, não falha.
-    return [];
-  }
+/** Busca as leituras exatas em uma só varredura, fora do módulo que carrega a configuração. */
+function camposConsumidos(campos: string[]): Set<string> {
+  const padroes = campos.flatMap((campo) => [
+    "-e", `agentConfig.${campo}`,
+    "-e", `agentConfig?.${campo}`,
+  ]);
+  const saida = execFileSync(
+    "git",
+    [
+      "grep", "-h", "-o", "-F", "-w", ...padroes, "--", "lib", "workers", "app",
+      ":(exclude,glob)**/*agent-config*",
+    ],
+    { cwd: RAIZ, encoding: "utf8" },
+  );
+  return new Set(saida.trimEnd().split("\n").map((match) => match.slice(match.lastIndexOf(".") + 1)));
 }
 
 describe("knobs da versão publicada", () => {
+  let campos: string[];
+  let consumidos: Set<string>;
+
+  beforeAll(() => {
+    campos = camposDaConfig();
+    consumidos = camposConsumidos(campos);
+  }, 60_000);
+
   it("o instrumento enxerga (controle positivo)", () => {
-    const campos = camposDaConfig();
     expect(campos.length, "a interface da config veio vazia — o parser quebrou").toBeGreaterThan(15);
     expect(campos).toContain("systemPrompt");
     expect(
-      consumidoresDe("systemPrompt").length,
-      "nem o system_prompt foi encontrado: o grep não está enxergando o repo",
-    ).toBeGreaterThan(0);
+      consumidos.has("systemPrompt"),
+      "a busca no repositório não encontrou leituras de systemPrompt",
+    ).toBe(true);
   });
 
   it("todo campo carregado tem quem o aplique", () => {
-    const orfaos = camposDaConfig().filter(
-      (c) => !(c in SEM_CONSUMIDOR_ACEITO) && consumidoresDe(c).length === 0,
+    const orfaos = campos.filter(
+      (c) => !(c in SEM_CONSUMIDOR_ACEITO) && !consumidos.has(c),
     );
     expect(
       orfaos,

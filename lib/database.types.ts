@@ -5531,6 +5531,8 @@ export type Database = {
           datafy_waba_id: string | null;
           display_name: string | null;
           engine: string;
+          entry_pipeline_id: string | null;
+          entry_stage_id: string | null;
           id: string;
           is_warmup_complete: boolean | null;
           last_health_check_at: string | null;
@@ -5574,6 +5576,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -5616,6 +5620,8 @@ export type Database = {
           datafy_waba_id?: string | null;
           display_name?: string | null;
           engine?: string;
+          entry_pipeline_id?: string | null;
+          entry_stage_id?: string | null;
           id?: string;
           is_warmup_complete?: never;
           last_health_check_at?: string | null;
@@ -6044,6 +6050,7 @@ export type Database = {
           ligado: boolean;
           lembrar_antes: boolean;
           organization_id: string;
+          resumo_so_com_agendamento: boolean;
           telefone_destino: string | null;
           updated_at: string;
           usa_numero_do_aviso_de_caso: boolean;
@@ -6057,6 +6064,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -6069,6 +6077,7 @@ export type Database = {
           ligado?: boolean;
           lembrar_antes?: boolean;
           organization_id?: string;
+          resumo_so_com_agendamento?: boolean;
           telefone_destino?: string | null;
           updated_at?: string;
           usa_numero_do_aviso_de_caso?: boolean;
@@ -7339,6 +7348,8 @@ export type Database = {
           tags: string[];
           title: string;
           updated_at: string;
+          valor_digitado_cents: number | null;
+          valor_pelas_vendas: boolean;
           value_cents: number | null;
           webhook_source_id: string | null;
           won_reason: string | null;
@@ -7377,6 +7388,8 @@ export type Database = {
           tags?: string[];
           title: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -7414,6 +7427,8 @@ export type Database = {
           tags?: string[];
           title?: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -7488,6 +7503,7 @@ export type Database = {
           periodo: string;
           pipeline_id: string | null;
           updated_at: string;
+          vendedor_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -7500,6 +7516,7 @@ export type Database = {
           periodo: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Update: {
           alvo?: number;
@@ -7511,6 +7528,7 @@ export type Database = {
           periodo?: string;
           pipeline_id?: string | null;
           updated_at?: string;
+          vendedor_id?: string | null;
         };
         Relationships: [
           {
@@ -8670,6 +8688,8 @@ export type Database = {
         Row: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at: string | null;
+          disabled_by: string | null;
           id: string;
           installed_at: string;
           installed_by: string | null;
@@ -8685,6 +8705,8 @@ export type Database = {
         Insert: {
           artifact_id: string;
           catalog_id: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -8699,6 +8721,8 @@ export type Database = {
         Update: {
           artifact_id?: string;
           catalog_id?: string;
+          disabled_at?: string | null;
+          disabled_by?: string | null;
           id?: string;
           installed_at?: string;
           installed_by?: string | null;
@@ -14050,6 +14074,7 @@ export type Database = {
           passada_do_banco: number | null;
           requested_by: string | null;
           retentativas_do_banco: number | null;
+          scheduled_for: string | null;
           status: string;
           to_version: string;
         };
@@ -14066,6 +14091,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14081,6 +14107,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14365,6 +14392,74 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      vendas_registradas: {
+        Row: {
+          contact_id: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          data: string;
+          id: string;
+          lead_id: string | null;
+          observacao: string | null;
+          organization_id: string;
+          tags: string[];
+          updated_at: string;
+          valor_cents: number;
+        };
+        ComputedFields: never;
+        Insert: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents: number;
+        };
+        Update: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data?: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id?: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vendas_registradas_lead_fk";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_contact_fk";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       voice_calls: {
         Row: {
@@ -15580,7 +15675,10 @@ export type Database = {
           error: true;
         } & "the function public.comando_da_conversa with parameter or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache";
       };
-      decrypt_cpf: { Args: { p_contact_id: string }; Returns: string };
+      // (9423) Duas assinaturas: `decrypt_cpf(uuid)` (a da 0762, intacta) e
+      // `decrypt_cpf(uuid, text)` com o propósito da leitura. O argumento é opcional
+      // no cliente porque a chamada de um argumento continua válida — é o export.
+      decrypt_cpf: { Args: { p_contact_id: string; p_purpose?: string | null }; Returns: string };
       emit_event: {
         Args: {
           p_entity_id: string;
@@ -16125,6 +16223,13 @@ export type Database = {
         };
         Returns: boolean;
       };
+      fn_definir_resumo_do_aviso_de_agendamento: {
+        Args: {
+          p_org: string;
+          p_so_com_agendamento: boolean;
+        };
+        Returns: boolean;
+      };
       fn_definir_aviso_de_caso: {
         Args: {
           p_channel: string;
@@ -16391,6 +16496,16 @@ export type Database = {
       fn_extensions_revert_install: {
         Args: {
           p_actor: string;
+          p_expected_installation_revision: number;
+          p_installation: string;
+          p_operation: string;
+        };
+        Returns: Json;
+      };
+      fn_extensions_set_switch: {
+        Args: {
+          p_actor: string;
+          p_disabled: boolean;
           p_expected_installation_revision: number;
           p_installation: string;
           p_operation: string;

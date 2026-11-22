@@ -35,7 +35,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
-import { useDeleteContact, mensagemDeBloqueioPorVinculo } from "@/hooks/contacts/useDeleteContact";
+import { useCamposDeContatoDaOrg } from "@/hooks/contacts/useCamposDeContatoDaOrg";
+import { useDeleteContact, mensagemDeBloqueioPorVinculo, destinoDoBloqueio } from "@/hooks/contacts/useDeleteContact";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 import type { Contact } from "@/lib/types/contacts";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -141,10 +142,13 @@ export function ContactsTable({
   const vocabularioDeEtiquetas = useContactTagVocabulary(orgAtiva?.orgId ?? null);
   const del = useDeleteContact();
   const [alvo, setAlvo] = useState<Contact | null>(null);
-  // Issue #2715 — editar pela linha, sem abrir a ficha. Sem customFieldDefs:
-  // o contrato do diálogo some a seção de campos do funil, e o caminho rápido
-  // coexiste com o completo (quem precisa dos campos abre a ficha, como hoje).
+  // Issue #2715 — editar pela linha, sem abrir a ficha.
+  // Issue #4929 — e com os MESMOS campos personalizados da ficha: a lista não
+  // tem funil único, então o conjunto é a união dos campos de CONTATO de todos
+  // os funis, que é exatamente o que o PATCH valida. Uma chamada só, pelo mesmo
+  // leitor do servidor (`defsDeContatoDaOrg`).
   const [contatoEmEdicao, setContatoEmEdicao] = useState<Contact | null>(null);
+  const camposDeContato = useCamposDeContatoDaOrg(Boolean(orgAtiva?.orgId));
   const router = useRouter();
   const qc = useQueryClient();
   // Issue #2382 — seletor de canal ao INICIAR a conversa. O diálogo é o retorno
@@ -427,8 +431,8 @@ export function ContactsTable({
             {avisoDeVinculo ? (
               <span className="mt-2 block text-sm font-medium text-warning-fg">
                 {avisoDeVinculo}{" "}
-                <Link href="/app/agenda" className="underline">
-                  {t("Abrir Agenda")}
+                <Link href={destinoDoBloqueio(vinculos.data).href} className="underline">
+                  {t(destinoDoBloqueio(vinculos.data).rotulo)}
                 </Link>
               </span>
             ) : null}
@@ -447,12 +451,18 @@ export function ContactsTable({
       </AlertDialogContent>
     </AlertDialog>
     {/* Issue #2715 — edição pela linha. Montado só com alvo escolhido, no
-        mesmo molde do AlertDialog de exclusão: fechar zera o state. */}
+        mesmo molde do AlertDialog de exclusão: fechar zera o state.
+        Issue #4929 — com os campos personalizados do contato, que a ficha já
+        mostrava. `camposDeTodosOsFunis` só muda a frase da seção: o diálogo
+        diz de onde vêm os campos em vez de repetir a da ficha, que fala do
+        funil padrão. */}
     {contatoEmEdicao && (
       <EditContactDialog
         contact={contatoEmEdicao}
         open
         onOpenChange={(v) => { if (!v) setContatoEmEdicao(null); }}
+        customFieldDefs={camposDeContato.data ?? []}
+        camposDeTodosOsFunis
         vocabulario={vocabularioDeEtiquetas.data}
       />
     )}

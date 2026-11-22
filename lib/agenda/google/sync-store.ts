@@ -70,7 +70,12 @@ export async function googleRpc(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   const { data, error } = await db.rpc(name, args as Record<string, Json>);
-  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  if (error)
+    throw Object.assign(new Error(error.message), {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
   return data;
 }
 export function expectedAppointment(a: AppointmentSnapshot, calendarFence?: CalendarFence) {

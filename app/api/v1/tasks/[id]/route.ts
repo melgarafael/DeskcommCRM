@@ -38,14 +38,19 @@ import {
   COLUNAS_DA_TAREFA,
   conferirNegocioEContato,
 } from "@/lib/tarefas/negocio-da-tarefa";
-import { normalizarRegra, regraDeRecorrenciaSchema, regraParaGravar } from "@/lib/tarefas/recorrencia";
+import {
+  criarProximaSemDerrubar,
+  normalizarRegra,
+  regraDeRecorrenciaSchema,
+  regraParaGravar,
+} from "@/lib/tarefas/recorrencia";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, created_at, updated_at, lead:crm_leads(id, title)";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, recurrence, recurrence_source_id, created_at, updated_at, lead:crm_leads(id, title)";
 
 const edicaoSchema = z
   .object({
@@ -164,9 +169,11 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
+  // A situação E a série ANTES da edição: a primeira decide se esta é a vez em
+  // que a tarefa fechou, e a segunda diz de qual rotina a próxima nasce (#4595).
   const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
-    .select("status")
+    .select("status, recurrence_source_id, due_date")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -188,7 +195,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     } else {
       const regra = normalizarRegra(parsed.data.recurrence);
       if (!regra) {
-        return fail("validation_failed", t("Escolha pelo menos um dia da semana e um horário."), 422, {
+        return fail("validation_failed", t("Escolha a repetição e o horário."), 422, {
           requestId,
         });
       }
@@ -254,6 +261,29 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
       tarefa: gravada,
       tipo: "task_completed",
       actor: authz.actor,
+    });
+
+    // ═══ A PRÓXIMA OCORRÊNCIA (#4595) ═══
+    //
+    // Um dos dois gatilhos — o outro é o agendador (`cron/task-recurrence`), e
+    // os dois caem no mesmo índice único. Só entra quando a tarefa FECHOU
+    // agora: marcar "concluída" numa tarefa que já estava concluída não pode gerar uma segunda
+    // ocorrência, e é o `fechouAgora` que já separa as duas coisas (a mesma
+    // régua que impede duas linhas na timeline do negócio).
+    //
+    // O prazo pode ter sido editado NESTE PATCH: vale o que ficou gravado, com o
+    // de antes como reserva. A criação não derruba a resposta — a conclusão já
+    // está gravada, e o que se perde, quando falha, é só a próxima.
+    await criarProximaSemDerrubar(portaDaAplicacao(), {
+      // `gravada` é a linha que o UPDATE devolveu (o nome da main); o `tarefa`
+      // desta função só existe DEPOIS, já com o negócio juntado.
+      id: gravada.id,
+      organization_id: organizationId,
+      recurrence_source_id:
+        gravada.recurrence_source_id ??
+        (antes as { recurrence_source_id?: string | null } | null)?.recurrence_source_id ??
+        null,
+      due_date: gravada.due_date ?? (antes as { due_date?: string | null } | null)?.due_date ?? null,
     });
   }
 

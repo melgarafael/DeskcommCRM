@@ -52,6 +52,9 @@ const MEMBRO = "22222222-2222-4222-8222-222222222222";
 const LEAD = "33333333-3333-4333-8333-333333333333";
 const CONTATO = "44444444-4444-4444-8444-444444444444";
 const CANAL = "55555555-5555-4555-8555-555555555555";
+const FUNIL = "66666666-6666-4666-8666-666666666666";
+/** Outra organização com o MESMO id de funil não pode emprestar o nome. */
+const OUTRA_ORG = "77777777-7777-4777-8777-777777777777";
 
 /** Um marcador por campo livre: o nome diz de onde ele vazou. */
 const M = {
@@ -72,6 +75,10 @@ const M = {
 
 const TABELAS: Record<string, Array<Record<string, unknown>>> = {
   organizations: [{ id: ORG, locale: "pt-BR" }],
+  crm_pipelines: [
+    { organization_id: OUTRA_ORG, id: FUNIL, name: "Funil de outra empresa" },
+    { organization_id: ORG, id: FUNIL, name: "Funil de vendas" },
+  ],
   user_organizations: [{ organization_id: ORG, user_id: MEMBRO, revoked_at: null }],
   crm_lead_scores: [
     {
@@ -127,6 +134,14 @@ function adminFake(): ActionCtx["admin"] {
   }
   return {
     from: (nome: string) => builder(nome),
+    // `fn_nomes_dos_membros`: só quem tem vínculo com a `p_org` pedida ganha linha.
+    rpc: async (fn: string, args: { p_org: string; p_ids: string[] }) => ({
+      data:
+        fn === "fn_nomes_dos_membros" && args.p_org === ORG && args.p_ids.includes(MEMBRO)
+          ? [{ user_id: MEMBRO, full_name: "Carla Souza" }]
+          : [],
+      error: null,
+    }),
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "closer@acme.com.br" } } }) } },
   } as unknown as ActionCtx["admin"];
 }
@@ -151,6 +166,9 @@ function ctx(): ActionCtx {
         currency: "BRL",
         won_reason: M.motivoDoGanho,
         lost_reason: M.motivoDaPerda,
+        owner_kind: "human",
+        owner_user_id: MEMBRO,
+        pipeline_id: FUNIL,
       },
       contact: { name: "Maria da Silva", display_name: "Maria da Silva", phone_number: "+5511988887777" },
     },
@@ -185,6 +203,8 @@ const ROTULOS = [
   "Telefone: ",
   "Valor: ",
   "Pontuação: ",
+  "Responsável: ",
+  "Funil: ",
   "Abrir negócio: ",
 ];
 
@@ -215,6 +235,15 @@ describe.each([
     expect(saida).toContain(`Valor: ${formatarMoeda(120_000, "BRL")}`);
     expect(saida.split("\n")).toContain("Pontuação: 72%");
     expect(saida).toContain(`Abrir negócio: https://crm.acme.com.br/app/leads/${LEAD}`);
+  });
+
+  it("diz quem responde pelo negócio e o funil — o nome da PRÓPRIA organização", async () => {
+    const saida = await texto();
+    expect(saida.split("\n")).toContain("Responsável: Carla Souza");
+    expect(saida.split("\n")).toContain("Funil: Funil de vendas");
+    expect(saida, "o funil de outra empresa com o mesmo id não empresta o nome").not.toContain(
+      "outra empresa",
+    );
   });
 
   it("toda linha tem um rótulo conhecido", async () => {

@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import { definirFiltroDasTarefas } from "@/app/actions/settings/definirFiltroDasTarefas";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -16,8 +18,8 @@ import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { useAttendants } from "@/hooks/team/useAttendants";
 import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { EscopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
@@ -38,12 +40,28 @@ export interface FunilDoFiltro {
 
 export function TarefasClient({
   podeEditar,
-  minhasDeInicio = false,
+  filtroInicial = "todos",
+  escopoProprio = null,
   funis = [],
   setoresLigados = false,
 }: {
   podeEditar: boolean;
-  minhasDeInicio?: boolean;
+  /**
+   * O filtro com que a tela ABRE (#4737), decidido no servidor: o
+   * `?assigned_to=me` do endereço, ou o último que a pessoa escolheu, ou
+   * "Minhas" quando o papel é de atendente. Nunca recalculado aqui — o
+   * componente só parte dele.
+   */
+  filtroInicial?: FiltroDeResponsavel;
+  /**
+   * O recorte que a RLS aplica a esta pessoa (`escopoDaTelaDeTarefas`), ou
+   * `null` quando ela vê a equipe. Com recorte, a tela diz o que a lista traz
+   * e não oferece os colegas: o banco entregaria só as tarefas deles que esta
+   * pessoa criou, e o filtro pareceria a lista inteira do colega. "Todos" fica,
+   * porque é exatamente o que a policy entrega — inclusive a tarefa que ela
+   * criou e entregou a alguém.
+   */
+  escopoProprio?: EscopoDaTelaDeTarefas;
   funis?: FunilDoFiltro[];
   /** Módulo opcional de setores (doc 213), lido no servidor pela página. Ausente = desligado. */
   setoresLigados?: boolean;
@@ -52,42 +70,40 @@ export function TarefasClient({
   const usuario = useUser();
   const [modo, setModo] = useState<"lista" | "calendario" | "quadro">("lista");
   const [situacao, setSituacao] = useState<FiltroDeSituacao>("aberto");
-  const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
+  const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(filtroInicial);
+  // A gravação da preferência vai numa transição: trocar o filtro não pode
+  // bloquear a lista, e a action é o que faz a escolha sobreviver à recarga.
+  const [, iniciarGravacao] = useTransition();
   // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
   const [setor, setSetor] = useState<string>("todos");
   // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
-  // pedido nem sai — sem setores, o seletor não aparece. O roster é agent+,
-  // pela mesma razão de `useAssignableMembers` logo abaixo.
+  // pedido nem sai — sem setores, o seletor não aparece. O roster de setores por
+  // atendente não é mais pedido aqui (#4883): o mapa "responsável → setor" saiu
+  // junto com o selo que ele alimentava.
   const { data: setoresResp } = useSectors(setoresLigados);
   const setores = useMemo(() => setoresResp?.data ?? [], [setoresResp]);
-  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
-  const atendentes = useMemo(() => atendentesResp?.data ?? [], [atendentesResp]);
-  // O chip da tarefa mostra o PRIMEIRO setor de quem a tem. Montado aqui, uma
-  // vez, para a lista e o quadro — eles não pedem setores por conta própria.
-  const setorDoResponsavel = useMemo(() => {
-    const porId = new Map(setores.map((s) => [s.id, s]));
-    const mapa = new Map<string, Sector>();
-    for (const a of atendentes) {
-      const setorDele = a.sector_ids?.[0] ? porId.get(a.sector_ids[0]) : undefined;
-      if (setorDele) mapa.set(a.user_id, setorDele);
-    }
-    return mapa;
-  }, [atendentes, setores]);
+  // O SETOR DO SELO NÃO SAI DAQUI (#4883): quem decide é o servidor — setor da
+  // conversa, senão o do negócio, senão (fallback, declarado) o do responsável,
+  // em `lib/tarefas/setor-da-tarefa.ts`. A tela só dá NOME ao id que veio em
+  // `tarefa.setor`; o filtro usa a mesma decisão, na rota. Montado uma vez para
+  // a lista e o quadro — eles não pedem setores por conta própria.
+  const setoresPorId = useMemo(
+    () => new Map<string, Sector>(setores.map((s) => [s.id, s])),
+    [setores],
+  );
 
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
   const { data: membros } = useAssignableMembers(podeEditar);
 
-  // Se um setor foi filtrado, estreita a lista de responsáveis apenas aos membros daquele setor
-  const membrosDoSetor = useMemo(() => {
-    if (setor === "todos") return membros ?? [];
-    const idsNoSetor = new Set(
-      atendentes
-        .filter((a) => a.sector_ids?.includes(setor))
-        .map((a) => a.user_id),
-    );
-    return (membros ?? []).filter((m) => idsNoSetor.has(m.user_id));
-  }, [membros, atendentes, setor]);
+  /*
+   * O filtro de setor NÃO estreita mais a lista de responsáveis (#4883). Ele
+   * dizia "tarefas de quem é do setor", e aí limitar o seletor aos membros
+   * fazia sentido. Agora o setor vem da conversa (ou do negócio): a tarefa que
+   * EXIBE "Internacionais" pode estar com alguém de "Nacionais" — que é
+   * justamente o caso que este conserto existe para mostrar. Estreitar por
+   * vínculo esconderia essa combinação, repetindo o defeito no seletor.
+   */
 
   // "todos" = sem filtro (a tela abre assim). Qualquer outro valor é o id de um funil.
   const [funil, setFunil] = useState<string>("todos");
@@ -115,6 +131,9 @@ export function TarefasClient({
       assigned_to: responsavelDoFiltro(responsavel),
       pipeline_id: funil === "todos" ? undefined : funil,
       sector_id: setor === "todos" ? undefined : setor,
+      // O selo vem do servidor: conversa → negócio → responsável. Só a tela de
+      // Tarefas pede o campo derivado (as outras listas não têm setor a mostrar).
+      com_setor: setoresLigados,
     },
     /*
      * No QUADRO esta busca fica parada. A visão em quadro faz a SUA própria
@@ -145,6 +164,29 @@ export function TarefasClient({
     else await criarTarefa(entrada);
   }
 
+  /**
+   * Trocar o filtro de responsável (#4737): a lista muda na hora e a escolha é
+   * gravada em segundo plano, na preferência da pessoa — o MESMO mecanismo da
+   * camada de datas da Agenda.
+   *
+   * Falha ao gravar NÃO desfaz o filtro: a lista já está recortada, e voltar
+   * para o filtro anterior seria mentir sobre o que está na tela. O aviso
+   * existe para ninguém achar que a escolha sobreviveu à recarga quando não.
+   */
+  function mudarResponsavel(novo: FiltroDeResponsavel) {
+    setResponsavel(novo);
+    iniciarGravacao(async () => {
+      const aviso = () =>
+        toast.error(t("A lista mudou, mas não consegui lembrar esta escolha para a próxima visita."));
+      try {
+        const resposta = await definirFiltroDasTarefas(novo);
+        if (!resposta.ok) aviso();
+      } catch {
+        aviso();
+      }
+    });
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -155,6 +197,13 @@ export function TarefasClient({
               "O que ficou combinado, com prazo. Tarefa presa a um negócio aparece na linha do tempo dele.",
             )}
           </p>
+          {escopoProprio && (
+            <p className="mt-1 text-xs text-muted-foreground" data-testid="tarefas-escopo-proprio">
+              {escopoProprio === "own"
+                ? t("Sua empresa mostra aqui as suas tarefas e as que você criou.")
+                : t("Sua empresa mostra aqui as suas tarefas, as que você criou e as que ainda não têm responsável.")}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -186,20 +235,7 @@ export function TarefasClient({
           {setores.length > 0 && (
             <Select
               value={setor}
-              onValueChange={(novoSetor) => {
-                setSetor(novoSetor);
-                if (
-                  novoSetor !== "todos" &&
-                  responsavel !== "todos" &&
-                  responsavel !== "eu" &&
-                  responsavel !== "ninguem"
-                ) {
-                  const estaNoSetor = atendentes.some(
-                    (a) => a.user_id === responsavel && a.sector_ids?.includes(novoSetor),
-                  );
-                  if (!estaNoSetor) setResponsavel("todos");
-                }
-              }}
+              onValueChange={setSetor}
             >
               <SelectTrigger
                 aria-label={t("Setor")}
@@ -219,20 +255,23 @@ export function TarefasClient({
             </Select>
           )}
 
-          <Select value={responsavel} onValueChange={(v) => setResponsavel(v as FiltroDeResponsavel)}>
+          <Select value={responsavel} onValueChange={(v) => mudarResponsavel(v as FiltroDeResponsavel)}>
             <SelectTrigger aria-label={t("Responsável")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-responsavel">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {/* Com o recorte do banco, os colegas não aparecem: a lista de
+                  um colega viria só com o que esta pessoa criou para ele. */}
               <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
-              {(membrosDoSetor ?? [])
-                .filter((m) => m.user_id !== usuario.id)
-                .map((m) => (
-                  <SelectItem key={m.user_id} value={m.user_id}>
-                    {rotuloDoMembro(m, t)}
-                  </SelectItem>
-                ))}
+              {!escopoProprio &&
+                (membros ?? [])
+                  .filter((m) => m.user_id !== usuario.id)
+                  .map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {rotuloDoMembro(m, t)}
+                    </SelectItem>
+                  ))}
               <SelectItem value="ninguem">{t("Sem responsável")}</SelectItem>
             </SelectContent>
           </Select>
@@ -355,9 +394,10 @@ export function TarefasClient({
                   assigned_to: responsavelDoFiltro(responsavel),
                   pipeline_id: funil === "todos" ? undefined : funil,
                   sector_id: setor === "todos" ? undefined : setor,
+                  com_setor: setoresLigados,
                 }}
                 aoEditar={abrirEdicao}
-                setorDoResponsavel={setorDoResponsavel}
+                setores={setoresPorId}
               />
             </div>
           )}
@@ -378,7 +418,7 @@ export function TarefasClient({
               aoAlternarConcluida={alternarConcluida}
               aoEditar={abrirEdicao}
               aoApagar={(tarefa) => apagarTarefa(tarefa.id)}
-              setorDoResponsavel={setorDoResponsavel}
+              setores={setoresPorId}
             />
           </div>
         </>

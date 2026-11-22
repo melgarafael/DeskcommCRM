@@ -15,6 +15,8 @@ const deps = vi.hoisted(() => ({
   desarquivar: vi.fn(),
   generate: vi.fn(),
   warn: vi.fn(),
+  validateConfig: vi.fn(),
+  assertCanalLivre: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -37,7 +39,8 @@ vi.mock("@/lib/prospecting/store", () => ({
   desarquivarCampanha: deps.desarquivar,
   configureCredential: vi.fn(),
   createSearch: vi.fn(),
-  validateConfig: vi.fn(),
+  validateConfig: deps.validateConfig,
+  assertCanalLivre: deps.assertCanalLivre,
   withProspectingLock: vi.fn(),
 }));
 vi.mock("@/lib/agent-engine/agent/abordagem-de-formulario", () => ({
@@ -49,6 +52,7 @@ import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-d
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { ProspectingError } from "@/lib/prospecting/provider";
+import { retomarCampanhasNaJanela } from "@/lib/prospecting/janela-da-campanha";
 import { withProspectingLock } from "@/lib/prospecting/store";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -119,6 +123,230 @@ describe("POST /api/v1/prospecting por token", () => {
   it("pause segue aberto ao token", async () => {
     const res = await POST(tokenPost({ action: "pause", id: ID }));
     expect(res.status).toBe(200);
+  });
+
+  /**
+   * #4847 — a campanha que a JANELA pausou pode ser pausada pela PESSOA.
+   *
+   * O simulador abaixo aplica o SQL do `update` da rota pelo que ele diz — o
+   * `where` decide quem é aceito, o `set` decide o que muda — em vez de devolver
+   * linha fixa. É isso que faz o teste morrer junto com o conserto: sem a
+   * cláusula `or (status='paused' and pausada_pela_janela)` no `where`, a
+   * campanha pausada pela janela não é aceita e a rota devolve 404 como hoje;
+   * sem o `pausada_pela_janela=false` no `set`, a marca sobrevive e o tick a
+   * retoma na abertura seguinte.
+   */
+  type LinhaPause = { status: string; pausada_pela_janela: boolean; error: string | null };
+  /** O `where` do update, interpretado contra o estado da linha (de verdade). */
+  function linhaAceita(onde: string, estado: LinhaPause): boolean {
+    if (/\(status='running' or \(status='paused' and pausada_pela_janela\)\)/.test(onde))
+      return (
+        estado.status === "running" ||
+        (estado.status === "paused" && estado.pausada_pela_janela)
+      );
+    if (/and status='running'/.test(onde)) return estado.status === "running";
+    if (/and status='paused'/.test(onde)) {
+      // A retomada AUTOMÁTICA da janela é guardada pela marca (sem ela, o tick
+      // reabriria até a pausa da pessoa). A da ROTA não tem a marca no where:
+      // quem aperta Retomar na tela retoma as duas.
+      const soComMarca = /and pausada_pela_janela/.test(onde);
+      return estado.status === "paused" && (!soComMarca || estado.pausada_pela_janela);
+    }
+    return true;
+  }
+  function bancoPause(estado: LinhaPause) {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.startsWith("select") && sql.includes("pausada_pela_janela and coalesce")) {
+        // A varredura da retomada no tick: só quem tem a marca volta sozinha.
+        return {
+          rows:
+            estado.pausada_pela_janela && estado.status === "paused"
+              ? [
+                  {
+                    id: ID,
+                    name: "Manhã",
+                    channel_session_id: ID,
+                    config: { janela: { dias: [1, 2, 3, 4, 5], inicio: 7, fim: 12 } },
+                  },
+                ]
+              : [],
+        };
+      }
+      if (sql.startsWith("select") && sql.includes("and status='paused'")) {
+        // A leitura que a ROTA faz antes de retomar: a campanha pausada, com
+        // configuração (a `validateConfig` da loja é dublê neste arquivo).
+        return { rows: [{ id: ID, status: "paused", config: { instruction: "x" } }], rowCount: 1 };
+      }
+      if (!sql.startsWith("update prospecting_campaigns")) return { rows: [], rowCount: 0 };
+      const onde = sql.slice(sql.indexOf(" where "));
+      const set = sql.slice(sql.indexOf(" set "), sql.indexOf(" where "));
+      if (!linhaAceita(onde, estado)) return { rows: [], rowCount: 0 };
+      // `SET` vê o valor ANTIGO da linha (regra do Postgres): o `case` do erro
+      // depende do estado de ANTES das escritas do mesmo update.
+      if (
+        /then null else error end/.test(set) &&
+        estado.status === "paused" &&
+        estado.pausada_pela_janela
+      )
+        estado.error = null;
+      if (/set status='paused'/.test(set)) estado.status = "paused";
+      if (/set status='running'/.test(set)) estado.status = "running";
+      if (/pausada_pela_janela=false/.test(set)) estado.pausada_pela_janela = false;
+      if (/pausada_pela_janela=true/.test(set)) estado.pausada_pela_janela = true;
+      void params;
+      return { rows: [{ id: ID }], rowCount: 1 };
+    });
+    return { estado, query };
+  }
+
+  const PAUSA_DA_JANELA: LinhaPause = {
+    status: "paused",
+    pausada_pela_janela: true,
+    error: "Fora do horário da campanha. Ela volta sozinha na próxima abertura.",
+  };
+
+  it("A1: PAUSE numa campanha pausada pela janela responde 200 e grava a marca false", async () => {
+    const banco = bancoPause({ ...PAUSA_DA_JANELA });
+    deps.pool.mockReturnValue({ query: banco.query });
+    const res = await POST(tokenPost({ action: "pause", id: ID }));
+    expect(res.status).toBe(200);
+    // A pausa é DEFINITIVA: a marca da volta automática cai, e o motivo que
+    // prometia "volta sozinha na próxima abertura" sai do cartão.
+    expect(banco.estado.pausada_pela_janela).toBe(false);
+    expect(banco.estado.status).toBe("paused");
+    expect(banco.estado.error).toBeNull();
+  });
+
+  it("A1: CONTROLE — pausar uma running segue aceitando pelo mesmo update", async () => {
+    const banco = bancoPause({ status: "running", pausada_pela_janela: false, error: null });
+    deps.pool.mockReturnValue({ query: banco.query });
+    const res = await POST(tokenPost({ action: "pause", id: ID }));
+    expect(res.status).toBe(200);
+    expect(banco.estado.status).toBe("paused");
+  });
+
+  it("A1: CONTROLE — campanha pausada SEM a marca (pausa da pessoa) não é reaceita: 404 como sempre", async () => {
+    const banco = bancoPause({ status: "paused", pausada_pela_janela: false, error: null });
+    deps.pool.mockReturnValue({ query: banco.query });
+    const res = await POST(tokenPost({ action: "pause", id: ID }));
+    expect(res.status).toBe(404);
+  });
+
+  it("A3: o RESUME da rota limpa a marca — retomar por clique apaga a volta automática", async () => {
+    // A retomada roda dentro do lock (dublê, como no `completar_fichas`), mas o
+    // UPDATE é o CÓDIGO REAL da rota aplicado pelo simulador do A1: no fim, a
+    // campanha voltou a `running` SEM a marca da janela.
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: "u-1", idioma: "pt" },
+      org: { orgId: "99999999-9999-4999-8999-999999999999" },
+    } as never);
+    deps.validateConfig.mockResolvedValue({ channel_session_id: ID });
+    deps.assertCanalLivre.mockResolvedValue(undefined);
+    const banco = bancoPause({ ...PAUSA_DA_JANELA });
+    vi.mocked(withProspectingLock).mockImplementation(
+      (async (_p: unknown, _o: unknown, fn: (d: unknown) => Promise<unknown>) =>
+        fn({ query: banco.query })) as never,
+    );
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/prospecting", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume", id: ID }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(banco.estado.status).toBe("running");
+    expect(banco.estado.pausada_pela_janela).toBe(false);
+  });
+
+  it("A2: a pausa manual de campanha pausada pela janela NÃO volta sozinha na varredura do tick seguinte", async () => {
+    // Terça 9h: DENTRO da janela seg-sex 7h-12h. Se a marca sobreviver à pausa
+    // manual, a varredura de retomada do tick (`retomarCampanhasNaJanela`, o
+    // módulo REAL, pelo mesmo UPDATE que o tick roda) devolve a campanha a
+    // `running` — exatamente o que a pessoa tentou impedir ao apertar Pausar.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-17T09:00:00-03:00"));
+    try {
+      const banco = bancoPause({ ...PAUSA_DA_JANELA });
+      deps.pool.mockReturnValue({ query: banco.query });
+      const res = await POST(tokenPost({ action: "pause", id: ID }));
+      expect(res.status).toBe(200);
+      await retomarCampanhasNaJanela(
+        { query: banco.query } as never,
+        "99999999-9999-4999-8999-999999999999",
+        new Date(),
+        "America/Sao_Paulo",
+      );
+      // A campanha continua pausada: sem a marca, a varredura nem a enxerga.
+      expect(banco.estado.status).toBe("paused");
+      expect(banco.estado.pausada_pela_janela).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("A1-CONTROLE: uma campanha SEM pausa manual, pausada pela janela, volta sozinha na varredura (a marca é o sujeito)", async () => {
+    // O lado que NÃO pode quebrar: a pausa da janela continua reversível só.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-17T09:00:00-03:00"));
+    try {
+      const banco = bancoPause({ ...PAUSA_DA_JANELA });
+      deps.assertCanalLivre.mockResolvedValue(undefined);
+      await retomarCampanhasNaJanela(
+        { query: banco.query } as never,
+        "99999999-9999-4999-8999-999999999999",
+        new Date(),
+        "America/Sao_Paulo",
+      );
+      expect(banco.estado.status).toBe("running");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("A4: o GET da lista devolve a coluna pausada_pela_janela no JSON da campanha", async () => {
+    // O fake PROJETA a linha: devolve só as colunas que o SQL pede (checadas
+    // pelo nome). Assim o teste é vermelho antes do conserto de verdade — sem
+    // `c.pausada_pela_janela` no SELECT, o campo some do JSON como hoje.
+    const LINHA = {
+      id: ID,
+      name: "Manhã",
+      search: {},
+      config: {},
+      status: "paused",
+      search_status: "succeeded",
+      run_id: null,
+      cost_usd: "0",
+      result_count: 0,
+      skipped_count: 0,
+      error: null,
+      next_send_at: "2026-11-17T10:00:00Z",
+      created_at: "2026-11-10T10:00:00Z",
+      channel_session_id: ID,
+      pausada_pela_janela: true,
+    };
+    deps.pool.mockReturnValue({
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("from prospecting_settings")) return { rows: [{ organization_id: ID }] };
+        if (sql.includes("from organizations")) return { rows: [{ settings: {}, locale: null }] };
+        if (sql.includes("from prospecting_campaigns c"))
+          return {
+            rows: [Object.fromEntries(Object.entries(LINHA).filter(([k]) => sql.includes(k)))],
+          };
+        return { rows: [] };
+      }),
+    });
+    const res = await GET(
+      new NextRequest("http://localhost/api/v1/prospecting", {
+        headers: { authorization: "Bearer dsk_abc" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { campaigns: Record<string, unknown>[] };
+    };
+    expect(body.data.campaigns[0]).toHaveProperty("pausada_pela_janela", true);
   });
 });
 

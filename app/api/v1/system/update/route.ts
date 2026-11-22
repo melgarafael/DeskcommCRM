@@ -44,6 +44,19 @@ import { ehVersaoPublicada, isRunStale } from "@/lib/system/update-run";
 export const dynamic = "force-dynamic";
 
 const RUN_IN_PROGRESS_MESSAGE = "Já existe uma atualização em andamento.";
+
+/**
+ * A resposta ao segundo clique quando o pedido está ESPERANDO A JANELA (#4334).
+ *
+ * Antes esta requisição fechava o run como "Run abandonado: o agente do host
+ * não reportou o desfecho a tempo (agente parado ou travado)" — e o agendamento
+ * morria em silêncio, com a tela culpando o servidor por um atraso que era o
+ * desenho. A frase agora diz o que está acontecendo e o que NÃO aconteceu: o
+ * pedido continua de pé.
+ */
+const MENSAGEM_AGUARDANDO_JANELA =
+  "A atualização está agendada para a janela de manutenção. O pedido continua de pé e é executado quando a janela abrir — aguardar não o cancela.";
+
 const SEM_FALHA_PARA_DESFAZER = "Não há nenhuma atualização com falha para desfazer agora.";
 const SEM_FALHA_PARA_FORCAR = "Não há nenhuma atualização com falha para forçar agora.";
 
@@ -258,26 +271,48 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data: running } = await db
     .from("system_update_runs")
-    .select("id, status, dispatched_at")
+    .select("id, status, dispatched_at, scheduled_for")
     .eq("status", "dispatched")
     .order("dispatched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (running) {
-    if (!isRunStale(running.dispatched_at, new Date())) {
+    // ── A SEGUNDA PORTA DO RUN (#4334) ──────────────────────────────────────
+    //
+    // O bloco abaixo fechava TODO run com mais de 15 min como "agente parado ou
+    // travado". Com a janela de manutenção ligada (o #4350), o clique fora da
+    // janela fica `dispatched` DE PROPÓSITO até ela abrir — e o segundo clique
+    // das 10h15 cancelava o agendamento da madrugada em silêncio, culpando um
+    // agente que ainda nem tinha tido a hora.
+    //
+    // A hora em que o pedido vai rodar quem diz é o agente do host
+    // (`scheduled_for`, gravado pelo `run_scheduled` do #4350 em epoch, sem fuso
+    // a interpretar). O app NÃO relê a janela: uma segunda leitura do cron, no
+    // fuso do contêiner, discordaria do `agent.sh` de quando ela abre. É a mesma
+    // régua da tela (`/system/version`) e da cerca das extensões (migration 9457).
+    const agora = new Date();
+    if (!isRunStale(running.dispatched_at, agora, running.scheduled_for)) {
+      const agendado = running.scheduled_for ? Date.parse(running.scheduled_for) : NaN;
+      if (agendado > agora.getTime()) {
+        logger.info("[system/update] run aguardando a janela de manutenção", {
+          runId: running.id,
+          dispatched_at: running.dispatched_at,
+          scheduled_for: running.scheduled_for,
+        });
+        return fail("state_conflict", MENSAGEM_AGUARDANDO_JANELA, 409);
+      }
       return fail("state_conflict", RUN_IN_PROGRESS_MESSAGE, 409);
     }
-    // Run "dispatched" vencido (>15min, RUN_STALE_AFTER_MS): o agente do host
-    // morreu no meio (crash, VPS reiniciada, bug) sem nunca reportar o
-    // desfecho. Sem isto, o índice único parcial (migration 0090) + o 409
-    // acima travariam QUALQUER novo pedido pra sempre — o botão morreria em
-    // silêncio até alguém abrir o banco à mão. Fechamos como `failed` (não é
-    // o agente reportando via run_result; é o PRÓPRIO app declarando
-    // inconclusivo) e seguimos com o pedido novo. `.eq("status","dispatched")`
-    // faz a escrita só valer se ainda estiver "dispatched" nesse instante —
-    // se o agente reportar o desfecho real bem nesse meio-tempo, esta escrita
-    // não pega nada e o run real prevalece.
+    // Run "dispatched" vencido: a janela já abriu (ou não há janela) e o agente
+    // do host não reportou o desfecho. Sem isto, o índice único parcial
+    // (migration 0090) + o 409 acima travariam QUALQUER novo pedido pra sempre
+    // — o botão morreria em silêncio até alguém abrir o banco à mão. Fechamos
+    // como `failed` (não é o agente reportando via run_result; é o PRÓPRIO app
+    // declarando inconclusivo) e seguimos com o pedido novo.
+    // `.eq("status","dispatched")` faz a escrita só valer se ainda estiver
+    // "dispatched" nesse instante — se o agente reportar o desfecho real bem
+    // nesse meio-tempo, esta escrita não pega nada e o run real prevalece.
     const { error: staleError } = await db
       .from("system_update_runs")
       .update({
