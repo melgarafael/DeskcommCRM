@@ -30,6 +30,10 @@ const estado = vi.hoisted(() => ({
   portaoOcioso: true,
   /** A chave `catalogo_por_feed` da instalação. */
   moduloLigado: true,
+  /** As empresas com linha `desligado` em `organization_modules` (#4871). */
+  empresasDesligadas: [] as string[],
+  /** A leitura da camada por empresa falhou: falha fechada, ninguém processado. */
+  leituraDaEmpresaFalhou: false,
 }));
 
 function cadeia(tabela: string) {
@@ -65,7 +69,15 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/catalogo/moeda-da-org", () => ({ moedaDaOrganizacao: vi.fn(async () => "BRL") }));
 vi.mock("@/lib/catalogo/feed-remoto", () => ({ buscarFeedDaUrl: vi.fn() }));
 vi.mock("@/lib/instalacao/modulos", () => ({
-  moduloLigado: vi.fn(async (_db: unknown, modulo: string) => modulo === "catalogo_por_feed" && estado.moduloLigado),
+  // O TERCEIRO argumento é o que este arquivo passou a cobrar (#4871): sem ele,
+  // a decisão é da instalação e a empresa que desligou continua sendo atendida.
+  moduloLigado: vi.fn(
+    async (_db: unknown, modulo: string, organizacaoId?: string | null) =>
+      modulo === "catalogo_por_feed" &&
+      estado.moduloLigado &&
+      !(organizacaoId && estado.leituraDaEmpresaFalhou) &&
+      !(organizacaoId && estado.empresasDesligadas.includes(organizacaoId)),
+  ),
 }));
 
 /**
@@ -97,6 +109,8 @@ beforeEach(() => {
   estado.produtos = [];
   estado.portaoOcioso = true;
   estado.moduloLigado = true;
+  estado.empresasDesligadas = [];
+  estado.leituraDaEmpresaFalhou = false;
   PisoOcioso.esquecerRetrato();
 });
 
@@ -356,3 +370,93 @@ describe("catalog-feed-sync — o teto proporcional é FALHA da rodada", () => {
     expect(estado.escritas.some((e) => e.tabela === "agent_inbox_items" && e.tipo === "insert")).toBe(true);
   });
 });
+
+/**
+ * A EMPRESA na ponta (#4871) — a rodada INTEIRA, com as duas empresas juntas.
+ *
+ * O defeito medido na main: `sincronizarFontes` perguntava a chave UMA vez, sem
+ * `organizationId`, então a linha `desligado` de `organization_modules` era
+ * ignorada — o feed da empresa que desligou continuava sendo buscado e o preço
+ * dela reescrito, a cada 2 h. Aqui as duas empresas estão na MESMA batida de
+ * propósito: pular a desligada não pode custar a rodada da ligada.
+ */
+describe("catalog-feed-sync — a empresa que desligou o módulo (#4871)", () => {
+  const LIGADA = "44444444-4444-4444-8444-444444444444";
+  const DESLIGADA = "55555555-5555-4555-8555-555555555555";
+  const fonteDe = (id: string, organization_id: string, url: string) => ({
+    id,
+    organization_id,
+    url,
+    formato: "json" as const,
+    mapeamento: {},
+    falhas_seguidas: 0,
+  });
+
+  beforeEach(() => {
+    estado.portaoOcioso = false;
+    vi.mocked(buscarFeedDaUrl).mockResolvedValue({
+      ok: true,
+      texto: JSON.stringify([{ id: "SKU-1", nome: "Fone", preco: 10 }]),
+    });
+  });
+
+  it("instalação ligada + empresa desligada: a desligada NÃO tem o feed buscado, e a ligada roda na MESMA execução", async () => {
+    estado.fontes = [
+      fonteDe("f-desligada", DESLIGADA, "https://desligada.example/feed.json"),
+      fonteDe("f-ligada", LIGADA, "https://ligada.example/feed.json"),
+    ];
+    estado.empresasDesligadas = [DESLIGADA];
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = (await sincronizarFontes(clienteFalso as never))!;
+
+    // A desligada: nada sai para a internet, nada é escrito, e o motivo é a chave.
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalledWith("https://desligada.example/feed.json");
+    expect(vi.mocked(buscarFeedDaUrl)).toHaveBeenCalledWith("https://ligada.example/feed.json");
+    expect(resultado[0]).toMatchObject({ organization_id: DESLIGADA, falhou: "modulo_desligado_na_empresa" });
+    expect(estado.escritas.some((e) => (e.valor as { organization_id?: string }).organization_id === DESLIGADA)).toBe(false);
+    // A ligada, na MESMA rodada: o produto nasce com o tenant explícito.
+    expect(resultado[1]).toMatchObject({ organization_id: LIGADA, criados: 1 });
+    const criado = estado.escritas.find((e) => e.tabela === "catalog_products" && e.tipo === "insert");
+    expect(criado?.valor).toMatchObject({ organization_id: LIGADA, id_externo: "SKU-1" });
+  });
+
+  it("sem linha da empresa: herda a instalação e o feed dela é buscado", async () => {
+    estado.fontes = [fonteDe("f-herda", LIGADA, "https://herda.example/feed.json")];
+    estado.empresasDesligadas = [];
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = (await sincronizarFontes(clienteFalso as never))!;
+
+    expect(resultado[0]).toMatchObject({ organization_id: LIGADA, criados: 1 });
+    expect(vi.mocked(buscarFeedDaUrl)).toHaveBeenCalledWith("https://herda.example/feed.json");
+  });
+
+  it("leitura da camada por empresa falhou: NINGUÉM é processado (não assume ligado)", async () => {
+    estado.fontes = [
+      fonteDe("f-herda", LIGADA, "https://herda.example/feed.json"),
+      fonteDe("f-outra", DESLIGADA, "https://outra.example/feed.json"),
+    ];
+    estado.leituraDaEmpresaFalhou = true;
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = (await sincronizarFontes(clienteFalso as never))!;
+
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalled();
+    expect(estado.escritas).toEqual([]);
+    expect(resultado.map((f) => f.falhou)).toEqual(["modulo_desligado_na_empresa", "modulo_desligado_na_empresa"]);
+  });
+
+  it("instalação desligada: nem a empresa ligada roda — a instalação é teto", async () => {
+    estado.moduloLigado = false;
+    estado.fontes = [fonteDe("f-ligada", LIGADA, "https://ligada.example/feed.json")];
+    const { sincronizarFontes } = await import("@/app/api/v1/cron/catalog-feed-sync/route");
+
+    const resultado = await sincronizarFontes(clienteFalso as never);
+
+    expect(resultado).toBeNull();
+    expect(vi.mocked(buscarFeedDaUrl)).not.toHaveBeenCalled();
+    expect(estado.escritas).toEqual([]);
+  });
+});
+

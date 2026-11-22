@@ -200,19 +200,21 @@ describe("definirMetaMensal", () => {
     expect(inseridas).toEqual([expect.objectContaining({ vendedor_id: USER, indicador: "valor_vendido" })]);
   });
 
-  it("vendedor que NÃO é membro da organização → validation_failed, e nada é gravado nem auditado", async () => {
+  // #4986: a recusa tem código próprio — com `validation_failed` a tela dizia
+  // "o mês e o alvo precisam estar preenchidos", com os dois preenchidos.
+  it("vendedor que NÃO é membro da organização → vendedor_fora_da_equipe, e nada é gravado nem auditado", async () => {
     const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
-    expect(r).toEqual(expect.objectContaining({ ok: false, error: "validation_failed" }));
+    expect(r).toEqual(expect.objectContaining({ ok: false, error: "vendedor_fora_da_equipe" }));
     expect(inseridas).toEqual([]);
     expect(atualizadas).toEqual([]);
     expect(auditadas).toEqual([]);
   });
 
-  it("vendedor com vínculo REVOGADO na organização → validation_failed, e nada é gravado nem auditado", async () => {
+  it("vendedor com vínculo REVOGADO na organização → vendedor_fora_da_equipe, e nada é gravado nem auditado", async () => {
     membros.add(OUTRO);
     revogados.add(OUTRO);
     const r = await definirMetaMensal({ periodo: "2026-10", indicador: "valor_vendido", vendedor_id: OUTRO, alvo: 15_000_000 });
-    expect(r).toEqual(expect.objectContaining({ ok: false, error: "validation_failed" }));
+    expect(r).toEqual(expect.objectContaining({ ok: false, error: "vendedor_fora_da_equipe" }));
     expect(inseridas).toEqual([]);
     expect(atualizadas).toEqual([]);
     expect(auditadas).toEqual([]);

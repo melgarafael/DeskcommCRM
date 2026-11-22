@@ -25,10 +25,13 @@ const AI_PRICING = [
     completion_cents_per_million_tokens: 750,
     embedding_cents_per_million_tokens: null,
   })),
+  // Tarifa fixa, sem virada: é o controle de que quem não está em PROMOCOES
+  // continua lendo a linha do banco. (O 3.5 Flash fazia esse papel até 18/11/2026;
+  // ele roteia ao 3.6 Flash e entrou na mesma virada de 2027.)
   {
-    model: "gemini-3.5-flash",
-    prompt_cents_per_million_tokens: 150,
-    completion_cents_per_million_tokens: 111,
+    model: "gemini-3.5-flash-lite",
+    prompt_cents_per_million_tokens: 30,
+    completion_cents_per_million_tokens: 250,
     embedding_cents_per_million_tokens: null,
   },
   // 0703: a linha do Argon já é a tarifa de 01/12/2026.
@@ -142,7 +145,7 @@ describe("computeCost — Gemini 3.6/3.7/3.8 Flash respeita a virada do costCent
   });
 
   it("um modelo sem essa virada continua na linha de ai_pricing", async () => {
-    expect(await centavos("gemini-3.5-flash", { promptTokens: 1_000_000 }, ANTES_DA_VIRADA)).toBeCloseTo(150, 6);
-    expect(await centavos("gemini-3.5-flash", { completionTokens: 1_000_000 }, VIRADA_2027)).toBeCloseTo(111, 6);
+    expect(await centavos("gemini-3.5-flash-lite", { promptTokens: 1_000_000 }, ANTES_DA_VIRADA)).toBeCloseTo(30, 6);
+    expect(await centavos("gemini-3.5-flash-lite", { completionTokens: 1_000_000 }, VIRADA_2027)).toBeCloseTo(250, 6);
   });
 });

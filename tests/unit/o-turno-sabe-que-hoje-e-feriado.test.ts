@@ -215,3 +215,80 @@ describe("blocoDoFeriado — o texto que entra no prompt", () => {
     }
   });
 });
+
+/**
+ * A OPÇÃO "NÃO ATENDER EM FERIADO NACIONAL" DESLIGADA NÃO PODE VIRAR TRAVA (#5039).
+ *
+ * Na véspera de 20/11/2026 uma organização que atende em feriado tinha horários
+ * livres na Agenda para a sexta, a ferramenta de horários livres os devolvia, e
+ * o agente nunca oferecia a sexta: o bloco dizia "nem marque compromisso lá".
+ * Com a opção desligada (o padrão), o feriado é dia comum para o turno — o bloco
+ * informa o fato, mas quem decide se há horário é a Agenda. Ligada, o texto de
+ * antes fica valendo palavra por palavra.
+ */
+describe("blocoDoFeriado — a opção de feriado desligada não proíbe marcar (#5039)", () => {
+  const AGENDA = "siga os horários livres da Agenda";
+  const VESPERA = feriadoNacionalNoTurno(NA_VESPERA, "America/Sao_Paulo", null);
+  const NO_DIA = feriadoNacionalNoTurno(NO_FERIADO, "America/Sao_Paulo", null);
+  const DOIS_DIAS = { hojeEm: FINADOS, amanhaEm: "2026-11-03", hoje: true, amanha: true };
+
+  it("véspera, opção desligada: não proíbe compromisso amanhã e manda seguir a Agenda", () => {
+    const bloco = blocoDoFeriado(VESPERA, { fechadoEmFeriado: false });
+
+    expect(bloco).toContain("Amanhã (02/11/2026) é feriado nacional no Brasil");
+    expect(bloco).not.toMatch(/nem marque compromisso/i);
+    expect(bloco).toContain(AGENDA);
+  });
+
+  it("no feriado, opção desligada: o horário livre da Agenda de hoje pode ser oferecido", () => {
+    const bloco = blocoDoFeriado(NO_DIA, { fechadoEmFeriado: false });
+
+    expect(bloco).toContain("Hoje (02/11/2026) é feriado nacional no Brasil");
+    expect(bloco).toContain(AGENDA);
+  });
+
+  it("dois dias de feriado, opção desligada: um bloco só, seguindo a Agenda", () => {
+    const bloco = blocoDoFeriado(DOIS_DIAS, { fechadoEmFeriado: false });
+
+    expect(bloco).toContain("Hoje (02/11/2026) e amanhã (03/11/2026) são feriados nacionais");
+    expect(bloco).toContain(AGENDA);
+    // A proibição em bloco some; o cuidado fica só para o que a Agenda não mostra.
+    expect(bloco).not.toContain("Não prometa atendimento nesses dias e não convide");
+  });
+
+  it("sem opção informada vale o padrão de fábrica: desligada", () => {
+    expect(blocoDoFeriado(VESPERA)).toBe(blocoDoFeriado(VESPERA, { fechadoEmFeriado: false }));
+  });
+
+  it("opção LIGADA: o texto de antes, palavra por palavra", () => {
+    expect(blocoDoFeriado(VESPERA, { fechadoEmFeriado: true })).toBe(
+      [
+        "## Feriado nacional",
+        "Amanhã (02/11/2026) é feriado nacional no Brasil. " +
+          "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para amanhã. " +
+          "Não prometa atendimento para amanhã assumindo dia útil nem marque compromisso lá; se a pessoa pedir, confirme com a equipe.",
+      ].join("\n"),
+    );
+    expect(blocoDoFeriado(NO_DIA, { fechadoEmFeriado: true })).toBe(
+      [
+        "## Feriado nacional",
+        "Hoje (02/11/2026) é feriado nacional no Brasil. " +
+          "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para hoje. " +
+          "Não diga que a empresa atende hoje nem convide a pessoa a ir até a loja sem antes confirmar com a equipe.",
+      ].join("\n"),
+    );
+    expect(blocoDoFeriado(DOIS_DIAS, { fechadoEmFeriado: true })).toBe(
+      [
+        "## Feriado nacional",
+        "Hoje (02/11/2026) e amanhã (03/11/2026) são feriados nacionais no Brasil. " +
+          "Feriado nacional não é dia útil: o expediente normal do horário de funcionamento NÃO vale para nenhum dos dois dias. " +
+          "Não prometa atendimento nesses dias e não convide a pessoa a ir até a loja sem antes confirmar com a equipe.",
+      ].join("\n"),
+    );
+  });
+
+  it("dia comum não muda com a opção", () => {
+    const comum = feriadoNacionalNoTurno(DIA_COMUM, "America/Sao_Paulo", null);
+    expect(blocoDoFeriado(comum, { fechadoEmFeriado: false })).toBe(blocoDoFeriado(comum, { fechadoEmFeriado: true }));
+  });
+});

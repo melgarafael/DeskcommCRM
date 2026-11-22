@@ -32,6 +32,7 @@ import {
   CHANNEL_PROVIDER_WAHA,
   PROVIDERS_DE_MENSAGEM,
   recusaNotaDeVoz,
+  recusaOGravadorDoInbox,
 } from "@/lib/channels/capabilities";
 
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
@@ -62,8 +63,16 @@ function renderComposer(props: { recusaNotaDeVoz?: boolean } = {}) {
 }
 
 describe("recusaNotaDeVoz — a matriz decide, canal a canal", () => {
-  it.each([...PROVIDERS_DE_MENSAGEM])("%s: recusa só quando declara voiceNote none", (provider) => {
-    expect(recusaNotaDeVoz(provider)).toBe(CHANNEL_CAPABILITIES[provider].voiceNote === "none");
+  it.each([...PROVIDERS_DE_MENSAGEM])("%s: recusa quando a nota de voz não aceita o ogg/opus do gravador", (provider) => {
+    expect(recusaNotaDeVoz(provider)).toBe(recusaOGravadorDoInbox(CHANNEL_CAPABILITIES[provider].voiceNote));
+  });
+
+  it("o gravador sobe ogg/opus: `none` e `wav-only` recusam, os outros aceitam", () => {
+    // `wav-only` é o Instagram: o AGENTE fala lá (sintetiza WAV), o gravador não.
+    expect(recusaOGravadorDoInbox("none")).toBe(true);
+    expect(recusaOGravadorDoInbox("wav-only")).toBe(true);
+    expect(recusaOGravadorDoInbox("opus-only")).toBe(false);
+    expect(recusaOGravadorDoInbox("server-convert")).toBe(false);
   });
 
   it("a rede social recusa; o WhatsApp por QR não", () => {

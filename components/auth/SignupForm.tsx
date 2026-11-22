@@ -12,6 +12,7 @@ import { fusoDoNavegador } from "@/lib/tempo/fuso-do-navegador";
 import {
   signupSchema,
   signupComConviteSchema,
+  SENHA_LONGA_DEMAIS,
   type SignupInput,
   type SignupComConviteInput,
 } from "@/lib/auth/schemas";
@@ -147,6 +148,11 @@ export function SignupForm({
         // não na tela inicial (que, para quem foi revogado, é a tela de acesso
         // revogado, com um botão Sair e mais nada).
         setContaExistente(true);
+      } else if (res.error === "password_too_long") {
+        // O GoTrue recusou por tamanho depois do schema (defesa em
+        // profundidade): a frase é a mesma do erro de campo, em vez do
+        // "Tente novamente" que nunca ia funcionar.
+        setServerError(t(SENHA_LONGA_DEMAIS));
       } else if (res.error === "somente_convite") {
         // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
         // de novo nunca vai funcionar — é política, não falha transitória.

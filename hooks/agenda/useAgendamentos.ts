@@ -28,6 +28,8 @@ interface AgendamentoListado {
   contatoNome: string | null;
   convidadosDaEquipe?: string[];
   tipo?: { id: string } | null;
+  /** Presente quando o compromisso é a vaga de uma ocorrência de serviço. */
+  servico?: { occurrence_id: string } | null;
 }
 
 export interface RecorteDaGrade {
@@ -85,6 +87,8 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
           responsavelId: a.donoId ?? "",
           convidadosDaEquipe: a.convidadosDaEquipe,
           tipoId: a.tipo?.id ?? null,
+          // Vaga de serviço: a duração é a da agenda do serviço (#4450).
+          ...(a.servico ? { duracaoFixa: true } : {}),
           comeca: a.iniciaEm,
           termina: a.terminaEm,
           // A origem vem da ROTA, e não é mais carimbada aqui.

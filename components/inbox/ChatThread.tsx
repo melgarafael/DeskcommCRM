@@ -117,12 +117,17 @@ export function ChatThread({
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
-  const q = useMessagesRealtime(conversationId);
+  const currentUser = useUser();
+  // O fio nomeia o autor e reconhece o próprio balão otimista (#4325 item 5).
+  const autorDoFio = useMemo(
+    () => (currentUser ? { id: currentUser.id, nome: currentUser.full_name } : null),
+    [currentUser],
+  );
+  const q = useMessagesRealtime(conversationId, autorDoFio);
   const notes = useConversationNotes(conversationId);
   const passagens = usePassagensDaConversa(conversationId);
   const claim = useClaimConversation();
   const activeOrg = useActiveOrg();
-  const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
   const { editar, apagar, ocultar, restaurar, reenviar, reagir } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;

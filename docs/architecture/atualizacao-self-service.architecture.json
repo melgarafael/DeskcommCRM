@@ -49,7 +49,7 @@
       "col": 0,
       "type": "api",
       "label": "POST /api/v1/system/agent",
-      "sublabel": "bearer INTERNAL_CRON_SECRET · heartbeat/run_progress/run_result"
+      "sublabel": "bearer INTERNAL_CRON_SECRET · heartbeat/run_progress/run_scheduled/run_result"
     },
     {
       "id": "versionroute",

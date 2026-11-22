@@ -24,7 +24,7 @@ import { z } from "zod";
 
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
-import { agenteAtende, precisaRecuperarLegado } from "@/lib/ai/agents/no-ar";
+import { agenteElegivelParaConversa } from "@/lib/ai/agents/no-ar";
 import { podeGastarComIa } from "@/lib/ai/budget/pode-gastar";
 import { computeCost } from "@/lib/ai/cost";
 import { avisarNaCentral, fecharAvisoDoJev } from "@/lib/ai/decisao/aviso";
@@ -222,7 +222,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     const { data: candidatos } = await admin
       .from("ai_agents")
       .select(
-        "id, config, kind, is_active, paused_at, published_version_id, archived_at, priority, created_at",
+        "id, config, kind, channel, is_active, paused_at, published_version_id, archived_at, priority, created_at",
       )
       .eq("organization_id", event.organization_id)
       .is("archived_at", null);
@@ -234,7 +234,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // equipe já respondia pelo celular. Medido numa VPS em set/2026: 3 avisos
     // assim com os três agentes pausados, e o classificador seguia cobrando
     // cada mensagem recebida. Mesma régua de `resolverAgenteDaConversa`.
-    if (!(candidatos ?? []).some((c) => agenteAtende(c) || precisaRecuperarLegado(c))) {
+    if (!(candidatos ?? []).some(agenteElegivelParaConversa)) {
       return { skipped: true, reason: "nenhum_agente_no_ar" };
     }
 

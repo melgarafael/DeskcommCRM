@@ -73,6 +73,8 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
 import { moduloQueAssumeAEntrada } from "@/lib/modulos/desvios-da-entrada";
+import { atenderMenuSemIa } from "@/lib/atendimento/menu/atender";
+import { portasDoMenu } from "@/lib/atendimento/menu/portas";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
@@ -1231,6 +1233,25 @@ async function abrirDemanda(
  * O payload é o MESMO dos dois canais, campo a campo. Um payload por canal
  * faria o consumidor adivinhar de quem veio — e o consumidor é um só
  * (`lib/agent-engine/edge/crm/drain.ts`).
+ *
+ * ─── O MENU DE ATENDIMENTO SEM IA TEM A PALAVRA ANTES (#4594) ───────────────
+ *
+ * Com `settings.menu_de_atendimento.ativa === true`, o menu determinístico
+ * responde a mensagem e o evento abaixo NÃO é emitido — é esta linha que faz o
+ * "sem gastar token" da issue ser verdade, não uma promessa na descrição da
+ * feature. O lugar é aqui, e não antes de `abrirDemanda`, porque um menu de
+ * entrada é ATENDIMENTO: a conversa continua virando card no funil, do mesmo
+ * jeito que quando quem responde é a IA ou uma pessoa.
+ *
+ * Desligado (o padrão de fábrica), `atenderMenuSemIa` lê a configuração, não
+ * acha a chave e devolve `tratado: false` — uma leitura a mais por mensagem, e o
+ * caminho de hoje intacto.
+ *
+ * Por que NÃO em `DESVIOS_DA_ENTRADA` (`lib/modulos/desvios-da-entrada.ts`): o
+ * registro é para o módulo que TIRA a mensagem do caminho comercial. O menu não
+ * tira — ele atende e o card do funil continua nascendo, como quando quem
+ * responde é uma pessoa. Entrar no registro faria a conversa deixar de virar
+ * demanda, que é justamente o que o menu não quer.
  */
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
@@ -1256,6 +1277,34 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
       organization_id: entrada.organizationId,
       detail: err instanceof Error ? err.message.slice(0, 120) : "unknown",
     });
+  }
+
+  // O menu não lança: qualquer desfecho dele é um `tratado` booleano, e
+  // `false` significa "não é comigo, siga o caminho de sempre".
+  const menu = await atenderMenuSemIa(
+    admin,
+    {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    },
+    portasDoMenu(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    }),
+  );
+  if (menu.tratado) {
+    logger.info("pos-entrada: menu de atendimento assumiu — IA não despachada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      motivo: menu.motivo,
+    });
+    return;
   }
 
   const { error } = await admin.rpc("emit_event" as never, {

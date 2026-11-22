@@ -38,7 +38,17 @@ Exemplo:
 }
 ```
 
-**Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+**Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda), mais `nav-grupo-modulos` no grupo Módulos, que só aparece quando a organização tem um módulo conectado ativo. Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, `nav-item-crm` (o link "Ver tudo em CRM") e assim por diante. O item da tela aberta — e só ele — leva também `nav-item-ativo`. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+
+`nav-item-ativo` é o que resolve o contraste do item aberto: ele é o único que já tem fundo na cor de destaque, e uma regra que pinta o menu inteiro (`.nav-grupo-crm .rounded-md:hover`) acerta nele também. Como o validador não aceita seletor por atributo nem `:not()`, use a classe: dê ao item aberto uma cor própria, ou repita nele o fundo neutro do menu.
+
+```css
+.nav-grupo .rounded-md { background-color: #f4f1ea; }
+.nav-grupo .rounded-md:hover { background-color: #e9e4d8; }
+.nav-grupo .nav-item-ativo, .nav-grupo .nav-item-ativo:hover { background-color: #2f6f8f; color: #ffffff; }
+```
+
+Comece o seletor do item aberto por `.nav-grupo`, como na regra do grupo: com o mesmo peso, a regra que vem depois vence; só `.nav-item-ativo` perde para `.nav-grupo .rounded-md`, e o item aberto fica com texto branco sobre o fundo neutro.
 
 **Cor por seção do conteúdo.** O contêiner do conteúdo de toda tela leva `tela-secao` e, quando a rota está no registro de navegação, também a da seção: `tela-secao-atendimento`, `tela-secao-crm`, `tela-secao-ia`, `tela-secao-canais`, `tela-secao-analise` e `tela-secao-organizacao` — com ela, `.tela-secao-crm .rounded-lg { border-top-color: #1d4ed8; }` vale só nas telas de CRM. Rota fora do registro fica só com `tela-secao`.
 

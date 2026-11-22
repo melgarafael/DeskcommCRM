@@ -14,10 +14,15 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { env } from "@/lib/env";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import {
   RETENCAO_TELEMETRIA_DE_IA_DIAS_PADRAO,
   RETENCAO_TELEMETRIA_DE_IA_DIAS_PISO,
@@ -54,9 +59,40 @@ type MotivoDoVazio = "nenhum_turno_na_janela" | "fora_da_retencao";
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
+  // Token de integração (Bearer): o cliente é o admin da API, filtrado pela
+  // organização do token. Sem Bearer, o fluxo de sessão segue exatamente como era.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_turn_traces",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_turn_traces", requestId);
+    if (teto) return teto;
+    return responder(req, requestId, authz.idioma ?? IDIOMA_PADRAO, authz.organizationId, async () => authz.supabase);
+  }
+
   const authz = await requireRole("manager", { requestId, resource: "ai_turn_traces" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  return responder(req, requestId, authz.user.idioma, authz.org.orgId, () => createClient());
+}
+
+/**
+ * O corpo da leitura, igual para os dois portões. O cliente vem por `obterDb`
+ * e não pronto: na sessão ele só é criado DEPOIS da validação e dentro do `try`,
+ * como era antes da conversão.
+ */
+async function responder(
+  req: NextRequest,
+  requestId: string,
+  idioma: Idioma,
+  organizationId: string,
+  obterDb: () => Promise<SupabaseClient>,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
 
   const filtros = filtrosDaQuery.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!filtros.success) {
@@ -100,13 +136,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   const falhaNaConsulta = () =>
     fail("query_failed", t("Erro interno. Tente de novo em instantes."), 500, { requestId });
   try {
-    const db = await createClient();
+    const db = await obterDb();
     let consulta = db
       .from("agent_turn_traces")
       .select(COLUNAS_DO_TRACO)
       // A organização vem da SESSÃO (o portão já a resolveu contra as memberships),
       // nunca de um filtro do pedido. A RLS da 0721 isola igual; isto é a segunda.
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", organizationId)
       .gte("created_at", janela.de.toISOString())
       .lt("created_at", janela.fimExclusivo.toISOString())
       .order("created_at", { ascending: false })

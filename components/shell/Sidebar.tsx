@@ -16,7 +16,11 @@ import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/Marca
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
-import { classeDoGrupo, classeDoItem } from "@/lib/navigation/classes-estaveis";
+import {
+  CLASSE_DO_ITEM_ATIVO,
+  classeDoGrupo,
+  classeDoItem,
+} from "@/lib/navigation/classes-estaveis";
 import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
@@ -59,6 +63,7 @@ export function SidebarContent({
     activeOrg?.interface_settings,
     activeOrg?.modulos_ligados ?? [],
     activeOrg?.capacidades_ligadas ?? [],
+    activeOrg?.modulos_conectados ?? [],
   );
   // Configurações sai da área que rola e vai para o rodapé fixo: medido em
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
@@ -387,6 +392,11 @@ export function SidebarContent({
                             // A classe do DESTINO é contrato estável para o CSS da
                             // tela Marca (#4463): `nav-item-inbox`, `nav-item-kanban`…
                             classeDoItem(item.href),
+                            // O item da tela aberta é o único com fundo na cor de
+                            // destaque; a classe estável é o que deixa o dono
+                            // pintá-lo — ou tirá-lo da regra do grupo — sem
+                            // atributo e sem `:not()` (#4463).
+                            isActive && CLASSE_DO_ITEM_ATIVO,
                             "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                             isActive
                               ? "bg-accent text-accent-foreground"
@@ -419,6 +429,12 @@ export function SidebarContent({
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
+                          // O hub é destino como qualquer outro: leva a classe do
+                          // próprio href (`nav-item-crm`, `nav-item-ai`…). Sem ela,
+                          // "Ver tudo em …" — a única porta de três grupos — ficava
+                          // fora do contrato que a doc promete (#4463).
+                          classeDoItem(group.hub.href),
+                          pathname === group.hub.href && CLASSE_DO_ITEM_ATIVO,
                           "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                           pathname === group.hub.href
                             ? "bg-accent text-accent-foreground"
@@ -448,6 +464,7 @@ export function SidebarContent({
             className={cn(
               "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
               classeDoItem(rodape.href),
+              pathname.startsWith(rodape.href) && CLASSE_DO_ITEM_ATIVO,
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -472,6 +489,7 @@ export function SidebarContent({
             className={cn(
               "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
               classeDoItem(ajuda.href),
+              pathname.startsWith(ajuda.href) && CLASSE_DO_ITEM_ATIVO,
               pathname.startsWith(ajuda.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

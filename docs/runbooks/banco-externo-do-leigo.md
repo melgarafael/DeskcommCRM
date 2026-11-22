@@ -167,6 +167,8 @@ Crie o funil antes, no menu **"Funis"**, com o botão "Novo funil" (ou "Criar me
 
 **Com escolha:** o agente cria o negócio no funil e na etapa escolhidos, com a referência do item (por exemplo, `wordpress-conteudo:4821`). Essa referência fica na descrição do negócio e em um campo próprio.
 
+**Funil escolhido à mão:** se o agente informar um funil e uma etapa que são o destino do interesse de uma receita ativa e não trouxer a referência de um item, a criação é recusada com a explicação de buscar a referência primeiro; sem um item que o cliente viu, o caminho é passar a conversa para a equipe. Criação manual pela tela e integrações fora do atendimento não passam por essa regra.
+
 - **Mesmo cliente, mesmo item:** se o cliente repetir o interesse no mesmo item e o negócio ainda estiver aberto, **não** nasce outro negócio. O sistema devolve o que já existe e deixa uma nota na linha do tempo: "O cliente voltou a demonstrar interesse em" seguido da referência. Isso vale desde que o funil do interesse seja o mesmo e o agente passe o contato da própria conversa: se você mudar o funil na receita entre um interesse e outro, nasce um negócio novo.
 - **Negócio já ganho ou perdido:** não impede um novo interesse.
 - **Item que não existe:** antes de abrir o negócio, o sistema confere no banco do site se o código existe. Se não existir, o negócio **não** nasce, e o agente é instruído a consultar de novo e a não dizer ao cliente que registrou. Se o banco do site estiver fora do ar nessa hora, o negócio também não nasce: o agente passa a conversa para a equipe.
@@ -183,7 +185,7 @@ Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o clie
 
 | Capacidade (nome na tela) | Para que serve | Pacote onde ela mora |
 |---|---|---|
-| "Ver as tabelas do banco conectado" | Descobre o código da conexão, que o agente precisa para listar as receitas. | "Organizar a operação" |
+| "Ver as tabelas do banco conectado" | Mostra as tabelas liberadas e o código da conexão. | "Organizar a operação" |
 | "Consultar receitas prontas do banco conectado" | Lista as receitas da conexão e executa a busca. | "Organizar a operação" |
 | "Criar oportunidade no funil" | Abre o negócio quando o cliente se interessa. | "Vender e mover o funil" |
 | "Chamar um atendente humano" | Passa a conversa para a equipe (quando não há funil de destino). | "Passar para um humano" |
@@ -192,7 +194,7 @@ Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o clie
 Pontos de atenção:
 
 - **O funil de destino precisa estar liberado para o agente.** Na aba **"Configuração"**, no papel **"Organiza o sistema"**, o campo **"Em que negócios ele pode mexer"** lista os funis. Marque o funil que você escolheu na receita. Se não marcar, o agente não consegue criar o negócio. A tela não avisa isso hoje.
-- **O código da conexão vem da ferramenta de descoberta.** Por isso a capacidade "Ver as tabelas do banco conectado" é necessária mesmo para a receita.
+- **Com uma única conexão ativa, a receita acha a conexão sozinha.** A ferramenta de receitas escolhe a única conexão ativa da empresa, e a capacidade "Ver as tabelas do banco conectado" deixa de ser obrigatória para listar receitas. Com **duas ou mais** conexões ativas, a resposta lista as conexões com nome e código, e o agente escolhe uma pelo código — a ferramenta de descoberta também não é necessária nesse caso.
 - Os nomes acima vêm do próprio sistema. Se a sua tela mostrar outro texto, siga o nome que aparecer.
 
 ---
@@ -273,8 +275,7 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 - **O link do conteúdo pode estar antigo.** O link vem de um campo que o WordPress não atualiza quando o site muda de domínio. Se o site mudou de endereço, o link aponta para o antigo.
 - **Base migrada com campo repetido.** Se o mesmo campo do site estiver gravado duas vezes no mesmo item, o item repete na lista. A receita não remove a repetição.
 - **Sistemas próprios com relacionamento próprio não entram.** Se o seu sistema guarda os dados de um jeito artesanal, sem receita pronta, ele fica fora do que esta versão faz.
-- **A conferência do item só vale quando o agente passa a referência.** Se o agente abrir o negócio escolhendo o funil por conta própria, sem a referência do item, nada confere se o item existe. Isso já aconteceu numa medição, com o banco do site inacessível (issue #4763).
-- **Duas consultas a mais por resposta.** Hoje o agente costuma errar a primeira consulta ("conexão ambígua") mesmo com uma conexão só, e acerta na seguinte. A resposta demora um pouco mais (issue #4763).
+- **Funil que não é destino de receita não confere item.** Numa conversa, se o agente abrir o negócio num funil e numa etapa que não são o destino de nenhuma receita ativa, sem referência, o negócio nasce sem conferência e fica registrado na auditoria como criado à mão (issue #4763).
 
 ---
 
