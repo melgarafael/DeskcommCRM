@@ -88,21 +88,18 @@ export async function loadDisclosureTemplate(db: Queryable, tenantId: string): P
  * contam: um 'queued'/'failed' não alcançou o lead, então a próxima tentativa ainda é a
  * primeira e leva o disclosure. organization_id/contact_id de fonte confiável (row do job — regra dura nº 1).
  *
- * ─── #4063: "1º outbound" é do NÚMERO, não da empresa ────────────────────────
+ * ─── #4063: o teto por abordagem pergunta pelo NÚMERO ───────────────────────
  *
- * A pergunta que os três chamadores fazem (disclosure F4-05, LGPD F4-09 e o
- * `abordagem` do teto #3851) é "esta PESSOA já recebeu uma mensagem NOSSA?" — e
- * "nossa" era a organização inteira. Com dois números na mesma empresa, quem
- * recebeu pelo número A contava como já abordado para o B: o B não se apresentava
- * (o disclosure é por número, é o número que o cliente vê) e a abordagem do B
- * deixava de contar no teto, porque o gate a lia como follow-up. Medido: com um
- * envio `accepted` no A e um `queued` no B, a função devolvia 1 para o B.
+ * Com `channelSessionId`, a conta fecha no canal do job — `CANAL_DO_JOB_SQL`, a
+ * MESMA régua que o claim e o watchdog usam para dizer de qual número é um job
+ * (payload direto ou a conversa do atendimento). Só o `abordagem` do teto (#3851,
+ * canal com `tetoSoAbordagem` ligado) passa o número: ali, quem o número A já
+ * abordou continua sendo pessoa nova para o B.
  *
- * `channelSessionId` presente fecha a conta no canal do job — `CANAL_DO_JOB_SQL`,
- * a MESMA régua que o claim e o watchdog usam para dizer de qual número é um job
- * (payload direto ou a conversa do atendimento). Sem o parâmetro o comportamento
- * é o de antes, de propósito: a prévia do agente (`agent/preview.ts`) monta o
- * contexto sem número e continua perguntando pela organização.
+ * Sem o parâmetro, a conta é da organização, como sempre foi: o disclosure (F4-05)
+ * e o gate LGPD (F4-09) perguntam assim, porque a base legal é da empresa
+ * (controladora), e a prévia do agente (`agent/preview.ts`) monta o contexto sem
+ * número.
  *
  * Devolve 0 ou 1, nunca o total: os chamadores só comparam com 0, e um `count(*)` por
  * envio contava todas as linhas casadas para responder "existe?"; o `exists` para na

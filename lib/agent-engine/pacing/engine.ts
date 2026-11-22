@@ -108,6 +108,24 @@ export interface PacingInput {
  */
 export type PacingVetoCode = 'outside_window' | 'warmup_cap' | 'daily_cap' | 'followup_cap';
 
+/**
+ * Os vetos de TETO DO DIA — o turno vetado por um deles é ADIADO até
+ * `nextAllowedAt`, nunca encerrado sem mensagem (inbound-turn, bloco
+ * `pacingCapVeto`). `Record` exaustivo de propósito: código novo em
+ * `PacingVetoCode` não compila sem alguém decidir se ele adia o turno.
+ * `outside_window` fica `false` porque a janela tem caminho próprio de adiamento.
+ */
+const ADIA_O_TURNO: Record<PacingVetoCode, boolean> = {
+  outside_window: false,
+  warmup_cap: true,
+  daily_cap: true,
+  followup_cap: true,
+};
+
+export function eTetoDoDia(code: string): boolean {
+  return Object.hasOwn(ADIA_O_TURNO, code) && ADIA_O_TURNO[code as PacingVetoCode];
+}
+
 export type PacingDecision =
   | { allow: true; waitMs: number }
   | { allow: false; code: PacingVetoCode; nextAllowedAt: Date; reason: string };

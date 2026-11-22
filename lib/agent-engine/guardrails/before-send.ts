@@ -179,9 +179,9 @@ export interface GateContext {
      * `tetoSoAbordagem` ligado lê o campo (#3851): ligado, o teto conta e barra
      * a abordagem e deixa passar o follow-up de quem já foi abordado.
      *
-     * Omitido = `true` (conservador) no motor. O runner SEMPRE declara quando
-     * consultou o `send_ledger`; quando não consultou, omitir é o certo — a
-     * ausência do dado não pode virar "pessoa já abordada" e abrir o teto.
+     * Omitido = `true` (conservador) no motor. O runner declara só com a opção
+     * ligada (consulta o `send_ledger` DESTE número) ou na resposta (`false`);
+     * a ausência do dado nunca vira "pessoa já abordada" e abre o teto.
      */
     abordagem?: boolean;
   };
@@ -1895,29 +1895,26 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
     // send_ledger (só conta se há template — sem template o gate é no-op de qualquer forma).
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
-    // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05),
-    // pelo gate LGPD (F4-09) e, agora, pelo teto por abordagem (#3851). Só consulta o
-    // ledger se ALGUM dos três precisa (senão no-op).
-    //
-    // O teto entra nesta conta e não numa consulta própria: "1ª mensagem a pessoa nova"
-    // é exatamente a pergunta que o disclosure já faz. A condição ganha o knob porque
-    // canal com a opção desligada (o default) não pode pagar uma query nova por envio.
-    //
-    // O NÚMERO vai junto (#4063): "já recebeu" é deste canal, não da organização. Sem
-    // ele, a pessoa abordada pelo número A contava como abordada para o B — o B não se
-    // apresentava e a abordagem dele não entrava no teto (virava follow-up).
+    // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05) e
+    // pelo gate LGPD (F4-09). Só consulta o ledger se ALGUM dos dois precisa (senão no-op).
+    // A conta é da ORGANIZAÇÃO, como sempre foi: a base legal da LGPD é da empresa
+    // (controladora), e a opção do teto (#3851) não muda quem se apresenta.
+    const isFirstOutbound =
+      disclosure !== null || args.lgpd !== undefined
+        ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
+        : false;
+    // ABORDAGEM (#3851/#4063): só o canal com `tetoSoAbordagem` ligado lê o campo, e só
+    // ele paga a consulta. Ali "já recebeu" é DESTE número (`channelSessionId`): a pessoa
+    // abordada pelo número A é abordagem nova para o B, senão um número novo herdaria a
+    // base do outro como follow-up. Resposta nunca é abordagem (a pessoa veio até nós).
+    // Desligado, fica INDEFINIDO: o motor não lê, e a linha do ledger nasce `true`.
     const tetoSoAbordagem = pacingCfg.knobs.tetoSoAbordagem === true;
-    const precisaSaberPrimeiroEnvio =
-      disclosure !== null || args.lgpd !== undefined || tetoSoAbordagem;
-    const isFirstOutbound = precisaSaberPrimeiroEnvio
-      ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId, args.channelSessionId)) === 0
-      : false;
-    // ABORDAGEM: resposta nunca é abordagem (a pessoa veio até nós); disparo é
-    // abordagem quando não houve envio accepted anterior a este contato. Sem
-    // consulta, fica INDEFINIDO — e omitir no motor vale "conta no teto", que é a
-    // direção segura: dado ausente não abre o teto.
     const abordagem: boolean | undefined =
-      args.resposta === true ? false : precisaSaberPrimeiroEnvio ? isFirstOutbound : undefined;
+      args.resposta === true
+        ? false
+        : tetoSoAbordagem
+          ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId, args.channelSessionId)) === 0
+          : undefined;
 
     const lastInboundAt = await readLastInboundAt(
       client,

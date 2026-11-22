@@ -10433,6 +10433,9 @@ export const DICIONARIO: Traducoes = {
   "O limite diário de envios do número foi atingido — proteção contra bloqueio do WhatsApp. Libera de novo amanhã, a partir das": {
     es: "El número alcanzó su límite diario de envíos. Es una protección para evitar que WhatsApp lo bloquee. Se restablece mañana, a partir de las",
   },
+  "O limite diário de follow-ups do número foi atingido — proteção contra bloqueio do WhatsApp. A mensagem volta amanhã, a partir das": {
+    es: "El número alcanzó su límite diario de seguimientos. Es una protección para evitar que WhatsApp lo bloquee. El mensaje vuelve mañana, a partir de las",
+  },
   // #4943: o aviso diz o próximo passo (o que escrever no prompt) e o que o
   // gate isenta. A chave é o texto em português, então o texto antigo sai.
   "A mesma mensagem estava se repetindo em massa por este número — o envio foi segurado para não parecer robô para o WhatsApp. Para liberar: no prompt, descreva o objetivo de cada mensagem em vez do texto exato e peça para personalizar com o nome e o contexto do lead; se for um passo de follow-up com texto fixo, acrescente outras redações ao passo. Mensagens curtas e links de pagamento não entram nessa conta.": {
