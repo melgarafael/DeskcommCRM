@@ -14,6 +14,26 @@ interface Negocio {
 }
 
 /**
+ * A leitura do interruptor num lugar só (#5142).
+ *
+ * O seletor do funil de entrada precisa do MESMO valor que o interruptor
+ * mostra — e precisa reagir quando ele muda. Duas `useQuery` com a mesma
+ * `queryKey` e a mesma `queryFn` compartilham o cache e o GET em voo, mas isso
+ * só vale enquanto forem idênticas; por isso elas moram aqui, e não repetidas
+ * em cada componente que lê o interruptor.
+ */
+export function useNegocioDaConversa(channelId: string) {
+  const query = useQuery({
+    queryKey: ["channel-negocio", channelId],
+    queryFn: () => apiClient.get<{ data: Negocio }>(`/api/v1/channel-sessions/${channelId}/negocio-da-conversa`),
+    refetchOnWindowFocus: false,
+  });
+  // Padrão do banco (`not null default true`): enquanto a rota não respondeu, a
+  // tela mostra o que a instalação antiga faz.
+  return { ...query, ligado: query.data?.data.conversa_nova_cria_negocio ?? true };
+}
+
+/**
  * O interruptor da #4670 no cartão da conexão: as conversas novas DESTE número
  * criam negócio no funil?
  *
@@ -31,12 +51,7 @@ export function NegocioDaConversa({ channelId }: { channelId: string }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState(false);
-  const query = useQuery({
-    queryKey: ["channel-negocio", channelId],
-    queryFn: () => apiClient.get<{ data: Negocio }>(`/api/v1/channel-sessions/${channelId}/negocio-da-conversa`),
-    refetchOnWindowFocus: false,
-  });
-  const ligado = query.data?.data.conversa_nova_cria_negocio ?? true;
+  const { ligado, ...query } = useNegocioDaConversa(channelId);
 
   async function trocar(valor: boolean) {
     setBusy(true);
