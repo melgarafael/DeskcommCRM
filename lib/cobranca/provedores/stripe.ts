@@ -546,7 +546,7 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
 
   // ponytail: 10 assinaturas e 10 faturas por cliente, sem paginar. Um cliente
   // de revendedor tem 1 ou 2; paginar quando `has_more` aparecer medido.
-  async function lerSituacao(p: { clienteRef: string }): Promise<Situacao> {
+  async function lerSituacao(p: { clienteRef: string; organizacao: string }): Promise<Situacao> {
     const cliente = encodeURIComponent(p.clienteRef);
     const [assinaturas, pagas] = await Promise.all([
       chamar("GET", `/subscriptions?customer=${cliente}&status=all&limit=10`).then((d) => ler(listaDe(assinaturaDaStripe), d).data),
@@ -693,7 +693,7 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
     };
   }
 
-  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string }): Promise<string> {
+  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string> {
     const configuracao = await portal(false);
     const sessao = ler(
       z.object({ url: z.string() }),

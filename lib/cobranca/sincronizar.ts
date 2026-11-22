@@ -188,7 +188,7 @@ export async function sincronizar(
   const lidoEm = agora();
   let situacao: Situacao;
   try {
-    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({ clienteRef: cliente });
+    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({ clienteRef: cliente, organizacao: orgId });
   } catch (e) {
     const erro = paraErroDeLeitura(e);
     const { error } = await admin

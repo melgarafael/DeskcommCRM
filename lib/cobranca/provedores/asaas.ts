@@ -169,6 +169,9 @@ const assinaturaDoAsaas = z.object({
   dateCreated: z.string(),
   /** Valor por ciclo, em reais — é o que `trocarPlano` grava (`precoCents / 100`). */
   value: z.number().nullish(),
+  /** Vínculo que NÓS gravamos no POST (#4862): é ele que separa a assinatura desta
+   * organização da que o cliente adotado do painel já tinha por outra integração. */
+  externalReference: z.string().nullish(),
 });
 type AssinaturaDoAsaas = z.infer<typeof assinaturaDoAsaas>;
 /** Removida (`deleted`), INACTIVE ou EXPIRED. */
@@ -733,10 +736,20 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
    * antiga, senão da pendente, só da principal viva; (8)
    * `pagamentoSemAssinaturaViva` é sempre false no Asaas: a API não diz quando
    * a assinatura foi removida, e o DELETE leva junto as cobranças abertas.
+   *
+   * #4862 — o vínculo vale também para a LEITURA: o cliente pode ter sido
+   * ADOTADO do painel (#4768) e carregar assinatura e cobrança de OUTRA
+   * integração. Entram nesta situação só as assinaturas com
+   * `externalReference` = id da organização e só as cobranças dessas assinaturas.
+   * Sem isso, `assinaturasVivas`, `jaPagou` e `proximoVencimento` sairiam
+   * calculados com o que é de fora, e a `assinaturaRef` devolvida (gravada em
+   * `provedor_assinatura_id` por `sincronizar`) apontaria para a assinatura de
+   * outra integração — cancelar ou trocar plano agiria sobre ela.
    */
-  async function lerSituacao(p: { clienteRef: string }): Promise<Situacao> {
+  async function lerSituacao(p: { clienteRef: string; organizacao: string }): Promise<Situacao> {
+    const orgId = uuidDaOrg(p.organizacao);
     const cliente = encodeURIComponent(p.clienteRef);
-    const [assinaturas, pagas] = await Promise.all([
+    const [lidas, pagasLidas] = await Promise.all([
       // includeDeleted: sem ele a removida some, e o cancelamento viraria "teste vencido".
       chamar("GET", `/subscriptions?customer=${cliente}&includeDeleted=true&limit=100`).then(
         (d) => ler(listaDoAsaas(assinaturaDoAsaas), d).data,
@@ -747,6 +760,12 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
         ),
       ).then((listas) => listas.flat()),
     ]);
+    // O filtro é na RESPOSTA, não na consulta: a listagem de assinaturas do Asaas
+    // não aceita `externalReference` (só a de clientes), e a consulta pelo vínculo
+    // não traria as REMOVIDAS que o includeDeleted precisa ver.
+    const assinaturas = lidas.filter((s) => s.externalReference === orgId);
+    const nossas = new Set(assinaturas.map((s) => s.id));
+    const pagas = pagasLidas.filter((c) => c.subscription !== null && c.subscription !== undefined && nossas.has(c.subscription));
     const recentes = [...assinaturas].sort((a, b) => b.dateCreated.localeCompare(a.dateCreated));
     const vivas = recentes.filter((s) => !ehTerminal(s));
     const principal = vivas[0] ?? null;
@@ -826,8 +845,8 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   }
 
   /** O Asaas não tem portal: "gerenciar" é pagar a cobrança aberta. Sem ela, `null` (a rota responde 409 `sem_portal`). */
-  async function urlDeGerenciar(p: { clienteRef: string }): Promise<string | null> {
-    return (await lerSituacao({ clienteRef: p.clienteRef })).linkDePagamento;
+  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string | null> {
+    return (await lerSituacao({ clienteRef: p.clienteRef, organizacao: p.organizacao })).linkDePagamento;
   }
 
   return {

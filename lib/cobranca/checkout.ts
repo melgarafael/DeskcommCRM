@@ -224,7 +224,7 @@ async function gerarCheckout(
 ): Promise<{ url: string } | { vivo: string | null } | { recusa: ResultadoDoCheckout }> {
   const ad = adaptador(provedor);
   if (lida.provedor_cliente_id) {
-    const situacao = await ad.lerSituacao({ clienteRef: lida.provedor_cliente_id });
+    const situacao = await ad.lerSituacao({ clienteRef: lida.provedor_cliente_id, organizacao: orgId });
     if (situacao.assinaturasVivas > 0) return { vivo: situacao.linkDePagamento };
   }
   if (lida.troca_id) {

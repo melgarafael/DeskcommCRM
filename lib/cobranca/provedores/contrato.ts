@@ -154,7 +154,15 @@ export interface AdaptadorDeCobranca {
   }): Promise<{ url: string; expiraEm: Date | null; assinaturaRef: string | null; sessaoId: string | null }>;
   iniciarAjusteProporcional(p: { clienteRef: string; orgId: string; plano: PlanoParaProvedor; valorCents: number; chaveIdempotencia: string; urlDeVolta: string }): Promise<{ pagamentoRef: string; url: string }>;
   lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado">;
-  lerSituacao(p: { clienteRef: string }): Promise<Situacao>;
+  /**
+   * A situação DA ORGANIZAÇÃO no cliente (#4862). `organizacao` não é decoração: o
+   * cliente pode ser ADOTADO do painel (a #4768) e carregar assinaturas e cobranças
+   * de OUTRA integração. O Asaas devolve tudo que está vinculado à organização —
+   * assinatura, cobrança, `assinaturaRef`, `jaPagou` e `proximoVencimento`; nada de
+   * fora entra. A Stripe amarra o vínculo no `metadata.organization_id` desde a
+   * criação (não existe assinatura de fora no cliente dela) e ignora o parâmetro.
+   */
+  lerSituacao(p: { clienteRef: string; organizacao: string }): Promise<Situacao>;
   /** Atualiza o preço recorrente sem mudar a data de renovação. Pode recusar com ErroDoProvedor não transitório. */
   trocarPlano(p: { assinaturaRef: string; plano: PlanoParaProvedor }): Promise<void>;
   /**
@@ -167,5 +175,6 @@ export interface AdaptadorDeCobranca {
    */
   expirarSessao(sessaoId: string): Promise<void>;
   cancelarNoFim(assinaturaRef: string): Promise<void>;
-  urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string }): Promise<string | null>;
+  /** No Asaas é a leitura filtrada pela organização (#4862): `organizacao` é obrigatória. A Stripe não a usa. */
+  urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string | null>;
 }

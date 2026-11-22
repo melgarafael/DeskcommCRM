@@ -231,7 +231,7 @@ describe("excluir tenant pelo painel: o provedor é relido antes da trava de ass
 
     // Outro resultado que o anterior: 0 gravado, 1 relido — e a trava viu 1.
     expect(h.ler).toHaveBeenCalledTimes(1);
-    expect(h.ler).toHaveBeenCalledWith({ clienteRef: "cus_1" });
+    expect(h.ler).toHaveBeenCalledWith({ clienteRef: "cus_1", organizacao: ORG });
     expect(m.linha!.assinaturas_vivas).toBe(1);
     expect(h.viuNaTrava).toMatchObject({ assinaturas_vivas: 1 });
     // A ordem: reler, gravar e só ENTÃO disparar a trava.

@@ -127,6 +127,11 @@ describe("sincronizar", () => {
     expect(enviarAviso).toHaveBeenCalledOnce();
   });
 
+  it("⭐ #4862 a leitura é PEDIDA com a organização: o Asaas filtra assinatura e cobrança pelo vínculo dela", async () => {
+    await rodar();
+    expect(ler).toHaveBeenCalledWith({ clienteRef: "cus_1", organizacao: ORG });
+  });
+
   it("⭐ trial vencido: aviso final há 49 h passa direto pela tolerância de 7 — suspensa, com mensagem de ASSINAR", async () => {
     m.linha = {
       ...LINHA, provedor: null, provedor_cliente_id: null, provedor_assinatura_id: null,

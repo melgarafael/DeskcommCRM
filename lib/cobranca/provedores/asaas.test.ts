@@ -764,7 +764,10 @@ describe("garantirCliente", () => {
 type Linha = Record<string, unknown>;
 const assinatura = (o: Linha = {}): Linha => ({
   object: "subscription", id: "sub_1", customer: CLIENTE, status: "ACTIVE", deleted: false, cycle: "MONTHLY",
-  billingType: "UNDEFINED", value: 49.9, dateCreated: "2026-09-01", nextDueDate: "2026-12-01", ...o,
+  billingType: "UNDEFINED", value: 49.9, dateCreated: "2026-09-01", nextDueDate: "2026-12-01",
+  // #4862: a leitura filtra por vínculo — o fixture padrão é a assinatura DA NOSSA
+  // organização (é o que o POST do CRM grava); os casos de outra integração passam `externalReference` explicitamente.
+  externalReference: ORG, ...o,
 });
 const cobranca = (o: Linha = {}): Linha => ({
   object: "payment", id: "pay_1", customer: CLIENTE, subscription: "sub_1", status: "PENDING", value: 49.9,
@@ -984,8 +987,67 @@ describe("lerSituacao", () => {
       { "GET /subscriptions": rotaDeAssinaturas(assinaturas), "GET /payments": rotaDePagamentos(cobrancas) },
       { agora: () => agora },
     );
-    return { ...m, situacao: m.adaptador.lerSituacao({ clienteRef: CLIENTE }) };
+    return { ...m, situacao: m.adaptador.lerSituacao({ clienteRef: CLIENTE, organizacao: ORG }) };
   };
+
+  it("⭐ #4862 cliente ADOTADO do painel: assinatura e cobrança de outra integração ficam FORA da situação da organização", async () => {
+    // A adoção (também #4768) trouxe um cliente que já tinha assinatura e
+    // cobrança na conta por fora. O filtro de vínculo cobria a CRIAÇÃO
+    // (`iniciarAssinatura`); sem o MESMO filtro na LEITURA, a situação da empresa
+    // passa a ser calculada com o que é de outra integração: aqui dariam
+    // `assinaturasVivas` 2, `jaPagou` true e `proximoVencimento` vindo do
+    // pagamento do painel.
+    const { situacao, chamadas } = ler(
+      [
+        assinatura({ id: "sub_nova", status: "PENDING", externalReference: ORG }),
+        assinatura({ id: "sub_do_painel", externalReference: null }),
+      ],
+      [
+        cobranca({ id: "pay_nova", subscription: "sub_nova", status: "PENDING", dueDate: "2026-10-05" }),
+        cobranca({ id: "pay_painel", subscription: "sub_do_painel", status: "RECEIVED", dueDate: "2026-09-15" }),
+      ],
+    );
+    expect(await situacao).toMatchObject({
+      assinaturaRef: "sub_nova",
+      assinaturasVivas: 1,
+      jaPagou: false,
+      existe: false,
+      proximoVencimento: null,
+      linkDePagamento: "https://sandbox.asaas.com/i/pay_nova",
+    });
+    // Nenhum id de outra integração sai na situação.
+    const escrito = JSON.stringify(await situacao);
+    expect(escrito).not.toContain("sub_do_painel");
+    expect(escrito).not.toContain("pay_painel");
+    // A consulta continua a ser a do cliente: o vínculo é conferido na RESPOSTA
+    // (a listagem de assinaturas do Asaas não aceita `externalReference`).
+    expect(chamadas.find((c) => c.rota === "GET /subscriptions")?.url.searchParams.get("externalReference")).toBeNull();
+  });
+
+  it("⭐ #4862 nossa assinatura REMOVIDA: `assinaturaRef` é a NOSSA, nunca a do painel — é ela que vira `provedor_assinatura_id`", async () => {
+    // No Asaas o cancelamento é DELETE (a removida só aparece com includeDeleted)
+    // e a assinatura do painel, mais recente, continua VIVA no mesmo cliente. Sem
+    // filtro na leitura, a referência devolvida é `sub_do_painel` e `sincronizar`
+    // a grava em `provedor_assinatura_id` (`estado.ts`: `assinaturaRef ?? atual`):
+    // cancelar ou trocar plano passaria a agir sobre a assinatura da OUTRA
+    // integração, com o valor e o ciclo dela.
+    const { situacao, chamadas } = ler(
+      [
+        assinatura({ id: "sub_nova", deleted: true, dateCreated: "2026-09-01" }),
+        assinatura({ id: "sub_do_painel", externalReference: null, dateCreated: "2026-10-04" }),
+      ],
+      [
+        cobranca({ id: "pay_nova", subscription: "sub_nova", status: "RECEIVED", dueDate: "2026-09-15" }),
+        cobranca({ id: "pay_painel", subscription: "sub_do_painel", status: "RECEIVED", dueDate: "2026-10-01" }),
+      ],
+    );
+    expect(await situacao).toMatchObject({ assinaturaRef: "sub_nova", cancelada: true, jaPagou: true });
+    const escrito = JSON.stringify(await situacao);
+    expect(escrito).not.toContain("sub_do_painel");
+    expect(escrito).not.toContain("pay_painel");
+    // As cobranças do painel não são nem consultadas: nada de fora entra no cálculo.
+    expect(chamadas.some((c) => c.url.pathname === "/v3/payments" && c.url.searchParams.get("subscription") === "sub_do_painel")).toBe(false);
+  });
 
   it("sem assinatura nenhuma", async () => {
     expect(await ler([], []).situacao).toMatchObject({
@@ -1129,7 +1191,7 @@ describe("lerSituacao", () => {
 
   it("forma inesperada → resposta_invalida (sincronizar grava leitura_invalida, estado intacto)", async () => {
     const m = montar({ "GET /subscriptions": { corpo: { data: "x" } }, "GET /payments": lista() });
-    await expect(m.adaptador.lerSituacao({ clienteRef: CLIENTE })).rejects.toMatchObject({ codigo: "resposta_invalida" });
+    await expect(m.adaptador.lerSituacao({ clienteRef: CLIENTE, organizacao: ORG })).rejects.toMatchObject({ codigo: "resposta_invalida" });
   });
 });
 
@@ -1219,11 +1281,11 @@ describe("cancelarNoFim e urlDeGerenciar", () => {
       "GET /subscriptions": rotaDeAssinaturas([assinatura()]),
       "GET /payments": rotaDePagamentos([cobranca({ id: "pay_out", status: "OVERDUE" })]),
     });
-    expect(await aberto.adaptador.urlDeGerenciar({ clienteRef: CLIENTE, urlDeVolta: "https://crm.example.com" })).toBe(
+    expect(await aberto.adaptador.urlDeGerenciar({ clienteRef: CLIENTE, urlDeVolta: "https://crm.example.com", organizacao: ORG })).toBe(
       "https://sandbox.asaas.com/i/pay_out",
     );
     const fechado = montar({ "GET /subscriptions": rotaDeAssinaturas([]), "GET /payments": rotaDePagamentos([]) });
-    expect(await fechado.adaptador.urlDeGerenciar({ clienteRef: CLIENTE, urlDeVolta: "https://crm.example.com" })).toBeNull();
+    expect(await fechado.adaptador.urlDeGerenciar({ clienteRef: CLIENTE, urlDeVolta: "https://crm.example.com", organizacao: ORG })).toBeNull();
   });
 
   it("⭐ cumpre o contrato inteiro", () => {
