@@ -4,11 +4,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * GET  → todas as conexões da org com knobs efetivos (override sobre default),
  *        overrides crus, defaults e bounds (a tela explica sem cravar números).
- * PUT/PATCH → upsert de channel_knobs para UMA conexão + teto diário em
+ * PUT → upsert de channel_knobs para UMA conexão + teto diário em
  *        channel_sessions.daily_message_limit (fonte única — regra dura nº 3).
- *        Campo null = volta ao default conservador do engine. Os dois verbos
- *        são o MESMO handler: o corpo sempre foi parcial (campo omitido =
- *        preserva), e PATCH é o que integrações esperam de ajuste de knob.
+ *        Campo null = volta ao default conservador do engine. O corpo é PARCIAL
+ *        (campo omitido = preserva) e a rota é só PUT: um alias `PATCH` não tem
+ *        guarda própria, e a cerca de cobertura de efeitos exige
+ *        `requireSupportWrite(` em cada export mutante.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -40,7 +41,7 @@ const KNOB_COLUMNS =
   // As duas janelas entram no SELECT: sem `resposta_*` aqui, a ficha Anti-ban
   // mostraria 7h-22h como se fosse a janela da resposta — e é a de DISPARO.
   // `followup_daily_cap` entra aqui como os outros: sem ele no SELECT o GET
-  // devolvia o default 200 mesmo depois de um PATCH que gravou 350.
+  // devolvia o default 200 mesmo depois de um PUT que gravou 350.
   "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, teto_so_abordagem, followup_daily_cap, prospeccao_dias, timezone, warmup_daily_caps, number_activated_at, atraso_notar_ms, ms_por_caractere, atraso_minimo_ms, atraso_maximo_ms";
 
 /**
@@ -335,13 +336,3 @@ export async function PUT(req: NextRequest): Promise<Response> {
     { requestId },
   );
 }
-
-/**
- * PATCH e PUT são o mesmo handler: o corpo desta rota sempre foi PARCIAL
- * (campo omitido preserva o gravado, `null` volta ao default), então não há
- * diferença de semântica entre os verbos. O PATCH existe para quem integra por
- * API e espera `PATCH` num ajuste de knob — antes dele, mandar
- * `followup_daily_cap` caía no 422 do schema `.strict()` e o teto do follow-up
- * ficava preso no default de 200/dia até alguém editar o banco.
- */
-export const PATCH = PUT;

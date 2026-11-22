@@ -1,5 +1,5 @@
 /**
- * PATCH/GET /api/v1/ai/pacing — o teto do follow-up (#4063) pela rota.
+ * PUT/GET /api/v1/ai/pacing — o teto do follow-up (#4063) pela rota.
  *
  * ─── O defeito, medido ─────────────────────────────────────────────────────
  *
@@ -7,12 +7,12 @@
  * `20261121120000_1043_teto_do_followup.sql` e o motor JÁ o respeita
  * (`decidePacing` veta o 201º follow-up com `followup_cap`), mas a rota não o
  * conhecia: o `KNOB_COLUMNS` do GET não pedia a coluna e o schema `.strict()`
- * do PATCH/PUT recusava o campo com 422. Na prática o teto era 200/dia fixo
+ * do PUT recusava o campo com 422. Na prática o teto era 200/dia fixo
  * para toda empresa — a única forma de mudar era `UPDATE` no banco.
  *
  * ─── O que este teste trava ────────────────────────────────────────────────
  *
- * 1. o PATCH grava 350 e a LEITURA SEGUINTE (GET) traz 350 — não adianta
+ * 1. o PUT grava 350 e a LEITURA SEGUINTE (GET) traz 350 — não adianta
  *    aceitar o campo e não devolvê-lo: a tela voltaria a mostrar 200;
  * 2. quem nunca mexeu lê o default 200, sem override nenhum;
  * 3. o seletor do GET pede a coluna de verdade — o dublê de PostgREST projeta
@@ -27,6 +27,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
+import { CHANNEL_SESSION_REF_COLUMNS } from "@/lib/channels/session-ref";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -40,6 +41,19 @@ vi.mock("@/lib/agent-engine/db/request-pool", () => ({
 const ORG = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
 const CANAL = "44444444-4444-4444-8444-444444444444";
+
+/**
+ * Colunas do identificador da sessão, derivadas do export que o repo usa para
+ * elas (`CHANNEL_SESSION_REF_COLUMNS`) e não escritas à mão: o lint de canais
+ * (invariante 1) proíbe nomear provider fora de `lib/channels/`, e a linha do
+ * dublê não precisa de valor — só de existir como o PostgREST a devolveria.
+ */
+const REF_DA_SESSAO: Record<string, null> = Object.fromEntries(
+  CHANNEL_SESSION_REF_COLUMNS.split(",")
+    .map((c) => c.trim())
+    .filter((c): c is string => Boolean(c) && c !== "provider")
+    .map((c) => [c, null]),
+);
 
 type Linha = Record<string, unknown>;
 
@@ -70,7 +84,7 @@ function makeDb(): Registro {
       id: CANAL,
       organization_id: ORG,
       archived_at: null,
-      waha_session_name: "canal-1",
+      ...REF_DA_SESSAO,
       display_name: "Canal 1",
       phone_number: null,
       status: "connected",
@@ -194,13 +208,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("PATCH/GET /api/v1/ai/pacing — teto do follow-up (#4063)", () => {
-  it("⭐ PATCH com followup_daily_cap 350 devolve 200 e o GET seguinte traz 350", async () => {
+describe("PUT/GET /api/v1/ai/pacing — teto do follow-up (#4063)", () => {
+  it("⭐ PUT com followup_daily_cap 350 devolve 200 e o GET seguinte traz 350", async () => {
     authOk();
     const db = makeDb();
-    const { PATCH, GET } = await import("@/app/api/v1/ai/pacing/route");
+    const { PUT, GET } = await import("@/app/api/v1/ai/pacing/route");
 
-    const res = await PATCH(pedido("PATCH", { channel_session_id: CANAL, followup_daily_cap: 350 }));
+    const res = await PUT(pedido("PUT", { channel_session_id: CANAL, followup_daily_cap: 350 }));
 
     expect(res.status).toBe(200);
     expect(db.upserts[0]).toMatchObject({ followup_daily_cap: 350 });
