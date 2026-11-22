@@ -1,5 +1,5 @@
 ---
-impacto: exige_acao
+impacto: capacidade_nova
 secao: adicionado
 titulo: A campanha de prospecção pode rodar só no horário dela, e pausa e retoma sozinha
 ---
@@ -26,8 +26,6 @@ sozinha nunca.
 O teto diário e o intervalo do número não mudaram de lugar: continuam contando
 por NÚMERO, somando o que todas as campanhas dele já tentaram nas últimas 24 h.
 Com uma campanha rodando por vez, a soma é a da campanha ativa.
-
-## Requer atenção
 
 O campo novo é opcional e vazio significa o comportamento de hoje — nenhuma
 campanha existente muda sozinha. Para usar, a janela é escolhida no formulário da

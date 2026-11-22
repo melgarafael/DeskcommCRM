@@ -247,10 +247,16 @@ export async function POST(req: NextRequest) {
       result = await activateCampaign(pool, admin, org, body.id, body.config);
     else if (body.action === "pause") {
       // Pause does not wait for the worker lock; the delivery guard sees it before sending.
-      // #4830: pausa MANUAL limpa a marca da pausa automática — uma campanha que
-      // a pessoa pausou não pode voltar sozinha quando a janela dela abrir.
+      // #4830/#4847: a rota aceita TAMBÉM a campanha que a janela pausou
+      // (`status='paused'` com a marca), gravando `pausada_pela_janela=false` —
+      // sem isso, quem quer parar às 14h a campanha da manhã não consegue: o
+      // tick a retoma às 7h do dia seguinte. A expressão do `SET` lê o valor
+      // ANTIGO da linha (regra do Postgres): o motivo da pausa automática, que
+      // diz "volta sozinha", é limpo só nesse caso; a pausa de uma `running`
+      // segue intacta, erro anterior incluso. Pausa manual, arquivamento e
+      // início limpam a marca — uma campanha que a pessoa pausou não volta sozinha nunca.
       const changed = await pool.query(
-        "update prospecting_campaigns set status='paused',pausada_pela_janela=false,updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",
+        "update prospecting_campaigns set status='paused',pausada_pela_janela=false,error=case when status='paused' and pausada_pela_janela then null else error end,updated_at=now() where organization_id=$1 and id=$2 and (status='running' or (status='paused' and pausada_pela_janela)) returning id",
         [org, body.id],
       );
       if (!changed.rows.length)

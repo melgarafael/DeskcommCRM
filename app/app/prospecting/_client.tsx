@@ -75,6 +75,12 @@ type Campaign = {
    * duas campanhas "Em andamento" parecem a mesma coisa repetida.
    */
   channel_session_id: string | null;
+  /**
+   * A pausa foi da JANELA (#4830)? O cartão oferece "Pausar abordagens" também
+   * nesse estado (#4847): quem quer parar às 14h a campanha da manhã precisa
+   * conseguir, senão ela volta sozinha na próxima abertura.
+   */
+  pausada_pela_janela?: boolean;
 };
 type Candidate = {
   id: string;
@@ -138,9 +144,23 @@ const selectClass = "h-10 w-full rounded-md border border-input bg-background px
  * 6=sábado. Os rótulos passam por `t()` na tela; a ORDEM é a da semana.
  */
 const NOMES_DOS_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
+/**
+ * Os sete dias traduzidos, na ordem da semana, em `t()` com LITERAL dia a dia
+ * (#4847): é a mesma régua do formulário da janela — o leitor de i18n
+ * (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`) só enxerga chave escrita
+ * literal no argumento, e `t(nome)` por variável deixaria o espanhol do cartão
+ * sem prova nenhuma.
+ */
+function diasTraduzidos(t: (texto: string) => string): string[] {
+  return [t("Dom"), t("Seg"), t("Ter"), t("Qua"), t("Qui"), t("Sex"), t("Sáb")];
+}
 /** A janela em texto — o mesmo formato que o servidor descreve (`7h–12h`). */
-function janelaEmTexto(janela: NonNullable<CampaignConfig["janela"]>): string {
-  const dias = janela.dias.map((d) => NOMES_DOS_DIAS[d] ?? String(d)).join(", ");
+function janelaEmTexto(
+  janela: NonNullable<CampaignConfig["janela"]>,
+  t: (texto: string) => string,
+): string {
+  const rotulos = diasTraduzidos(t);
+  const dias = janela.dias.map((d) => rotulos[d] ?? NOMES_DOS_DIAS[d] ?? String(d)).join(", ");
   return `${dias}, ${janela.inicio}h–${janela.fim}h`;
 }
 const emptyConfig: CampaignConfig = {
@@ -1650,7 +1670,7 @@ export function ProspectingClient() {
                           : t("Sem voz definida")}
                         {configCompleta.janela && (
                           <span className="block">
-                            {t("Roda só em")} {janelaEmTexto(configCompleta.janela)}.
+                            {t("Roda só em")} {janelaEmTexto(configCompleta.janela, t)}.
                           </span>
                         )}
                       </p>
@@ -1669,6 +1689,27 @@ export function ProspectingClient() {
                         </Button>
                       ) : campaign.status === "paused" ? (
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* #4847: a campanha que a JANELA pausou continua
+                              pausável pela pessoa. Sem este botão nesse estado,
+                              quem quer parar às 14h a campanha da manhã não
+                              consegue — ela volta a abordar às 7h do dia
+                              seguinte, a menos que seja arquivada. A rota grava
+                              `pausada_pela_janela=false`, e a pausa passa a ser
+                              definitiva. */}
+                          {campaign.pausada_pela_janela === true && (
+                            <Button
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                perform(
+                                  { action: "pause", id: campaign.id },
+                                  t("Novas abordagens pausadas."),
+                                )
+                              }
+                            >
+                              {t("Pausar abordagens")}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             disabled={busy}

@@ -366,4 +366,43 @@ describe("pausa e retomada automáticas pelo caminho que já existe (#4830)", ()
       pausarCampanhasForaDaJanela(dentro as never, ORG, TERCA_9H, FUSO),
     ).resolves.toEqual([]);
   });
+
+  it("#4847: à noite, o tick ENXERGA a organização cujo único item é campanha pausada pela janela", async () => {
+    // Terça 21h — o caso da noite, com as duas campanhas do número fora do
+    // horário: nenhuma `running`, nenhuma busca em andamento, só uma `paused`
+    // com a marca da janela. A seleção de organizações do tick precisa ter o
+    // `or pc.pausada_pela_janela`; sem ele o tick nunca entra na organização
+    // e a pausa da janela vira congelamento permanente — ninguém retoma.
+    vi.setSystemTime(new Date("2026-11-17T21:00:00-03:00"));
+    const writes: Array<{ sql: string; params: unknown[] | undefined }> = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      writes.push({ sql, params });
+      if (sql.includes("pg_try_advisory_lock")) return { rows: [{ locked: true }] };
+      if (sql.includes("pg_advisory_unlock")) return { rows: [] };
+      if (sql.startsWith("select pc.organization_id")) {
+        // A linha da organização: o ÚNICO item é a pausada pela janela. O
+        // simulador só devolve a organização quando o SQL enxerga a marca —
+        // é isso que torna o teste vermelho se a cláusula sumir.
+        return { rows: /pausada_pela_janela/.test(sql) ? [{ organization_id: ORG }] : [] };
+      }
+      if (sql.startsWith("select timezone from organizations"))
+        return { rows: [{ timezone: FUSO }] };
+      if (sql.includes("status='running' and config ? 'janela'")) return { rows: [] };
+      if (sql.includes("pausada_pela_janela and coalesce(config->>'arquivada_em'"))
+        return { rows: [campanha({ status: "paused", pausada_pela_janela: true })] };
+      return { rows: [] };
+    });
+    await montarTick({ query });
+
+    // O tick entrou na organização: a varredura de retomada foi consultada…
+    expect(
+      writes.some((w) =>
+        w.sql.includes("pausada_pela_janela and coalesce(config->>'arquivada_em'"),
+      ),
+    ).toBe(true);
+    // …mas às 21h a janela está FECHADA e nada voltou a rodar.
+    expect(writes.some((w) => w.sql.includes("status='running',pausada_pela_janela=false"))).toBe(
+      false,
+    );
+  });
 });
