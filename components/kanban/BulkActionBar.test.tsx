@@ -276,7 +276,7 @@ describe('Funil: "promocao" sugere a etiqueta "Promoção"', () => {
 
 describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (#5102)", () => {
   // A tela real: o quadro guarda `selectedIds` e passa `onClear`; aqui o mesmo
-  // contrato, com o pai removendo da seleção só quem o diálogo devolveu.
+  // contrato — o diálogo avisa que houve efeito e a seleção inteira é limpa.
   function BarraComSelecao({ inicial }: { inicial: string[] }) {
     const [selecionados, setSelecionados] = useState(inicial);
     return (
@@ -317,7 +317,8 @@ describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (
       if (String(url).includes("lead-1")) {
         throw new ApiError(500, "internal_error", { cloned_lead_id: cloneId }, "qa-1", "Falha ao vincular a origem");
       }
-      // lead-2: recusado ANTES de criar — continua selecionado para retentar.
+      // lead-2: recusado sem cópia; mesmo assim a seleção é limpa (regra de
+      // antes: houve efeito no lote, ninguém fica selecionado).
       throw new ApiError(422, "required_fields_missing", undefined, "qa-2", "Campos obrigatórios faltando");
     });
 
