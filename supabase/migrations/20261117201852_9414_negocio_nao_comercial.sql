@@ -1,5 +1,7 @@
 -- 9414 · NEGÓCIO NÃO COMERCIAL (issue #4191)
 --
+-- manifest: Negócio NÃO comercial (issue #4191): três colunas nullable e sem default em `crm_leads` — `nao_comercial_em` (a que decide), `nao_comercial_motivo` (texto da equipe, sem vocabulário fechado) e `nao_comercial_por` (sem FK, como `created_by_user_id`) — mais o CHECK `crm_leads_nao_comercial_coerente` (classificado exige motivo) e o índice parcial `crm_leads_nao_comerciais_idx`. Não toca `status`, `lost_reason`, `closed_at` nem etapa: o negócio sai do Radar e do funil sem virar perda nem venda, e o histórico fica. Elegibilidade em `lib/leads/elegibilidade-comercial.ts`. Sem backfill.
+--
 -- Um contato identificado pela equipe como golpe recebeu etiqueta e a conversa
 -- foi encerrada, mas o negócio continuou aberto no Radar. Marcar como perdido
 -- afirmaria uma perda comercial que não existiu; excluir o card descartaria

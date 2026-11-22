@@ -1,6 +1,7 @@
--- 20261119125000_9431 — o negócio sai do follow-up SEM calar o contato, e o
--- manifest: O negócio marcado como não comercial sai do follow-up sem calar o contato — a inscrição passa a carregar `lead_id` e o motor consulta ESSE negócio no disparo (`lib/followup/elegibilidade-do-negocio.ts`) — e o motivo do "não comercial" entra na anonimização pelo gatilho `trg_lgpd_redigir_classificacao_comercial`, mantendo `nao_comercial_em`.
+-- 20261122010336_9451 — o negócio sai do follow-up SEM calar o contato, e o
 -- motivo do "não comercial" entra na anonimização.
+--
+-- manifest: O negócio marcado como não comercial sai do follow-up sem calar o contato — a inscrição passa a carregar `lead_id` e o motor consulta ESSE negócio no disparo (`lib/followup/elegibilidade-do-negocio.ts`) — e o motivo do "não comercial" entra na anonimização pelo gatilho `trg_lgpd_redigir_classificacao_comercial`, mantendo `nao_comercial_em`.
 --
 -- Pai: #4195 (o espelho da classificação está na 9414). Esta migration fecha os
 -- itens 2 e 3 do que o mantenedor cobrou na #4191 — os dois que precisam de
@@ -47,7 +48,7 @@ create index if not exists idx_followup_enrollments_lead
   where lead_id is not null;
 
 comment on column public.followup_enrollments.lead_id is
-  'O NEGÓCIO dono desta inscrição (#4195/#9431). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
+  'O NEGÓCIO dono desta inscrição (#4195, migration 9451). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
 
 -- Backfill: o vínculo já estava gravado na fronteira de atendimento (a demanda
 -- da conversa aponta para o negócio dela). Aplicar a MESMA régua do código

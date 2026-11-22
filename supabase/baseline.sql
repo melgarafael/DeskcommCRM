@@ -82948,8 +82948,8 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
--- ---- o negócio sai do follow-up e entra na anonimização (migration 9431) ----
--- Espelho de supabase/migrations/20261119125000_9431_saida_do_followup_e_lgpd_do_nao_comercial.sql.
+-- ---- o negócio sai do follow-up e entra na anonimização (migration 9451) ----
+-- Espelho de supabase/migrations/20261122010336_9451_saida_do_followup_e_lgpd_do_nao_comercial.sql.
 -- #4195, itens 2 e 3 do que o mantenedor cobrou na #4191. Mora AQUI — antes do
 -- rótulo da cascata 9243 e do bloco da VARREDURA anon — por duas razões que o
 -- próprio arquivo cobra: cria FUNÇÃO (a VARREDURA anon proíbe `create function`
@@ -82963,18 +82963,23 @@ grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, serv
 alter table public.followup_enrollments
   add column if not exists lead_id uuid;
 
-alter table public.followup_enrollments
-  drop constraint if exists followup_enrollments_lead_id_fkey;
-alter table public.followup_enrollments
-  add constraint followup_enrollments_lead_id_fkey
-  foreign key (lead_id) references public.crm_leads(id) on delete set null;
+-- Troca da FK num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em
+-- autocommit, e um `add` que falhasse depois do `drop` solto deixaria a coluna
+-- sem a FK.
+do $x$ begin
+  alter table public.followup_enrollments
+    drop constraint if exists followup_enrollments_lead_id_fkey;
+  alter table public.followup_enrollments
+    add constraint followup_enrollments_lead_id_fkey
+    foreign key (lead_id) references public.crm_leads(id) on delete set null;
+end $x$;
 
 create index if not exists idx_followup_enrollments_lead
   on public.followup_enrollments (organization_id, lead_id)
   where lead_id is not null;
 
 comment on column public.followup_enrollments.lead_id is
-  'O NEGÓCIO dono desta inscrição (#4195/#9431). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
+  'O NEGÓCIO dono desta inscrição (#4195, migration 9451). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
 
 update public.followup_enrollments e
    set lead_id = d.lead_id
@@ -88932,13 +88937,17 @@ alter table public.crm_leads
   add column if not exists nao_comercial_motivo text,
   add column if not exists nao_comercial_por uuid;
 
-alter table public.crm_leads
-  drop constraint if exists crm_leads_nao_comercial_coerente;
-alter table public.crm_leads
-  add constraint crm_leads_nao_comercial_coerente check (
-    nao_comercial_em is null
-    or (nao_comercial_motivo is not null and length(btrim(nao_comercial_motivo)) > 0)
-  );
+-- Troca do CHECK num bloco só, pelo mesmo motivo da FK da 9451: sem ele, um
+-- `add` que falhasse no update.sh deixaria a tabela sem a regra.
+do $x$ begin
+  alter table public.crm_leads
+    drop constraint if exists crm_leads_nao_comercial_coerente;
+  alter table public.crm_leads
+    add constraint crm_leads_nao_comercial_coerente check (
+      nao_comercial_em is null
+      or (nao_comercial_motivo is not null and length(btrim(nao_comercial_motivo)) > 0)
+    );
+end $x$;
 
 comment on column public.crm_leads.nao_comercial_em is
   'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9414). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
@@ -88950,6 +88959,7 @@ comment on column public.crm_leads.nao_comercial_por is
 create index if not exists crm_leads_nao_comerciais_idx
   on public.crm_leads (organization_id, nao_comercial_em desc)
   where nao_comercial_em is not null;
+
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
 -- `queued` por idade, e nenhum índice de `messages` cobria esse status.
