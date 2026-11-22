@@ -194,7 +194,7 @@ describe("fiação — a espera humana é paga UMA vez por turno", () => {
     // A main tinha subido para 2500 pelo `foto_enviada` (foto por URL, R4), que
     // também alongou este callback; o merge soma os dois e 3600 cobre os dois
     // (o próximo `: tool({` só aparece ~19.500 caracteres adiante).
-    // AgenteV3 (hotfix IA calada): a guarda `pessoaAssumiuDuranteOTurno` entrou no
+    // IA calada: a guarda `pessoaAssumiuDuranteOTurno` entrou no
     // `enviar` deste callback e empurrou a âncora ~90 caracteres; 3700 cobre os três.
     const janela = FONTE_INBOUND.slice(i, i + 3700);
     expect(janela).not.toContain(": tool({");

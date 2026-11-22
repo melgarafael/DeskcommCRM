@@ -40,7 +40,7 @@ const ORG_B = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "33333333-3333-4333-8333-333333333333";
 const CONTACT_ID = "44444444-4444-4444-8444-444444444444";
 const SESSION_ID = "55555555-5555-4555-8555-555555555555";
-const TECNICO_RESPONSAVEL = "66666666-6666-4666-8666-666666666666"; // Ribamar
+const TECNICO_RESPONSAVEL = "66666666-6666-4666-8666-666666666666"; // técnico responsável (fixture)
 const OUTRO_TECNICO = "77777777-7777-4777-8777-777777777777";
 
 type Row = Record<string, unknown>;
@@ -186,7 +186,7 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
   it("4. Técnico não responsável envia mensagem: não assume indevidamente (aplica janela temporária de 5min, NÃO 'infinity')", async () => {
     wahaConfigured();
     const { supabase, patches } = duble({
-      assignedToUserId: TECNICO_RESPONSAVEL, // Responsável é o Ribamar
+      assignedToUserId: TECNICO_RESPONSAVEL, // o responsável é o técnico da fixture
       botSilencedUntil: null,
     });
     // Quem envia é OUTRO técnico (ex.: colega comentando)
