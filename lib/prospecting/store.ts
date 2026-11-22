@@ -99,6 +99,16 @@ export interface Campaign {
    * reiniciaria o relógio a cada volta.
    */
   channel_down_since: Date | null;
+
+  /**
+   * A PAUSA FOI DA JANELA DA CAMPANHA (#4830, saída 1)?
+   *
+   * `true` só quando o tick pausou a campanha porque o horário próprio dela
+   * fechou — e é o que autoriza o tick a retomá-la sozinho na abertura. Pausa
+   * manual, arquivamento e início limpam a marca: campanha que a pessoa pausou
+   * não volta sozinha nunca.
+   */
+  pausada_pela_janela?: boolean;
 }
 export interface Candidate {
   id: string;
@@ -1361,7 +1371,7 @@ export async function activateCampaign(
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
     try {
       await db.query(
-        "update prospecting_campaigns set config=$3,channel_session_id=$4,status='running',next_send_at=now()+interval '1 minute',error=null,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+        "update prospecting_campaigns set config=$3,channel_session_id=$4,status='running',pausada_pela_janela=false,next_send_at=now()+interval '1 minute',error=null,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
         [org, id, config, config.channel_session_id],
       );
     } catch (error) {
@@ -1858,7 +1868,7 @@ export async function editBriefing(
  * dois operadores ao mesmo tempo, não reescreve o marcador nem mexe no `status`.
  */
 export const ARQUIVAR_CAMPANHA_SQL =
-  "update prospecting_campaigns set config = coalesce(config, '{}'::jsonb) || jsonb_build_object('arquivada_em', $3::text), status = case when status='running' then 'paused' else status end, updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') = '' returning id,status";
+  "update prospecting_campaigns set config = coalesce(config, '{}'::jsonb) || jsonb_build_object('arquivada_em', $3::text), status = case when status='running' then 'paused' else status end, pausada_pela_janela=false, updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') = '' returning id,status";
 
 /**
  * DESARQUIVAR (#4359): tira o marcador e a campanha volta para a lista — PAUSADA,
