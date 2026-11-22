@@ -17,7 +17,7 @@ type Context = { params: Promise<{ id: string }> };
  * no funil?
  *
  * LIGADA por padrão, e o padrão é o banco (`not null default true`, migration
- * 9395): a rota não decide nada quando a coluna não veio — só a ausência de
+ * 9459): a rota não decide nada quando a coluna não veio — só a ausência de
  * leitura vira erro.
  *
  * Mesma porta de admin da tela de conexões (`ai-access`, `acervo`): leitura para
