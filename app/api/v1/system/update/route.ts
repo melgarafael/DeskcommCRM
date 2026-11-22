@@ -40,7 +40,7 @@ import {
   supportsForcedUpdate,
 } from "@/lib/system/runtime-identity";
 import { ehVersaoPublicada, isRunStale, runAbandonado } from "@/lib/system/update-run";
-import { normalizarJanela } from "@/lib/system/janela-de-manutencao";
+import { fusoDaJanela, normalizarJanela } from "@/lib/system/janela-de-manutencao";
 
 export const dynamic = "force-dynamic";
 
@@ -283,6 +283,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   // se o run pode ser fechado e o que a recusa diz (#4334). Ausente, vazia ou
   // recusada → `null` → o comportamento de sempre.
   const janela = normalizarJanela(process.env.SYSTEM_UPDATE_WINDOW);
+  // O fuso em que a janela é lida (#4504), também uma vez só: é o fuso do HOST
+  // — o mesmo `date +%H:%M` do `agent.sh` —, nunca o do processo. As duas
+  // leituras juntas mantêm o relógio do abandono no mesmo fuso de quem executa.
+  const fuso = fusoDaJanela();
 
   if (running) {
     if (!isRunStale(running.dispatched_at, new Date())) {
@@ -300,11 +304,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     // janela já esteve aberta desde a despacho. Sem janela configurada ele é
     // `isRunStale`, byte a byte — a única mudança de comportamento é para quem
     // configurou a janela.
-    if (!runAbandonado(running.dispatched_at, new Date(), janela)) {
+    if (!runAbandonado(running.dispatched_at, new Date(), janela, fuso)) {
       logger.info("[system/update] run aguardando a janela de manutenção", {
         runId: running.id,
         dispatched_at: running.dispatched_at,
         janela,
+        fuso,
       });
       return fail("state_conflict", mensagemAguardandoJanela(janela ?? ""), 409);
     }

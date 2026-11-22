@@ -35,11 +35,111 @@
  * (o comportamento de sempre), igual ao `agent.sh`: um erro de digitação não
  * pode deixar a instalação sem atualizar — nem, aqui, fazer o app tratar todo
  * run como agendado para sempre.
+ *
+ * ─── Em que fuso a janela é lida (#4504) ────────────────────────────────────
+ * O `agent.sh` pergunta a hora com `date +%H:%M`, que é o relógio de PAREDE do
+ * host; aqui a hora era lida com `getHours()`, que é o fuso do PROCESSO. Os
+ * dois só coincidem por acidente. Medido com a janela de 5 em 5 minutos das
+ * 2h às 5h59 e um clique às 23:15 de São Paulo (02:15Z): o app respondia
+ * 02:20Z (a hora `2-5` lida em UTC) e o
+ * host abria 05:00Z — 2h40 em que o app já declarava o pedido abandonado e o
+ * agente ainda nem tinha tido a hora. Nessa fresta, o segundo clique cancelava
+ * o agendamento que a feature existe para proteger.
+ *
+ * A correção é DECLARAR o fuso da janela, um só, e lê-lo sempre nele:
+ *
+ *   - `America/Sao_Paulo` por padrão, que é o fuso do host do parque instalado
+ *     (o mesmo que o `date +%H:%M` do `agent.sh` responde);
+ *   - `SYSTEM_UPDATE_WINDOW_TZ` (IANA) para quem instalar num host de outro
+ *     fuso — o valor TEM de ser o do relógio de parede do host, senão os dois
+ *     lados voltam a discordar;
+ *   - valor ausente ou inválido cai no padrão, NUNCA no fuso do processo: um
+ *     `TZ` errado no contêiner não pode voltar a mover a janela em silêncio.
+ *
+ * Por isso `primeiraOportunidade` varre os minutos em tempo ABSOLUTO e
+ * pergunta as horas a `Intl` no fuso declarado (`getUTCHours`-equivalente), em
+ * vez de `getHours()`. O fuso do processo deixou de importar: o mesmo cron e o
+ * mesmo clique dão o mesmo instante com `TZ=UTC` e com `TZ=America/Sao_Paulo`,
+ * e é isso que o teste de #4504 mede em dois processos de verdade.
  */
 
 const UM_MINUTO_MS = 60_000;
 /** Um dia de varredura cobre qualquer janela válida: ela não tem dia, mês nem semana. */
 const MINUTOS_POR_DIA = 24 * 60;
+
+/** A variável que declara o fuso da janela (IANA). Ver o bloco do cabeçalho. */
+export const VARIAVEL_DO_FUSO_DA_JANELA = "SYSTEM_UPDATE_WINDOW_TZ";
+
+/**
+ * O fuso da janela quando ninguém declara outro — o relógio de parede do host
+ * do parque instalado, o mesmo que o `date +%H:%M` do `agent.sh` responde.
+ */
+export const FUSO_PADRAO_DA_JANELA = "America/Sao_Paulo";
+
+/**
+ * O fuso efetivo da janela. `SYSTEM_UPDATE_WINDOW_TZ` (ou o valor passado) se
+ * for uma zona IANA que o runtime conhece; senão o padrão. NUNCA o fuso do
+ * processo: `TZ` é do contêiner, e um `TZ` errado não pode mover a janela.
+ */
+export function fusoDaJanela(
+  bruto: string | null | undefined = process.env[VARIAVEL_DO_FUSO_DA_JANELA],
+): string {
+  const valor = typeof bruto === "string" ? bruto.trim() : "";
+  if (!valor) return FUSO_PADRAO_DA_JANELA;
+  return fusoConhecido(valor) ? valor : FUSO_PADRAO_DA_JANELA;
+}
+
+function fusoConhecido(fuso: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: fuso });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const RELOGIOS = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * O relógio de PAREDE do fuso declarado, reaproveitado entre minutos e entre
+ * requisições: a varredura de `primeiraOportunidade` pergunta a hora até 1440
+ * vezes, e criar um `Intl.DateTimeFormat` por minuto seria caro à toa.
+ * Fuso desconhecido cai no padrão (o mesmo degrau de `fusoDaJanela`).
+ */
+function relogioNoFuso(fuso: string): Intl.DateTimeFormat {
+  const cacheado = RELOGIOS.get(fuso);
+  if (cacheado) return cacheado;
+  const opcoes: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  let relogio: Intl.DateTimeFormat;
+  try {
+    relogio = new Intl.DateTimeFormat("en-US", { timeZone: fuso, ...opcoes });
+  } catch {
+    relogio = new Intl.DateTimeFormat("en-US", { timeZone: FUSO_PADRAO_DA_JANELA, ...opcoes });
+  }
+  RELOGIOS.set(fuso, relogio);
+  return relogio;
+}
+
+function horaEMinutoDoRelogio(
+  relogio: Intl.DateTimeFormat,
+  quando: Date,
+): { hora: number; minuto: number } {
+  const partes = relogio.formatToParts(quando);
+  const valor = (tipo: "hour" | "minute") =>
+    Number(partes.find((parte) => parte.type === tipo)?.value);
+  return { hora: valor("hour"), minuto: valor("minute") };
+}
+
+/**
+ * Hora e minuto de PAREDE do fuso da janela num instante — a régua que o
+ * `date +%H:%M` do `agent.sh` usa, só que num fuso declarado.
+ */
+export function horaEMinutoNoFuso(
+  quando: Date,
+  fuso: string = fusoDaJanela(),
+): { hora: number; minuto: number } {
+  return horaEMinutoDoRelogio(relogioNoFuso(fuso), quando);
+}
 
 interface ItemDoCron {
   inicio: number;
@@ -163,17 +263,26 @@ export function janelaContem(janela: string, hora: number, minuto: number): bool
  *
  * ESTE é o relógio do abandono: um run despachado às 10h, com a janela
  * de 5 em 5 minutos das 2h às 5h59, só começa a envelhecer às 02h00 do dia
- * seguinte.
+ * seguinte — 02h00 no fuso DECLARADO da janela (`fuso`), que é o mesmo relógio
+ * de parede do `date +%H:%M` do `agent.sh`. O fuso do processo não entra na
+ * conta: o mesmo `desde` e o mesmo cron devolvem o mesmo instante com
+ * `TZ=UTC` e com `TZ=America/Sao_Paulo` (#4504).
  */
-export function primeiraOportunidade(janela: string, desde: Date): Date | null {
+export function primeiraOportunidade(
+  janela: string,
+  desde: Date,
+  fuso: string = fusoDaJanela(),
+): Date | null {
   const base = desde.getTime();
   if (Number.isNaN(base)) return null;
+  const relogio = relogioNoFuso(fuso);
   // O minuto da própria despacho não conta: o agente só pega o run no ciclo
   // SEGUINTE, e um run criado às 02:00:59 não teve a chance das 02:00.
   let t = Math.floor(base / UM_MINUTO_MS) * UM_MINUTO_MS + UM_MINUTO_MS;
   for (let i = 0; i < MINUTOS_POR_DIA; i++) {
     const quando = new Date(t);
-    if (janelaContem(janela, quando.getHours(), quando.getMinutes())) return quando;
+    const { hora, minuto } = horaEMinutoDoRelogio(relogio, quando);
+    if (janelaContem(janela, hora, minuto)) return quando;
     t += UM_MINUTO_MS;
   }
   return null;

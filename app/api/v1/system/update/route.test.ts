@@ -458,19 +458,31 @@ it("origem com sufixo de desenvolvimento não vira uma tag publicada no pedido d
 });
 
 /**
- * A SEGUNDA PORTA DO RUN (#4334): a janela de manutenção.
+ * A SEGUNDA PORTA DO RUN (#4334, #4504): a janela de manutenção.
  *
  * O defeito medido: com `SYSTEM_UPDATE_WINDOW` configurada, o clique das 10h
  * fica `dispatched` de propósito até a janela abrir — e o SEGUNDO clique das
  * 10h15 fechava aquele run como "Run abandonado: o agente do host não reportou
  * o desfecho a tempo", cancelando o agendamento da madrugada em silêncio.
  *
- * O relógio é fixado porque a decisão depende da HORA local: um teste que
- * dependesse do relógio da máquina passaria de madrugada e falharia de manhã.
+ * O segundo defeito (#4504) era o fuso: o app lia a janela no fuso do PROCESSO
+ * (UTC no contêiner) e o `agent.sh` no relógio de parede do host (-03). Perto
+ * da meia-noite os dois discordavam por três horas, e o pedido agendado podia
+ * ser cancelado justamente na fresta entre "o app já liberou o prazo" e "o host
+ * ainda não abriu a janela".
+ *
+ * O relógio é fixado e os instantes são escritos em `-03:00` (o fuso declarado
+ * da janela): um teste que dependesse do fuso da máquina passaria na VPS em
+ * -03 e falharia no CI em UTC.
  */
-describe("janela de manutenção da atualização (#4334)", () => {
+describe("janela de manutenção da atualização (#4334, #4504)", () => {
   const JANELA = "*/5 2-5 * * *";
-  const quando = (hora: number, minuto: number, dia = 12) => new Date(2026, 10, dia, hora, minuto);
+  const quando = (hora: number, minuto: number, dia = 12) => {
+    const hh = String(hora).padStart(2, "0");
+    const mm = String(minuto).padStart(2, "0");
+    const dd = String(dia).padStart(2, "0");
+    return new Date(`2026-11-${dd}T${hh}:${mm}:00-03:00`);
+  };
 
   function relogioEm(data: Date) {
     vi.useFakeTimers();
@@ -531,6 +543,32 @@ describe("janela de manutenção da atualização (#4334)", () => {
       const fechado = mocks.updateRow.mock.calls[0]?.[0] as { status?: string; log_tail?: string };
       expect(fechado.status).toBe("failed");
       expect(fechado.log_tail).toContain("Run abandonado");
+    });
+  });
+
+  it("entre o prazo liberado e a abertura da janela, o segundo clique NÃO cancela o agendamento (#4504)", async () => {
+    // Clique às 23:00 de 19/11 em São Paulo (02:00Z de 20/11). Com a janela
+    // lida em UTC, o app achava que ela já estava aberta nesse instante e
+    // liberava o fechamento às 23:20 (02:20Z + 15 min); o host só abriria às
+    // 02:00 de São Paulo, ou seja 05:00Z. Nessa fresta de 2h40 — aqui medida às
+    // 23:40 — este mesmo clique fechava o pedido e o agendamento morria.
+    relogioEm(quando(23, 40, 19));
+    await comJanela(JANELA, async () => {
+      comRuns({
+        id: "run-agendado",
+        status: "dispatched",
+        dispatched_at: quando(23, 0, 19).toISOString(),
+      });
+
+      const res = await POST(clique());
+
+      expect(res.status).toBe(409);
+      const { error } = await res.json();
+      expect(error.code).toBe("state_conflict");
+      expect(error.message).toContain("janela de manutenção");
+      // O run segue `dispatched`: nada foi fechado e nada foi pedido de novo.
+      expect(mocks.updateRow).not.toHaveBeenCalled();
+      expect(mocks.insertRow).not.toHaveBeenCalled();
     });
   });
 

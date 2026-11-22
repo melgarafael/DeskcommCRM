@@ -1,5 +1,5 @@
 import { failureSupersededByRuntime, type RuntimeIdentity } from "@/lib/system/runtime-identity";
-import { normalizarJanela, primeiraOportunidade } from "@/lib/system/janela-de-manutencao";
+import { fusoDaJanela, normalizarJanela, primeiraOportunidade } from "@/lib/system/janela-de-manutencao";
 
 /**
  * Vocabulário e transições de uma atualização disparada pela UI.
@@ -66,11 +66,16 @@ export function isRunStale(dispatchedAt: string, now: Date): boolean {
  * Sem janela (ausente, vazia ou recusada) isto é `isRunStale` puro: o
  * comportamento de antes, byte a byte. Janela recusada é janela ABERTA, como no
  * shell — um erro de digitação não pode transformar todo run em "agendado".
+ *
+ * `fuso` é o da JANELA, não o do processo (#4504): ver o cabeçalho de
+ * `janela-de-manutencao.ts`. Sem ele, vale o declarado (`fusoDaJanela()`), que
+ * é o mesmo relógio de parede do `date +%H:%M` do `agent.sh`.
  */
 export function runAbandonado(
   dispatchedAt: string,
   now: Date,
   janelaBruta?: string | null,
+  fuso: string = fusoDaJanela(),
 ): boolean {
   const janela = normalizarJanela(janelaBruta);
   if (!janela) return isRunStale(dispatchedAt, now);
@@ -78,7 +83,7 @@ export function runAbandonado(
   const inicio = Date.parse(dispatchedAt);
   if (Number.isNaN(inicio)) return true;
 
-  const primeira = primeiraOportunidade(janela, new Date(inicio));
+  const primeira = primeiraOportunidade(janela, new Date(inicio), fuso);
   // Janela que não abre em 24 h: o pedido nunca vai rodar, mas fechá-lo como
   // "agente travado" seria mentira — quem tem de falar aqui é quem configurou.
   // Não fechar mantém o pedido de pé, que é o desfecho conservador.

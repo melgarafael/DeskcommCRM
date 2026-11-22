@@ -68,6 +68,20 @@ services:
       # fila de todas as organizações dentro da requisição
       # (lib/dev/kick-local-pipeline.ts).
       EVENT_LOG_WORKER_DRAINS: ${EVENT_LOG_WORKER_DRAINS:-true}
+      # ── OS DOIS FUSOS DO APP, DECLARADOS (#4504) ──────────────────────────
+      # `TZ` é o fuso do PROCESSO — e é o de sempre: o contêiner não declarava
+      # nada e caía no UTC da imagem. Declarado aqui para não depender do
+      # default desta ou daquela base, e para deixar claro que ele NÃO é o fuso
+      # da janela de manutenção.
+      #
+      # `SYSTEM_UPDATE_WINDOW_TZ` é o fuso em que a JANELA é lida — o mesmo
+      # relógio de parede do `date +%H:%M` do `agent.sh`, que é o lado que
+      # executa. Ausente, vale `America/Sao_Paulo` no código; num host de outro
+      # fuso, declare aqui a zona IANA do host (`Europe/Lisbon`, `UTC`…). As
+      # duas pontas precisam ler a mesma hora: em UTC-3, um app lendo a janela
+      # em UTC abria o prazo de 15 min às 23h e o host só executava às 02h.
+      TZ: UTC
+      SYSTEM_UPDATE_WINDOW_TZ: ${SYSTEM_UPDATE_WINDOW_TZ:-America/Sao_Paulo}
     depends_on:
       srh:
         condition: service_started

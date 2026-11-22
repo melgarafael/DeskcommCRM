@@ -1,5 +1,5 @@
 /**
- * A JANELA DE MANUTENÇÃO LIDA PELO APP (#4334).
+ * A JANELA DE MANUTENÇÃO LIDA PELO APP (#4334, #4504).
  *
  * Este arquivo é o espelho em TypeScript de `janela_normalizada` e
  * `janela_contem` (`hostgator-setup-kit/_common.sh`), e a régua aqui é a MESMA
@@ -7,14 +7,31 @@
  * janela ABERTA. Um teste que afrouxasse isso deixaria a rota fechando (ou não
  * fechando) runs por um motivo que o `agent.sh` não reconhece.
  *
- * Tempo é construído em horário LOCAL (`new Date(ano, mês, dia, hora, min)`),
- * que é o mesmo relógio que `date +%H:%M` usa no host — e o que a varredura de
- * `primeiraOportunidade` lê. Fixar em UTC faria o teste passar em UTC e falhar
- * numa VPS em -03.
+ * TEMPO E FUSO. Os instantes são escritos com o deslocamento explícito
+ * (`-03:00`, o do host que roda o `agent.sh`), nunca com
+ * `new Date(ano, mês, dia, hora, min)` — aquele construtor lê o fuso da
+ * MÁQUINA, e o mesmo teste passaria aqui (VPS em -03) e falharia no CI (UTC).
+ * É exatamente a confusão que o #4504 conserta: a janela é lida no fuso
+ * declarado (`America/Sao_Paulo` por padrão, `SYSTEM_UPDATE_WINDOW_TZ` para
+ * declarar outro), e o fuso do processo deixa de importar.
  */
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { janelaContem, normalizarJanela, primeiraOportunidade } from "./janela-de-manutencao";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  FUSO_PADRAO_DA_JANELA,
+  fusoDaJanela,
+  horaEMinutoNoFuso,
+  janelaContem,
+  normalizarJanela,
+  primeiraOportunidade,
+} from "./janela-de-manutencao";
+
+/** Um instante do relógio de parede do host (`-03:00`), sem depender do fuso da máquina. */
+const emSaoPaulo = (isoLocal: string) => new Date(`${isoLocal}-03:00`);
 
 describe("normalizarJanela", () => {
   it("aceita os cinco campos do cron, com um espaço entre eles", () => {
@@ -87,25 +104,141 @@ describe("primeiraOportunidade", () => {
   const JANELA = "*/5 2-5 * * *";
 
   it("despacho de dia: a janela só abre na madrugada seguinte", () => {
-    const despacho = new Date(2026, 10, 12, 10, 0);
+    const despacho = emSaoPaulo("2026-11-12T10:00:00");
     const primeira = primeiraOportunidade(JANELA, despacho);
-    expect(primeira?.getTime()).toBe(new Date(2026, 10, 13, 2, 0).getTime());
+    expect(primeira?.toISOString()).toBe(emSaoPaulo("2026-11-13T02:00:00").toISOString());
   });
 
   it("despacho dentro da janela: a próxima oportunidade é o ciclo seguinte", () => {
-    expect(primeiraOportunidade(JANELA, new Date(2026, 10, 12, 2, 0))?.getTime()).toBe(
-      new Date(2026, 10, 12, 2, 5).getTime(),
-    );
+    expect(
+      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString(),
+    ).toBe(emSaoPaulo("2026-11-12T02:05:00").toISOString());
   });
 
   it("o minuto da própria despacho não conta — o agente pega no ciclo seguinte", () => {
     // 01:59:59 → o primeiro minuto inteiro DEPOIS é 02:00, que já está na janela.
-    expect(primeiraOportunidade(JANELA, new Date(2026, 10, 12, 1, 59, 59))?.getTime()).toBe(
-      new Date(2026, 10, 12, 2, 0).getTime(),
-    );
+    expect(
+      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T01:59:59"))?.toISOString(),
+    ).toBe(emSaoPaulo("2026-11-12T02:00:00").toISOString());
     // 02:00:00 exato: 02:00 já passou, e 02:01 não casa o passo — 02:05.
-    expect(primeiraOportunidade(JANELA, new Date(2026, 10, 12, 2, 0, 0))?.getTime()).toBe(
-      new Date(2026, 10, 12, 2, 5).getTime(),
+    expect(
+      primeiraOportunidade(JANELA, emSaoPaulo("2026-11-12T02:00:00"))?.toISOString(),
+    ).toBe(emSaoPaulo("2026-11-12T02:05:00").toISOString());
+  });
+});
+
+/**
+ * O FUSO DA JANELA (#4504).
+ *
+ * Vermelho antes: o cálculo lia `getHours()`, o fuso do PROCESSO. Com a janela
+ * de 5 em 5 minutos das 2h às 5h59 e um clique às 23:15 de São Paulo (02:15Z),
+ * `TZ=UTC` devolvia 02:20Z e `TZ=America/Sao_Paulo` devolvia 05:00Z — o app
+ * liberando o fechamento do pedido 2h40 antes de o host poder executá-lo.
+ */
+describe("fuso da janela (#4504)", () => {
+  const JANELA = "*/5 2-5 * * *";
+  /** 23:15 de 19/11 em São Paulo — o clique do defeito medido. */
+  const CLIQUE = new Date("2026-11-20T02:15:00.000Z");
+
+  /**
+   * Roda `primeiraOportunidade` num PROCESSO de verdade com `TZ` trocado: só
+   * assim o `getHours()` de antes apareceria. Trocar `process.env.TZ` dentro do
+   * vitest não muda o fuso que o Node já resolveu.
+   */
+  function emProcesso(tz: string, janela = JANELA, clique = CLIQUE.toISOString()): string {
+    const modulo = fileURLToPath(new URL("./janela-de-manutencao.ts", import.meta.url));
+    const programa = [
+      `const { primeiraOportunidade } = await import(${JSON.stringify(modulo)});`,
+      `const quando = primeiraOportunidade(${JSON.stringify(janela)}, new Date(${JSON.stringify(clique)}));`,
+      `process.stdout.write(quando ? quando.toISOString() : "null");`,
+    ].join("\n");
+    return execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", programa], {
+      env: { ...process.env, TZ: tz },
+      encoding: "utf8",
+    }).trim();
+  }
+
+  it("o mesmo cron e o mesmo clique dão o MESMO instante com TZ=UTC e TZ=America/Sao_Paulo", () => {
+    const comUTC = emProcesso("UTC");
+    const comLocal = emProcesso("America/Sao_Paulo");
+
+    expect(comUTC).toBe(comLocal);
+    // 02:00 de 20/11 em São Paulo — a hora em que o host abre a janela.
+    expect(comUTC).toBe("2026-11-20T05:00:00.000Z");
+  });
+
+  it("o instante vem do fuso DECLARADO, não de um acidente do processo", () => {
+    vi.stubEnv("SYSTEM_UPDATE_WINDOW_TZ", "UTC");
+    try {
+      // A mesma janela lida em UTC abre 02:00Z — é o valor de antes do #4504, e
+      // é o que um host em UTC deve ver. O que não pode acontecer é isso mudar
+      // sozinho: agora só muda declarando.
+      expect(primeiraOportunidade(JANELA, CLIQUE)?.toISOString()).toBe("2026-11-20T02:20:00.000Z");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(primeiraOportunidade(JANELA, CLIQUE)?.toISOString()).toBe("2026-11-20T05:00:00.000Z");
+  });
+
+  it("fuso declarado de outro host é respeitado; valor inválido cai no padrão", () => {
+    expect(FUSO_PADRAO_DA_JANELA).toBe("America/Sao_Paulo");
+    expect(fusoDaJanela("")).toBe(FUSO_PADRAO_DA_JANELA);
+    expect(fusoDaJanela("   ")).toBe(FUSO_PADRAO_DA_JANELA);
+    expect(fusoDaJanela(null)).toBe(FUSO_PADRAO_DA_JANELA);
+    expect(fusoDaJanela("Europe/Lisbon")).toBe("Europe/Lisbon");
+
+    // 23:15 de 19/11 em Lisboa (23:15Z, Lisboa é UTC+0 no inverno): a janela
+    // das 2h às 5h59 abre 02:00Z do dia 20 — e não 02:00 de São Paulo (05:00Z).
+    expect(
+      primeiraOportunidade(JANELA, new Date("2026-11-19T23:15:00.000Z"), "Europe/Lisbon")?.toISOString(),
+    ).toBe("2026-11-20T02:00:00.000Z");
+
+    // Lixo não vira fuso do processo: vira o padrão declarado.
+    expect(fusoDaJanela("Marte/Olympus")).toBe(FUSO_PADRAO_DA_JANELA);
+    expect(primeiraOportunidade(JANELA, CLIQUE, "Marte/Olympus")?.toISOString()).toBe(
+      "2026-11-20T05:00:00.000Z",
+    );
+
+    vi.stubEnv("SYSTEM_UPDATE_WINDOW_TZ", "Europe/Lisbon");
+    try {
+      expect(fusoDaJanela()).toBe("Europe/Lisbon");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("hora e minuto de parede no fuso da janela", () => {
+    const madrugada = new Date("2026-11-20T05:00:00.000Z");
+    expect(horaEMinutoNoFuso(madrugada, "America/Sao_Paulo")).toEqual({ hora: 2, minuto: 0 });
+    expect(horaEMinutoNoFuso(madrugada, "UTC")).toEqual({ hora: 5, minuto: 0 });
+    // Duas horas sem zero à esquerda e meia-noite como 0 — `hourCycle: "h23"`,
+    // porque o default de `en-US` devolve "24" à meia-noite e `janelaContem`
+    // recusaria a hora 24.
+    expect(horaEMinutoNoFuso(new Date("2026-11-20T03:00:00.000Z"), "UTC")).toEqual({
+      hora: 3,
+      minuto: 0,
+    });
+    expect(horaEMinutoNoFuso(new Date("2026-11-20T00:00:00.000Z"), "UTC")).toEqual({
+      hora: 0,
+      minuto: 0,
+    });
+    expect(horaEMinutoNoFuso(new Date("2026-11-20T00:05:00.000Z"), "UTC")).toEqual({
+      hora: 0,
+      minuto: 5,
+    });
+  });
+
+  it("o compose declara o MESMO fuso padrão do código", () => {
+    // Duas declarações do mesmo fuso é uma a mais do que o ideal; se elas
+    // divergirem, a janela muda de significado em produção sem nenhum teste
+    // vermelho. Esta é a cerca.
+    const compose = readFileSync(
+      fileURLToPath(new URL("../../docker-compose.prod.yml", import.meta.url)),
+      "utf8",
+    );
+    expect(compose).toContain(
+      `SYSTEM_UPDATE_WINDOW_TZ: \${SYSTEM_UPDATE_WINDOW_TZ:-${FUSO_PADRAO_DA_JANELA}}`,
     );
   });
 });

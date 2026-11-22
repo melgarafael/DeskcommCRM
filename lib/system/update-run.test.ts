@@ -237,16 +237,22 @@ describe("rollbackDesmentidoPeloApp", () => {
   });
 });
 
-describe("runAbandonado — o relógio do abandono com a janela de manutenção (#4334)", () => {
+describe("runAbandonado — o relógio do abandono com a janela de manutenção (#4334, #4504)", () => {
   const JANELA = "*/5 2-5 * * *";
-  const despachoDeDia = new Date(2026, 10, 12, 10, 0).toISOString();
+  /**
+   * Instantes no fuso DECLARADO da janela (`-03:00`), não no fuso da máquina:
+   * `new Date(2026, 10, 12, 10, 0)` lê o relógio da máquina e fazia o mesmo
+   * caso passar na VPS em -03 e falhar no CI em UTC — o defeito do #4504.
+   */
+  const emSaoPaulo = (isoLocal: string) => new Date(`${isoLocal}-03:00`);
+  const despachoDeDia = emSaoPaulo("2026-11-12T10:00:00").toISOString();
 
   it("sem janela continua exatamente o de antes: 15 min após o clique, abandonado", () => {
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 14))).toBe(false);
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16))).toBe(true);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-12T10:14:00"))).toBe(false);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-12T10:16:00"))).toBe(true);
     // Vazio e recusado são janela ABERTA, como no shell.
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), "")).toBe(true);
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), "02:00-05:00")).toBe(
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-12T10:16:00"), "")).toBe(true);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-12T10:16:00"), "02:00-05:00")).toBe(
       true,
     );
   });
@@ -254,27 +260,38 @@ describe("runAbandonado — o relógio do abandono com a janela de manutenção 
   it("com janela, o segundo clique das 10h15 NÃO fecha o pedido da madrugada", () => {
     // O defeito medido: 15 min de idade, zero oportunidades de execução.
     // Antes: fechado como "Run abandonado". Depois: continua de pé.
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), JANELA)).toBe(false);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-12T10:16:00"), JANELA)).toBe(false);
     // Mesmo 16 horas depois do clique, o run segue esperando: a janela abre 02:00.
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 1, 59), JANELA)).toBe(false);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-13T01:59:00"), JANELA)).toBe(false);
   });
 
   it("mas a janela que já abriu conta: 15 min depois da primeira oportunidade, abandonado", () => {
     // `*/5 2-5` abre às 02:00 (minuto 0 do passo 5) — a primeira oportunidade
     // depois do clique das 10h. O limite é `>`: 02:15 ainda não é abandono,
     // 02:16 é o primeiro minuto em que o run é desfecho desconhecido.
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 2, 15), JANELA)).toBe(false);
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 2, 16), JANELA)).toBe(true);
-    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 9, 0), JANELA)).toBe(true);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-13T02:15:00"), JANELA)).toBe(false);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-13T02:16:00"), JANELA)).toBe(true);
+    expect(runAbandonado(despachoDeDia, emSaoPaulo("2026-11-13T09:00:00"), JANELA)).toBe(true);
   });
 
   it("despacho já dentro da janela: o relógio começa no ciclo seguinte, não no clique", () => {
-    const despachoNaJanela = new Date(2026, 10, 12, 2, 0).toISOString();
-    expect(runAbandonado(despachoNaJanela, new Date(2026, 10, 12, 2, 16), JANELA)).toBe(false);
-    expect(runAbandonado(despachoNaJanela, new Date(2026, 10, 12, 2, 21), JANELA)).toBe(true);
+    const despachoNaJanela = emSaoPaulo("2026-11-12T02:00:00").toISOString();
+    expect(runAbandonado(despachoNaJanela, emSaoPaulo("2026-11-12T02:16:00"), JANELA)).toBe(false);
+    expect(runAbandonado(despachoNaJanela, emSaoPaulo("2026-11-12T02:21:00"), JANELA)).toBe(true);
+  });
+
+  it("o prazo é lido no fuso declarado da janela, não no do processo (#4504)", () => {
+    // Clique às 23:00 de 19/11 em São Paulo: a janela abre 02:00 do dia 20
+    // (05:00Z). Às 23:40 o pedido ainda espera — com a janela lida em UTC ele
+    // já estaria abandonado desde 02:20Z, 2h40 antes de o host poder rodar.
+    const cliqueDaNoite = emSaoPaulo("2026-11-19T23:00:00").toISOString();
+    const segundaPorta = emSaoPaulo("2026-11-19T23:40:00");
+    expect(runAbandonado(cliqueDaNoite, segundaPorta, JANELA)).toBe(false);
+    // A mesma pergunta em UTC — só muda quando alguém DECLARA o outro fuso.
+    expect(runAbandonado(cliqueDaNoite, segundaPorta, JANELA, "UTC")).toBe(true);
   });
 
   it("data ilegível no run é desfecho desconhecido, com ou sem janela", () => {
-    expect(runAbandonado("nao-e-data", new Date(2026, 10, 12, 10, 16), JANELA)).toBe(true);
+    expect(runAbandonado("nao-e-data", emSaoPaulo("2026-11-12T10:16:00"), JANELA)).toBe(true);
   });
 });
