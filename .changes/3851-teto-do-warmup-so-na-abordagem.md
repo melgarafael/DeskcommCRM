@@ -18,9 +18,3 @@ continuam valendo para todo envio, e opt-out, bloqueio e janela seguem vetando.
 
 Ligar a opção não solta mensagem parada: os turnos adiados pelo teto continuam com
 o dia marcado, porque só os adiados pela janela são reagendados na abertura dela.
-
-O **teto próprio do follow-up** que a opção cria agora é configurável: a mesma ficha
-e a rota `PUT/PATCH /api/v1/ai/pacing` aceitam `followup_daily_cap` (inteiro maior
-que zero, até 10.000 envios/dia). Em branco ou `NULL`, vale o padrão de **200/dia** —
-quem nunca mexeu não vê diferença, e o motor segue vetando o 201º follow-up com
-`followup_cap`. Antes o campo existia só no banco: toda empresa ficava presa nos 200.

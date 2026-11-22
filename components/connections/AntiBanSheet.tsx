@@ -48,8 +48,6 @@ interface FormState {
   atraso_minimo_ms: string;
   atraso_maximo_ms: string;
   daily_message_limit: string;
-  /** Teto próprio do follow-up (#4063). '' = herda o default (200/dia). */
-  followup_daily_cap: string;
   allow_sunday: boolean;
   /** Teto do dia só na abordagem (#3851). Default desligado = régua de sempre. */
   teto_so_abordagem: boolean;
@@ -78,7 +76,6 @@ function fromItem(item: PacingKnobsItem): FormState {
       item.channel_session.daily_message_limit != null
         ? String(item.channel_session.daily_message_limit)
         : "",
-    followup_daily_cap: o?.followup_daily_cap != null ? String(o.followup_daily_cap) : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
     teto_so_abordagem: o?.teto_so_abordagem ?? item.defaults.tetoSoAbordagem,
     // Dias nascem do EFETIVO (banco normalizado ou default todos os dias): a
@@ -219,9 +216,6 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         ...(form.daily_message_limit.trim() !== ""
           ? { daily_message_limit: Math.round(Number(form.daily_message_limit)) }
           : {}),
-        // `null` = "nunca mexi": o motor lê o default (200). É o mesmo contrato
-        // dos outros knobs — o campo vazio não grava 0, volta a herdar.
-        followup_daily_cap: intOrNull(form.followup_daily_cap),
         // Meio-dia UTC, não meia-noite: a data é um DIA declarado pelo operador, e
         // meia-noite vira o dia anterior em qualquer fuso a oeste — o número
         // envelheceria um dia a menos do que ele informou.
@@ -562,28 +556,6 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             <p className="text-xs text-muted-foreground">
               {t(
                 "Máximo de mensagens que este número inicia por dia: primeira mensagem, follow-up e campanha. A resposta a quem escreveu não conta. Números novos também respeitam o aquecimento automático abaixo, o que for menor.",
-              )}
-            </p>
-          </fieldset>
-
-          <fieldset className="flex flex-col gap-2">
-            <Label htmlFor="followup-daily-cap">{t("Teto diário do follow-up")}</Label>
-            <Input
-              id="followup-daily-cap"
-              type="number"
-              min={item.bounds.followup_daily_cap.min}
-              max={item.bounds.followup_daily_cap.max}
-              inputMode="numeric"
-              placeholder={String(eff.followupDailyCap)}
-              value={form.followup_daily_cap}
-              onChange={(e) => set({ followup_daily_cap: e.target.value })}
-              disabled={!canWrite}
-              aria-label={t("Teto diário de follow-ups")}
-              className="w-32"
-            />
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Máximo de mensagens que retomam conversa (follow-up) por dia, quando o teto do dia conta só a abordagem. Campo vazio usa o padrão de 200. Com o teto do dia contando tudo, o follow-up continua entrando no teto diário acima e este valor não se aplica.",
               )}
             </p>
           </fieldset>

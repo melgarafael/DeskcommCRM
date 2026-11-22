@@ -124,7 +124,6 @@ function itemDePacing(over: Partial<PacingKnobsItem> = {}): PacingKnobsItem {
       hourLastStart: 23,
       hourEnd: 24,
       daily_limit: { min: 1, max: 2_000 },
-      followup_daily_cap: { min: 1, max: 10_000 },
     },
     ...over,
   };
