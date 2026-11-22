@@ -36,6 +36,7 @@ import { logger } from "@/lib/logger";
 
 import { idsDaCadeiaDoAviso, modoDoDestinoDoAviso, resolverDestinoDoAviso } from "./destino-do-aviso";
 import { normalizarTelefoneDeAviso, telefoneDeAvisoValido } from "./estado-do-aviso";
+import { lerMembrosSemAviso } from "./membros-sem-aviso";
 
 /** A linha da conversa, reduzida ao que a cadeia lê. */
 export type ConversaDoMundoDoAviso = {
@@ -54,6 +55,11 @@ export interface MundoDoAviso {
   contato: ContatoDoMundoDoAviso | null;
   /** `user_id` → WhatsApp do perfil do membro (ou `null` quando não cadastrou). */
   whatsapps: Map<string, string | null>;
+  /**
+   * Quem está marcado com "Não enviar aviso de caso" (#4989). Opcional porque
+   * os dublês anteriores não o têm: ausente = ninguém marcado.
+   */
+  naoAvisar?: ReadonlySet<string>;
 }
 
 /** O que o membro digitou, na forma que o banco aceita. */
@@ -113,6 +119,11 @@ export async function carregaWhatsappsDosMembros(
 export async function carregaMundoDoAviso(
   admin: SupabaseClient,
   entrada: { organizationId: string; conversationId: string | null; contactId: string | null },
+  /**
+   * `comMarca` lê também "Não enviar aviso de caso" (#4989). Só o aviso de
+   * CASO pede: o de proposta não respeita a marca e não deve esperar por ela.
+   */
+  opcoes: { comMarca?: boolean } = {},
 ): Promise<MundoDoAviso> {
   const { organizationId, conversationId, contactId } = entrada;
 
@@ -149,27 +160,73 @@ export async function carregaMundoDoAviso(
   // Falha de leitura NÃO derruba o aviso: quem chama trata cada linha ausente
   // como "este elo não existe", e a cadeia cai no número da empresa. Lançar
   // aqui transformaria um `42P01` num aviso que nunca sai.
-  if (conversa.error || contato.error || negocio.error) {
-    const linhaConversa = conversa.error ? null : (conversa.data as ConversaDoMundoDoAviso | null);
-    const linhaContato = contato.error ? null : (contato.data as ContatoDoMundoDoAviso | null);
-    const linhaNegocio = negocio.error ? null : (negocio.data as NegocioDoMundoDoAviso | null);
-    return {
-      conversa: linhaConversa,
-      negocio: linhaNegocio,
-      contato: linhaContato,
-      whatsapps: new Map(),
-    };
-  }
-
+  const falhou = Boolean(conversa.error || contato.error || negocio.error);
   const mundo: MundoDoAviso = {
-    conversa: (conversa.data as ConversaDoMundoDoAviso | null) ?? null,
-    negocio: (negocio.data as NegocioDoMundoDoAviso | null) ?? null,
-    contato: (contato.data as ContatoDoMundoDoAviso | null) ?? null,
+    conversa: conversa.error ? null : ((conversa.data as ConversaDoMundoDoAviso | null) ?? null),
+    negocio: negocio.error ? null : ((negocio.data as NegocioDoMundoDoAviso | null) ?? null),
+    contato: contato.error ? null : ((contato.data as ContatoDoMundoDoAviso | null) ?? null),
     whatsapps: new Map(),
   };
+  if (falhou && !opcoes.comMarca) return mundo;
+
   const ids = idsDaCadeiaDoAviso(mundo);
-  mundo.whatsapps = await carregaWhatsappsDosMembros(admin, organizationId, ids);
+  if (!falhou) {
+    // O caminho normal: telefone dos elos, e a marca quando pedida.
+    const [whatsapps, marca] = await Promise.all([
+      carregaWhatsappsDosMembros(admin, organizationId, ids),
+      opcoes.comMarca && ids.length > 0 ? lerMarca(admin, organizationId) : Promise.resolve(new Set<string>()),
+    ]);
+    mundo.whatsapps = whatsapps;
+    if (opcoes.comMarca) mundo.naoAvisar = marcadosAtivos(marca, whatsapps);
+    return mundo;
+  }
+
+  // Uma leitura ACESSÓRIA falhou (ex.: o negócio). Os telefones continuam fora
+  // — é o comportamento de antes: a cadeia cai no número da empresa. Uma
+  // exceção, e só uma: a PRIMEIRA pessoa lida da cadeia está marcada. Aí a
+  // vez é dela com certeza, e uma leitura de outro elo não pode jogar no
+  // celular do dono o caso que alguém pediu para não avisar. Marca de um elo
+  // seguinte não vale aqui: sem os telefones não dá para saber se a vez
+  // chegaria nele (o primeiro podia ter número).
+  const primeiro = ids[0];
+  if (!primeiro) {
+    mundo.naoAvisar = new Set();
+    return mundo;
+  }
+  try {
+    const [ativos, marca] = await Promise.all([
+      carregaWhatsappsDosMembros(admin, organizationId, [primeiro]),
+      lerMarca(admin, organizationId),
+    ]);
+    mundo.naoAvisar = marcadosAtivos(marca, ativos);
+  } catch {
+    mundo.naoAvisar = new Set();
+  }
   return mundo;
+}
+
+/**
+ * A marca "Não enviar aviso de caso" (#4989). Ler falhou = ninguém marcado,
+ * DECLARADO no log: o aviso segue a ordem de sempre em vez de sumir.
+ */
+async function lerMarca(admin: SupabaseClient, organizationId: string): Promise<Set<string>> {
+  const marca = await lerMembrosSemAviso(admin, organizationId);
+  if (marca.ids !== null) return marca.ids;
+  logger.warn(
+    "[aviso-de-caso] a marca de quem não recebe aviso (não enviar aviso de caso) não pôde ser lida; seguindo a ordem de sempre",
+    { organizationId, causa: "causa" in marca ? marca.causa : "desconhecida" },
+  );
+  return new Set();
+}
+
+/**
+ * Só vale a marca de quem ainda é membro ATIVO: `carregaWhatsappsDosMembros`
+ * só devolve chave para vínculo ativo (valor `null` = ativo sem número). Quem
+ * saiu da equipe e ficou marcado não pode parar a cadeia — é pulado como
+ * sempre foi.
+ */
+function marcadosAtivos(marca: ReadonlySet<string>, ativos: ReadonlyMap<string, unknown>): Set<string> {
+  return new Set([...marca].filter((id) => ativos.has(id)));
 }
 
 /**
@@ -182,6 +239,7 @@ export async function carregaMundoDoAviso(
 export function destinoDoAvisoComMundo(
   config: Record<string, unknown> | null | undefined,
   mundo: MundoDoAviso,
+  opcoes: { respeitaNaoAvisar?: boolean } = {},
 ) {
   return resolverDestinoDoAviso({
     config,
@@ -189,6 +247,9 @@ export function destinoDoAvisoComMundo(
     negocio: mundo.negocio,
     contato: mundo.contato,
     whatsapps: mundo.whatsapps,
+    // Só o aviso de CASO respeita a marca (#4989): a issue não fala do aviso
+    // de proposta, e ele continua na cadeia de sempre.
+    ...(opcoes.respeitaNaoAvisar && mundo.naoAvisar ? { naoAvisar: mundo.naoAvisar } : {}),
   });
 }
 
@@ -224,7 +285,7 @@ export async function resolveDestinoDoEnvio(entrada: {
   if (modoDoDestinoDoAviso(config) === "responsavel" && carregaMundo) {
     try {
       const mundo = await carregaMundo({ organizationId, conversationId, contactId });
-      return destinoDoAvisoComMundo(config, mundo);
+      return destinoDoAvisoComMundo(config, mundo, { respeitaNaoAvisar: aviso === "caso" });
     } catch (err) {
       logger.warn(`[aviso-de-${aviso}] destino do responsável não pôde ser lido; usando o número da empresa`, {
         organizationId,

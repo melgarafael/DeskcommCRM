@@ -7,14 +7,15 @@ import { useAgentsList } from "@/hooks/ai/useAgents";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import { usePipelinesDaPaleta } from "@/hooks/pipelines/usePipelinesDaPaleta";
 import { roleAtLeast } from "@/lib/auth/types";
-import { NAV_GROUPS, searchable } from "@/lib/navigation/registry";
+import { GRUPO_DOS_MODULOS, NAV_GROUPS, searchable } from "@/lib/navigation/registry";
 import {
   GRUPOS_DE_ITENS_DA_BUSCA,
   itensDaBusca,
   type GrupoDeItensDaBusca,
 } from "@/lib/navigation/itens-da-paleta";
-import { FlowArrow, Funnel, Robot } from "@/lib/ui/icons";
+import { FlowArrow, Funnel, PuzzlePiece, Robot } from "@/lib/ui/icons";
 import { PaletaDeDestinos, type DestinoDaPaleta } from "@/components/shell/PaletaDeDestinos";
+import { usePainelDoModulo } from "@/components/modulo/PainelDoModulo";
 
 /**
  * Paleta de busca do topo (⌘K) do APP DO TENANT.
@@ -72,6 +73,7 @@ export function CommandPalette({
         activeOrg?.interface_settings,
         activeOrg?.modulos_ligados ?? [],
         activeOrg?.capacidades_ligadas ?? [],
+        activeOrg?.modulos_conectados ?? [],
       ),
     [
       user.is_platform_admin,
@@ -80,8 +82,14 @@ export function CommandPalette({
       activeOrg?.interface_settings,
       activeOrg?.modulos_ligados,
       activeOrg?.capacidades_ligadas,
+      activeOrg?.modulos_conectados,
     ],
   );
+
+  // "Abrir ao lado: <módulo>": um item por módulo conectado, no grupo gerado. Escolher abre o painel
+  // lateral (em tela estreita o painel leva à rota do módulo). O `href` é só identidade na lista.
+  const { modulos, abrir } = usePainelDoModulo();
+  const rotuloAoLado = t("Abrir ao lado");
 
   const { podeVerFunis, podeVerFluxos, podeVerAgentes } = useMemo(
     () => ({
@@ -104,15 +112,29 @@ export function CommandPalette({
       fluxos: fluxos.data ?? [],
       agentes: agentes.data ?? [],
     });
-    return [...visiveis, ...itens.map((item) => ({ ...item, icon: ICONE_DO_GRUPO[item.group] }))];
-  }, [visiveis, funis.data, fluxos.data, agentes.data]);
+    return [
+      ...visiveis,
+      ...itens.map((item) => ({ ...item, icon: ICONE_DO_GRUPO[item.group] })),
+      ...modulos.map((m) => ({
+        href: `painel-do-modulo:${m.slug}`,
+        label: `${rotuloAoLado}: ${m.titulo}`,
+        description: "Módulo conectado",
+        group: GRUPO_DOS_MODULOS.id,
+        icon: PuzzlePiece,
+        acao: () => abrir(m.slug),
+      })),
+    ];
+  }, [visiveis, funis.data, fluxos.data, agentes.data, modulos, abrir, rotuloAoLado]);
+
+  // O grupo "Módulos" é gerado: entra no fim da lista de categorias e só aparece com destino nele.
+  const grupos = useMemo(() => [...NAV_GROUPS, ...GRUPOS_DE_ITENS_DA_BUSCA, GRUPO_DOS_MODULOS], []);
 
   return (
     <PaletaDeDestinos
       open={open}
       onOpenChange={onOpenChange}
       destinos={destinos}
-      grupos={[...NAV_GROUPS, ...GRUPOS_DE_ITENS_DA_BUSCA]}
+      grupos={grupos}
       titulo={t("Buscar no sistema")}
       rotuloLista={t("Resultados")}
       placeholder={t(

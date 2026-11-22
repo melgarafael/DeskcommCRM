@@ -16,6 +16,7 @@ import {
   createSupabaseFollowupGateDb,
   resolveAgentForAutomaticTrigger,
 } from "@/lib/followup/agent-followup-gate";
+import { resolverNegocioDaFronteira } from "@/lib/followup/elegibilidade-do-negocio";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
 
 /**
@@ -161,6 +162,12 @@ export async function enrollFollowupFlow(
     };
   }
 
+  // #4191: a inscrição passa a carregar o NEGÓCIO (não só o contato). Sem isto a
+  // guarda de cobrança não teria como distinguir o card marcado como não
+  // comercial do outro negócio aberto da mesma pessoa, e a única saída seria
+  // calar o contato — que é justamente o que a issue proíbe.
+  const negocioId = await resolverNegocioDaFronteira(supabase, boundary);
+
   const { data: created, error: insErr } = await supabase
     .from("followup_enrollments")
     .insert({
@@ -168,6 +175,7 @@ export async function enrollFollowupFlow(
       pointer_id: pointerId,
       version_id: pointer.active_version_id,
       contact_id: contactId,
+      lead_id: negocioId,
       current_node_id: triggerNode.id,
       status: "active",
       // next_eval_at omite: default now() do banco (migration 0147). new Date()

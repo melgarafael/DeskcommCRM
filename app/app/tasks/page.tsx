@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { metadadosDaSessao, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { escopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
+import { filtroInicialDaTela } from "@/lib/tarefas/preferencia-do-filtro";
 
 import { TarefasClient } from "./_components/TarefasClient";
 
@@ -28,6 +30,23 @@ export const metadata: Metadata = { title: "Tarefas" };
  * `viewer` VÊ as tarefas: saber o que o time combinou é informação de operação.
  * Criar e editar é `agent` — e a rota cobra de novo (`requireRole("agent")`).
  * A tela esconder o botão é cortesia, não autorização.
+ *
+ * ─── O FILTRO COM QUE A TELA ABRE (#4737) ──────────────────────────────────
+ *
+ * Duas decisões, e as duas no SERVIDOR:
+ *
+ *  1. **O padrão do papel.** Quem tem papel de atendente abre em "Minhas": a
+ *     fila dele é o que ele veio ver, e "Todos" numa operação com dez pessoas
+ *     é a lista do colega misturada com a sua.
+ *  2. **A escolha lembrada.** O último filtro que a pessoa escolheu volta no
+ *     próximo carregamento, lido do `raw_user_meta_data` pelo MESMO mecanismo
+ *     da Agenda (`lib/tarefas/preferencia-do-filtro.ts`). `?assigned_to=me`
+ *     continua ganhando de tudo: é o endereço que o lembrete abre.
+ *
+ * QUEM RESTRINGE É O BANCO: a policy `crm_tasks_select`, com "Atendentes podem
+ * mexer na agenda dos colegas" e "O que cada atendente enxerga". A página só
+ * lê a mesma régua (`escopoDaTelaDeTarefas`) para a tela dizer o recorte e não
+ * oferecer um colega cuja lista viria pela metade.
  */
 export default async function TarefasPage({
   searchParams,
@@ -54,10 +73,31 @@ export default async function TarefasPage({
     .eq("is_archived", false)
     .order("position");
 
+  // O recorte que a RLS aplica a esta pessoa, lido das MESMAS opções que a
+  // policy consulta. Não autoriza nada: a lista já chega recortada pelo banco.
+  const { data: organizacao } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  const escopoProprio = escopoDaTelaDeTarefas({
+    papel: activeOrg.role,
+    platformAdmin: user.is_platform_admin,
+    settings: organizacao?.settings,
+  });
+
+  // O padrão do papel: atendente abre em "Minhas"; o resto continua em "Todos".
+  const filtroInicial = filtroInicialDaTela(await metadadosDaSessao(), {
+    padrao: activeOrg.role === "agent" ? "eu" : "todos",
+    restritoAoProprio: escopoProprio !== null,
+    pedidoNoEndereco: assigned_to ?? null,
+  });
+
   return (
     <TarefasClient
       podeEditar={podeEditar}
-      minhasDeInicio={assigned_to === "me"}
+      filtroInicial={filtroInicial}
+      escopoProprio={escopoProprio}
       funis={(funis ?? []) as Array<{ id: string; name: string }>}
       setoresLigados={await moduloLigado(createAdminClient(), "setores")}
     />

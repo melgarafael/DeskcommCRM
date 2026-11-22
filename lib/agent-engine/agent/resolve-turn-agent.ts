@@ -718,8 +718,17 @@ export async function resolveTurnAgent(
       // #4363 — a TROCA AUTOMÁTICA diz de quem a conversa veio, para o agente
       // novo se apresentar e continuar. Uma leitura a mais, paga SÓ no turno da
       // troca; falha dela não derruba o turno — o aviso sai sem o nome.
+      //
+      // #4679 — o par (agente anterior, agente novo) é que decide, não o rótulo
+      // do desfecho. Com sticky entrando pela reserva, a intenção sticky é
+      // `null`; a PRIMEIRA intenção casada — mesmo a do próprio agente que já
+      // atende — vira `reclassified` com `agentId` igual ao anterior. Montar a
+      // passagem aí mandava o agente se reapresentar ("vou continuar seu
+      // atendimento") no meio da conversa, sem troca nenhuma. O `outcome`
+      // gravado continua `reclassified` (não mexemos na trilha do roteador);
+      // o que não existe mais é a passagem para quem nunca saiu do turno.
       const passagem: PassagemRecebida | null =
-        outcome !== 'reclassified' || input.stickyAgentId === null
+        outcome !== 'reclassified' || input.stickyAgentId === null || input.stickyAgentId === agentId
           ? null
           : {
               agenteAnteriorId: input.stickyAgentId,

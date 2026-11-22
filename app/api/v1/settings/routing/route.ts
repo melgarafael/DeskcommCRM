@@ -34,25 +34,26 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { atendimentoConfigPatchSchema, routingConfigSchema, validateRequest } from "@/lib/schemas";
 import { mesclarSettingsDeAtendimento } from "@/lib/schemas/routing";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 /** Default aplicado quando settings.routing ainda não existe (G1-06b). */
 const DEFAULT_ROUTING = routingConfigSchema.parse({});
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "settings_routing" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "settings_routing", role: "manager", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.routing", requestId);
+  if (teto) return teto;
+  const activeOrg = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: orgRow, error } = await supabase
     .from("organizations")
     .select("settings")
@@ -74,9 +75,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "settings_routing" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "settings_routing", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const { user: authUser, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.routing", requestId);
+  if (teto) return teto;
+  const activeOrg = { orgId: authz.organizationId };
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
   let input;
   try {
@@ -132,7 +136,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "routing.config_changed",
-    actorUserId: authUser.id,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "organization",
     resourceId: activeOrg.orgId,

@@ -264,6 +264,37 @@ describe("POST /api/v1/system/agent", () => {
     expect(lastUpdate("system_update_runs")?.status).toBeUndefined();
   });
 
+  it("run_scheduled grava a hora em que o pedido vai rodar, sem encerrar o run (#4334)", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const epoch = Math.floor(Date.now() / 1000) + 6 * 60 * 60;
+    const { POST } = await import("./route");
+    const res = await POST(req({ kind: "run_scheduled", run_id: RUN_ID, scheduled_for_epoch: epoch }));
+    expect(res.status).toBe(200);
+    expect(lastUpdate("system_update_runs")).toMatchObject({
+      scheduled_for: new Date(epoch * 1000).toISOString(),
+    });
+    expect(lastUpdate("system_update_runs")?.status).toBeUndefined();
+  });
+
+  it("run_scheduled recusa horário além de um dia (seguraria a cerca das extensões)", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const epoch = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60;
+    const { POST } = await import("./route");
+    const res = await POST(req({ kind: "run_scheduled", run_id: RUN_ID, scheduled_for_epoch: epoch }));
+    expect(res.status).toBe(422);
+    expect(lastUpdate("system_update_runs")).toBeNull();
+  });
+
+  it("run_scheduled de um run que já terminou → 409", async () => {
+    runRow = { id: RUN_ID, status: "success", dispatched_at: new Date().toISOString() };
+    const { POST } = await import("./route");
+    const res = await POST(
+      req({ kind: "run_scheduled", run_id: RUN_ID, scheduled_for_epoch: Math.floor(Date.now() / 1000) + 60 }),
+    );
+    expect(res.status).toBe(409);
+    expect(lastUpdate("system_update_runs")).toBeNull();
+  });
+
   it("run_progress quando o update falha → 500", async () => {
     runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
     updateErrorByTable.system_update_runs = { message: "conexão caiu" };

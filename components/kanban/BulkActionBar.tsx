@@ -30,6 +30,7 @@ import { resolveVocabulary } from "@/lib/kanban/vocabulary";
 import { filtrarEtiquetas } from "@/lib/kanban/filtrar-etiquetas";
 import type { PipelineVocabulary, Stage } from "@/lib/kanban/types";
 import { LoseLeadDialog } from "./LoseLeadDialog";
+import { LevarLoteParaOutroFunilDialog } from "./LevarLoteParaOutroFunilDialog";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface BulkActionBarProps {
@@ -53,6 +54,8 @@ interface BulkActionBarProps {
    */
   tagsExistentes: string[];
   onClear: () => void;
+  /** O título do card — o resultado de "levar para outro funil" nomeia quem ficou. */
+  tituloDe?: (leadId: string) => string | undefined;
 }
 
 export function BulkActionBar({
@@ -62,7 +65,9 @@ export function BulkActionBar({
   vocabulary,
   tagsExistentes,
   onClear,
+  tituloDe,
 }: BulkActionBarProps) {
+  const [outroFunilOpen, setOutroFunilOpen] = useState(false);
   const t = useT();
   const user = useUser();
   const activeOrg = useActiveOrg();
@@ -113,13 +118,16 @@ export function BulkActionBar({
 
   // Esc to clear selection
   useEffect(() => {
-    if (selectedIds.length === 0) return;
+    // Com "levar para outro funil" aberto, o Esc é do diálogo: limpar a
+    // seleção desmontaria a barra (e o diálogo) no meio do lote, e o
+    // resultado — quem foi recusado e por quê — sumiria sem ser lido.
+    if (selectedIds.length === 0 || outroFunilOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClear();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedIds.length, onClear]);
+  }, [selectedIds.length, onClear, outroFunilOpen]);
 
   if (selectedIds.length === 0) return null;
 
@@ -247,6 +255,15 @@ export function BulkActionBar({
                 {s.name}
               </DropdownMenuItem>
             ))}
+            {/* Outro FUNIL fica no mesmo menu: é a mesma pergunta ("para
+                onde vai?"), e quem procura não precisa achar um segundo botão. */}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              data-testid="lote-outro-funil"
+              onClick={() => setOutroFunilOpen(true)}
+            >
+              {t("Outro funil…")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -393,6 +410,18 @@ export function BulkActionBar({
           `leads/bulk`. Motivo é obrigatório (o diálogo já barra o "Confirmar"
           sem motivo) e a escrita respeita organização/permissão de cada item na
           rota. Só monta quando há etapa de perda (mesmo gate do gatilho). */}
+      {/* Só monta aberto: fechado, não há por que consultar os destinos. */}
+      {outroFunilOpen && (
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={setOutroFunilOpen}
+          pipelineId={pipelineId}
+          leadIds={selectedIds}
+          tituloDe={tituloDe}
+          onConcluido={onClear}
+        />
+      )}
+
       {etapaDePerda && (
         <LoseLeadDialog
           open={loseOpen}

@@ -32,6 +32,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /* ── dublês de infraestrutura (mesmo molde do teste de auditoria do #1755) ── */
 
+// A seção de vendas tem consulta própria (TanStack Query); aqui ela não é o assunto.
+vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => null }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useLocaleDeData: () => undefined }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));

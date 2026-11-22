@@ -133,7 +133,11 @@ export async function POST(req: NextRequest): Promise<Response> {
           requestId,
         });
       }
-      input = { ...input, owner_user_id: actor.id };
+      // Só a sessão chega aqui (papelDaSessao), logo o ator é pessoa; o guarda é explícito
+      // para que o id de um token nunca vá para coluna de pessoa (tests/unit/ator-modulo-nao-vira-pessoa).
+      if (actor.type === "user") {
+        input = { ...input, owner_user_id: actor.id };
+      }
     }
   }
 

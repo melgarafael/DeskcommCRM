@@ -134,11 +134,16 @@ function montarMundo(opts: MundoOpts = {}) {
         Promise.resolve({ data: inserido, error: null }).then(resolve, reject);
       return elo;
     };
+    // O POST de comanda confere o contato do corpo contra a empresa com
+    // `maybeSingle` antes de gravar: o contato DESTA empresa precisa responder,
+    // como responderia no banco de verdade.
     cadeia.maybeSingle = async () =>
       tabela === "organizations"
         ? // D11 — `moedaDaOrganizacao` lê `currency` com `maybeSingle`.
           { data: { currency: moedaDaOrg }, error: null }
-        : { data: null, error: null };
+        : tabela === "contacts"
+          ? { data: CONTATOS[0], error: null }
+          : { data: null, error: null };
     cadeia.single = async () => ({ data: null, error: null });
     cadeia.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
       Promise.resolve({

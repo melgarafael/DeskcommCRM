@@ -20,6 +20,10 @@ function consulta(filtros: Array<(l: Linha) => boolean> = []) {
   const com = (f: (l: Linha) => boolean) => consulta([...filtros, f]);
   const q = {
     select: () => q,
+    // O builder do supabase-js tem `limit`; o dublê não tinha, e a rota passou a
+    // usá-lo nas pastas de histórico (#4451). Devolve a MESMA consulta: aqui o
+    // teste mede as contagens exatas, e o teto não corta nada destes cenários.
+    limit: () => q,
     eq: (c: string, v: unknown) => com((l) => l[c] === v),
     in: (c: string, vs: unknown[]) => com((l) => vs.includes(l[c])),
     is: (c: string, v: unknown) => com((l) => (l[c] ?? null) === v),

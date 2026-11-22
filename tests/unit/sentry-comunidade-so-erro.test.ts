@@ -213,8 +213,10 @@ describe("o init do cliente honra a política", () => {
  *
  * Mesma família do e2e que escrevia no banco de produção: o default é a coisa
  * mais perigosa quando o default é "manda para o nosso servidor de verdade".
- * `resolveSentryDsn("")` cai no DSN da comunidade — então a AUSÊNCIA da chave no
- * ambiente da suíte é o que mandava dado de teste para lá.
+ * `resolveSentryDsn("")` caía no DSN da comunidade — era o que mandava dado de
+ * teste para lá. Desde a #4936 o vazio DESLIGA; a linha do `SENTRY_DSN=off`
+ * continua obrigatória porque `off` também é o que protege quem um dia voltar a
+ * dar default a alguma coisa.
  */
 describe("o ambiente da suíte desliga a telemetria", () => {
   it("o gerador do .env.e2e escreve SENTRY_DSN=off", () => {
@@ -233,7 +235,21 @@ describe("o ambiente da suíte desliga a telemetria", () => {
 
   it("e `off` de fato desliga — a guarda acima não vale nada se o valor não desligasse", () => {
     expect(resolveSentryDsn("off")).toBeUndefined();
-    // Controle: o vazio NÃO desliga, e é por isso que a linha acima é obrigatória.
-    expect(isCommunityDsn(resolveSentryDsn(""))).toBe(true);
+    // Controle do contrato novo (#4936): o VAZIO também desliga. Quem quer o
+    // Sentry do projeto pede por nome (`comunidade`, o token do install.sh); o
+    // silêncio do `.env` deixou de ser consentimento.
+    expect(resolveSentryDsn("")).toBeUndefined();
+    expect(resolveSentryDsn("   ")).toBeUndefined();
+    expect(isCommunityDsn(resolveSentryDsn("comunidade"))).toBe(true);
+  });
+
+  it("o token do aceite é o único caminho para o DSN do projeto — e o DSN próprio passa intacto", () => {
+    // `COMUNIDADE` em maiúsculas cai no mesmo token, como o `off` já caía.
+    expect(isCommunityDsn(resolveSentryDsn("Comunidade"))).toBe(true);
+    // DSN literal continua valendo (escolha escrita, não default) e não é
+    // confundido com o da comunidade — é o que decide amostragem e integrações.
+    const proprio = "https://abc123@o0.ingest.sentry.io/42";
+    expect(resolveSentryDsn(`  ${proprio}  `)).toBe(proprio);
+    expect(isCommunityDsn(resolveSentryDsn(proprio))).toBe(false);
   });
 });

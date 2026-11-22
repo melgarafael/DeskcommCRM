@@ -638,7 +638,8 @@ const updateInputShape = {
    * monta `{...rest}` a partir DESTE shape, e `z.object` descarta chave que não
    * declarou, o valor morria antes de chegar ao schema que o aceitaria.
    *
-   * Efeito da ausência: o produto deixa criar até 50 campos por funil, desenha
+   * Efeito da ausência: o produto deixa criar até `MAX_CAMPOS_DO_NEGOCIO`
+   * campos por funil, desenha
    * todos na ficha do lead — e nenhum agente conseguia preencher um. Quem
    * modelou o funil no vocabulário do próprio nicho recebia a IA como leitora,
    * nunca como escrivã.
