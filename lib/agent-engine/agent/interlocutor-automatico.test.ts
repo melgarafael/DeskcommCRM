@@ -25,6 +25,13 @@
  *     (`pistas=3 familias=menu,cadencia`). A cadência passou a medir o tempo de
  *     resposta do contato à IA, e o menu deixou de casar com verbo de pedido +
  *     quantidade.
+ *  7. **cliente engajado não é robô (#4714) → NÃO barra.** Respondendo em 15-25 s
+ *     (celular na mão), o cliente tem `cadencia` em toda cena — por isso ela
+ *     corrobora pistas mas não completa a exigência de duas famílias. Pedido em
+ *     lista de 3 itens, agente com abertura fixa e três perguntas parecidas
+ *     deixam de silenciar a conversa, e três cópias do mesmo texto somam UMA
+ *     família (`repeticao`), não duas. O incidente continua barrado (testes 1,
+ *     `menu` + `molde_da_ia`).
  *
  * Pool/cliente falsos no molde de `teto-de-respostas.test.ts`: o que se
  * exercita é o runner de verdade (`runBeforeSend`), não o gate de mentira.
@@ -63,6 +70,9 @@ const CANAL = "00000000-0000-4000-8000-000000000004";
 const COMECO = new Date("2026-11-10T13:00:00Z"); // 10h BRT, terça
 
 const MENU = "1 - Consultar saldo\n2 - Fazer pagamento\n3 - Falar com atendente";
+
+/** Pedido de cliente em lista numerada de TRÊS itens — não é menu de URA. */
+const PEDIDO_EM_TRES = "1 - camiseta preta P\n2 - camiseta preta M\n3 - bermuda jeans 42";
 
 function recebida(body: string, sentAt: Date): MensagemDaAmostra {
   return { direction: "inbound", body, sentAt, sentVia: null };
@@ -373,6 +383,106 @@ describe("cliente humano em rajada (#1044)", () => {
     ]);
     expect(quadro.familias).toEqual([]);
     expect(quadro.pistas).toBe(0);
+  });
+});
+
+describe("cliente engajado não é robô (#4714)", () => {
+  // O mantenedor mediu no head anterior, com o cliente respondendo 15 a 25 s
+  // depois de cada mensagem da IA (o ritmo de quem está com o celular na mão):
+  // `cadencia` dispara para GENTE. Somada a qualquer segundo sinal comum — um
+  // pedido em lista de 3 itens, um agente com abertura fixa, três perguntas
+  // parecidas — a conversa era silenciada. O conserto: `cadencia` corrobora
+  // pistas mas não completa a exigência de duas famílias, e `molde` deixou de
+  // contar as cópias idênticas que já são `repeticao`.
+  const em = (segundos: number) => new Date(COMECO.getTime() + segundos * 1000);
+
+  it("cliente engajado com pedido em lista de 3 itens → não veta", async () => {
+    const b = bancada({
+      amostra: [
+        respostaDaIa("Perfeito! Qual modelo e tamanho?", em(0)),
+        recebida(PEDIDO_EM_TRES, em(18)),
+        respostaDaIa("Anotado! Confirma o CEP da entrega?", em(60)),
+        recebida("01310-100, moro perto da paulista", em(80)),
+        respostaDaIa("Fechado. Segue o link de pagamento.", em(130)),
+        recebida("pago, obrigado!", em(148)),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    // O pedido em lista é `menu`, a resposta em segundos é `cadencia` — mas
+    // menu é UMA família, e o relógio não completa a segunda.
+    expect(quadro.familias).toEqual(["menu", "cadencia"]);
+    expect(quadro.pistas).toBe(3);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    expect((await resultado).status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliente engajado com agente que abre toda resposta igual → não veta", async () => {
+    const abertura = "Olá! Aqui é a Lia, assistente virtual da Clínica Sorriso. ";
+    const b = bancada({
+      amostra: [
+        respostaDaIa(`${abertura}Em que posso ajudar?`, em(0)),
+        recebida("oi, queria um orçamento", em(16)),
+        respostaDaIa(`${abertura}Claro! Qual o tamanho do espaço?`, em(60)),
+        recebida("uns 60 metros quadrados", em(79)),
+        respostaDaIa(`${abertura}Ótimo, o kit médio atende.`, em(130)),
+        recebida("pode mandar o valor?", em(147)),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    // `molde_da_ia` é o NOSSO agente repetindo a abertura, não o contato: sozinho
+    // (com a cadência ao lado) não pode calar um cliente.
+    expect(quadro.familias).toEqual(["cadencia", "molde_da_ia"]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    expect((await resultado).status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliente engajado com três perguntas no mesmo começo → não veta", async () => {
+    const b = bancada({
+      amostra: [
+        respostaDaIa("Posso ajudar com valores?", em(0)),
+        recebida("quanto custa o kit basico de limpeza?", em(17)),
+        respostaDaIa("O básico sai por 89 reais.", em(60)),
+        recebida("quanto custa o kit medio de limpeza?", em(78)),
+        respostaDaIa("O médio sai por 149 reais.", em(130)),
+        recebida("quanto custa o kit premium de limpeza?", em(149)),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    // Três perguntas com o mesmo começo são `molde` — uma família. O cliente
+    // perguntando sobre três produtos é conversa, não template de robô.
+    expect(quadro.familias).toEqual(["molde", "cadencia"]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
+
+    const { resultado, send } = tentaEnviar(b, COMECO);
+    expect((await resultado).status).toBe("sent");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("as mesmas três mensagens somam UMA família, não duas", async () => {
+    // Três cópias do MESMO texto são `repeticao`. Antes elas também contavam
+    // como `molde`, e o "2 famílias" deixava de proteger: a mesma mensagem
+    // virava duas provas de que o outro lado é um programa.
+    const b = bancada({
+      amostra: [
+        recebida("qual o horario de funcionamento?", em(0)),
+        recebida("qual o horario de funcionamento?", em(90)),
+        recebida("qual o horario de funcionamento?", em(240)),
+      ],
+    });
+
+    const quadro = avaliarInterlocutor(b.amostra);
+    expect(quadro.pistas).toBe(3);
+    expect(quadro.familias).toEqual(["repeticao"]);
+    expect(interlocutorEhAutomatico(quadro)).toBe(false);
   });
 });
 

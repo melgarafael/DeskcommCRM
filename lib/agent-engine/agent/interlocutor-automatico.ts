@@ -33,10 +33,16 @@
  * as DUAS condições ao mesmo tempo:
  *
  *  1. **pelo menos 3 pistas** na amostra — um menu sozinho nunca conta;
- *  2. **pelo menos 2 famílias distintas** de sinal (`menu`, `repeticao`,
- *     `molde`, `cadencia`, `molde_da_ia`) — um menu repetido já é anormal, mas
- *     ainda pode ser reenvio de rede; exige-se outra família
- *     (molde/repetição/cadência) para afirmar que é um programa.
+ *  2. **pelo menos 2 famílias ESTRUTURAIS distintas** de sinal (`menu`,
+ *     `repeticao`, `molde`, `molde_da_ia`) — um menu repetido já é anormal, mas
+ *     ainda pode ser reenvio de rede; exige-se outra família estrutural para
+ *     afirmar que é um programa.
+ *
+ * `cadencia` fica FORA da exigência de duas, de propósito: ela soma pistas e
+ * aparece no veredito, mas não é família que afirma sozinha nem que completa a
+ * segunda. O relógio não distingue robô de pessoa — quem está com o celular na
+ * mão responde em 15 a 25 s, que é o mesmo tempo de uma URA. O que separa os
+ * dois é a ESTRUTURA do texto (menu, repetição, molde); o tempo só corrobora.
  *
  * As cinco famílias, cada uma ancorada num sinal que o autor da issue mediu:
  *
@@ -44,11 +50,15 @@
  *    instrução de ESCOLHA ("digite 1", "responda com 2") — ver `ehMenuNumerado`;
  *  - `repeticao` — a MESMA mensagem recebida TRÊS vezes (texto idêntico depois
  *    de normalizar), com mínimo de 12 caracteres para "ok" não contar;
- *  - `molde` — 3+ mensagens recebidas com o mesmo começo (4 primeiras palavras)
- *    e tamanho parecido: é o "sempre com o mesmo molde" do relato;
+ *  - `molde` — 3+ mensagens recebidas DIFERENTES com o mesmo começo (4 primeiras
+ *    palavras) e tamanho parecido: é o "sempre com o mesmo molde" do relato.
+ *    Cópias idênticas ficam de fora: elas são `repeticao`, e contá-las aqui de
+ *    novo transformaria AS MESMAS mensagens em duas famílias;
  *  - `cadencia` — o contato respondeu à IA em ≤ 30 s em 3+ rodadas distintas: é
  *    o tempo de reação de uma máquina ao estímulo, e é o sinal que o @jhometal
- *    apontou na #4590. **Não** é o intervalo entre duas mensagens recebidas —
+ *    apontou na #4590. Ela CORROBORA pistas e não completa a exigência de duas
+ *    famílias (ver acima): respondendo em segundos, o cliente engajado tem a
+ *    mesma cadência. **Não** é o intervalo entre duas mensagens recebidas —
  *    ver a nota abaixo, que é o defeito do #1044;
  *  - `molde_da_ia` — 3+ respostas da IA na mesma conversa com o mesmo molde: é
  *    o pingue-pongue já instalado, o retrato do incidente.
@@ -322,6 +332,9 @@ export function avaliarInterlocutor(
     const grupo = [i];
     recebidas.forEach((outra, j) => {
       if (j <= i || jaAgrupadas.has(j)) return;
+      // Cópia idêntica é `repeticao`, não `molde`: agrupar as duas coisas faria
+      // as MESMAS três mensagens somarem duas famílias e derrubar o "2 famílias".
+      if (normalizarMensagem(m.body ?? '') === normalizarMensagem(outra.body ?? '')) return;
       if (mesmoMolde(m.body ?? '', outra.body ?? '')) grupo.push(j);
     });
     if (grupo.length >= MINIMO_DO_GRUPO_DE_MOLDE) {
@@ -411,7 +424,12 @@ export function interlocutorEhAutomatico(quadro: {
   pistas: number;
   familias: readonly FamiliaDePista[];
 }): boolean {
-  return quadro.pistas >= MINIMO_DE_PISTAS && quadro.familias.length >= MINIMO_DE_FAMILIAS;
+  // `cadencia` soma pistas mas NÃO conta para as duas famílias: o relógio não
+  // separa robô de pessoa (cliente engajado responde em 15-25 s, igual a uma
+  // URA). Quem tem de estar em duas é a estrutura — menu, repetição, molde,
+  // molde da IA. Assim "cadência + um pedido em lista" não cala mais ninguém.
+  const estruturais = quadro.familias.filter((f) => f !== 'cadencia');
+  return quadro.pistas >= MINIMO_DE_PISTAS && estruturais.length >= MINIMO_DE_FAMILIAS;
 }
 
 /**
