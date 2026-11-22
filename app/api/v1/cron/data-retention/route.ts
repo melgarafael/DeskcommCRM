@@ -101,6 +101,7 @@ import {
   type ResultadoDoDrenoDaAbordagem,
 } from "@/lib/prospecting/arquivos-orfaos-da-abordagem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export const dynamic = "force-dynamic";
 
@@ -912,19 +913,48 @@ function fonteDaProspeccaoDoAdmin(
 ): FonteDaProspeccao {
   return {
     async organizacoes() {
-      const { data, error } = await admin.from("organizations").select("id");
-      if (error) throw new Error(`organizations: ${error.message}`);
-      return (data ?? []).map((linha) => linha.id);
+      // `max_rows` do PostgREST corta a resposta em 1.000 linhas SEM erro: uma
+      // instalação com mais organizações perderia as últimas do laço em
+      // silêncio. `lerPaginado` prova o fim pelo `count` da primeira página e
+      // `truncado` (laço esgotado) vira falha nomeada, não passada incompleta.
+      const pagina = await lerPaginado<{ id: string }>((inicio, fim, contar) =>
+        admin
+          .from("organizations")
+          .select("id", { count: contar ? "exact" : undefined })
+          .order("id")
+          .range(inicio, fim),
+      );
+      if (pagina.erro) throw new Error(`organizations: ${pagina.erro}`);
+      if (pagina.truncado) throw new Error("organizations: leitura truncada");
+      return pagina.linhas.map((linha) => linha.id);
     },
 
     async caminhosReferenciados(organizationId) {
-      const { data, error } = await admin
-        .from("prospecting_campaigns")
-        .select("config")
-        .eq("organization_id", organizationId);
-      if (error) throw new Error(`prospecting_campaigns: ${error.message}`);
+      // AQUI o corte do `max_rows` é perigoso: uma organização com mais de
+      // 1.000 campanhas (as arquivadas contam — arquivar não apaga o arquivo)
+      // teria as referências das últimas linhas invisíveis, e o arquivo delas
+      // seria removido como se fosse órfão. A leitura pagina por `id` e, se o
+      // teto de páginas for atingido sem provar o fim, a organização FALHA
+      // (nada é removido por ela) em vez de remover com prova incompleta.
+      const pagina = await lerPaginado<{ config: unknown }>(
+        (inicio, fim, contar) =>
+          admin
+            .from("prospecting_campaigns")
+            .select("config", { count: contar ? "exact" : undefined })
+            .eq("organization_id", organizationId)
+            .order("id")
+            .range(inicio, fim),
+        // Teto alto de propósito: 10 páginas = 10.000 campanhas por organização.
+        // Passou disso, a organização FALHA (nada é removido por ela) — falhar
+        // fechado é o único desfecho aceitável para "referências incompletas".
+        10,
+      );
+      if (pagina.erro) throw new Error(`prospecting_campaigns: ${pagina.erro}`);
+      if (pagina.truncado) {
+        throw new Error("prospecting_campaigns: leitura truncada — referências incompletas");
+      }
       const caminhos: string[] = [];
-      for (const linha of data ?? []) {
+      for (const linha of pagina.linhas) {
         const config = linha.config as
           | { midia_da_abordagem?: { storage_path?: unknown } }
           | null;
