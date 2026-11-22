@@ -13703,6 +13703,16 @@ export const DICIONARIO: Traducoes = {
   "Desligada: nenhuma pergunta sai ao encerrar.": {
     es: "Desactivada: no se envía ninguna pregunta al cerrar.",
   },
+  // #4737 — Tarefas: abrir em "Minhas", lembrar o filtro e dizer o recorte do banco.
+  "Sua empresa mostra aqui as suas tarefas e as que você criou.": {
+    es: "Tu empresa muestra aquí tus tareas y las que creaste.",
+  },
+  "Sua empresa mostra aqui as suas tarefas, as que você criou e as que ainda não têm responsável.": {
+    es: "Tu empresa muestra aquí tus tareas, las que creaste y las que todavía no tienen responsable.",
+  },
+  "A lista mudou, mas não consegui lembrar esta escolha para a próxima visita.": {
+    es: "La lista cambió, pero no pude recordar esta elección para la próxima visita.",
+  },
   "Resultado dos últimos 30 dias": {
     es: "Resultado de los últimos 30 días",
   },
