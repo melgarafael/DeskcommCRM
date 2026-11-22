@@ -49,8 +49,13 @@ interface Props {
   leadIds: string[];
   /** O título do card, para nomear quem foi recusado. */
   tituloDe?: (leadId: string) => string | undefined;
-  /** Chamado ao fechar depois de levar — a seleção já não existe no quadro. */
-  onConcluido?: () => void;
+  /**
+   * Chamado ao fechar depois de levar, com os negócios que JÁ TÊM cópia no
+   * funil de destino — os levados e os que tiveram o clone criado antes de a
+   * operação falhar (#5102). Quem chama tira esses da seleção; um segundo
+   * "Levar" não pode recriar o que já existe lá.
+   */
+  onConcluido?: (levados: string[]) => void;
 }
 
 export function LevarLoteParaOutroFunilDialog({
@@ -87,9 +92,19 @@ export function LevarLoteParaOutroFunilDialog({
   function fechar(next: boolean) {
     if (levando) return; // o laço não é cancelável no meio: fechar esconderia o que já foi
     if (!next) {
-      const houveEfeito = (resultado?.levados.length ?? 0) > 0;
+      // Quem já tem cópia no destino sai da seleção — inclusive quem falhou
+      // DEPOIS de o clone nascer (`cloneId`): esse negócio já existe lá, e
+      // deixá-lo selecionado fazia o "Levar" seguinte criar uma segunda cópia
+      // (#5102). Quem foi recusado sem cópia continua selecionado para a
+      // pessoa corrigir e tentar de novo.
+      const comCopia = resultado
+        ? [
+            ...resultado.levados,
+            ...resultado.recusados.filter((recusa) => recusa.cloneId).map((recusa) => recusa.leadId),
+          ]
+        : [];
       limpar();
-      if (houveEfeito) onConcluido?.();
+      if (comCopia.length > 0) onConcluido?.(comCopia);
     }
     onOpenChange(next);
   }

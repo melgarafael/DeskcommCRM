@@ -54,6 +54,12 @@ interface BulkActionBarProps {
    */
   tagsExistentes: string[];
   onClear: () => void;
+  /**
+   * Tira da seleção só os negócios que já têm cópia no funil de destino — os
+   * levados e os que ficaram criados numa falha parcial (#5102). Sem isto, um
+   * segundo "Levar" recriava no destino o negócio que já estava lá.
+   */
+  onRemoverDaSelecao?: (leadIds: string[]) => void;
   /** O título do card — o resultado de "levar para outro funil" nomeia quem ficou. */
   tituloDe?: (leadId: string) => string | undefined;
 }
@@ -65,6 +71,7 @@ export function BulkActionBar({
   vocabulary,
   tagsExistentes,
   onClear,
+  onRemoverDaSelecao,
   tituloDe,
 }: BulkActionBarProps) {
   const [outroFunilOpen, setOutroFunilOpen] = useState(false);
@@ -418,7 +425,7 @@ export function BulkActionBar({
           pipelineId={pipelineId}
           leadIds={selectedIds}
           tituloDe={tituloDe}
-          onConcluido={onClear}
+          onConcluido={onRemoverDaSelecao ?? onClear}
         />
       )}
 
