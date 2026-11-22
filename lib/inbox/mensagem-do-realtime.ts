@@ -39,14 +39,22 @@ import type { InfiniteData } from "@tanstack/react-query";
  * rede, por dois caminhos: o que o PRÓPRIO fio já sabe (mensagens do mesmo autor
  * que vieram pela rota trazem o nome) e o nome de quem está com a conversa
  * aberta (`autorAtual`), que cobre o primeiro envio de cada pessoa. Nome que não
- * se conhece continua ausente — o balão cai em "Atendente", que é a verdade.
+ * se conhece fica ausente aqui, e quem o busca é o chamador (abaixo).
  *
  * ─── O que continua sendo rede ──────────────────────────────────────────────
- * Nada, no caminho comum. O que não dá para aplicar (payload sem `id`, cache
- * ainda sem página) devolve `null`, e o chamador decide — hoje, invalidar, que
- * é o comportamento de antes. E a rede de segurança (`useRefetchDeSeguranca`)
- * segue no lugar: se a mescla perder um evento, é ela que percebe pela
- * assinatura (contagem + id do mais recente) e ressincroniza.
+ * Três casos, todos decididos em `useMessagesRealtime`:
+ *  - payload que nem vira evento (`eventoDeMensagem` devolve `null`): invalida,
+ *    que é o comportamento de antes;
+ *  - os dois campos que a ROTA deriva e a linha crua não traz: o
+ *    `sent_by_user_name` de um colega que o fio não conhece e o `texto_retido`
+ *    da mensagem que o contato apagou (`mascararTextoRetido`). Esses eventos
+ *    entram no cache E pedem uma releitura;
+ *  - o que `aplicarEventoNoFio` não consegue aplicar (cache ainda sem página,
+ *    `UPDATE`/`DELETE` de mensagem que não está carregada) devolve `null`, e o
+ *    chamador o DESCARTA (`?? atual`): mensagem fora do cache não está na tela.
+ * E a rede de segurança (`useRefetchDeSeguranca`) segue no lugar: se a mescla
+ * perder um evento, é ela que percebe pela assinatura (contagem + id do mais
+ * recente) e ressincroniza.
  */
 
 /** Uma página do fio, do jeito que o `useInfiniteQuery` a guarda. */

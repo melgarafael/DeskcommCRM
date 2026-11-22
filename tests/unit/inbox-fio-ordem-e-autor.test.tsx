@@ -27,7 +27,10 @@
  *
  * SABOTAGEM: (a) voltar o `INSERT` para o começo de `pages[0]` deixa a ORDEM
  * vermelha; (b) tirar `semOBalaoOtimistaDoEnvio` deixa o caso do envio vermelho
- * com dois balões; (c) tirar `comAutor` deixa os casos de autor vermelhos.
+ * com dois balões; (c) tirar `comAutor` deixa os casos de autor vermelhos;
+ * (d) tirar a releitura do nome desconhecido deixa o caso "sem nome conhecido"
+ * vermelho; (e) tirar a releitura da apagada pelo contato deixa o caso do texto
+ * retido vermelho.
  */
 import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -267,6 +270,8 @@ describe("o fio da conversa aberta", () => {
 
     const balao = fioNoCache(qc).pages[0]!.data.find((m) => m.id === "m9")!;
     expect(balao.sent_by_user_name).toBe("Andreia Cristina de Souza");
+    // Nome resolvido pelo próprio fio: nenhuma recarga.
+    expect(leiturasDeMensagens()).toBe(1);
 
     // O balão desenha o autor a partir da linha que está no cache.
     render(<MessageBubble message={balao as unknown as Message} viewerUserId={AUTOR.id} />);
@@ -286,7 +291,7 @@ describe("o fio da conversa aberta", () => {
     expect(balao.sent_by_user_name).toBe(AUTOR.nome);
   });
 
-  it("sem nome conhecido a linha fica SEM autor — o balão não inventa um", async () => {
+  it("sem nome conhecido a linha fica SEM autor — o balão não inventa um, e o fio pede o nome à rota", async () => {
     const qc = await montar(fioCom([]));
 
     fakes.onChange!({
@@ -305,6 +310,36 @@ describe("o fio da conversa aberta", () => {
     expect(balao.sent_by_user_name ?? null).toBeNull();
     render(<MessageBubble message={balao as unknown as Message} viewerUserId={AUTOR.id} />);
     expect(screen.getByText("Atendente")).toBeInTheDocument();
+    // Só a rota sabe o nome (campo derivado): UMA recarga, em vez de "Atendente"
+    // até a próxima — era o que a invalidação de antes entregava (#4031).
+    await waitFor(() => expect(leiturasDeMensagens()).toBe(2));
+  });
+
+  // ─── 4. O OUTRO CAMPO DERIVADO: TEXTO RETIDO ───────────────────────────────
+  it("a mensagem que o CONTATO apagou pede UMA releitura — o botão do texto retido é da rota", async () => {
+    await montar(
+      fioCom([
+        linha({ id: "m1", body: "meu cpf é..." }),
+        linha({ id: "m2", direction: "outbound", sent_via: "user", body: "recebido" }),
+      ]),
+    );
+
+    // A apagada pelo ATENDENTE não tem campo derivado novo: mescla sem rede.
+    fakes.onChange!({
+      eventType: "UPDATE",
+      table: "messages",
+      new: linha({ id: "m2", direction: "outbound", revoked_at: "2026-11-21T12:05:00.000Z" }),
+    });
+    expect(leiturasDeMensagens(), "a apagada pelo atendente pediu rede").toBe(1);
+
+    // A apagada pelo CONTATO: a linha crua traz `revoked_at` e nunca
+    // `texto_retido`, que só `mascararTextoRetido` preenche na rota.
+    fakes.onChange!({
+      eventType: "UPDATE",
+      table: "messages",
+      new: linha({ id: "m1", body: "meu cpf é...", revoked_at: "2026-11-21T12:05:00.000Z" }),
+    });
+    await waitFor(() => expect(leiturasDeMensagens()).toBe(2));
   });
 
   it("o INSERT do COLEGA não come o meu balão otimista, mesmo com o texto igual", async () => {

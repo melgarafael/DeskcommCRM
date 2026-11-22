@@ -109,10 +109,27 @@ export function useMessagesRealtime(
         return;
       }
       const autorAtual = autorId ? { id: autorId, nome: autorNome } : null;
-      qc.setQueryData<InfiniteData<PaginaDeMensagens>>(
+      const dados = qc.setQueryData<InfiniteData<PaginaDeMensagens>>(
         ["messages", conversationId],
-        (dados) => aplicarEventoNoFio(dados, evento, { autorAtual }) ?? dados,
+        (atual) => aplicarEventoNoFio(atual, evento, { autorAtual }) ?? atual,
       );
+      // A rota deriva dois campos que a linha crua do canal não traz, e só
+      // ela os resolve — nesses dois casos o evento pede UMA recarga:
+      //  - `sent_by_user_name` de um colega que o fio ainda não conhece: sem a
+      //    recarga o balão diria "Atendente" até a próxima. Só no INSERT —
+      //    depois dela o nome está no fio, e as confirmações o preservam;
+      //  - `texto_retido` da mensagem que o CONTATO apagou: é a rota
+      //    (`mascararTextoRetido`) que liga o botão "Ver texto retido".
+      const linha = evento.tipo === "remocao" ? null : evento.linha;
+      const semNome =
+        evento.tipo === "insercao" &&
+        typeof linha?.sent_by_user_id === "string" &&
+        !dados?.pages[0]?.data.find((m) => m.id === linha.id)?.sent_by_user_name;
+      const apagadaPeloContato =
+        evento.tipo === "atualizacao" && linha?.revoked_at != null && linha.direction === "inbound";
+      if (semNome || apagadaPeloContato) {
+        void qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+      }
     },
     [qc, conversationId, autorId, autorNome],
   );
