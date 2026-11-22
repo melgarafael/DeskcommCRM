@@ -7162,8 +7162,12 @@ async function executarTurnoDoAgente(
               // mesmas duas escolhas do aviso de escalação.
               enforceCommercialRestriction: false,
               enforceSpinning: false,
-              send: (finalBody: string) =>
-                liveChannel().send({
+              // A pessoa que assumiu entre a leitura do turno e este aviso
+              // também cala a frase da troca: é um envio ao canal como os
+              // outros (`unavailable` → o aviso conta como não enviado).
+              send: async (finalBody: string) => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
+                return liveChannel().send({
                   tenantId,
                   leadId,
                   jobId: liveJob().id,
@@ -7172,7 +7176,8 @@ async function executarTurnoDoAgente(
                   seq: SEQ_DA_PASSAGEM_AO_CLIENTE,
                   conversationId: input.conversationId,
                   body: finalBody,
-                }),
+                });
+              },
             });
             return chain.status === 'vetoed' ? 'blocked' : chain.outcome.kind;
           },
