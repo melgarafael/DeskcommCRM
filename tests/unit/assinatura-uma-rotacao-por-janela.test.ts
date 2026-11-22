@@ -181,23 +181,32 @@ describe("dois turnos seguidos fazem UM POST — a janela do token novo é respe
   });
 
   it("⭐ o expires_at do token NOVO e o marco ficam GRAVADOS na credencial", async () => {
-    const fake = new FakeSupabase();
-    fake.linha = linhaVencendoEm(UMA_HORA);
-    dublarTrocaDeToken();
+    // O relógio congelado SÓ neste caso. O marco é gravado pelo código e recalculado aqui com
+    // `proximaRenovacaoEm`, que lê `Date.now()` (fração 0,1): 20 ms entre as duas leituras davam 2 ms de diferença,
+    // e sob carga o caso caía. Só o `Date` é falso: os timers seguem reais.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000_000_000);
+    try {
+      const fake = new FakeSupabase();
+      fake.linha = linhaVencendoEm(UMA_HORA);
+      dublarTrocaDeToken();
 
-    const antes = Date.now();
-    const devolvidos = await lerLoginCodexRenovandoSeProxima({ admin: fake as never, orgId: ORG });
-    const gravado = guardadoNaLinha(fake);
+      const antes = Date.now();
+      const devolvidos = await lerLoginCodexRenovandoSeProxima({ admin: fake as never, orgId: ORG });
+      const gravado = guardadoNaLinha(fake);
 
-    expect(gravado.access_token).toBe("at-novo");
-    expect(gravado.expires_at).toBe(devolvidos?.expires_at);
-    // Vida nova (1 h) contada de agora — não o `expires_at` do token velho.
-    expect(Number(gravado.expires_at)).toBeGreaterThanOrEqual(antes + UMA_HORA - 5_000);
-    // E o marco é o fim da janela DESSE par.
-    expect(Number(gravado.proxima_renovacao_em)).toBe(
-      proximaRenovacaoEm(Number(gravado.expires_at)),
-    );
-    expect(Number(gravado.proxima_renovacao_em)).toBeGreaterThan(Date.now());
+      expect(gravado.access_token).toBe("at-novo");
+      expect(gravado.expires_at).toBe(devolvidos?.expires_at);
+      // Vida nova (1 h) contada de agora — não o `expires_at` do token velho.
+      expect(Number(gravado.expires_at)).toBeGreaterThanOrEqual(antes + UMA_HORA - 5_000);
+      // E o marco é o fim da janela DESSE par.
+      expect(Number(gravado.proxima_renovacao_em)).toBe(
+        proximaRenovacaoEm(Number(gravado.expires_at)),
+      );
+      expect(Number(gravado.proxima_renovacao_em)).toBeGreaterThan(Date.now());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("quando a janela do token novo abre, a rotação acontece de novo (não é 'nunca mais')", async () => {

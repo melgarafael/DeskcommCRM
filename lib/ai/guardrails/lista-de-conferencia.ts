@@ -35,6 +35,10 @@
  * é opcional. Onde não há escolha, a tela diz POR QUÊ em uma linha; onde há, ela
  * diz o CUSTO. Controle decorativo é pior que controle ausente.
  */
+// Só TIPO: este módulo entra no bundle do painel (componente de cliente), então
+// nada de runtime de motor aqui — `import type` desaparece na compilação.
+import type { CamadaConfiguravel } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import type { EstadoDaTarefa } from "@/lib/ai/decisao/config";
 
 /** Uma conferência, como ela se apresenta a quem configura o agente. */
 export interface ConferenciaDeSaida {
@@ -278,6 +282,173 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
 ];
+
+/**
+ * A MESMA lista, na fala da tela de novo tenant — "o que ele nunca faz".
+ *
+ * ─── Por que não é o `rotulo` ──────────────────────────────────────────────
+ *
+ * O `rotulo` acima é o TÍTULO de uma proteção no painel do agente ("Respeitar
+ * quem pediu para parar", ao lado do porquê de não se desligar). No onboarding
+ * ele ia direto para debaixo do título "E nunca vai fazer", e a leitura saía ao
+ * contrário do que a conferência faz: "nunca vai fazer — Respeitar quem pediu
+ * para parar" (issue #4526). Metade da lista começava por "Não prometer…",
+ * outra parte por verbo afirmativo ("Conferir…", "Deixar…", "Só oferecer…") —
+ * quatro formas verbais na mesma coluna.
+ *
+ * Aqui cada item é a AÇÃO PROIBIDA, no infinitivo, e o título da coluna fica
+ * "O que ele nunca faz": "Prometer preço ou prazo por conta própria",
+ * "Insistir com quem pediu para parar". A forma casa com a coluna irmã, cujos
+ * itens também são ações no infinitivo ("Ver o que a empresa atende").
+ *
+ * ─── Por que uma TABELA com o `nome` do gate, e não um campo na conferência ─
+ *
+ * A chave é a mesma do runtime (`nome`), e `tests/unit/onboarding-frases-do-
+ * novo-tenant.test.tsx` exige a mesma lista de chaves, na mesma ordem: renomear
+ * gate, tirar conferência ou acrescentar uma sem dar-lhe fala reprova.
+ *
+ * ⚠️ Isto prende a FALA à cadeia; não prova que a camada está ligada. Quem diz
+ * se ela roda nesta organização é `itensDaColuna`, com o estado lido do motor —
+ * e é por isso que a coluna deixou de ser uma lista de frases e passou a levar
+ * o estado ao lado de cada uma (#1041).
+ *
+ * O texto é traduzido em `app/onboarding/setup-ai/page.tsx` por
+ * `Object.values(...).map(traduzir)`: a varredura de espanhol resolve os
+ * valores da tabela e cobra cada um no dicionário.
+ */
+export const NUNCA_FAZ: Readonly<Record<string, string>> = {
+  stop: "Insistir com quem pediu para parar",
+  lgpd: "Escrever para contato apagado ou sem base legal",
+  pacing: "Disparar mensagens sem espaçar o envio",
+  messaging_window: "Furar a janela de 24 horas do WhatsApp",
+  teto_de_respostas: "Responder sem parar a conversa que virou pingue-pongue",
+  spinning: "Repetir o texto idêntico para todo mundo",
+  promise: "Prometer preço ou prazo por conta própria",
+  concessao_sem_lastro: "Confirmar condição que só o cliente citou",
+  semantic_promise: "Deixar passar promessa escrita em texto livre",
+  factual_claim: "Afirmar fato que o material consultado não tem",
+  case_promise: "Prometer atendimento humano sem abrir chamado",
+  internal_vocabulary: "Falar a nossa língua com o seu cliente",
+  clinical_claim: "Fazer afirmação clínica",
+  commercial_restriction: "Negociar valores no lugar da equipe",
+  agenda_stall: "Prometer checar a agenda sem checar de verdade",
+  horario_da_agenda: "Oferecer horário que a agenda não devolveu",
+  registro_sem_efeito: "Afirmar registro que a ferramenta não confirmou",
+  disclosure: "Esconder que é um assistente quando perguntam",
+};
+
+/**
+ * O ESTADO REAL DE CADA ITEM NESTA ORGANIZAÇÃO (#1041).
+ *
+ * ─── O que estava errado ───────────────────────────────────────────────────
+ *
+ * Depois que a coluna passou a se ler direito (#4526), ela prometia com clareza
+ * quatro conferências que uma INSTALAÇÃO NOVA não cumpre. Numa organização
+ * recém-criada — que é quem vê esta tela — o motor tem:
+ *
+ *   - `clinical_claim` e `commercial_restriction` DESLIGADAS
+ *     (`padraoDasCamadasNoAmbiente`, `camadas-da-org.ts`);
+ *   - `semantic_promise` desligada, porque só liga com
+ *     `PROMISE_SEMANTIC_ENABLED=true` e o `.env.example` traz a variável vazia;
+ *   - `factual_claim` desligada, porque quem decide é a tarefa do Jev e ela não
+ *     nasce com aceite (`estadoEfetivoDaTarefa`).
+ *
+ * A coluna dizia "nunca faz" para as quatro, do mesmo jeito que dizia para as
+ * que rodam sempre. Quem lia não tinha como saber que parte da proteção
+ * prometida não estava no ar — e a nota ainda mandava "configuração do agente",
+ * lugar onde a conferência de fato nem mora.
+ *
+ * ─── O conserto é de TELA, e a escolha foi declarada ──────────────────────
+ *
+ * Duas saídas possíveis: (a) mostrar o estado real por camada, com o caminho
+ * para ligar; (b) dar um interruptor a cada item prometido. A (b) ligaria guarda
+ * por padrão ou criaria quatro botões novos numa tela de boas-vindas — as duas
+ * coisas mexem em comportamento sem pedido do mantenedor. Ficou a (a): nenhum
+ * item some (as que rodam sempre seguem listadas), e as quatro que dependem de interruptor
+ * dizem, ao lado, o estado DESTA organização e onde ligá-lo.
+ *
+ * ─── Por que o estado entra por parâmetro ──────────────────────────────────
+ *
+ * Este módulo é puro e entra no bundle do painel; ler banco aqui arrastaria o
+ * motor para o browser. Quem lê é a página (server), com as mesmas funções que o
+ * motor usa — `estadoEfetivoDasCamadas` + `estadoEfetivoDaTarefa` —, e o teste
+ * monta o estado de uma organização nova com essas funções, não com fixture.
+ */
+export type OndeLigar = "painel" | "jev";
+
+/**
+ * O que a coluna mostra para um item que depende de interruptor.
+ *
+ *  - `ligada`: roda nesta organização.
+ *  - `desligada`: existe, e o motor não a executa hoje.
+ *  - `so_anota`: roda e registra, mas não barra nada (o estado `observando` da
+ *    conferência de fato). Chamar isso de "ligada" seria mentira: nenhuma
+ *    mensagem é corrigida.
+ */
+export type EstadoDoItem = "ligada" | "desligada" | "so_anota";
+
+/** O que o motor faz hoje com as camadas que são escolha de alguém. */
+export interface EstadoDasCamadas {
+  /** `estadoEfetivoDasCamadas(...)`: linha da organização, ou padrão do ambiente. */
+  painel: Record<CamadaConfiguravel, boolean>;
+  /** `estadoEfetivoDaTarefa(configDoJev, TAREFA_DA_AFIRMACAO_DE_FATO)`. */
+  afirmacaoDeFato: EstadoDaTarefa;
+}
+
+/** Um item da coluna, com o estado desta organização e o caminho para ligar. */
+export interface ItemDaColuna {
+  /** A chave do gate — a mesma de `NUNCA_FAZ`. */
+  nome: string;
+  frase: string;
+  /** `null` = não é escolha de ninguém: roda sempre, sem interruptor. */
+  estado: EstadoDoItem | null;
+  /** Onde o interruptor mora, quando há um. `null` para as que rodam sempre. */
+  ondeLigar: OndeLigar | null;
+}
+
+/**
+ * A coluna "o que ele nunca faz", item por item, com o estado REAL.
+ *
+ * A ordem é a da cadeia (a mesma de `CONFERENCIAS_DE_SAIDA`), e a chave é o
+ * `nome` do gate: é o que prende esta lista ao runtime.
+ */
+export function itensDaColuna(estado: EstadoDasCamadas): ItemDaColuna[] {
+  return CONFERENCIAS_DE_SAIDA.map((c): ItemDaColuna => {
+    // Fala ausente é defeito de programação, não dado de organização: o teste
+    // de chaves reprova antes de isto chegar a uma tela. Gritar aqui é melhor
+    // do que imprimir o nome do gate para o dono do negócio.
+    const frase = NUNCA_FAZ[c.nome];
+    if (frase === undefined) {
+      throw new Error(`NUNCA_FAZ sem fala para a conferência "${c.nome}" — as duas listas têm de casar.`);
+    }
+    // A conferência de fato NÃO é camada de `org_guardrail_layers`: quem decide
+    // é a tarefa do Jev, e ela só veta no estado `decidindo`. Ler o painel para
+    // ela daria "desligada" eterna a quem já a ligou no cartão.
+    if (c.nome === "factual_claim") {
+      return {
+        nome: c.nome,
+        frase,
+        estado:
+          estado.afirmacaoDeFato === "decidindo"
+            ? "ligada"
+            : estado.afirmacaoDeFato === "observando"
+              ? "so_anota"
+              : "desligada",
+        ondeLigar: "jev",
+      };
+    }
+    if (c.camada === null) {
+      // Nem escolha da organização, nem interruptor em outra tela: roda sempre.
+      return { nome: c.nome, frase, estado: null, ondeLigar: null };
+    }
+    return {
+      nome: c.nome,
+      frase,
+      estado: estado.painel[c.camada] ? "ligada" : "desligada",
+      ondeLigar: "painel",
+    };
+  });
+}
 
 /**
  * A conferência de ENTRADA, que não está na cadeia de saída.

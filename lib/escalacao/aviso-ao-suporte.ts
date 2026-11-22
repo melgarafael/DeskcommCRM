@@ -211,6 +211,14 @@ export interface AvisoDb {
   atualizaEntrega(orgId: string, entregaId: string, patch: PatchDaEntrega): Promise<void>;
   /** Devolve quantas entregas `pendente` daquele caso viraram `cancelado`. */
   cancelaPendentesDoCaso(orgId: string, caseId: string): Promise<number>;
+  /**
+   * Cancela a entrega `pendente` da ABERTURA do caso (`update_event_id` nulo)
+   * — a que ficou represada (espaçamento, canal fora) e cuja vez agora é de
+   * alguém com "Não enviar aviso de caso" (#4989). Sem isto ela ficaria
+   * "Tentando enviar" para sempre: o evento já foi consumido. Opcional pelos
+   * dublês anteriores.
+   */
+  cancelaAberturaPendente?(orgId: string, caseId: string): Promise<void>;
   carregaCanal(orgId: string, channelSessionId: string): Promise<CanalDoAviso | null>;
   /**
    * O número de destino é de uma conexão ATIVA desta organização AGORA?
@@ -397,6 +405,12 @@ function passouDoTeto(row: EventRow, agora: Date): boolean {
   return agora.getTime() - emitido > IDADE_MAXIMA_DO_EVENTO_MS;
 }
 
+/** `nao_avisar:<elo>` — o desfecho de quando a cadeia parou na marca (#4989). */
+function motivoDoNaoAvisar(destino: DestinoDoAviso): string {
+  const parou = destino.descartes.find((d) => d.motivo === "nao_avisar")?.elo ?? "responsavel";
+  return `nao_avisar:${parou}`;
+}
+
 /** A frase de gente do erro, para o corpo do item da Central. */
 function fraseDoErro(codigo: ErroDaEntregaDeAviso): string {
   return FRASE_DO_ERRO_DO_AVISO[codigo];
@@ -489,6 +503,14 @@ export async function aplicaAvisoDeCaso(
   // função única `resolverDestinoDoAviso`.
   const contactId = textoOuNulo(row.payload.contact_id);
   const destino: DestinoDoAviso = await destinoDoEnvio(deps, orgId, cfg, caso.conversation_id, contactId);
+  // "Não enviar aviso de caso" (#4989): a cadeia parou em alguém marcado. Nada
+  // sai e nenhuma entrega nasce — o caso segue no painel Casos. O motivo vai no
+  // desfecho do evento, separado de `sem_destino`, com o elo em que parou.
+  if (destino.origem === "nao_avisar") {
+    if (atualizacao) await deps.db.cancelaAtualizacao?.(orgId, caseId, caseEventId!);
+    else await deps.db.cancelaAberturaPendente?.(orgId, caseId);
+    return skipped(motivoDoNaoAvisar(destino));
+  }
   // Sem número não há aviso: `sem_destino` é a resposta honesta (a coluna é
   // `not null` com CHECK, então este ramo só existe para uma linha torta — e
   // mandar para `""` faria o transporte recusar com um erro que ninguém lê).
@@ -672,6 +694,12 @@ export async function aplicaAvisoDeCaso(
   const destinoAgora = cfgAgora
     ? await destinoDoEnvio(deps, orgId, cfgAgora, caso.conversation_id, contactId)
     : null;
+  // A vez passou a ser de alguém com "Não enviar aviso de caso" enquanto este
+  // envio era preparado (#4989): cancela, e o motivo é o da marca.
+  if (destinoAgora?.origem === "nao_avisar") {
+    await deps.db.atualizaEntrega(orgId, entrega.id, { status: "cancelado", erro_codigo: null });
+    return skipped(motivoDoNaoAvisar(destinoAgora));
+  }
   if (!cfgAgora?.ligado || cfgAgora.channel_session_id !== channelSessionId ||
       destinoAgora?.telefone !== numeroDoAviso || destinoAgora.origem !== destino.origem ||
       cfgAgora.resposta_whatsapp_habilitada !== cfg.resposta_whatsapp_habilitada ||
@@ -887,7 +915,8 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
      */
     async carregaMundoDoAviso({ organizationId, conversationId, contactId }) {
       const { carregaMundoDoAviso } = await import("@/lib/escalacao/membros-do-aviso");
-      return carregaMundoDoAviso(admin, { organizationId, conversationId, contactId });
+      // `comMarca`: só o aviso de CASO lê "Não enviar aviso de caso" (#4989).
+      return carregaMundoDoAviso(admin, { organizationId, conversationId, contactId }, { comMarca: true });
     },
 
     async carregaCaso(orgId, caseId) {
@@ -990,6 +1019,17 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         .update(patch)
         .eq("organization_id", orgId)
         .eq("id", entregaId);
+      if (error) throw new Error(error.message);
+    },
+
+    async cancelaAberturaPendente(orgId, caseId) {
+      const { error } = await admin
+        .from("entregas_de_aviso_de_caso")
+        .update({ status: "cancelado", erro_codigo: null })
+        .eq("organization_id", orgId)
+        .eq("case_id", caseId)
+        .is("update_event_id", null)
+        .eq("status", "pendente");
       if (error) throw new Error(error.message);
     },
 

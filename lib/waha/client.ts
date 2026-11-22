@@ -996,16 +996,48 @@ export class WahaClient {
    * LANÇA `waha_<status>`, como os vizinhos, e a decisão de falhar macio é de
    * QUEM CHAMA: `marcarConversaComoLida` (`./send`) engole e loga, e o põe
    * DEPOIS do envio para a resposta nunca esperar por enfeite de conversa.
+   *
+   * ⚠️ O "li esta conversa" NÃO vale no NOWEB sem store (#5015): sem ids, o
+   * controller do WAHA vai por `readChatMessages`, que lê o store local, e com
+   * "Guardar histórico" desligado (o padrão desde o #999) responde 400. Por isso
+   * `messageIds`: com eles o pedido vai por `session.sendSeen` →
+   * `sock.readMessages(keys)`, que não usa o store. O formato é o serializado que
+   * o webhook entrega (`false_<chat>_<id>`) — o `remoteJid` sai do próprio id, e
+   * a mensagem que chegou por `@lid` é lida no `@lid` dela. Ids `fromMe` o WAHA
+   * ignora. Sem ids (ou lista vazia), o corpo é o de antes.
    */
-  async sendSeen(session: string, chatId: string): Promise<void> {
+  async sendSeen(session: string, chatId: string, messageIds?: readonly string[]): Promise<void> {
     const res = await this.fetchComTeto(`${this.baseUrl}/api/sendSeen`, {
       method: "POST",
       headers: {
         "X-Api-Key": this.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ session, chatId }),
+      body: JSON.stringify({
+        session,
+        chatId,
+        ...(messageIds && messageIds.length > 0 ? { messageIds } : {}),
+      }),
     });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
+  /**
+   * Recusa uma chamada de voz recebida (`POST /api/{session}/calls/reject`).
+   *
+   * `from` e `id` vêm do payload do evento `call.received`, sem tradução. Quem
+   * chama decide o que fazer com a falha: a ligação já está tocando, e o pior
+   * resultado de errar é ela tocar como tocava antes.
+   */
+  async rejectCall(session: string, from: string, callId: string): Promise<void> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/calls/reject`,
+      {
+        method: "POST",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, id: callId }),
+      },
+    );
     if (!res.ok) throw new Error(`waha_${res.status}`);
   }
 

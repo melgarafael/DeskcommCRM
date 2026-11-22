@@ -18,7 +18,19 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+/**
+ * `modulos` é o único id que NÃO está em `NAV_GROUPS`: o grupo "Módulos" é GERADO em tempo de
+ * execução (um item por módulo conectado ativo da organização, Spec 33 F4), por
+ * `sidebarGroups`/`searchable` em `registry.ts`. Nenhuma entrada de `NAV_CATALOG` pode usá-lo.
+ */
+export type NavGroupId =
+  | "atendimento"
+  | "crm"
+  | "ia"
+  | "canais"
+  | "analise"
+  | "organizacao"
+  | "modulos";
 
 export interface NavGroup {
   id: NavGroupId;
@@ -423,6 +435,20 @@ export const NAV_CATALOG = [
     // onde o catálogo se CADASTRA — trabalho de quando entra produto novo ou
     // muda preço, não de toda manhã. Quem atende não a abre para vender; abre o
     // Inbox e o funil, que continuam no menu.
+  },
+  {
+    // Módulo opcional `catalogo_servicos` (doc 212, #3480): a porta só existe
+    // depois que o administrador da instalação instala o módulo em
+    // `/admin/modulos`. Ao lado de Produtos porque é o mesmo catálogo — o
+    // serviço é item dele —, e no hub pelo mesmo motivo: cadastra-se quando
+    // muda preço, não toda manhã.
+    href: "/app/servicos",
+    label: "Serviços",
+    description: "Hora marcada, projeto ou plano recorrente, com variações, prazo e sinal.",
+    icon: "Storefront",
+    group: "crm",
+    section: "Preparar a venda",
+    modulo: "catalogo_servicos",
   },
   {
     href: "/app/imports",
@@ -927,6 +953,22 @@ export const NAV_CATALOG = [
     section: "Dinheiro",
     minRole: "viewer",
     modulo: "honorarios",
+  },
+  {
+    // ── O PAINEL DE VENDAS ─────────────────────────────────────
+    //
+    // "Quanto vendi" numa tela só: cartões de Vendas, Valor vendido, Ticket
+    // médio e Conversão, o gráfico do período e a lista das vendas por funil e
+    // tag. Fonte: os negócios GANHOS (`lib/relatorios/painel-de-vendas.ts`).
+    // SÓ NO HUB ("Ver tudo em Análise") e no ⌘K: o menu lateral está no teto
+    // medido de 15 itens (`tests/unit/interface-por-empresa.test.ts`).
+    href: "/app/vendas",
+    label: "Vendas",
+    description: "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
   },
   {
     href: "/app/metrics",

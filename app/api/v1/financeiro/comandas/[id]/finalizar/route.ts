@@ -108,6 +108,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (!desfecho.ja_finalizada) {
     await audit({
       action: "comanda.finalizada",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
       resourceType: "sale",
       resourceId: id,
       requestId,

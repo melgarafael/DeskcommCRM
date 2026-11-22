@@ -17,7 +17,7 @@ Uma resposta HTTP de sucesso não basta: a Meta precisa confirmar `events_receiv
 
 Eventos enviados com código de teste da Meta ficam como pendência de teste e não elevam o contador de vendas aceitas. Desative o código e só reporte vendas reais verificadas.
 
-## Google: duas formas de conexão
+## Google: duas formas de enviar conversões
 
 - Conexões existentes permanecem na Google Ads API. O token de desenvolvedor continua necessário para esse caminho.
 - Novas autorizações usam Data Manager. Use o mesmo aplicativo OAuth configurado na instalação, habilite a Data Manager API no projeto Google Cloud e autorize o escopo `https://www.googleapis.com/auth/datamanager`. Não precisa de developer token para essa API.
@@ -31,6 +31,16 @@ Fontes oficiais consultadas em 24/09/2026 UTC:
 - [Importação pela Google Ads API](https://developers.google.com/google-ads/api/docs/conversions/upload-offline): `partial_failure=true` e inspeção por item.
 - [Restrições de acesso a uploads antigos](https://developers.google.com/google-ads/api/docs/deprecations): a elegibilidade histórica depende do uso anterior do recurso.
 - [Ingestão Data Manager](https://developers.google.com/data-manager/api/reference/rest/v1/events/ingest) e [consulta do protocolo](https://developers.google.com/data-manager/api/reference/rest/v1/requestStatus/retrieve).
+
+## Consultar campanhas de várias contas Google Ads
+
+1. Como administrador do CRM, abra **Google Ads → Desempenho no Google** e clique em **Conectar conta de leitura**. Dê um nome que a equipe reconheça, como “Unidade Centro”. Informe o ID de dez dígitos da conta de anúncios. Se o login acessa essa conta por uma conta gerente, preencha também o ID da gerente (MCC).
+2. Clique em **Continuar no Google** e escolha um login com acesso à conta de anúncios informada. A consulta de campanhas usa a Google Ads API e o escopo OAuth `adwords`. Se a autorização anterior era só para Data Manager, use **Autorizar leitura desta conta**.
+3. Repita para as outras contas e use o seletor do painel para consultar cada uma. Você pode usar logins Google diferentes. **Reconectar para leitura** permite refazer a autorização da conta selecionada.
+
+No projeto Google Cloud do aplicativo OAuth, habilite a Google Ads API. Um projeto com acesso **Explorer** pode fazer as consultas sem informar um token de desenvolvedor. Confira a elegibilidade e os limites do seu projeto na [documentação de níveis de acesso do Google](https://developers.google.com/google-ads/api/docs/api-policy/access-levels).
+
+O painel dá preferência à autorização de leitura cadastrada para cada conta. Para a conta de conversões já existente, também aceita a autorização anterior se ela permitir consultar campanhas. **Remover acesso de leitura** retira a autorização específica de relatórios. A captura pelos links do site e a configuração em **Configurações → Conversões** têm funcionamento independente.
 
 ## Escopo desta entrega
 

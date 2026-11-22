@@ -118,6 +118,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
 }));
 
 import { deriveMessageMedia, MARCADOR_NAO_LIDA } from "@/workers/media-derive-worker";
+import { PdfExtractError } from "@/lib/ai/rag/extractors/pdf";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 import { resolveOrgLlmConfig, type OrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
@@ -395,6 +396,7 @@ describe("deriveMessageMedia", () => {
    * com "The model `claude-sonnet-5` does not exist or you do not have access
    * to it", e a Central com ZERO avisos de mídia.
    */
+
   describe("a falha permanente avisa a Central", () => {
     const RECUSA_DO_PROVEDOR =
       "The model `claude-sonnet-5` does not exist or you do not have access to it.";
@@ -445,6 +447,117 @@ describe("deriveMessageMedia", () => {
 
     it("derivação que dá certo não avisa nada (controle)", async () => {
       await deriveMessageMedia(eventRow(4));
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ─── PDF ESCANEADO NÃO É FALHA CRÍTICA (#4889) ────────────────────────────
+   *
+   * O extrator marca o caso de duas formas: `motivo: "sem_texto"` quando o PDF
+   * abriu inteiro e não tem letra selecionável, `"falha"` quando a engine não
+   * conseguiu ler. Até aqui o worker só olhava a exceção, então os dois
+   * custavam o mesmo: cinco tentativas, aviso "a leitura deu erro em todas as
+   * tentativas" e um `event_dead` aberto — que, pelo índice único da migration
+   * 0491, ocupa a única vaga da organização e esconde a falha seguinte.
+   *
+   * Medido no dublê: ZERO inserts em `agent_inbox_items` e `skipped` já na
+   * PRIMEIRA tentativa. Se alguém apagar o tratamento novo, o `status` volta a
+   * ser `error` e a Central recebe um aviso que ninguém pode resolver.
+   */
+  describe("PDF sem texto selecionável (escaneado)", () => {
+    const SEM_TEXTO = "pdfjs-dist extracted no text (possibly image-only PDF)";
+    const MOTIVO = "o PDF não tem texto selecionável (é escaneado ou só imagem)";
+
+    beforeEach(() => {
+      messageRow.type = "document";
+      messageRow.media_mime = "application/pdf";
+      messageRow.media_storage_path = "org1/proposta-escaneada.pdf";
+    });
+
+    it.each([0, 4])(
+      "encerra como skipped e grava failed com a razão, sem avisar a Central (attempts=%s)",
+      async (attempts) => {
+        vi.mocked(deriveMediaText).mockRejectedValue(
+          new PdfExtractError(SEM_TEXTO, undefined, "sem_texto"),
+        );
+        const erro = vi.spyOn(logger, "error");
+        try {
+          const r = await deriveMessageMedia(eventRow(attempts));
+
+          expect(r).toEqual({
+            consumer_key: "media_derive_v1",
+            status: "skipped",
+            detail: "pdf_sem_texto",
+          });
+          // O turno seguinte precisa saber que existe arquivo ilegível — é o
+          // mesmo marcador das demais falhas terminais.
+          expect(updateEqMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              media_derived_text: MARCADOR_NAO_LIDA,
+              media_derived_status: "failed",
+              metadata: { media_derived_motivo: MOTIVO },
+            }),
+          );
+          // E a Central fica limpa: nada há para o operador consertar num PDF
+          // que o cliente mandou escaneado.
+          expect(inboxInsertMock, "PDF escaneado abriu aviso na Central").not.toHaveBeenCalled();
+          // Nem "falhou de vez": a derivação terminou, não desistiu.
+          expect(erro).not.toHaveBeenCalled();
+        } finally {
+          erro.mockRestore();
+        }
+      },
+    );
+
+    it("falha ao gravar o desfecho devolve error, sem avisar a Central", async () => {
+      // Sugerido por @xofrd na #4889. O dublê ignora o retorno de
+      // `updateEqMock`: quem decide o `{ error }` do update é `updateError`
+      // (zerado no beforeEach de fora).
+      vi.mocked(deriveMediaText).mockRejectedValue(
+        new PdfExtractError(SEM_TEXTO, undefined, "sem_texto"),
+      );
+      updateError = { message: "db fora" };
+
+      const r = await deriveMessageMedia(eventRow(0));
+
+      expect(r).toEqual({
+        consumer_key: "media_derive_v1",
+        status: "error",
+        detail: "failed_status_update_failed",
+      });
+      expect(inboxInsertMock).not.toHaveBeenCalled();
+    });
+
+    it("erro REAL de extração (motivo falha) continua tentando e avisa na última", async () => {
+      // O controle que dá sentido ao caso acima: o mesmo `PdfExtractError`,
+      // com o outro motivo, tem de seguir o caminho de sempre.
+      vi.mocked(deriveMediaText).mockRejectedValue(
+        new PdfExtractError("pdfjs-dist failed to extract text from the PDF", new Error("boom"), "falha"),
+      );
+
+      const r = await deriveMessageMedia(eventRow(4));
+
+      expect(r.status).toBe("error");
+      expect(inboxInsertMock, "o erro real deixou de avisar").toHaveBeenCalledTimes(1);
+      expect(updateEqMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          media_derived_status: "failed",
+          metadata: expect.objectContaining({
+            media_derived_motivo: expect.stringContaining("falhou em todas as tentativas"),
+          }),
+        }),
+      );
+    });
+
+    it("erro REAL de extração numa tentativa intermediária não avisa nem encerra", async () => {
+      vi.mocked(deriveMediaText).mockRejectedValue(
+        new PdfExtractError("pdfjs-dist failed to extract text from the PDF", undefined, "falha"),
+      );
+
+      const r = await deriveMessageMedia(eventRow(1));
+
+      expect(r.status).toBe("error");
       expect(inboxInsertMock).not.toHaveBeenCalled();
     });
   });

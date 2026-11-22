@@ -12,6 +12,17 @@
 import { daysBetween, toUtcDay } from '@/lib/ai/usage/aggregate';
 import { LEAD_STAGES } from '@/lib/agent-engine/agent/lead-state';
 
+/**
+ * Uma fonte do painel que não veio inteira (#5016): `cortada` bateu o teto de
+ * linhas do PostgREST e o bloco mostra um recorte; `falhou` não foi lida e o
+ * bloco aparece zerado. `fonte` é o nome da tabela — a tela traduz para o nome
+ * do bloco.
+ */
+export interface FonteIncompleta {
+  fonte: string;
+  motivo: "cortada" | "falhou";
+}
+
 export interface EvolutionInput {
   range: { from: Date; to: Date };
   memoryEntries: Array<{ created_at: string; title: string }>;
@@ -48,6 +59,8 @@ export interface EvolutionInput {
   }>;
   stageTransitions: Array<{ created_at: string; to_stage: string }>;
   costCents: number;
+  /** Fontes cortadas ou que falharam. Ausente = nenhuma. */
+  fontesIncompletas?: FonteIncompleta[];
   inboundCount: number;
   handoffCount: number;
   pipelines: Array<{ name: string; hints: Array<string | null> }>;
@@ -96,6 +109,8 @@ export interface EvolutionPayload {
      */
     messages_received: number;
   };
+  /** Fontes que não vieram inteiras; a tela avisa quais blocos estão incompletos (#5016). */
+  fontes_incompletas: FonteIncompleta[];
   gaps: {
     unmapped_agent_steps: Array<{ pipeline_name: string; steps: string[] }>;
     /**
@@ -256,5 +271,6 @@ export function aggregateEvolution(input: EvolutionInput): EvolutionPayload {
       router_no_match: decisoesDeRoteador.filter((r) => r.outcome === 'no_match').length,
       router_failed: decisoesDeRoteador.filter((r) => r.outcome === 'classifier_failed').length,
     },
+    fontes_incompletas: input.fontesIncompletas ?? [],
   };
 }

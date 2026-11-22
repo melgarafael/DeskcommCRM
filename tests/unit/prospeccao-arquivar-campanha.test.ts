@@ -58,7 +58,13 @@ const CONFIG = {
   interval_minutes: 15,
 };
 
-type Linha = { id: string; status: string; config: Record<string, unknown> | null };
+type Linha = {
+  id: string;
+  status: string;
+  config: Record<string, unknown> | null;
+  /** #4847: a campanha pode chegar aqui com a marca da pausa pela janela. */
+  pausada_pela_janela?: boolean;
+};
 type Chamada = { text: string; params: unknown[] };
 
 /**
@@ -87,6 +93,10 @@ function banco(linhas: Linha[]) {
       if (text.includes("jsonb_build_object('arquivada_em'")) {
         if (marcador) return { rows: [], rowCount: 0 };
         linha.config = { ...(linha.config ?? {}), arquivada_em: params[2] as string };
+        // #4847: o arquivamento também limpa a marca da pausa pela janela — o
+        // `update` real da loja tem `pausada_pela_janela=false` no SET, e o
+        // simulador aplica o que o SQL diz.
+        if (text.includes("pausada_pela_janela=false")) linha.pausada_pela_janela = false;
         // A regra dura: campanha rodando PARA de enviar.
         if (text.includes("status='running'")) linha.status = "paused";
         return { rows: [{ id: linha.id, status: linha.status }], rowCount: 1 };
@@ -258,16 +268,39 @@ describe("ida e volta: arquivar, sair da lista, desarquivar, voltar", () => {
     await desarquivarCampanha(pool, ORG, CAMPANHA);
     expect(campanhasVisiveis([estado.get(CAMPANHA)!], false)).toHaveLength(1);
   });
+  it("A3: arquivar uma campanha pausada PELA JANELA limpa a marca (#4847)", async () => {
+    // A marca é o que autoriza a volta automática. Arquivar a campanha sem
+    // limpá-la deixaria um `update ... and pausada_pela_janela` do tick livre
+    // para reabri-la — campanha arquivada enviando é o pior desfecho (#4359).
+    // O simulador do `banco()` aplica o `pausada_pela_janela=false` do SQL
+    // real: sem ele no `update` da loja, a linha abaixo continua com a marca.
+    const { pool, estado } = banco([
+      { id: CAMPANHA, status: "paused", pausada_pela_janela: true, config: { ...CONFIG } },
+    ]);
+    await arquivarCampanha(pool, ORG, CAMPANHA);
+    expect(estado.get(CAMPANHA)?.status).toBe("paused");
+    expect(estado.get(CAMPANHA)?.pausada_pela_janela).toBe(false);
+  });
 });
 
 describe("activateCampaign: rascunho arquivado não inicia (#4430)", () => {
   // O que a tela manda no Iniciar: a configuração da campanha, que carrega o marcador.
   const comMarcador = campaignConfigSchema.parse({ ...CONFIG, arquivada_em: ISO });
+  // A configuração limpa do caminho feliz da ativação (#4847, teste A3).
+  const CONFIG_PARSE = campaignConfigSchema.parse(CONFIG);
   /** O mínimo para `validateConfig` passar e a ativação chegar à campanha. */
   function bancoDaAtivacao(configDaCampanha: Record<string, unknown> | null) {
     const escritas: Chamada[] = [];
+    // #4847: o estado da linha, para perguntar no fim "a marca da janela sobreviveu?".
+    const linha = { status: "draft", pausada_pela_janela: true };
     const query = vi.fn(async (text: string, params: unknown[] = []) => {
       if (/^(update|insert|delete)/i.test(text)) escritas.push({ text, params });
+      if (text.startsWith("update prospecting_campaigns")) {
+        if (text.includes("status='running'")) linha.status = "running";
+        // O simulador aplica o que o SQL diz: sem `pausada_pela_janela=false`
+        // no `update` real da ativação, a marca fica e o teste é vermelho.
+        if (text.includes("pausada_pela_janela=false")) linha.pausada_pela_janela = false;
+      }
       const rows = (() => {
         if (text.includes("pg_try_advisory_lock")) return [{ locked: true }];
         if (text.includes("from ai_agents a join ai_agent_versions"))
@@ -284,7 +317,7 @@ describe("activateCampaign: rascunho arquivado não inicia (#4430)", () => {
       return { rows, rowCount: rows.length };
     });
     const pool = { connect: async () => ({ query, release: vi.fn() }) };
-    return { pool: pool as never, escritas };
+    return { pool: pool as never, escritas, linha };
   }
 
   it("recusa com 409 e não escreve nada: iniciado, ele sairia enviando fora da lista", async () => {
@@ -303,5 +336,18 @@ describe("activateCampaign: rascunho arquivado não inicia (#4430)", () => {
     const daCampanha = escritas.filter((e) => e.text.startsWith("update prospecting_campaigns"));
     expect(daCampanha.some((e) => e.text.includes("status='running'"))).toBe(true);
     for (const e of daCampanha) expect(arquivadaEm(e.params[2])).toBeNull();
+  });
+
+  it("A3: o INÍCIO limpa a marca da pausa pela janela (#4847)", async () => {
+    // A ativação devolve a campanha a `running`; a marca só vale enquanto
+    // pausada (a invariante do módulo da janela). Se o `update` do início
+    // deixar a marca, a linha volta a rodar `running=true E pausada_pela_janela=true`
+    // — estado impossível, e o tick a trataria como pausa automática. O
+    // simulador aplica o que o SQL diz: sem o `pausada_pela_janela=false` no
+    // UPDATE real, a marca sobrevive e o teste fica vermelho.
+    const { pool, linha } = bancoDaAtivacao(null);
+    await activateCampaign(pool, {} as never, ORG, CAMPANHA, CONFIG_PARSE);
+    expect(linha.status).toBe("running");
+    expect(linha.pausada_pela_janela).toBe(false);
   });
 });

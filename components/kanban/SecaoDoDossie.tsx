@@ -41,9 +41,10 @@ export const CHAVE_DAS_SECOES_RECOLHIDAS = "dossie:secoes-recolhidas";
 /**
  * As seções recolhíveis do dossiê. As três do autor (#3181) e, depois delas, a
  * seção dos números do cliente (#3669), que só existe quando há relacionado.
- * `Tarefas` e `Propostas` ficam de fora.
+ * Depois, a seção das vendas registradas do negócio. `Tarefas` e `Propostas`
+ * ficam de fora.
  */
-export type IdDeSecao = "contato" | "numeros-do-negocio" | "dados-do-negocio" | "linha-do-tempo";
+export type IdDeSecao = "contato" | "numeros-do-negocio" | "dados-do-negocio" | "vendas" | "linha-do-tempo";
 
 function gravar(fechadas: Set<string>): void {
   try {

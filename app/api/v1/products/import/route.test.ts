@@ -13,10 +13,21 @@ import { audit } from "@/lib/audit";
 import { fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
 import { lerPlanilha } from "@/lib/catalogo/planilha";
 import { createClient } from "@/lib/supabase/server";
+import { sinaisFixosQueTravamPreco } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: vi.fn(async () => false),
+  modulosLigados: vi.fn(async () => []),
+}));
+vi.mock("@/lib/catalogo/servicos-supabase", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  sinaisFixosQueTravamPreco: vi.fn(async () => new Map()),
+}));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -657,7 +668,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
   it("GET devolve o modelo com a coluna de foto, e o modelo é planilha que o importador lê", async () => {
     const { GET } = await import("./route");
 
-    const texto = (await (await GET()).text()).replace("\ufeff", "");
+    const texto = (await (await GET(new NextRequest("http://localhost/api/v1/products/import"))).text()).replace("\ufeff", "");
 
     expect(texto.split("\n")[0]).toBe("codigo,nome,marca,categoria,preco,custo,estoque,descricao,foto");
     const lido = lerPlanilha(texto);
@@ -725,3 +736,37 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
+
+describe("POST /api/v1/products/import — a porta do catálogo de serviços (doc 212, #3480)", () => {
+  async function importar(linhas: string) {
+    vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", ["SOCIAL", "IP15"]) as never);
+    const { POST } = await import("./route");
+    const res = await POST(await pedido(csv(linhas)));
+    return { status: res.status, corpo: (await res.json()) as { data: Record<string, unknown> } };
+  }
+
+  it("módulo desligado: a planilha é a de sempre e não pergunta nada ao módulo", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(false);
+    const { corpo } = await importar("SOCIAL,Social media,100");
+    expect(corpo.data).toMatchObject({ atualizados: 1, erros: [] });
+    expect(sinaisFixosQueTravamPreco).not.toHaveBeenCalled();
+  });
+
+  it("módulo ligado: a linha que baixaria o preço abaixo do sinal fixo sai com motivo; as outras entram", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(true);
+    vi.mocked(sinaisFixosQueTravamPreco).mockResolvedValue(new Map([[idDe("SOCIAL"), 30_000]]));
+    const { corpo } = await importar("SOCIAL,Social media,299.99\nIP15,iPhone 15,4999");
+    expect(upserts.flat().map((l) => l.codigo)).toEqual(["IP15"]);
+    expect(corpo.data.erros).toEqual([
+      { linha: 2, motivo: '"SOCIAL": o preço ficaria abaixo do sinal fixo do serviço.' },
+    ]);
+  });
+
+  it("módulo ligado e conferência falhou: nada é gravado", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(true);
+    vi.mocked(sinaisFixosQueTravamPreco).mockRejectedValue(new Error("boom"));
+    const { status } = await importar("SOCIAL,Social media,999");
+    expect(status).toBe(500);
+    expect(upserts).toEqual([]);
+  });
+});

@@ -104,7 +104,7 @@ export async function agenteAceitaComandoDeCelular(
 
     const { data: candidatos, error: agErr } = await supabase
       .from("ai_agents")
-      .select("id, config, kind, is_active, paused_at, published_version_id, archived_at, priority, created_at")
+      .select("id, config, kind, channel, is_active, paused_at, published_version_id, archived_at, priority, created_at")
       .eq("organization_id", organizationId)
       .is("archived_at", null);
     if (agErr) throw new Error(agErr.message);
