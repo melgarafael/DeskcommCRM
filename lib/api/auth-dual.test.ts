@@ -192,6 +192,7 @@ describe("os caminhos de envio passam pelo proxy", () => {
     ).toBe(true);
     expect(isPublicPath("/api/v1/prospecting")).toBe(true);
     expect(isPublicPath("/api/v1/agenda/tipos")).toBe(true);
+    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(true);
   });
 
   it("libera versão, publicação e teste do agente (issue #2052)", () => {
@@ -201,11 +202,12 @@ describe("os caminhos de envio passam pelo proxy", () => {
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/publish`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/test`)).toBe(true);
-    // E NÃO dá carona: os irmãos seguem só-sessão, e um segmento que não é
-    // UUID (ou um sufixo qualquer) não entra de carona em cima de um que entra.
-    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
+    // E NÃO dá carona a segmentos que não são UUID nem têm porta própria:
+    // pause, duplicate, proposals, reconcile, tool-usage aceitam token desde
+    // a fatia 6 (Spec 33) — têm porta própria em MODELOS_DA_CONFIGURACAO.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(true);
     expect(isPublicPath("/api/v1/ai/agents/abc")).toBe(false);
-    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/pause`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/pause`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/rollback`)).toBe(false);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/`)).toBe(false);
   });
@@ -216,14 +218,14 @@ describe("os caminhos de envio passam pelo proxy", () => {
     expect(isPublicPath("/api/v1/ai/followup-flows/123/duplicate")).toBe(false);
     expect(isPublicPath("/api/v1/ai/followup-flows/123")).toBe(false);
     expect(isPublicPath("/api/v1/ai/followup-flows/xpto")).toBe(false);
-    // agents: assignable segue só-sessão; o segmento da versão é UUID.
-    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
+    // agents: assignable aceita token desde a fatia 6 (Spec 33); o segmento da versão é UUID.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(true);
     expect(isPublicPath("/api/v1/ai/agents/abc/versions")).toBe(false);
     // prospecting: só a raiz; os irmãos de /agents (chat, prepare, session) seguem só-sessão.
     expect(isPublicPath("/api/v1/prospecting/agents")).toBe(false);
     expect(isPublicPath("/api/v1/prospecting/agents/chat")).toBe(false);
-    // agenda/tipos: o irmão /reativar segue só-sessão.
-    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(false);
+    // agenda/tipos: /reativar aceita token (Spec 33, fatia 5), mas outros irmãos seguem só-sessão.
+    expect(isPublicPath("/api/v1/agenda/tipos/xyz")).toBe(false);
   });
 
   it("não dá carona a sub-paths que não têm suporte a Bearer", () => {

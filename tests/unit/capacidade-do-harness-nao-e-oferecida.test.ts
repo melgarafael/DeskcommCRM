@@ -35,6 +35,7 @@ import {
   IDS_DO_HARNESS,
   motivoDoHarness,
 } from "@/lib/mcp/tools/ferramentas-do-harness";
+import { IDS_DO_ADMINISTRADOR } from "@/lib/mcp/tools/ferramentas-do-administrador";
 import {
   capacidadesAutomaticasDoPacote,
   capacidadesCriticasDoPacote,
@@ -81,7 +82,10 @@ describe("capacidade do harness não é oferecida como marcável", () => {
 
   it("o resto do catálogo continua marcável — não é desculpa para esconder capacidade", () => {
     const naoMarcaveis = SERVIDO.filter((c) => !c.marcavel).map((c) => c.id);
-    expect(naoMarcaveis.sort()).toEqual([...IDS_DO_HARNESS].sort());
+    // As duas listas DECLARADAS, e só elas: o harness (o motor descarta) e as de
+    // editar assistentes, que são só do administrador por aplicativo conectado
+    // (`lib/mcp/tools/ferramentas-do-administrador.ts`).
+    expect(naoMarcaveis.sort()).toEqual([...IDS_DO_HARNESS, ...IDS_DO_ADMINISTRADOR].sort());
     // E o motivo é exclusivo de quem não é marcável.
     for (const c of SERVIDO) {
       if (c.marcavel) expect(c.motivo_nao_marcavel, `${c.id} é marcável`).toBeNull();

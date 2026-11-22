@@ -115,7 +115,7 @@ export function avaliarRespostaDeTeste(
   // silêncio-que-parece-aprovação que este módulo existe para corrigir.
   const corpo = texto ?? "";
   const avaliado = corpo.trim() !== "";
-  const achado = detectarVazamentoInterno(corpo);
+  const achado = detectarVazamentoInterno(corpo, { linkDoCliente: true });
   // #2490: texto limpo NÃO é aprovação quando a foto que a resposta promete
   // não passou pela mesma preparação do envio real — aí o teste é VERMELHO.
   const midiaPendente = midia.some((m) => m.falha !== undefined);

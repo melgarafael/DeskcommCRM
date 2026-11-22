@@ -44,8 +44,11 @@ import {
 } from "@/components/ui/table";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
-import { useSerieTemporal } from "@/hooks/metrics/useSerieTemporal";
+import { type FunilDaSerie, useSerieTemporal } from "@/hooks/metrics/useSerieTemporal";
 import { granularidadeValida, type Granularidade } from "@/lib/metrics/serie-temporal";
+
+/** A opção do seletor que NÃO é funil nenhum: a organização inteira. */
+const TODOS_OS_FUNIS = "__todos__";
 
 /**
  * O rótulo do balde na data: `AAAA-MM` vira mês/ano, `AAAA-MM-DD` vira dia/mês.
@@ -61,11 +64,15 @@ function rotuloDoBalde(balde: string, tagDoIdioma: string): string {
     : d.toLocaleDateString(tagDoIdioma, { day: "2-digit", month: "2-digit" });
 }
 
-export function SeriePanel() {
+export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
   const [granularidade, setGranularidade] = useState<Granularidade>("dia");
-  const { data, isLoading, isError } = useSerieTemporal(granularidade);
+  // Recorte por funil (#4918): a escolha da tela é o ID do funil; `null` é a
+  // organização inteira — exatamente o pedido que a rota fazia antes.
+  const [funil, setFunil] = useState<string>(TODOS_OS_FUNIS);
+  const funilId = funil === TODOS_OS_FUNIS ? null : funil;
+  const { data, isLoading, isError } = useSerieTemporal(granularidade, funilId);
 
   if (isLoading) {
     return (
@@ -98,24 +105,52 @@ export function SeriePanel() {
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">
-          {t("Ganhos por período")} · {serie.total}
-        </CardTitle>
-        <Select
-          value={granularidade}
-          onValueChange={(v) => {
-            if (granularidadeValida(v)) setGranularidade(v);
-          }}
-        >
-          <SelectTrigger className="w-32 md:w-40" aria-label={t("Granularidade")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="dia">{t("Dia")}</SelectItem>
-            <SelectItem value="semana">{t("Semana")}</SelectItem>
-            <SelectItem value="mes">{t("Mês")}</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-0.5">
+          <CardTitle className="text-base">
+            {t("Ganhos por período")} · {serie.total}
+          </CardTitle>
+          {/* O ESCOPO do número (#4918). O nome do funil vem da RESPOSTA, não do
+              seletor: é o conjunto que a rota de fato contou. Sem funil, o card
+              diz que a conta é a da organização inteira — antes ele não dizia
+              nada e dava a soma de todos os funis como se fosse uma coisa só. */}
+          <p data-testid="escopo-dos-ganhos" className="text-xs text-muted-foreground">
+            {serie.funil
+              ? `${t("Funil:")} ${serie.funil.name}`
+              : t("Organização inteira")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {funis.length > 0 ? (
+            <Select value={funil} onValueChange={setFunil}>
+              <SelectTrigger className="w-40 md:w-48" aria-label={t("Funil selecionado")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODOS_OS_FUNIS}>{t("Organização inteira")}</SelectItem>
+                {funis.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Select
+            value={granularidade}
+            onValueChange={(v) => {
+              if (granularidadeValida(v)) setGranularidade(v);
+            }}
+          >
+            <SelectTrigger className="w-32 md:w-40" aria-label={t("Granularidade")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dia">{t("Dia")}</SelectItem>
+              <SelectItem value="semana">{t("Semana")}</SelectItem>
+              <SelectItem value="mes">{t("Mês")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {baldes.length === 0 ? (

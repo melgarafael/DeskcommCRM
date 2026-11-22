@@ -48,6 +48,7 @@ export function montarUrlDeConsentimento(
      * toa.
      */
     incluirGoogleAds?: boolean;
+    selecionarConta?: boolean;
   },
 ): string {
   const clientId = app.clientId?.trim();
@@ -74,7 +75,7 @@ export function montarUrlDeConsentimento(
     // Sem `offline` não vem refresh_token nenhum; sem `consent` ele some na
     // segunda vez — mesma armadilha 1 do irmão da Agenda.
     access_type: "offline",
-    prompt: "consent",
+    prompt: opcoes.selecionarConta ? "select_account consent" : "consent",
     state: opcoes.state,
   });
 

@@ -35,6 +35,13 @@ const CAMPO_IDADES = {
   mensagem_padrao: MENSAGEM_DO_CAMPO,
 };
 
+/**
+ * O campo SEM padrão que os casos escrevem ao lado de `idades`. Precisa estar
+ * declarado no funil: a chave que o funil não declara é recusada no mesmo
+ * degrau (#4667), e estes casos medem o padrão, não a chave.
+ */
+const CAMPO_BAIRRO = { key: "bairro", label: "Bairro", type: "text" };
+
 /** O estado padrão do produto: a conferência de campo NASCE DESLIGADA. */
 const DESLIGADA = { jev: { ligado: false } };
 
@@ -176,7 +183,7 @@ describe("a IA não grava fora do padrão — mesmo com a conferência desligada
     const { resultado, jev } = await escrever(
       { idades: "dois", bairro: "Asa Norte" },
       {
-        pipelineSettings: { fields: [CAMPO_IDADES] },
+        pipelineSettings: { fields: [CAMPO_IDADES, CAMPO_BAIRRO] },
         config: DESLIGADA,
       },
     );
@@ -258,7 +265,7 @@ describe("com a conferência LIGADA, o padrão decide ANTES do Jev", () => {
     const { resultado, jev } = await escrever(
       { bairro: "Asa Norte" },
       {
-        pipelineSettings: { fields: [CAMPO_IDADES] },
+        pipelineSettings: { fields: [CAMPO_IDADES, CAMPO_BAIRRO] },
         config: DECIDINDO,
       },
     );

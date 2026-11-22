@@ -62,7 +62,7 @@ vi.mock("next/link", () => ({
 }));
 
 const AGORA = new Date("2026-10-27T12:00:00Z");
-/** 5 dias parado na etapa: dá idade para o rodapé escrever "5d em Negociação". */
+/** 5 dias parado na etapa: dá idade para o rodapé escrever "5d". */
 const ENTRADA_NA_ETAPA = "2026-10-22T12:00:00Z";
 
 const LEAD = {
@@ -93,9 +93,9 @@ const LEAD = {
   tarefas: [],
 } as unknown as Lead;
 
-function montar(denso: boolean) {
+function montar(denso: boolean, lead: Lead = LEAD) {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const card = buildCardInput(LEAD, {
+  const card = buildCardInput(lead, {
     stageName: "Negociação",
     ownerNames: new Map([["u-1", "Marcos"]]),
     coolingIds: new Set<string>(),
@@ -111,7 +111,7 @@ function montar(denso: boolean) {
             <div>
               <KanbanCard
                 card={card}
-                lead={LEAD}
+                lead={lead}
                 index={0}
                 pipelineId="p-1"
                 etapas={[]}
@@ -150,8 +150,9 @@ describe("card compacto × confortável (#3461, item 2)", () => {
     // Valor e dono continuam no card.
     expect(within(cartao).getByText(/2\.500/)).toBeInTheDocument();
     expect(within(cartao).getByText(/Marcos/)).toBeInTheDocument();
-    // E o tempo na etapa também.
-    expect(within(cartao).getByText(/Negociação/)).toBeInTheDocument();
+    // O tempo na etapa continua. O nome da etapa não: a coluna já o mostra.
+    expect(within(cartao).getByText("5d")).toBeInTheDocument();
+    expect(within(cartao).queryByText(/Negociação/)).toBeNull();
   });
 
   it("o compacto tira do card a conversa e o contato — e é isto que o PR declara", () => {
@@ -169,5 +170,24 @@ describe("card compacto × confortável (#3461, item 2)", () => {
     // `ContatoDoNegocio`. Sem estas duas, "sai para o detalhe" seria desculpa.
     expect(dossie).toContain("ConversaNoDossie");
     expect(dossie).toContain("ContatoDoNegocio");
+  });
+});
+
+describe("a foto do contato no card (revisão do #5007)", () => {
+  it("sem foto, nenhum disco ao lado do título — o disco do rodapé é o do responsável", () => {
+    for (const denso of [false, true]) {
+      const { unmount } = montar(denso);
+      expect(screen.queryByTestId("foto-do-contato")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("com foto, a imagem aparece nos dois modos", () => {
+    const comFoto = { ...LEAD, contact_has_avatar: true } as Lead;
+    for (const denso of [false, true]) {
+      const { unmount } = montar(denso, comFoto);
+      expect(screen.getByTestId("foto-do-contato").getAttribute("src")).toBe("/api/v1/contacts/c-1/avatar");
+      unmount();
+    }
   });
 });

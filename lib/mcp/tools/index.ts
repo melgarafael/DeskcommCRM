@@ -21,6 +21,7 @@ import {
 } from "./conversations";
 import {
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   crmCreateLead,
   crmUpdateLead,
@@ -100,6 +101,16 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import {
+  crmGetAiAgentTurn,
+  crmGetAiAgentVersion,
+  crmListAiAgents,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+} from "./agentes";
+import { crmCreateTask, crmListTasks, crmUpdateTask } from "./tarefas";
 import { crmSaveLeadDiagnosis } from "./diagnostico";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
@@ -122,6 +133,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmGetConversationHistory,
   crmGetQueueStatus,
   crmListLeads,
+  crmCountLeads,
   crmGetLead,
   // #4544 (item 2) — o documento anexado ao card: listar para descobrir o id,
   // ler para tirar dali os valores. Entram logo depois do get_lead porque são a
@@ -145,6 +157,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmConsultarReceita,
   crmListPrivacyRequests,
   crmGetProspectingSiteAudit,
+  crmListTasks,
   // read — organizar a operação (W4)
   crmListStages,
   crmListTags,
@@ -160,6 +173,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListAvailableAttendants,
   crmListHumanCases,
   crmGetHumanCase,
+  // read — editar os assistentes de IA (só admin; ver `./agentes.ts`)
+  crmListAiAgents,
+  crmGetAiAgentVersion,
+  crmGetAiAgentTurn,
   // write
   // A que consulta E marca numa chamada só vem primeiro: quando o cliente já deu
   // dia e hora, é o caminho curto, e é o que evita o turno morrer no meio (#831).
@@ -206,6 +223,13 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCloseHumanCase,
   crmResumeAiAttendance,
   crmDraftProposal,
+  // write — editar os assistentes de IA: rascunho, teste, publicar, reverter
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmCreateTask,
+  crmUpdateTask,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

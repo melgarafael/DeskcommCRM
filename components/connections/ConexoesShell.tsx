@@ -47,11 +47,13 @@ export function qrDaUrl(valor: string | null): string | undefined {
 export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
+  podeCriarAgenteDeVoz,
   graphParceiro = null,
   bot = null,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
+  podeCriarAgenteDeVoz: boolean;
   /**
    * O canal parceiro que espelha a Cloud API (recorte do #1130) é OPCIONAL DA
    * INSTALAÇÃO e nasce desligado (decisão do dono, doc 54). `null` = a
@@ -140,7 +142,7 @@ export function ConexoesShell({
       </TabsContent>
 
       <TabsContent value="telefonia" className="mt-0">
-        <TelefoniaClient />
+        <TelefoniaClient podeCriarAgente={podeCriarAgenteDeVoz} />
       </TabsContent>
       <TabsContent value="sociais" className="mt-0"><RedesSociaisClient /></TabsContent>
 

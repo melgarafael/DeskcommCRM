@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * REATIVAR UM TIPO DE AGENDAMENTO — o outro lado do `DELETE` da rota irmã.
@@ -43,9 +44,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -57,10 +58,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const requestId = req.headers.get("x-request-id") ?? undefined;
-  const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
+  const requestId = req.headers.get("x-request-id") ?? randomUUID();
+  const autorizado = await resolveAuthDual(req, { requestId, resource: "calendar_event_types", role: "manager", scope: "mcp:write" });
   if (!autorizado.ok) return autorizado.response;
-  const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
+  const teto = await tetoDeEscritaDoToken(autorizado, "agenda_tipos_reativar", requestId); if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, autorizado.idioma ?? "pt-BR");
 
   const lido = corpo.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) return fail("validation_failed", t("corpo inválido"), 422, { requestId });
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     .eq("id", lido.data.id)
     // O tenant vem da SESSÃO, nunca do corpo — o corpo carrega só o `id` do
     // tipo, e sem este filtro a service role reativaria tipo de outra casa.
-    .eq("organization_id", autorizado.org.orgId)
+    .eq("organization_id", autorizado.organizationId)
     .select("id")
     .maybeSingle();
 
@@ -80,9 +82,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
 
   await audit({
-    actorUserId: autorizado.user.id,
+    actorUserId: autorizado.actor.type === "user" ? autorizado.actor.id : null,
+    actorApiTokenId: autorizado.apiTokenId ?? null,
     action: "agenda.tipo_reativado",
-    organizationId: autorizado.org.orgId,
+    organizationId: autorizado.organizationId,
     resourceType: "calendar_event_types",
     resourceId: lido.data.id,
     metadata: {},

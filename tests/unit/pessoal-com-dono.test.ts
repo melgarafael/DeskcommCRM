@@ -34,9 +34,10 @@ import { podeVerPessoal } from "@/lib/inbox/pessoal";
  *    isso que a primitiva não recebe papel. No ENVIO a sabotagem equivalente é
  *    `autorizado = humano` (largar a comparação com o dono): caem "admin não
  *    envia" e "gerente não envia".
- * 2. BUSCA SEM DONO. Apagar o `.eq("personal_owner_user_id", …)` da subconsulta
- *    de contatos → cai "o dono procura Mãe e a busca não nomeia o do colega"
- *    (o `contact_id.in.` passa a listar `ct-colega`).
+ * 2. BUSCA SEM DONO. Trocar `p_dono: querPessoal ? atorHumanoId : null` por
+ *    `p_dono: null` na chamada a `fn_contatos_da_busca` (#4326) → cai "o dono
+ *    procura Mãe e a busca não nomeia o do colega" (o `contact_id.in.` passa a
+ *    listar `ct-colega`). Medido em 17/11 no head b0889fb40.
  * 3. CONTAGEM ESQUECIDA. Trocar `countExact(auxiliares, pessoaisVisiveis)` por
  *    `countExact()` → caem "a contagem pessoal usa a mesma primitiva" e "o
  *    conjunto vazio responde zero sem consultar".
@@ -156,7 +157,26 @@ function bancoDeMentira(tabelas: Record<string, Linha[]>) {
 
   return {
     // O handler usa o client admin/service role: `from` é a única superfície.
-    client: { from: daTabela } as never,
+    // `rpc` emula `fn_contatos_da_busca` (#4326): a busca do Inbox casa o termo
+    // dentro do banco, e a régua de pessoal/dono vai como ARGUMENTO. O dublê
+    // AVALIA `p_pessoal`/`p_dono` contra as linhas — é o que deixa a SABOTAGEM 2
+    // (largar o dono) visível como `ct-colega` no `contact_id.in.`.
+    client: {
+      from: daTabela,
+      rpc: (fn: string, args: Record<string, unknown>) => {
+        registros.push({ tabela: `rpc:${fn}`, eq: Object.entries(args), em: [], nao: [], ou: [] });
+        const termo = String(args.p_termo ?? "").replace(/%/g, "");
+        const casados = (tabelas.contacts ?? []).filter(
+          (c) =>
+            c.organization_id === args.p_org &&
+            c.is_anonymized === false &&
+            c.is_personal === (args.p_pessoal ?? false) &&
+            (args.p_dono == null || c.personal_owner_user_id === args.p_dono) &&
+            String(c.busca_sem_acento ?? "").includes(termo),
+        );
+        return Promise.resolve({ data: casados.map((c) => ({ contact_id: c.id })), error: null });
+      },
+    } as never,
     registros,
   };
 }
@@ -420,10 +440,20 @@ describe("porta 2: a busca funciona DENTRO da aba, e só no próprio", () => {
     const LISTA = semComentarios(fonte("app", "api", "v1", "conversations", "_handler.ts"));
     // As DUAS pontas (ficha principal e telefone extra) filtram pelo mesmo
     // booleano da lista e, dentro da aba, pelo dono.
-    expect(LISTA.match(/\.eq\("(?:contacts\.)?is_personal",\s*querPessoal\)/g) ?? []).toHaveLength(
-      2,
-    );
-    expect(LISTA.match(/personal_owner_user_id",\s*atorHumanoId/g) ?? []).toHaveLength(2);
+    // Desde o #4326 o casamento mora em `fn_contatos_da_busca`: o handler passa o
+    // MESMO booleano da lista e o dono, e a função aplica os dois nas TRÊS pontas
+    // (nome, telefone principal, telefone extra).
+    expect(LISTA).toMatch(/p_pessoal:\s*querPessoal/);
+    expect(LISTA).toMatch(/p_dono:\s*querPessoal\s*\?\s*atorHumanoId\s*:\s*null/);
+    const dir = path.join(process.cwd(), "supabase", "migrations");
+    const arq = fs.readdirSync(dir).find((n) => /_busca_de_contatos_usa_o_indice\.sql$/.test(n));
+    expect(arq, "a migration de fn_contatos_da_busca sumiu").toBeDefined();
+    const FUNCAO = fs.readFileSync(path.join(dir, arq as string), "utf8");
+    expect(FUNCAO.match(/c\.is_personal = v_pessoal/g) ?? []).toHaveLength(3);
+    expect(
+      FUNCAO.match(/\(p_dono is null or c\.personal_owner_user_id = p_dono\)/g) ?? [],
+    ).toHaveLength(3);
+    expect(FUNCAO).not.toMatch(/c\.is_personal = false/);
     // Ninguém pode voltar a FIXAR `false` numa ponta e deixar a outra invertida.
     expect(LISTA).not.toMatch(/\.eq\("(?:contacts\.)?is_personal",\s*false\)/);
   });

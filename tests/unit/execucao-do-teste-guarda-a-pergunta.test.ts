@@ -112,7 +112,9 @@ function bancoDoTeste() {
  *
  * `ai_agent_runs` é consultada por `.in("id", [...])` — o texto do teste é
  * buscado pelos ids que as linhas de `llm_calls` apontam, e não pela organização
- * inteira.
+ * inteira. O `.eq("organization_id", …)` que vem antes é o recorte da
+ * organização (pelo token o cliente é a service role, que ignora a RLS), e fica
+ * registrado como pedido também.
  */
 function bancoDaAba(
   textos: Record<
@@ -161,6 +163,10 @@ function bancoDaAba(
       if (tabela === "ai_agent_runs") {
         const consulta = {
           select() {
+            return consulta;
+          },
+          eq(coluna: string, valores: unknown) {
+            pedidos.push({ tabela, coluna, valores });
             return consulta;
           },
           in(coluna: string, valores: unknown) {
@@ -303,7 +309,10 @@ describe("GET /runs — a linha do teste leva o texto; a execução real não (#
     // O texto é buscado pelo id do run de prévia, não pela organização: um
     // `select` sem filtro traria o texto de TODOS os testes do agente para todas
     // as linhas — o mesmo defeito de escopo que esta onda conserta em outro lugar.
-    expect(db.pedidos).toEqual([{ tabela: "ai_agent_runs", coluna: "id", valores: [RUN] }]);
+    expect(db.pedidos).toEqual([
+      { tabela: "ai_agent_runs", coluna: "organization_id", valores: ORG },
+      { tabela: "ai_agent_runs", coluna: "id", valores: [RUN] },
+    ]);
   });
 
   it("a execução real continua sem texto — nada é emprestado entre linhas", async () => {
@@ -355,6 +364,9 @@ describe("GET /runs — a linha do teste leva o texto; a execução real não (#
     expect(real?.["tool_calls"]).toBeNull();
     // E a única leitura é `llm_calls` (a lista) + `ai_agent_runs` (o conteúdo do
     // run de prévia, pelos ids): nada é escrito nem copiado entre as tabelas.
-    expect(db.pedidos).toEqual([{ tabela: "ai_agent_runs", coluna: "id", valores: [RUN] }]);
+    expect(db.pedidos).toEqual([
+      { tabela: "ai_agent_runs", coluna: "organization_id", valores: ORG },
+      { tabela: "ai_agent_runs", coluna: "id", valores: [RUN] },
+    ]);
   });
 });
