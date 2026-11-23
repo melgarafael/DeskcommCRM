@@ -303,6 +303,17 @@ prova chama a rota direto.
 
 ### F2 — A janela e o link
 
+Status: **F2-A entregue (esta especificação)**. O que a F2-A entrega:
+- `GET /webchat.js?k=<chave>`: script da bolha em `public/`, sem dependências.
+- `/chat/<chave>`: janela em HTML de route handler com CSP `frame-ancestors` por conexão.
+- Coleta, consentimento de LGPD, domínios, código para colar, giro da chave e pausa.
+- A pausa vive em `metadata.webchat.pausado` (configuração da conexão, NÃO em `channel_sessions.status`); entrou na F2-A (saiu da F3).
+- Módulo `canal_webchat` desligado de fábrica; zero conexões é um estado completo.
+
+O que fica para a F2-B (formatos e ajustes de aparência):
+- Formatos da janela (bolha, painel, embutido, página inteira) e posição (direita/esquerda).
+- Avatar, auto-abrir, som, badge de não lidas e respostas rápidas.
+
 - `GET /webchat.js?k=<chave>`: um script pequeno, sem dependências, que cria a bolha e um iframe
   para `/chat/<chave>`. O script só lê da página o `location.href`, o `referrer` e as UTMs da URL,
   e os passa ao iframe por `postMessage`, com a origem conferida.

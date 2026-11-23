@@ -270,17 +270,20 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 ## J45 — Chat no site: o visitante conversa pela página `[P1]`
 
 Contexto do código: Spec 36, F2-A; módulo `canal_webchat` desligado de fábrica; prova exige um
-administrador que ligue o módulo e crie a conexão em Conexões. Roteiro detalhado e evidência:
-`docs/testing/chat-no-site.md`.
+administrador que ligue o módulo e crie a conexão em Conexões. Roteiro detalhado:
+`docs/testing/chat-no-site.md`; spec: `tests/e2e/chat-no-site.spec.ts`.
+
+A spec está **escrita e NÃO executada ainda**: o e2e só roda em PR para a main; a prova
+pela tela fica para o CI do PR ao mantenedor.
 
 | # | Caso | Expectativa |
 |---|------|-------------|
 | J45.1 | Módulo desligado | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404; nenhuma organização que não ligue o módulo vê diferença |
-| J45.2 | Ligar o módulo e criar a conexão | A aba aparece em Conexões; cadastrar o domínio de um servidor de teste gera a chave `wck_...` e o código para colar |
+| J45.2 | Dono liga o módulo; admin da empresa cria a conexão | A aba aparece em Conexões; cadastrar o domínio de um servidor de teste gera a chave `wck_...` e o código para colar |
 | J45.3 | Visitante abre a janela | Colar o script numa página local exibe a bolha; abrir carrega `/chat/<chave>` com o CSP `frame-ancestors` da lista de domínios |
 | J45.4 | Conversar como visitante | Aceitar o aviso de LGPD (controlador + link de política), preencher coleta se obrigatória, enviar mensagem; a conversa aparece no Inbox com o selo "Chat no site" |
 | J45.5 | Responder pela Inbox | A resposta do atendente chega à janela do visitante pelo stream de eventos (`text/event-stream`) |
-| J45.6 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); só o link direto abre |
+| J45.6 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela |
 | J45.7 | Girar a chave | Páginas com o código antigo recebem "chat indisponível" ao abrir conversa nova; quem já está conversando segue até a sessão expirar |
 | J45.8 | Pausar o chat | PATCH `config.pausado: true` pela rota de administração; as três rotas públicas (`/sessao`, `/mensagens`, `/eventos`) dão o mesmo 404; a janela mostra "chat indisponível" |
 | J45.9 | Retomar o chat | PATCH `config.pausado: false` volta a funcionar: sessão, mensagens e eventos respondem normalmente |

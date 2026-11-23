@@ -214,12 +214,20 @@ Horário de atendimento (janela por dia, feriados, mensagem fora do expediente e
 
 ## Plano de sabotagem (não rodar — veredito pelo CI)
 
-Sobre o commit verde da Tarefa 8, sabotar de propósito e confirmar que os testes ficam vermelhos:
+Sobre o commit verde do PR de prova da Tarefa 8, sabotar de propósito e confirmar que os
+testes ficam vermelhos:
 
-1. **Tirar a exclusão do `DENY` em `/chat/` em `next.config.ts`** → o teste da Tarefa 3 (frame-ancestors / CSP) e o e2e C6 (site fora da lista) devem ficar vermelhos: o iframe passa a ser bloqueado globalmente pelo `X-Frame-Options: DENY`.
-2. **Montar o `frame-ancestors` com `*` (ou remover a lista de domínios)** → o teste da Tarefa 3 e o e2e C6 devem ficar vermelhos: qualquer domínio consegue embutir a janela.
-3. **Tirar o `if (config.pausado === true) return null;` de `conexaoPelaChave`/`conexaoPeloId`** → o e2e C8 (chat pausado → rotas públicas dão 404) deve ficar vermelho: as rotas continuam entregando a conexão mesmo pausada.
-4. **Esquecer o `moduloLigado` numa rota pública** → o e2e C1 (módulo desligado → 404) deve ficar vermelho: as rotas respondem mesmo com o módulo desligado.
+1. **Tirar a exclusão de `/chat/` no `source` global de `next.config.ts`** → o `X-Frame-Options:
+   DENY` passa a valer para `/chat/<chave>`, o iframe é bloqueado pelo navegador; `chat-cabecalhos.test.ts`
+   e `webchat-janela-rota.test.ts` ficam vermelhos, e o e2e C5 (site fora da lista) também.
+2. **Tirar a lista de domínios no `frame-ancestors` em `lib/channels/webchat/janela-html.ts`**
+   (montar com `'*'` ou `'none'` sempre) → `janela-html.test.ts` fica vermelho (lista vazia deve
+   render `'none'`, lista com dois domínios só os dois); o e2e C3/C5 também.
+3. **Tirar a leitura de `pausado` em `lib/channels/webchat/conexao-pela-chave.ts`** → as rotas
+   públicas continuam entregando a conexão mesmo pausada; `conexao-pela-chave.test.ts`,
+   `webchat-rotas-publicas.test.ts` e o e2e C7 ficam vermelhos.
 
-Controle verde: restaurar cada sabotagem e confirmar que os testes voltam ao verde. Cada sabotagem tem seu próprio commit de controle (verde) antes da próxima.
+Controle verde: restaurar cada sabotagem e confirmar que os testes voltam ao verde. Cada
+sabotagem tem seu próprio commit de controle (verde) antes da próxima. O controle verde fica
+noutro PR.
 

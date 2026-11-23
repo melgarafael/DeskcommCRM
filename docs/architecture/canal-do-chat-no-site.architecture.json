@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Chat no site (canal webchat)",
-    "subtitle": "Partes 1 e 2 (Spec 36, F1+F2): conexão pela organização, chave pública, token de visitante, entrada pela ingestão do canal, respostas pelo handler comum entregues por stream; janela /chat/<chave>, script da bolha e aba de administração em Conexões; módulo canal_webchat desligado de fábrica",
+    "subtitle": "Partes 1 e 2 (Spec 36, F1+F2): conexão pela organização, chave pública, token de visitante, entrada pela ingestão do canal, respostas pelo handler comum entregues por stream; janela /chat/<chave>, script da bolha e aba de administração em Conexões; módulo canal_webchat desligado de fábrica; pausa em metadata.webchat.pausado",
     "output": "canal-do-chat-no-site.html",
     "quality_profile": "standard"
   },
@@ -32,7 +32,7 @@
     { "id": "redact", "lane": "banco", "col": 3, "type": "database", "label": "trg_redigir_conversas_ao_anonimizar: ao virar is_anonymized, zera contacts.social_identity e redige as mensagens" },
     { "id": "janela", "lane": "servidor", "col": 2, "type": "route", "label": "GET /chat/<chave>: HTML da janela com CSP frame-ancestors da lista de domínios; referencia /webchat-janela.js; sem React" },
     { "id": "bolha", "lane": "visitante", "col": 1, "type": "external", "label": "public/webchat.js: lê a chave do ?k= do próprio src, cria a bolha e o iframe; postMessage com href/referrer/UTMs" },
-    { "id": "aba", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões › Chat no site (CanalChatClient): ativa conexão, domínios, aparência, coleta, pausa, giro da chave" }
+    { "id": "aba", "lane": "operador", "col": 2, "type": "frontend", "label": "Conexões › Chat no site (CanalChatClient): ativa conexão, domínios, aparência, coleta, pausa (metadata.webchat.pausado), giro da chave" }
   ],
   "edges": [
     { "id": "e1", "from": "admin", "to": "conexao_rota", "label": "cria, muda domínios, gira a chave" },
@@ -59,7 +59,7 @@
     { "id": "e22", "from": "visitante", "to": "bolha", "label": "cola <script src=...webchat.js?k=...> na página" },
     { "id": "e23", "from": "bolha", "to": "janela", "label": "iframe src = /chat/<chave> na origem do CRM" },
     { "id": "e24", "from": "admin", "to": "aba", "label": "abre a aba só com o módulo canal_webchat ligado" },
-    { "id": "e25", "from": "aba", "to": "conexao_rota", "label": "POST cria conexão; PATCH domínios, config.pausado, girar chave" },
+    { "id": "e25", "from": "aba", "to": "conexao_rota", "label": "POST cria conexão; PATCH domínios, metadata.webchat.pausado, girar chave" },
     { "id": "e26", "from": "aba", "to": "sessao_banco", "label": "grava webchat_public_key, allowed_origins, metadata.webchat" },
     { "id": "e27", "from": "janela", "to": "chave_rota", "label": "POST /api/v1/webchat/sessao com a chave pública" },
     { "id": "e28", "from": "janela", "to": "mensagens_rota", "label": "POST /api/v1/webchat/mensagens com bearer token" },
