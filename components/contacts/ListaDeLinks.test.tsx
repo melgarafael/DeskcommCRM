@@ -76,4 +76,36 @@ describe("ListaDeLinks", () => {
 
     expect(aoClicar).toHaveBeenCalledTimes(1);
   });
+
+  it("⭐ #5128: com tiposPermitidos, só os tipos marcados aparecem", () => {
+    render(
+      <ListaDeLinks
+        links={[
+          { tipo: "instagram", href: "https://instagram.com/loja" },
+          { tipo: "youtube", href: "https://youtube.com/@loja" },
+          { tipo: "site", href: "https://exemplo.com.br/" },
+        ]}
+        tiposPermitidos={["instagram", "site"]}
+      />,
+    );
+
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "Abrir Instagram" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Abrir Site" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Abrir YouTube" })).toBeNull();
+  });
+
+  it("sem tiposPermitidos, o catálogo inteiro continua aparecendo (Diagnóstico e Comparação)", () => {
+    render(
+      <ListaDeLinks
+        links={[
+          { tipo: "instagram", href: "https://instagram.com/loja" },
+          { tipo: "youtube", href: "https://youtube.com/@loja" },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+  });
 });

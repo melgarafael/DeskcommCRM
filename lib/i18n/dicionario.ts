@@ -3501,6 +3501,10 @@ export const DICIONARIO: Traducoes = {
   "Um de cada vez por conversa": { es: "Una a la vez por conversación" },
   "Um de cada vez por cliente": { es: "Una a la vez por cliente" },
   "Só atender em horário de funcionamento": { es: "Atender solo en horario de funcionamiento" },
+  "Continuar a conversa assim que a equipe devolver ao automático": { es: "Continuar la conversación en cuanto el equipo la devuelva al automático" },
+  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": {
+    es: "Cuando alguien del equipo atiende, envía el último mensaje (un presupuesto, por ejemplo) y hace clic en Devolver al automático, el agente continúa desde ahí al instante, sin esperar a que el cliente escriba. No habla si el cliente ya respondió, si la conversación tiene un seguimiento en curso o si el contacto está marcado para atención humana.",
+  },
   "Só enviar follow-up nestes horários": { es: "Enviar seguimientos solo en estos horarios" },
   "Mensagem fora do horário (opcional)": { es: "Mensaje fuera del horario (opcional)" },
   "Ex.: Nosso atendimento funciona de segunda a sexta, das 8h às 18h. Recebemos sua mensagem e respondemos no próximo horário de atendimento.": {
@@ -23224,6 +23228,15 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Ordem da fila": { es: "Orden de la cola" },
+  "Ordem:": { es: "Orden:" },
+  "Esperando há mais tempo": { es: "Esperando hace más tiempo" },
+  "Anotações do cliente": { es: "Notas del cliente" },
+  "Editar anotação": { es: "Editar nota" },
+  "Anotação salva.": { es: "Nota guardada." },
+  "Adicionar anotação": { es: "Agregar nota" },
+  "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
+  "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
   // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },
@@ -23277,6 +23290,34 @@ export const DICIONARIO: Traducoes = {
   "Apagar esta venda? Ela sai do painel de vendas.": { es: "¿Borrar esta venta? Sale del panel de ventas." },
   "venda(s)": { es: "venta(s)" },
   "total": { es: "total" },
+  // ─── Tipos de link do contato por organização (#5128) ──────────────────────
+  // Tela `app/app/settings/links-de-contato`, rota `settings/links-de-contato` e
+  // o painel do funil. Os rótulos dos tipos (Instagram, Site…) já estão acima.
+  "Tipos de link do contato": { es: "Tipos de enlace del contacto" },
+  "Quais tipos de link a ficha do contato e o funil mostram.": {
+    es: "Qué tipos de enlace muestran la ficha del contacto y el embudo.",
+  },
+  "Escolha quais tipos aparecem na ficha do contato e no funil. Desmarcar um tipo não apaga o que já foi preenchido nele: o valor fica guardado e volta a aparecer se você marcar de novo.":
+    {
+      es: "Elige qué tipos aparecen en la ficha del contacto y en el embudo. Desmarcar un tipo no borra lo que ya se completó en él: el valor queda guardado y vuelve a aparecer si lo marcas de nuevo.",
+    },
+  "Quais tipos a ficha mostra": { es: "Qué tipos muestra la ficha" },
+  "Os tipos desmarcados somem do formulário e da exibição da ficha e do funil. Nada é apagado: o valor preenchido continua guardado e volta a aparecer se o tipo for marcado de novo.":
+    {
+      es: "Los tipos desmarcados desaparecen del formulario y de la vista de la ficha y del embudo. No se borra nada: el valor completado sigue guardado y vuelve a aparecer si el tipo se marca de nuevo.",
+    },
+  "Marque pelo menos um tipo de link.": { es: "Marca al menos un tipo de enlace." },
+  "Tipos de link salvos.": { es: "Tipos de enlace guardados." },
+  "Salvar tipos": { es: "Guardar tipos" },
+  "Não foi possível carregar os tipos de link.": {
+    es: "No se pudieron cargar los tipos de enlace.",
+  },
+  "Escolha ao menos um tipo de link válido.": {
+    es: "Elige al menos un tipo de enlace válido.",
+  },
+  "A configuração da empresa está em um formato inesperado.": {
+    es: "La configuración de la empresa está en un formato inesperado.",
+  },
 };
 
 /**

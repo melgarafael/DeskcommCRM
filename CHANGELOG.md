@@ -8,6 +8,243 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.124.0] — 2026-11-23
+
+### Adicionado
+
+- **O teto diário do número pode contar só a primeira mensagem a pessoa nova** Cada conexão ganha a opção **Teto do dia só na abordagem** na ficha de proteção de envio. Ligada, o teto de aquecimento e o limite diário do CRM contam apenas a primeira mensagem a uma pessoa nova, e "pessoa nova" é medida por número: quem outro número da empresa já abordou ainda conta como abordagem neste. A abordagem continua contando e sendo barrada como antes.
+
+  Com a opção ligada, o follow-up a quem já recebeu mensagem deste número sai sem gastar nem esperar esse teto, e passa a ter um teto próprio de segurança: **200 follow-ups por dia por número**. Passou disso, o envio fica para o dia seguinte, e a conversa mostra o motivo.
+
+  Desligada, que é o padrão, nada muda: o teto conta todo disparo, exatamente como hoje. A opção é por número, não por empresa: quem tem dois números escolhe em cada um.
+
+  O que **não** muda em nenhum dos dois casos: a resposta a quem escreveu continua fora do teto (desde a 9061); o intervalo entre mensagens e a janela horária continuam valendo para todo envio; a apresentação como assistente na primeira mensagem e a base legal da LGPD continuam contando pela empresa; opt-out e bloqueio seguem vetando.
+
+  Ligar a opção não solta mensagem parada: os turnos adiados pelo teto continuam com o dia marcado, porque só os adiados pela janela são reagendados na abertura dela.
+
+  Contribuição de @webtecnica (#4063, issue #3851).
+
+- **Negócio pode ser classificado como não comercial, sem virar perda e sem sair do histórico** O negócio tinha dois desfechos e nenhum jeito de dizer "isto nunca foi uma
+  oportunidade". A saída que a operação usava era pior nos dois sentidos: marcar
+  como perdido inventava uma perda comercial (um golpe entrava na conta de "perdemos
+  por preço") e excluir o card apagava contato, conversa, mensagens, anexos e
+  atividades.
+
+  Agora a ficha do negócio tem a classificação **não comercial**, com motivo
+  declarado pela equipe, autor e data. Ela não mexe em status, etapa, valor nem
+  `closed_at`: o negócio não vira ganho nem perda, e as métricas de desfecho não
+  se movem. O que muda é a elegibilidade comercial — o negócio sai do Radar de
+  risco (inclusive da lista de demandas sem próximo passo) e sai da conta do funil
+  (conversão, matriz de origem e dias até fechar), num predicado só, usado pelos
+  dois.
+
+  Errar a classificação é reversível: reverter devolve o negócio ao comercial, sem
+  replay de mensagens nem de cadências vencidas. Cada classificação e cada
+  reversão deixam uma linha na timeline do negócio e um registro no audit.
+  Repetir a operação não escreve de novo; classificar com motivo diferente do já
+  gravado é recusado em vez de sobrescrever a decisão de outra pessoa.
+
+  O negócio classificado também deixa de receber os passos de follow-up: a
+  conferência acontece na hora do disparo, e o outro negócio aberto do mesmo
+  contato segue recebendo normalmente. Inscrição feita antes desta atualização e
+  sem vínculo com um negócio segue como antes. Ao anonimizar o contato, o motivo
+  e a autoria da classificação são apagados; a data fica, para o negócio não
+  voltar ao comercial.
+
+  Contribuição de @webtecnica (#4195), a partir da issue #4191 de @leonciojunior.
+
+- **A atualização pedida pela tela pode esperar uma janela de manutenção, e o painel e a volta automática continuam de plantão** Quem opera em horário comercial não queria a instalação ~5 minutos em manutenção
+  no meio do expediente. Agora o `.env` aceita `SYSTEM_UPDATE_WINDOW` com os cinco
+  campos de um horário de cron (minuto hora dia mês dia-da-semana, os três últimos
+  em `*`) e a atualização pedida pela tela só executa dentro dela; por exemplo
+  `SYSTEM_UPDATE_WINDOW=*/5 2-5 * * *` restringe à madrugada. Pedido feito fora da
+  janela não se perde: fica pendente e roda quando ela abrir.
+
+  O que **não** muda: o agente continua rodando de 5 em 5 minutos, o batimento ao
+  painel continua acontecendo o dia inteiro (a tela segue sabendo da versão
+  instalada e de que há atualização esperando) e a vigília que devolve a versão
+  anterior sozinha, se o app não subir, nunca é segurada pela janela. Sem a chave
+  no `.env`, nada muda: a atualização roda assim que for pedida, como sempre foi.
+  Valor inválido é recusado em voz alta no log do servidor e a janela fica aberta,
+  para uma digitação errada não deixar a instalação sem atualizar. Isso inclui o
+  minuto que nunca cai numa rodada do agente (que roda em :00, :05, :10…): `1 2 * * *`
+  é recusado, porque a janela nunca abriria.
+
+  Enquanto o pedido espera, ele é reconhecido como **agendado**: a tela de
+  atualização diz "Atualização agendada para 02h00", sem o botão de pedir de novo
+  e sem o falso "perdi contato com o servidor" depois de 15 minutos; um segundo
+  pedido feito enquanto isso (de outra aba ou pela API) recebe a resposta de que o
+  agendamento segue de pé, em vez de cancelá-lo; e a instalação, atualização e publicação de extensões continuam bloqueadas até a
+  atualização rodar, como já eram durante uma atualização em curso.
+
+  A janela é lida no relógio do fuso `SYSTEM_UPDATE_WINDOW_TZ` (nome IANA), com
+  `America/Sao_Paulo` quando a chave não existe, e não no fuso do servidor, que
+  numa VPS nova costuma ser UTC. Para conferir a hora que vale:
+  `TZ=America/Sao_Paulo date`.
+
+  Contribuição de @webtecnica (#4334, #4504). O estado agendado, o fuso e a recusa do
+  minuto fora das rodadas foram feitos pelos mantenedores, sobre o desenho de
+  @webtecnica.
+
+- **Integração por token edita a ficha do cliente e comanda o atendimento sem trocar o responsável** Uma integração que atendia o cliente por token tinha duas saídas ruins. Para
+  corrigir um cadastro, só conseguia pedir revisão: a mudança virava proposta e
+  esperava alguém abrir o CRM. Para calar o atendimento automático de uma
+  conversa, o único caminho era transferir — e transferir troca o responsável da
+  conversa e o do negócio, transformando pausa em tomada de carteira.
+
+  Agora existem as duas portas, com escopo próprio, concedido por quem emite o
+  token na tela de Tokens de API. Na ficha, pela ferramenta do agente e do MCP
+  (`crm_update_contact`), `contacts:write` grava na hora, com a mesma régua da
+  tela (documento do país, consentimento, trava de anonimização e auditoria); sem
+  esse escopo, a edição continua virando proposta, e a resposta diz isso com o
+  nome do campo que precisa de permissão. A rota REST da ficha
+  (`PATCH /api/v1/contacts/{id}`) não muda: segue pedindo `mcp:write`. No atendimento,
+  `conversations:write` pausa e retoma a IA e encerra e reabre a conversa: pausar
+  não assume a conversa sem dono, nem muda o dono do negócio, e retomar não solta
+  o responsável humano — quando ele existe, a resposta avisa que o automático
+  segue vetado. Encerrar e reabrir passam pela mesma transição do botão da tela,
+  com revisão conferida.
+
+  As quatro operações também entram no catálogo do agente como ferramentas, para
+  quem opera o CRM conversando: pausar, retomar, encerrar e reabrir. O próprio
+  agente não comanda a sua automação — quem pausa é uma pessoa ou uma integração
+  autorizada. O log de auditoria registra qual token agiu em cada um desses
+  gestos (#4517). Contribuição de @webtecnica (#4534).
+
+- **Menu de atendimento sem IA, com opções numeradas, como módulo opcional desligado** Novo módulo opcional "Menu de atendimento sem IA", que nasce desligado. Ligado em /admin/sistema, e com o menu ativado pela empresa, a PRIMEIRA mensagem de uma conversa sem dono — sem nenhuma saída anterior da empresa — recebe um menu com opções numeradas escrito pela empresa, e o cliente escolhe por número: a conversa vai para a fila, para uma pessoa, ou recebe um arquivo. Contato marcado como "sempre atendimento humano" (ou com etiqueta de contato interno/da equipe) não recebe o menu: essas marcas valem no menu como já valiam para a IA. Em conversa que já teve resposta da empresa, o menu não volta depois de 24 h — o atendimento é um diálogo em andamento. Enquanto o menu espera a escolha, a IA não é chamada e não há gasto de IA. Uma resposta que não é opção repete o menu uma vez; na segunda, a conversa passa para um atendente.
+
+  Nesta etapa o menu é escrito na configuração da empresa (settings.menu_de_atendimento) e ainda não há tela para editá-lo. Quem não liga o módulo não vê diferença nenhuma: a entrada continua sendo da IA ou de quem atende. Contribuição de @webtecnica (#4594).
+
+- **Cada conexão escolhe se as conversas novas criam negócio no funil** O cartão de cada número em **Conexões** ganha o interruptor **Conversas novas criam negócio no funil**. Desligado, a conversa nova que chega por aquele número continua aparecendo no Inbox, o contato é criado e a IA atende normalmente; só o card no funil não nasce. Criar o negócio à mão, pela conversa ou pela ficha do contato, continua igual.
+
+  Ligado é o padrão, e é o comportamento de hoje: quem só atualiza não precisa abrir tela nenhuma, e todo número segue criando card como antes. A escolha é por número, não pela empresa inteira, e só quem administra pode mudá-la; cada mudança fica registrada na auditoria.
+
+  Contribuição de @webtecnica (#4683, issue #4670).
+
+- **Tarefas abre em "Minhas" para atendentes, lembra o último filtro e mostra o recorte que a empresa já aplica** Quem tem papel de atendente passa a abrir a tela de Tarefas em **Minhas** em vez de
+  **Todos**. O último filtro de responsável escolhido volta no próximo carregamento,
+  também em outro aparelho, porque a escolha fica guardada na preferência da pessoa, no
+  mesmo lugar da camada de datas da Agenda. O endereço `?assigned_to=me`, que o lembrete
+  de tarefa abre, continua ganhando de tudo. Gerente e administrador seguem abrindo em
+  **Todos**.
+
+  Não há opção nova. Quem decide o que o atendente vê em Tarefas continua sendo o que já
+  existe: "Atendentes podem mexer na agenda dos colegas" e "O que cada atendente enxerga".
+  Quando essas opções recortam a lista, a tela passa a dizer isso abaixo do título, e o
+  filtro de responsável deixa de oferecer os colegas, porque a lista de um colega viria só
+  com as tarefas que a própria pessoa criou para ele. "Todos" continua no filtro e traz
+  exatamente o que o banco libera. Contribuição de @webtecnica, a partir da issue #4737.
+
+- **Dá para enviar o arquivo da primeira abordagem pela tela da Prospecção, inclusive vídeo e PDF** Na configuração da campanha, o campo **Arquivo da primeira abordagem** passou a aceitar um arquivo novo enviado do computador: imagem (JPG, PNG ou WEBP, até 5 MB), vídeo (MP4, 3GP ou MOV, até 16 MB) ou PDF (até 50 MB). Antes, a tela só oferecia as imagens que já estavam nas respostas rápidas; vídeo e PDF exigiam a API da campanha. O envio é conferido pelos BYTES do arquivo — o tipo declarado pelo navegador não decide nada —, e a régua de tipo e tamanho é a mesma do envio (`classificarMidiaDaAbordagem`), então a tela não aceita nada que a abordagem recusaria.
+
+  O arquivo fica no mesmo lugar que o motor lê, `whatsapp-media` sob `{org}/prospecting/`, e o que a tela grava na configuração é exatamente o caminho que o worker assina na hora de mandar. Escolher um arquivo já existente no CRM continua funcionando, e o campo segue permitindo remover o arquivo antes de iniciar a campanha.
+
+  O aviso de risco e o teto de 30 abordagens com arquivo por número por dia não mudaram: acima do teto, as abordagens do dia saem só com texto. Como o resto da configuração, o arquivo fica fixo depois de a campanha começar, e apagar o arquivo do CRM pausa a campanha com o motivo na tela. Contribuição de @webtecnica (#4824).
+
+- **A campanha de prospecção pode rodar só no horário dela, e pausa e retoma sozinha** Quem usa um número só para dois nichos — um de manhã, outro à tarde — pausava
+  uma campanha e retomava a outra a cada troca, à mão. Agora a campanha ganha,
+  opcionalmente, "rodar só entre X e Y" (dias da semana e horas cheias, no fuso da
+  organização). Fora do horário dela a campanha pausa pelo mesmo caminho da tela e
+  volta sozinha na abertura seguinte; dentro dele, dispara normalmente.
+
+  AS DUAS JANELAS SE CRUZAM, NÃO SE SUBSTITUEM. A janela do NÚMERO — dias próprios
+  da prospecção, horas de disparo, aquecimento, teto diário e intervalo — continua
+  valendo exatamente como antes, e é ela que decide o ritmo. Só dispara onde as
+  duas estão abertas: fora da janela da campanha nada sai, nem tentativa nem
+  candidato marcado, e a fila espera a próxima abertura.
+
+  A TRAVA DE UMA CAMPANHA POR NÚMERO CONTINUA. Se a janela de uma campanha abrir
+  enquanto outra estiver rodando no mesmo número, ela não retoma: fica pausada com
+  o motivo escrito no cartão ("o número está com outra campanha em andamento") e
+  volta sozinha quando o número ficar livre. Pausa manual, arquivamento e início
+  limpam a marca da pausa automática — campanha que uma pessoa pausou não volta
+  sozinha nunca.
+
+  O teto diário e o intervalo do número não mudaram de lugar: continuam contando
+  por NÚMERO, somando o que todas as campanhas dele já tentaram nas últimas 24 h.
+  Com uma campanha rodando por vez, a soma é a da campanha ativa.
+
+  O campo novo é opcional e vazio significa o comportamento de hoje — nenhuma
+  campanha existente muda sozinha. Para usar, a janela é escolhida no formulário da
+  campanha, no passo do ritmo (marcar "Rodar só em horário próprio" e escolher os
+  dias e as horas cheias de início e fim). A janela vale do início da campanha em
+  diante: ela não é editável numa campanha já iniciada, então quem quer aplicá-la a
+  uma campanha existente pausa, cria a nova com a janela e retoma o trabalho por
+  ela. A saída 2 da issue (várias campanhas no mesmo número ao mesmo tempo) NÃO
+  entra aqui: continua valendo uma campanha em andamento por número. Contribuição de @webtecnica (#4847).
+
+- **Catálogo por feed vira módulo por empresa** O Catálogo por feed passou a ser um módulo por empresa: em `/admin/sistema`, na tela de módulos por empresa, aparece a linha **Catálogo sincronizado por feed**, e a empresa que a desliga deixa de ter as fontes lidas pelo trabalho de fundo.
+
+  O cron do catálogo por feed roda sozinho a cada 2 horas e percorre as fontes de várias empresas na mesma execução. Agora cada fonte é decidida com o `organization_id` dela: a que desligou não é lida, nada sai para a internet e nenhum campo da fonte é tocado, enquanto as demais seguem sendo sincronizadas na mesma rodada. O servidor continua sendo o teto; empresa sem linha herda a instalação; e se a leitura da linha por empresa falhar, aquela fonte não é processada em vez de ser processada às cegas.
+
+  O worker de cadência passa a levar a empresa à pergunta do módulo, mas a resposta não muda hoje: cadência é módulo de tabela, e o que a empresa desliga continua sendo a cadência nas configurações dela. Nada muda no banco nem no payload dos jobs. Contribuição de @webtecnica (issue #4871).
+
+- **Consulte campanhas de várias contas no painel Google Ads** Um administrador pode cadastrar as contas de anúncios por nome e autorizar cada uma com o login Google que tem acesso a ela. A equipe escolhe a conta no painel para consultar suas campanhas. As conexões de leitura são independentes do envio de conversões.
+
+  Crédito: @SerusoNakamoto.
+
+- **Análise › Vendas — o painel de vendas, com cartões, gráfico e filtro por funil e tag** Nova tela Análise › Vendas, aberta pelo "Ver tudo em Análise" e pela busca, para responder "quanto vendi" numa olhada. No topo, atalhos de período (Hoje, 7 dias, 30 dias, Este mês, Mês passado) e datas livres, e os filtros de funil e de tag. Logo abaixo, quatro cartões — Vendas, Valor vendido, Ticket médio e Conversão — e o gráfico do período, por dia (ou por mês, em períodos de mais de 62 dias), com a opção de ver o valor ou a quantidade. Embaixo, os rankings e a lista de cada venda, no mesmo período e com o mesmo filtro. Os números são os dos negócios ganhos no funil, com a data do ganho no fuso da empresa: o valor vendido soma o valor dos cards na moeda da empresa, o ticket médio ignora as vendas sem valor preenchido, e a conversão é ganhos ÷ (ganhos + perdidos) fechados no período. Quando não há base para a conta, o cartão mostra "—" em vez de zero, e venda sem valor ou em outra moeda é avisada na tela. O faturamento das comandas continua na tela de Faturamento. Nenhuma ação é necessária na atualização. Contribuição de @tec7alex (#4802).
+
+- **Registre uma venda em qualquer negócio, sem mover o card para ganho** Agora dá para registrar uma venda direto no negócio, em qualquer etapa: pelo "+" do card no funil, ou pelo "+" ao lado do campo Valor, no negócio aberto e no painel do contato no Inbox. Com venda registrada, o Valor do negócio passa a ser a soma das vendas, e o card mostra essa soma; apagar a última venda devolve o Valor que estava digitado, e o campo volta a ser editável; a seção "Vendas" do negócio guarda o histórico de cada uma. Cada venda tem valor, data, tags e uma observação opcional, e o mesmo negócio pode ter quantas vendas forem precisas, então a recompra do mesmo cliente no mês entra como venda nova. O painel de vendas passa a contar a venda registrada pela data dela, e o negócio ganho que já tem venda registrada não conta duas vezes; ganho sem venda registrada continua contando como antes. Atendentes, gestores e administradores registram; quem só visualiza vê as vendas sem poder mexer, e apagar fica com quem registrou ou com gestores e administradores. Contribuição de @tec7alex (#5087).
+
+### Alterado
+
+- **As abas Fechadas e Arquivadas do Inbox contam até 99 e mostram 99+ acima disso** As abas Fechadas e Arquivadas do Inbox deixaram de contar o histórico inteiro a cada 30 segundos. Agora elas contam até cem conversas. Abaixo disso o número é exato, e a pasta vazia continua sem número. A partir de cem, o badge mostra "99+", e ao parar o mouse sobre ele aparece "Mais de 99: esta aba conta o histórico inteiro". As abas Fila, Automático, Minhas, Todas e Pessoal seguem com o número exato. Contribuição de @webtecnica, a partir da issue #4325.
+
+### Corrigido
+
+- **Mensagens seguidas do mesmo contato viram uma resposta só, e a espera para de crescer sem fim** Quando o cliente escreve em várias bolhas — o jeito normal de digitar no WhatsApp —, o CRM já juntava as mensagens do mesmo contato numa resposta só. Mas a janela dessa junção era fixa: nascia com a primeira mensagem e não andava mais. Uma rajada de bolhas com 10 a 20 segundos de intervalo caía fora dela, e o agente respondia uma vez para cada bolha, como se fossem assuntos diferentes.
+
+  Agora a janela **anda** a cada mensagem nova do mesmo contato e para num teto contado da primeira mensagem da rajada: 45 s por padrão, na variável `INBOUND_BURST_MAX_MS` do worker (`0` volta à janela fixa de antes). Passado o teto, a mensagem seguinte abre uma rajada nova: quem escreve sem parar continua sendo respondido, uma vez por rajada em vez de uma vez por bolha. Quem escreveu uma mensagem só e parou recebe a resposta no mesmo tempo de antes.
+
+  Numa simulação com teto de 18 s, uma rajada de 8 bolhas que virava 8 turnos passa a virar 4, e a espera da última mensagem cai de ~170 s para ~50 s. Nada a fazer na atualização. Contribuição de @webtecnica, a partir da issue #196 de @Gervanno.
+
+- **A mensagem que chega pelo tempo real entra direto na conversa aberta, sem recarregar o histórico inteiro** No Inbox, cada mensagem nova, e cada confirmação de enviada, entregue ou lida, fazia a conversa aberta buscar de novo todas as páginas do histórico já carregadas, e a lista de conversas também. Quanto mais a pessoa rolava para trás, mais cara ficava cada mensagem. Agora a mensagem que chega pelo tempo real entra direto no fim da conversa, e a confirmação atualiza o balão no lugar, sem nova busca.
+
+  Isso vale também para a mensagem que a pessoa acaba de enviar: ela não aparece duas vezes enquanto o envio termina. O balão continua dizendo quem da equipe enviou. Quando o nome do colega ainda não está na conversa, a tela o busca uma vez — e faz o mesmo quando o contato apaga uma mensagem, para o botão "Ver texto retido" aparecer na hora. A lista de conversas, quando precisa recarregar, busca só a primeira página e junta os eventos de 1,5 segundo numa busca só.
+
+  Crédito: @webtecnica (#4325, #4504).
+
+- **A coluna "o que ele nunca faz" do onboarding mostra o estado real de cada conferência, com o caminho para ligar** A tela de novo tenant mostrava "E nunca vai fazer" com itens que eram títulos de
+  proteção ("Respeitar quem pediu para parar"): o título da coluna colado no
+  primeiro item lia o contrário do que a conferência faz, e a lista misturava
+  "Não prometer…", "Conferir…", "Deixar…" e "Só oferecer…" — quatro formas
+  verbais. Agora as colunas são "O que ele já sabe fazer" e "O que ele nunca faz",
+  com todo item no infinitivo descrevendo a ação proibida ("Prometer preço ou
+  prazo por conta própria", "Insistir com quem pediu para parar"). As duas listas
+  continuam saindo da cadeia de conferências que roda de verdade, com os mesmos itens e na
+  mesma ordem — nada saiu da tela, e o teste novo reprova se um item
+  sumir ou se a fala do onboarding deixar de casar com um gate da cadeia.
+
+  E a coluna passa a dizer o estado REAL de cada conferência nesta empresa. Numa
+  organização recém-criada, quatro delas vêm desligadas — a afirmação
+  clínica, a restrição comercial, a promessa semântica (que só liga com
+  `PROMISE_SEMANTIC_ENABLED=true`) e a conferência de fato (que depende da tarefa
+  do Jev). Elas aparecem marcadas como "desligada nesta organização", com o
+  caminho para ligar: as três do painel em IA › Agentes › Confere antes de
+  enviar, e a de fato em IA › Provedores de IA › cartão do Jev. As outras
+  rodam sempre e seguem sem marca. Nenhum padrão de guardrail mudou: o conserto é
+  da tela, que deixou de prometer proteção que a instalação não tem. Contribuição
+  de @webtecnica (#4526, #1041).
+
+- **O rascunho assistido chama a passagem antes de encerrar o turno** No modo de rascunho assistido, quando a resposta do agente promete passar o atendimento para uma pessoa ou abrir um caso, a prévia agora orienta o agente a chamar a ferramenta de passagem antes de encerrar o turno. Antes, o rascunho recebia a mesma ordem de encerrar que o Testar recebe, e o agente parava logo depois de escrever: a resposta aprovada saía com a promessa e sem a passagem. O Testar continua como estava. Nenhuma ação é necessária na atualização. Contribuição de @webtecnica (#4674), a partir da issue #4663.
+
+- **O agente só se reapresenta quando o roteador troca de agente de fato** A troca automática entre agentes do roteador passa a ser decidida pelo par (agente que atendia, agente que vai atender), e não pelo rótulo do desfecho do turno. Quando o mesmo agente continua na conversa, ele não se reapresenta: antes, um turno marcado como troca fazia o próprio agente que já atendia anunciar que ia continuar o atendimento, no meio da conversa e sem troca nenhuma. Contribuição de @webtecnica (#4707).
+
+- **Cadastro e convite de equipe recusam senha acima de 72 bytes** O cadastro e o convite de equipe passam a recusar senha com mais de 72 bytes, com a mesma regra que a troca de senha já aplicava — e com a mensagem dizendo qual é o limite. A conta é por bytes, não por caracteres: senha com acento ou emoji ocupa mais de um byte por caractere e chega ao limite antes do que a contagem de caracteres sugere. Contribuição de @webtecnica (#4728).
+
+- **Quem volta da Nuvemshop ou do Google Ads chega à tela certa, e não ao login** Duas voltas que começam fora do sistema terminavam na tela de login, mesmo com tudo pronto: a volta da Nuvemshop depois de autorizar a loja e a volta do Google depois de liberar o Google Ads. A integração ou a conexão já estava gravada, mas a pessoa via o login e achava que tinha falhado. Agora as duas chegam à tela de destino com a sessão reconhecida, como já acontecia na volta da Agenda e da entrada com Google. O cookie de sessão continua restrito ao próprio sistema.
+
+  Crédito: @webtecnica (#4731).
+
+- **A rota do catálogo por feed respeita o módulo que a empresa desligou** O catálogo por feed tem duas portas para o mesmo módulo: a tela, que publica o feed por `POST /api/v1/products/feed`, e o trabalho de fundo, que a cada 2 horas relê a fonte gravada. O cron já perguntava o módulo com a empresa — o `organization_id` da fonte — desde a fatia dos trabalhos de fundo, mas a rota perguntava só pela instalação. Numa instalação que hospeda várias empresas, quem desligava o Catálogo por feed em Módulos por empresa continuava publicando pela tela, e a rodada seguinte do cron recusava a mesma fonte: duas respostas para a mesma chave.
+
+  Agora a rota faz a mesma pergunta duas vezes, na mesma ordem do cron: a instalação, que é o teto e responde antes de qualquer leitura — 404, como já respondia —, e depois a empresa que o cookie resolveu, lida de `organization_modules`. Desligada para a empresa, a resposta é o mesmo 404 da instalação desligada, antes de buscar a URL, de ler o catálogo e de gravar produto ou fonte; não é um 403 novo, e não é um código que a tela não saiba tratar. Empresa sem linha herda a instalação; se a leitura da linha por empresa falhar, a rota nega em vez de publicar às cegas. Nada muda de banco, de tela nem de payload: quem nunca desligou nada continua exatamente onde estava. Contribuição de @webtecnica (issue #4871).
+
+- **Os erros do navegador voltam a chegar ao Sentry** O envio de erros da tela para o Sentry passa pelo caminho `/monitoring` do próprio app, e esse caminho era redirecionado para o `/login`, com ou sem sessão. Nenhum erro de navegador chegava ao Sentry, nem os da tela de login e de cadastro. Agora o envio segue direto, e o caminho aceita só o projeto do Sentry configurado nesta instalação, com teto de tamanho e de frequência. Com a telemetria desligada, o caminho não responde. Contribuição de @AyhamJo7, a partir da issue #5091.
+
+- **Esc cancela o ajuste de duração na agenda** Ao puxar a borda de um compromisso com o mouse, apertar Esc desfaz o ajuste, como já acontecia no teclado. Com a pergunta de confirmação aberta, o Esc a fecha sem gravar. Em espanhol, a pergunta diz "a" no lugar de "para" (por exemplo, "Cambiar la duración de X a 14:00–15:00 (60 min)?"), e a mesma troca vale na confirmação de remarcar e no painel de ligação das automações. Contribuição de @mateuscmtropical, a partir da issue #5106.
+
 ## [1.123.0] — 2026-11-21
 
 ### ⚠️ Requer atenção
@@ -18659,7 +18896,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...HEAD
+[1.124.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...v1.124.0
 [1.123.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...v1.123.0
 [1.122.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...v1.122.0
 [1.121.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.120.1...v1.121.0

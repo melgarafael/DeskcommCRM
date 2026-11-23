@@ -10035,5 +10035,7 @@
   "Não foi possível ler o funil de entrada.": "Could not read the entry pipeline.",
   "Não foi possível conferir o funil.": "Could not verify the pipeline.",
   "Não foi possível conferir a etapa.": "Could not verify the stage.",
-  "Não foi possível ler a conexão.": "Could not read the connection."
+  "Não foi possível ler a conexão.": "Could not read the connection.",
+  "Continuar a conversa assim que a equipe devolver ao automático": "Continue the conversation as soon as the team returns it to automatic",
+  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": "When someone on the team takes over, sends the last message (a quote, for example) and clicks Return to automatic, the agent picks up from there right away, without waiting for the customer to write. It stays quiet if the customer has already replied, if the conversation has a follow-up in progress, or if the contact is marked for human service."
 }

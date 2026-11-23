@@ -38,6 +38,7 @@ import { avisoDeAgendamentoNoWhatsAppHandler } from "@/lib/agenda/aviso-de-agend
 import { avisoDeCasoAoSuporteHandler } from "@/lib/escalacao/aviso-ao-suporte.handler";
 import { avisoDeHandoffHandler } from "@/lib/escalacao/aviso-de-handoff.handler";
 import { casoNaCentralHandler } from "@/lib/escalacao/caso-na-central.handler";
+import { retomadaAoDevolverHandler } from "@/lib/escalacao/retomada-ao-devolver.handler";
 import { followupGatilhoCasoHandler } from "@/lib/followup/gatilho-caso.handler";
 import { followupGatilhoEtapaHandler } from "@/lib/followup/gatilho-etapa.handler";
 import { followupGatilhoLeadHandler } from "@/lib/followup/gatilho-lead.handler";
@@ -103,6 +104,8 @@ const PULA: EventHandler[] = [
   pinoReintentoHandler,
   // Reenviar a mensagem que o canal mandou desacelerar é falar com o cliente.
   reenvioDesaceleradoHandler,
+  // Retomar ao devolver: o desfecho é um turno que fala com o cliente.
+  retomadaAoDevolverHandler,
 ];
 
 const PREFIXO_DE_TESTE = "teste-org-parada";
