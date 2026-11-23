@@ -1,19 +1,16 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: A IA não volta sozinha no meio de um atendimento humano
+titulo: A IA não manda mais mensagem depois que uma pessoa assume a conversa
 ---
 
-Quando uma pessoa assume uma conversa, ou responde o cliente depois de a IA passar a conversa
-para a equipe, a IA agora fica calada até alguém clicar em **Devolver ao automático**, por mais
-tempo que o atendimento leve.
+Quando uma pessoa assumia a conversa enquanto a IA ainda estava escrevendo, a IA mandava a
+mensagem seguinte mesmo assim — inclusive o aviso ao cliente da troca automática de agente.
+Agora ela confere, logo antes de cada envio, se alguém assumiu nesse meio-tempo, e se assumiu
+não manda.
 
-Antes, a opção «Devolver ao agente sozinho depois de um tempo sem resposta da equipe», em
-Configurações › Distribuição de atendimento, também devolvia conversas que alguém tinha
-assumido, quando a pessoa passava do prazo sem escrever. Ela continua valendo, mas agora só
-para a conversa passada à equipe que ninguém assumiu nem respondeu.
-
-Também foi fechada a janela em que a IA, já escrevendo quando a pessoa assumia, ainda mandava
-a mensagem seguinte: agora ela confere antes de cada envio. A resposta do responsável pela
-conversa pela tela também passa a calar a IA até a devolução, e não só por cinco minutos,
-exceto quando o modo «IA com o dono» está ligado naquela conversa.
+A resposta do responsável pela conversa pela tela também passa a calar a IA até alguém clicar em
+**Devolver ao automático**, e não só por cinco minutos, exceto quando o modo «IA com o dono» está
+ligado naquela conversa. A opção «Devolver ao agente sozinho depois de um tempo sem resposta da
+equipe», em Configurações › Distribuição de atendimento, continua funcionando como antes.
+Contribuição de @fcostamil-hub.

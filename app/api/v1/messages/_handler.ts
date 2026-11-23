@@ -1848,7 +1848,8 @@ export async function sendMessageHandler(
     // A RESPOSTA DO DONO É ATENDIMENTO, NÃO PAUSA. Quando quem escreve é o
     // responsável pela conversa, o silêncio vira `'infinity'` — o mesmo valor do
     // "Assumir" (`fn_conversation_assign`, migration 0173) — e só uma ação
-    // explícita o solta ("Devolver ao automático", encerrar marcando a devolução).
+    // explícita o solta ("Devolver ao automático", encerrar marcando a devolução)
+    // ou o prazo de devolução automática, se a organização o ligou.
     // A janela de 5 min abaixo serve à resposta pontual de quem NÃO é o dono; para
     // o dono ela era só um relógio. O veto do dono (`assignee_kind = 'user'`)
     // segura a IA enquanto o dono existe, mas `isLeadInHandoff` — que o follow-up

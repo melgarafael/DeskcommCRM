@@ -31,14 +31,6 @@
  *
  * ## O que fica de fora, e por quê
  *
- * - **Conversa que uma pessoa assumiu** (dono humano) e **conversa em que uma
- *   pessoa respondeu depois da passagem**, mesmo sem clicar em Assumir. O prazo
- *   vale só para a passagem que ninguém pegou; atendimento humano em curso só
- *   volta à IA por ação explícita de alguém (`pessoaNoComando`, abaixo, e o
- *   cron `handoff-devolucao`). Antes desta regra o prazo também devolvia
- *   conversas com dono — e "contar do último sinal humano" não protegia o
- *   técnico que passou o prazo sem escrever, ocupado resolvendo o problema.
- *
  * - **Sessão sem agente publicado.** Devolver "para ninguém" tira a conversa
  *   da fila humana e ninguém responde — pior que deixá-la com a pessoa. O cron
  *   só devolve onde há quem atenda (`sessoesComAgente`).
@@ -182,13 +174,6 @@ export type MotivoDeNaoDevolver =
   | "sem_relogio"
   | "dentro_do_prazo";
 
-/**
- * A pergunta do RELÓGIO: o prazo desta conversa venceu?
- *
- * Responder `devolver: true` aqui NÃO basta para devolver: o lote
- * (`selecionarVencidas`) ainda descarta a conversa com dono humano, e o cron
- * descarta a que recebeu resposta humana depois da passagem.
- */
 export function avaliarDevolucao(
   c: ConversaEmHandoff,
   sel: Selecao,
@@ -215,101 +200,13 @@ export function avaliarDevolucao(
   return { devolver: true, minutos };
 }
 
-/**
- * UMA PESSOA ASSUMIU ESTA CONVERSA — e relógio nenhum a tira dela.
- *
- * O prazo de `handoff_return_after_minutes` nasceu para a passagem que NINGUÉM
- * pegou (a fila esquecida). Aplicado a uma conversa com dono, ele devolvia à IA,
- * sozinho, um atendimento que uma pessoa tinha tomado para si — e o técnico que
- * levou 40 minutos testando um equipamento voltava para a conversa com a IA
- * respondendo por cima dele. A regra do produto passou a ser: depois que alguém
- * assume, só uma AÇÃO EXPLÍCITA de pessoa devolve o atendimento ("Devolver ao
- * automático", encerrar marcando a devolução, a tool `crm_resume_ai_attendance`
- * chamada por gente, o `#on` do celular). Tempo não é ação.
- *
- * Por que o critério é só `assigned_to_user_id`: o CHECK
- * `conversations_assignee_kind_coherence` (migration 0032) garante que
- * `assignee_kind = 'user'` existe exatamente quando há esse id — ler os dois
- * seria repetir a mesma pergunta, e ler só o `kind` aceitaria um estado que o
- * banco recusa.
- *
- * Por que aqui, e não dentro de `avaliarDevolucao`: aquela função responde à
- * pergunta do RELÓGIO ("o prazo venceu?"), e `tests/invariants/
- * reabertura-com-devolucao-automatica.test.ts` — congelado — a julga exatamente
- * nesses termos. A decisão de devolver é do LOTE, e o lote é quem ouve esta regra.
- * O cron ainda a reconfere no momento da escrita (`expectedAssignee: null` em
- * `devolverAtendimentoAoAgente`), porque alguém pode assumir entre a leitura e ela.
- */
-export function pessoaNoComando(c: Pick<ConversaEmHandoff, "assigned_to_user_id">): boolean {
-  return c.assigned_to_user_id !== null;
-}
-
-/**
- * O que o cron lê do banco para separar ATENDIMENTO HUMANO de DISTRIBUIÇÃO.
- *
- * `ultimaAtribuicao` é o evento mais recente de `conversation_assignment_events`
- * da conversa (quem deu o dono atual, e se foi gente). `null` = não se sabe.
- */
-export interface FatosDaAtribuicao {
-  ultimaAtribuicao: { reason: string; changed_by: string | null } | null;
-  /** Mensagem de gente (`sent_via` user/external_device) depois de `assigned_at`. */
-  humanoRespondeuDesdeAAtribuicao: boolean;
-}
-
-/**
- * A PESSOA ESTÁ ATENDENDO — ou só recebeu a conversa de um sorteio?
- *
- * Medido numa instalação de teste (D6, 2026-11-20): com rodízio, toda mensagem do
- * cliente numa conversa sem dono pede distribuição, e o técnico recebia a
- * conversa 30 segundos depois de a IA responder — sem ninguém pedir gente, sem
- * ele abrir a conversa. Tratar esse dono como "pessoa no comando" calava a IA
- * PARA SEMPRE: só um clique em Devolver a soltava. A regra do produto é:
- *
- *   - Assumir, Transferir (evento `claim`/`transfer`, ou qualquer evento feito
- *     por uma pessoa — `changed_by` preenchido), uma passagem real da IA para
- *     humano (`last_handoff_at` gravado) ou uma RESPOSTA humana depois da
- *     atribuição ⇒ atendimento humano: a IA fica calada até a devolução explícita;
- *   - a distribuição automática SOZINHA (`routing`, sem pessoa, sem passagem, sem
- *     resposta) não é atendimento: o prazo de devolução da organização vale para
- *     ela como valia antes, e a conversa volta para a IA se a pessoa não agir.
- *
- * Na dúvida é atendimento (falha FECHADA): sem o evento da atribuição, sem dono
- * ou com silêncio permanente (resposta do responsável pela tela grava
- * `'infinity'`), a conversa fica com a pessoa.
- */
-export function atendimentoHumanoEfetivo(
-  c: Pick<ConversaEmHandoff, "assigned_to_user_id" | "last_handoff_at" | "bot_silenced_until">,
-  fatos: FatosDaAtribuicao | undefined,
-): boolean {
-  if (c.assigned_to_user_id === null) return true;
-  if (!fatos || fatos.ultimaAtribuicao === null) return true;
-  if (c.last_handoff_at !== null) return true;
-  if (c.bot_silenced_until === "infinity") return true;
-  if (fatos.humanoRespondeuDesdeAAtribuicao) return true;
-  const { reason, changed_by } = fatos.ultimaAtribuicao;
-  return !(reason === "routing" && changed_by === null);
-}
-
-/**
- * As conversas vencidas, com o prazo que venceu cada uma.
- *
- * Conversa com dono humano NÃO entra, por mais que o prazo tenha vencido — ver
- * `pessoaNoComando` —, com UMA exceção: o dono que veio só da distribuição
- * automática, sem atendimento nenhum (`atendimentoHumanoEfetivo`). Para ele o
- * cron traz os fatos (`fatos`, por id de conversa); sem eles, o dono fica.
- * A outra metade da regra ("uma pessoa respondeu depois da passagem, sem clicar
- * em Assumir") precisa ler `messages` e por isso mora no cron, que a aplica sobre
- * este lote.
- */
+/** As conversas vencidas, com o prazo que venceu cada uma. */
 export function selecionarVencidas(
   conversas: readonly ConversaEmHandoff[],
   sel: Selecao,
-  fatos?: ReadonlyMap<string, FatosDaAtribuicao>,
 ): Array<{ conversa: ConversaEmHandoff; minutos: number }> {
   const out: Array<{ conversa: ConversaEmHandoff; minutos: number }> = [];
   for (const conversa of conversas) {
-    if (pessoaNoComando(conversa) && atendimentoHumanoEfetivo(conversa, fatos?.get(conversa.id)))
-      continue;
     const r = avaliarDevolucao(conversa, sel);
     if (r.devolver) out.push({ conversa, minutos: r.minutos });
   }

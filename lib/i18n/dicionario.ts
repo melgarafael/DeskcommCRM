@@ -9010,8 +9010,8 @@ export const DICIONARIO: Traducoes = {
   "Devolver ao agente sozinho depois de um tempo sem resposta da equipe": {
     es: "Devolver al agente automáticamente tras un tiempo sin respuesta del equipo",
   },
-  "Vale só para a conversa passada à equipe que ninguém assumiu nem respondeu: o tempo conta a partir da passagem. Conversa que uma pessoa assumiu, ou em que alguém respondeu pela tela ou pelo celular, não volta sozinha — só quando alguém clica em Devolver. Só devolve onde há agente publicado.": {
-    es: "Solo vale para la conversación pasada al equipo que nadie asumió ni respondió: el tiempo se cuenta desde el traspaso. La conversación que una persona asumió, o en la que alguien respondió desde la pantalla o desde el celular, no vuelve sola — solo cuando alguien hace clic en Devolver. Solo se devuelve donde hay un agente publicado.",
+  "O tempo conta a partir do último sinal de uma pessoa na conversa: assumir, responder pela tela ou pelo celular. Só devolve onde há agente publicado. Desligado, vale a regra de sempre: a IA só volta quando alguém clica em Devolver.": {
+    es: "El tiempo se cuenta desde la última actividad de una persona en la conversación: asumirla, responder desde la pantalla o desde el celular. Solo se devuelve donde hay un agente publicado. Si la opción está desactivada, rige la regla de siempre: la IA solo vuelve cuando alguien hace clic en Devolver.",
   },
   "Minutos sem resposta da equipe": { es: "Minutos sin respuesta del equipo" },
   "Quando alguém responde pelo celular, a IA espera quanto tempo?": {

@@ -1109,27 +1109,16 @@ Próxima conversation no mesmo contact (status=resolved + nova abertura) começa
 organização pode ligar um prazo em Configurações › Distribuição de atendimento
 (`organizations.settings.routing.handoff_return_after_minutes`, 5 min – 30 dias; `null` = nunca).
 Com o prazo ligado, o cron `app/api/v1/cron/handoff-devolucao` (a cada 5 min) devolve ao agente
-**só a passagem formal que ninguém pegou** — `bot_silenced_until = 'infinity'`, sem dono humano
-(`assigned_to_user_id` nulo) e sem nenhuma mensagem humana (`sent_via` `user` ou
-`external_device`) depois de `last_handoff_at` — que ficou o prazo inteiro parada.
-**Atendimento humano em curso nunca volta à IA por relógio:** conversa que uma pessoa assumiu,
-ou em que alguém respondeu ao cliente depois da passagem, só volta por ação explícita de pessoa
-(botão "Devolver ao automático", encerrar marcando a devolução, `crm_resume_ai_attendance`
-chamada por gente, `#on` pelo celular). A escrita reconfere a ausência de dono
-(`expectedAssignee: null`), então quem assume entre a leitura e a devolução ganha. Até 2026-11
-o prazo também devolvia conversas com dono, contando do último sinal humano — e o técnico que
-passava do prazo resolvendo o problema via a IA voltar no meio do atendimento.
-**Sorteio não é atendimento.** O dono que veio SÓ da distribuição automática (rodízio/carga:
-último evento `routing` sem pessoa em `changed_by`, sem `last_handoff_at`, sem silêncio
-permanente e sem mensagem de gente depois de `assigned_at`) não está atendendo: o mesmo prazo
-o devolve à IA, exigindo que o dono continue o mesmo na escrita (`expectedAssignee` = o dono
-lido) e relendo o último evento logo antes dela. Assumir, Transferir, a passagem real da IA ou
-uma resposta de gente seguram a conversa com a pessoa (`atendimentoHumanoEfetivo`).
+a conversa que está com humano de forma durável — `bot_silenced_until = 'infinity'`,
+`assignee_kind = 'user'` ou `assigned_to_user_id` preenchido — e ficou o prazo inteiro sem
+**nenhum sinal humano** (o maior entre `last_handoff_at`, `assigned_at` e `last_outbound_at`).
 **Devolver não redistribui.** Toda devolução grava `metadata.ia_retomada`; enquanto a marca
 existir, a conversa não tiver passado para humano de novo e houver IA no ar no número, o
 `routing-worker` guarda o pedido de distribuição (reavaliado a cada 5 min, sem prazo) em vez de
-entregar — `lib/routing/retomada-da-ia.ts`. E a devolução feita por PESSOA limpa o setor que a
-IA ou uma automação escolheu (`limparSetorDaIaNaDevolucao`); setor escolhido por pessoa fica.
+entregar — `lib/routing/retomada-da-ia.ts`. E a devolução explícita (botão, encerrar marcando a
+devolução, ação em lote, `crm_resume_ai_attendance`, `#on`) limpa o setor que a IA ou uma automação
+escolheu (`limparSetorDaIaNaDevolucao`); setor escolhido por pessoa fica. O cron do prazo e a reação à derivação
+técnica não limpam.
 A devolução passa pela MESMA função do botão (`devolverAtendimentoAoAgente`) e só acontece em
 sessão com agente publicado ou roteador ativo; a pausa por resposta pelo celular
 (`lib/escalacao/atendimento-manual.ts`, silêncio finito) não entra — vence sozinha. Regra pura e

@@ -35,16 +35,12 @@ interface Banco {
   conversations: Array<Record<string, unknown>>;
   ai_agents: Array<Record<string, unknown>>;
   ai_routers: Array<Record<string, unknown>>;
-  /** Saídas da conversa — o cron pergunta se GENTE respondeu depois da passagem. */
-  messages: Array<Record<string, unknown>>;
-  /** Quem deu o dono atual — o cron separa sorteio de atendimento por aqui. */
-  conversation_assignment_events: Array<Record<string, unknown>>;
 }
 let banco: Banco;
 
 /** Um filtro que o código de produção pediu ao PostgREST, como ele o pediu. */
 interface Filtro {
-  metodo: "not" | "is" | "in" | "eq" | "gt" | "or";
+  metodo: "not" | "is" | "in" | "eq";
   args: unknown[];
 }
 let filtrosPorTabela: Record<string, Filtro[]>;
@@ -63,9 +59,6 @@ function navegarJsonb(coluna: string, linha: Record<string, unknown>): unknown {
   const partes = coluna.split(/(->>|->)/);
   let atual: unknown = linha[partes[0] ?? ""];
   if (atual === undefined) return SQL_NULL;
-  // Coluna comum (sem seta): o `null` da linha É o SQL NULL — é o que o
-  // PostgREST casa em `is.null`. Só DENTRO do jsonb o `null` do JSON é outra coisa.
-  if (partes.length === 1 && atual === null) return SQL_NULL;
   for (let i = 1; i < partes.length; i += 2) {
     const seta = partes[i];
     const chave = partes[i + 1] ?? "";
@@ -107,16 +100,6 @@ function passa(f: Filtro, linha: Record<string, unknown>): boolean {
       return navegarJsonb(coluna, linha) === a;
     case "in":
       return (a as unknown[]).includes(navegarJsonb(coluna, linha));
-    case "or":
-      // O recorte em duas faixas fica no-op de propósito: quem decide é a regra
-      // pura e o cron (os casos abaixo provam), e o formato pedido é conferido
-      // à parte (ver "os dois recortes").
-      return true;
-    case "gt": {
-      // Só o que o cron pede: instante ISO contra instante ISO.
-      const v = navegarJsonb(coluna, linha);
-      return typeof v === "string" && Date.parse(v) > Date.parse(String(a));
-    }
   }
 }
 
@@ -161,16 +144,7 @@ vi.mock("@/lib/supabase/admin", () => ({
                 ? // Aplica os filtros modelados (org, status, is_group); o `.or`
                   // segue no-op — quem corta a faixa é `selecionarVencidas`.
                   aplicar(filtros, banco.conversations)
-                : tabela === "messages"
-                  ? // A pergunta "gente respondeu depois da passagem?" é o filtro
-                    // inteiro (org, conversa, direção, sent_via, depois de) — aplicado.
-                    aplicar(filtros, banco.messages)
-                  : tabela === "conversation_assignment_events"
-                    ? // org + conversa aplicados; a ordem vem do `order` abaixo.
-                      aplicar(filtros, banco.conversation_assignment_events).sort((a, b) =>
-                        String(b.created_at).localeCompare(String(a.created_at)),
-                      )
-                    : banco[tabela],
+                : banco[tabela],
           error: null,
         });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -180,9 +154,7 @@ vi.mock("@/lib/supabase/admin", () => ({
         in: registrar("in"),
         is: registrar("is"),
         eq: registrar("eq"),
-        gt: registrar("gt"),
-        or: registrar("or"),
-        order: () => chain,
+        or: () => chain,
         limit: () => resolver(),
         then: (res: (v: unknown) => unknown) => resolver().then(res),
       };
@@ -208,10 +180,7 @@ function conversa(id: string, minutosParada: number): Record<string, unknown> {
     organization_id: ORG,
     channel_session_id: SESSAO,
     status: "pending",
-    // A passagem formal que ninguém pegou. `assignee_kind: "user"` sem dono era o
-    // valor daqui, e é um estado que o CHECK `conversations_assignee_kind_coherence`
-    // recusa no banco — o dublê não pode provar nada com uma linha impossível.
-    assignee_kind: null,
+    assignee_kind: "user",
     assigned_to_user_id: null,
     assigned_at: null,
     bot_silenced_until: "infinity",
@@ -240,8 +209,6 @@ beforeEach(() => {
       },
     ],
     ai_routers: [],
-    messages: [],
-    conversation_assignment_events: [],
   };
 });
 
@@ -263,12 +230,7 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     const [deps, input] = devolver.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
     expect(deps.organizationId).toBe(ORG);
     expect(deps.actor).toEqual({ type: "webhook_source", id: "cron:handoff-devolucao" });
-    expect(input).toEqual({
-      conversationId: VENCIDA,
-      origem: { automatica: { minutos: 60 } },
-      // A conversa foi lida sem dono e só é devolvida se continuar sem dono.
-      expectedAssignee: null,
-    });
+    expect(input).toEqual({ conversationId: VENCIDA, origem: { automatica: { minutos: 60 } } });
 
     expect(auditar).toHaveBeenCalledTimes(1);
     expect(auditar.mock.calls[0]?.[0]).toMatchObject({
@@ -286,83 +248,6 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     expect(devolver).not.toHaveBeenCalled();
     const corpo = (await res.json()) as { data: Record<string, number> };
     expect(corpo.data.examinadas).toBe(0);
-  });
-
-  /**
-   * ATENDIMENTO HUMANO EM CURSO NÃO VOLTA À IA POR RELÓGIO.
-   *
-   * O prazo é para a passagem que ninguém pegou. Antes desta regra ele também
-   * devolvia a conversa que uma pessoa assumiu (contando do último sinal dela),
-   * e a que uma pessoa respondeu sem clicar em Assumir — o técnico que passava do
-   * prazo resolvendo o problema via a IA voltar no meio do atendimento.
-   *
-   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
-   *   - tirar `.is("assigned_to_user_id", null)` do route E `pessoaNoComando` de
-   *     `selecionarVencidas`: o caso do dono devolve a conversa.
-   *   - tirar a checagem `humanoRespondeuDepoisDe` do route: o caso da resposta
-   *     pelo Inbox (e o do celular) devolve.
-   */
-  it("conversa que uma pessoa ASSUMIU, parada há 30 dias: não é devolvida", async () => {
-    banco.conversations = [
-      {
-        ...conversa(VENCIDA, 30 * 24 * 60),
-        assignee_kind: "user",
-        assigned_to_user_id: "99999999-9999-4999-8999-999999999999",
-        assigned_at: min(30 * 24 * 60),
-      },
-    ];
-    const res = await chamar();
-    expect(res.status).toBe(200);
-    expect(devolver).not.toHaveBeenCalled();
-    expect(auditar).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["pelo Inbox", "user"],
-    ["pelo celular", "external_device"],
-  ])("uma pessoa respondeu %s depois da passagem, sem assumir: não é devolvida", async (_via, sentVia) => {
-    banco.conversations = [conversa(VENCIDA, 600)];
-    banco.messages = [
-      {
-        organization_id: ORG,
-        conversation_id: VENCIDA,
-        direction: "outbound",
-        sent_via: sentVia,
-        created_at: min(500),
-      },
-    ];
-    const res = await chamar();
-    expect(res.status).toBe(200);
-    expect(devolver).not.toHaveBeenCalled();
-    expect(filtrosPorTabela.messages).toContainEqual({ metodo: "eq", args: ["organization_id", ORG] });
-  });
-
-  it("o aviso da própria IA na passagem, ou uma resposta ANTES dela, não contam como atendimento", async () => {
-    banco.conversations = [conversa(VENCIDA, 600)];
-    banco.messages = [
-      // O "vou chamar alguém da equipe" sai como `ai`, colado na passagem.
-      { organization_id: ORG, conversation_id: VENCIDA, direction: "outbound", sent_via: "ai", created_at: min(599) },
-      // Uma resposta humana de antes da passagem é de outro momento.
-      { organization_id: ORG, conversation_id: VENCIDA, direction: "outbound", sent_via: "user", created_at: min(700) },
-    ];
-    await chamar();
-    expect(devolver).toHaveBeenCalledTimes(1);
-  });
-
-  it("isolamento: resposta humana numa conversa de OUTRA organização não segura esta", async () => {
-    banco.conversations = [conversa(VENCIDA, 600)];
-    banco.messages = [
-      {
-        organization_id: "77777777-7777-4777-8777-777777777777",
-        conversation_id: VENCIDA,
-        direction: "outbound",
-        sent_via: "user",
-        created_at: min(500),
-      },
-    ];
-    await chamar();
-    expect(devolver).toHaveBeenCalledTimes(1);
-    expect(devolver.mock.calls[0]?.[0]).toMatchObject({ organizationId: ORG });
   });
 
   it("nada vencido: nenhuma devolução e nenhuma linha de auditoria", async () => {
@@ -401,7 +286,6 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     expect(devolver.mock.calls[0]?.[1]).toEqual({
       conversationId: VENCIDA,
       origem: { automatica: { minutos: 5000 } },
-      expectedAssignee: null,
     });
     expect(auditar).toHaveBeenCalledTimes(1);
   });
@@ -566,137 +450,5 @@ describe("o predicado que escolhe as organizações", () => {
     const curto = { routing: { handoff_return_after_minutes: 2 } };
     expect(sobrevive(curto)).toBe(true);
     expect(lerPrazoDeDevolucaoMinutos(curto)).toBeNull();
-  });
-});
-
-/**
- * SORTEIO NÃO É ATENDIMENTO (D6 numa instalação de teste, 2026-11-20).
- *
- * Com rodízio, a conversa ganha dono por distribuição automática 30 s depois de a
- * IA responder, sem ninguém pedir gente. Esse dono não está atendendo: o prazo
- * da organização o devolve à IA. Assumir, Transferir, a passagem real da IA ou
- * uma resposta de gente continuam segurando a conversa com a pessoa.
- */
-describe("o dono que veio só do sorteio", () => {
-  const DONO = "66666666-6666-4666-8666-666666666666";
-  const OUTRA_ORG = "77777777-7777-4777-8777-777777777777";
-
-  function doSorteio(minutos: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      ...conversa(VENCIDA, minutos),
-      status: "claimed",
-      assignee_kind: "user",
-      assigned_to_user_id: DONO,
-      assigned_at: min(minutos),
-      bot_silenced_until: null,
-      last_handoff_at: null,
-      status_changed_at: min(minutos),
-      ...extra,
-    };
-  }
-  const evento = (reason: string, changedBy: string | null, org = ORG) => ({
-    organization_id: org,
-    conversation_id: VENCIDA,
-    reason,
-    changed_by: changedBy,
-    created_at: min(61),
-  });
-
-  it("os dois recortes: passagem sem dono E dono sem passagem — e nenhum outro", async () => {
-    banco.conversations = [];
-    await chamar();
-    const or = filtrosPorTabela.conversations?.find((f) => f.metodo === "or");
-    expect(or?.args[0]).toBe(
-      "and(assigned_to_user_id.is.null,bot_silenced_until.eq.infinity)," +
-        "and(assigned_to_user_id.not.is.null,last_handoff_at.is.null)",
-    );
-  });
-
-  it("⭐ sorteio sem ninguém agir, prazo vencido: volta para a IA, exigindo o MESMO dono na escrita", async () => {
-    banco.conversations = [doSorteio(61)];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    await chamar();
-    expect(devolver).toHaveBeenCalledTimes(1);
-    expect(devolver.mock.calls[0]![1]).toEqual({
-      conversationId: VENCIDA,
-      origem: { automatica: { minutos: 60 } },
-      expectedAssignee: DONO,
-    });
-  });
-
-  it("sorteio dentro do prazo: fica", async () => {
-    banco.conversations = [doSorteio(20)];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["a pessoa clicou em Assumir", evento("claim", DONO)],
-    ["houve transferência", evento("transfer", DONO)],
-    ["o evento de distribuição foi feito por uma pessoa", evento("routing", DONO)],
-  ])("%s: é atendimento, e o relógio não o tira", async (_caso, ev) => {
-    banco.conversations = [doSorteio(600)];
-    banco.conversation_assignment_events = [ev];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["pelo Inbox", "user"],
-    ["pelo celular", "external_device"],
-  ])("a pessoa do sorteio respondeu %s: é atendimento", async (_via, sentVia) => {
-    banco.conversations = [doSorteio(600)];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    banco.messages = [
-      {
-        organization_id: ORG,
-        conversation_id: VENCIDA,
-        direction: "outbound",
-        sent_via: sentVia,
-        created_at: min(30),
-      },
-    ];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it("a resposta do responsável pela tela deixou o silêncio permanente: é atendimento", async () => {
-    banco.conversations = [doSorteio(600, { bot_silenced_until: "infinity" })];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it("a passagem real da IA para humano (`last_handoff_at`) é transferência: fica com a pessoa", async () => {
-    banco.conversations = [doSorteio(600, { last_handoff_at: min(600) })];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it("sem o evento da atribuição não há prova de sorteio: fica (falha fechada)", async () => {
-    banco.conversations = [doSorteio(600)];
-    banco.conversation_assignment_events = [];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-  });
-
-  it("isolamento: o evento de OUTRA organização não vale como prova de sorteio", async () => {
-    banco.conversations = [doSorteio(600)];
-    banco.conversation_assignment_events = [evento("routing", null, OUTRA_ORG)];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
-    expect(filtrosPorTabela.conversation_assignment_events).toContainEqual({
-      metodo: "eq",
-      args: ["organization_id", ORG],
-    });
-  });
-
-  it("modo \"IA com o dono\": a conversa é do dono E do automático — o sorteio não é desfeito", async () => {
-    banco.conversations = [doSorteio(600, { metadata: { ai_com_dono: true } })];
-    banco.conversation_assignment_events = [evento("routing", null)];
-    await chamar();
-    expect(devolver).not.toHaveBeenCalled();
   });
 });
