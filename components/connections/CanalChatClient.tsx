@@ -262,9 +262,11 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
     respostasLinhas.length <= 5 && respostasLinhas.every((linha) => linha.length >= 1 && linha.length <= 80);
 
   const ajustes: Record<string, unknown> = {};
-  if (avatarPreenchido) ajustes.avatar_url = avatarUrl.trim();
-  if (autoAbrirParaEnviar !== undefined) ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
-  ajustes.som = som;
+  if (avatarPreenchido && avatarUrl.trim() !== avatarInicial) ajustes.avatar_url = avatarUrl.trim();
+  if (autoAbrirParaEnviar !== undefined && autoAbrirAtual !== String(autoAbrirInicial)) {
+    ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
+  }
+  if (som !== somInicial) ajustes.som = som;
   if (respostasRapidas.trim() !== respostasInicial) ajustes.respostas_rapidas = respostasLinhas;
 
   const ajustesMudou =

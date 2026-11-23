@@ -450,6 +450,18 @@ it("salvar ajustes manda os campos preenchidos pelo PATCH", async () => {
   );
 });
 
+it("mudar so o som manda apenas som", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { som: true } }));
+});
+
 it("avatar invalido mostra erro em portugues e nao envia", async () => {
   h.get.mockResolvedValue({ data: comConexao });
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
