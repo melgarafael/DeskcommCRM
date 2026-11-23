@@ -23227,6 +23227,12 @@ export const DICIONARIO: Traducoes = {
   "Ordem da fila": { es: "Orden de la cola" },
   "Ordem:": { es: "Orden:" },
   "Esperando há mais tempo": { es: "Esperando hace más tiempo" },
+  "Anotações do cliente": { es: "Notas del cliente" },
+  "Editar anotação": { es: "Editar nota" },
+  "Anotação salva.": { es: "Nota guardada." },
+  "Adicionar anotação": { es: "Agregar nota" },
+  "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
+  "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
   // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },
