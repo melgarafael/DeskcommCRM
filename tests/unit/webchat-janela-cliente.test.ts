@@ -7,7 +7,7 @@
  * dirigido com um `fetch` falso no jsdom (ambiente padrão deste repositório).
  */
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,8 +30,9 @@ interface Modulo {
   iniciar: (opcoes: Record<string, unknown>) => unknown;
 }
 
-const requerer = createRequire(import.meta.url);
-const CAMINHO = fileURLToPath(new URL("../../public/webchat-janela.js", import.meta.url));
+// import.meta.url não é um file: dentro do jsdom; a raiz do repositório é o cwd do vitest.
+const CAMINHO = resolve(process.cwd(), "public/webchat-janela.js");
+const requerer = createRequire(CAMINHO);
 const modulo = requerer(CAMINHO) as Modulo;
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

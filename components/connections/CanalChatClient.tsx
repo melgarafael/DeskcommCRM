@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { copyToClipboard } from "@/lib/clipboard";
 import { codigoParaColar, linkDireto } from "@/lib/channels/webchat/codigo-para-colar";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -158,10 +159,10 @@ function SemConexao({ aoAtivar }: { aoAtivar: () => Promise<unknown> }) {
           rows={4}
           value={dominios}
           onChange={(e) => setDominios(e.target.value)}
-          placeholder="https://seusite.com.br"
+          placeholder="https://www.example.com"
         />
         <p className="text-xs text-muted-foreground">
-          {t("Use o endereço completo com https, por exemplo https://seusite.com.br.")}
+          {t("Use o endereço completo com https, por exemplo https://www.example.com.")}
         </p>
         <p className="text-xs text-muted-foreground">
           {t("Sem domínios, o chat não abre no seu site. Ele só abre pelo link direto.")}
@@ -264,10 +265,9 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   };
 
   const copiar = async (texto: string) => {
-    try {
-      await navigator.clipboard.writeText(texto);
+    if (await copyToClipboard(texto)) {
       toast.success(t("Copiado."));
-    } catch {
+    } else {
       toast.error(t("Não foi possível copiar. Selecione o texto e copie manualmente."));
     }
   };
@@ -405,11 +405,11 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             id="canal-chat-dominios"
             rows={4}
             value={dominios}
-            placeholder="https://seusite.com.br"
+            placeholder="https://www.example.com"
             onChange={(e) => setDominios(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            {t("Use o endereço completo com https, por exemplo https://seusite.com.br.")}
+            {t("Use o endereço completo com https, por exemplo https://www.example.com.")}
           </p>
           {listaDominios.length === 0 && (
             <p role="alert" className="text-xs text-destructive">

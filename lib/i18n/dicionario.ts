@@ -22604,7 +22604,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar o chat no site. Recarregue a página.": { es: "No fue posible cargar el chat en el sitio. Recargue la página." },
   "Chat no site ativado. Cole o código no seu site para ele aparecer.": { es: "Chat en el sitio activado. Pegue el código en su sitio para que aparezca." },
   "Domínios, um por linha": { es: "Dominios, uno por línea" },
-  "Use o endereço completo com https, por exemplo https://seusite.com.br.": { es: "Use la dirección completa con https, por ejemplo https://susitio.com.br." },
+  "Use o endereço completo com https, por exemplo https://www.example.com.": { es: "Use la dirección completa con https, por ejemplo https://susitio.com.br." },
   "Sem domínios, o chat não abre no seu site. Ele só abre pelo link direto.": { es: "Sin dominios, el chat no se abre en su sitio. Solo se abre por el enlace directo." },
   "Ativar chat no site": { es: "Activar chat en el sitio" },
   "Alterações salvas.": { es: "Cambios guardados." },

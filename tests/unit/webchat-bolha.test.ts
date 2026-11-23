@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,8 +26,9 @@ interface ModuloDaBolha {
   ) => boolean;
 }
 
-const requerer = createRequire(import.meta.url);
-const CAMINHO = fileURLToPath(new URL("../../public/webchat.js", import.meta.url));
+// import.meta.url não é um file: dentro do jsdom; a raiz do repositório é o cwd do vitest.
+const CAMINHO = resolve(process.cwd(), "public/webchat.js");
+const requerer = createRequire(CAMINHO);
 
 function carregarModulo(): ModuloDaBolha {
   return requerer(CAMINHO) as ModuloDaBolha;
