@@ -323,6 +323,7 @@
       "POST /api/v1/conversations/[id]/participants",
       "POST /api/v1/conversations/[id]/pause-ai",
       "POST /api/v1/conversations/[id]/reactivate-bot",
+      "POST /api/v1/conversations/[id]/reopen",
       "POST /api/v1/conversations/[id]/snooze",
       "POST /api/v1/conversations/[id]/transfer",
       "POST /api/v1/conversations/[id]/transferir-agente",
@@ -1153,7 +1154,7 @@
         {
           "nome": "listConversationsQuerySchema",
           "origem": "@/lib/schemas",
-          "hash": "19cf1a29d188dca0"
+          "hash": "92d560e6e1b357dd"
         }
       ],
       "resposta": []

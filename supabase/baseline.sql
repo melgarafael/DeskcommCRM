@@ -83399,6 +83399,39 @@ revoke execute on function public.fn_extensions_core_update_in_progress() from p
 
 notify pgrst, 'reload schema';
 
+-- ---- preço do Gemini 3.5 Flash (migration 9462, #5090) ----
+-- manifest: atualiza ai_models e ai_pricing do Gemini 3.5 Flash para 150/750 centavos por milhão, alinhando ao motor e ao roteamento oficial do Google pelo 3.6 Flash (#5090).
+-- Espelho de supabase/migrations/20261123102811_9462_preco_gemini_35_flash.sql. Vem depois da semente
+-- da 0101 (150/900), então vence no install e no update. Não cria função.
+-- Alinha ai_models e ai_pricing ao motor (#4968).
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('google', 'gemini-3.5-flash', 'Gemini 3.5 Flash',
+   'Roteado ao 3.6 Flash. Preço de catálogo: tarifa de 01/01/2027 (US$ 1,50/US$ 7,50); o motor cobra a promo até essa data (UTC).',
+   150, 750, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gemini-3.5-flash', 150, 750, 'catálogo 9462 — alinhado ao motor e ao roteamento pelo 3.6 Flash (#5090)')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -88830,6 +88863,26 @@ comment on column public.channel_sessions.zernio_webhook_id is
   'Assinatura de webhook que entrega os eventos desta conta, registrada pela INSTALAÇÃO. Na conexão por um clique é o webhook ÚNICO da instalação (compartilhado, filtrado aos perfis das conexões ativas; id em platform_config): a remoção do canal tira o perfil do filtro e NÃO apaga a assinatura. Na chave própria é a assinatura do número (filtrada à conta), apagada na remoção. Nulo quando o operador configurou o webhook à mão. Migration 9093.';
 comment on column public.channel_sessions.zernio_credencial_da_instalacao is
   'true = a sessão fala com o provedor pela chave da INSTALAÇÃO (platform_config), resolvida na hora; zernio_token_encrypted fica nulo. false = chave própria da organização, cifrada em zernio_token_encrypted. Migration 9093.';
+
+-- ---- a CONEXÃO decide se a conversa nova cria negócio (migration 9459) ----
+-- Espelho da 9459 (issue #4670); o porquê inteiro está no cabeçalho da migration.
+-- Coluna, e não `metadata`: a leitura acontece uma vez por card que nasce, no
+-- caminho quente da ingestão, e a ausência de chave em jsonb teria de significar
+-- LIGADO — o oposto da chave vizinha (`guardar_historico`, #999), que é a razão
+-- de a regra não poder morar num leitor que adivinha.
+--
+-- ⚠️ `default true` é o que torna a atualização invisível: toda instalação de
+-- hoje continua criando card em todo número. No Postgres 11+ um default
+-- não-volátil não reescreve a tabela, então a coluna entra sem varredura.
+--
+-- Não cria função e não concede nada a `anon`: pode ficar depois da VARREDURA
+-- anon. Reaplicável por `add column if not exists` — o `update.sh` roda o
+-- apêndice inteiro a cada atualização (`tests/unit/baseline-reaplicavel.test.ts`).
+alter table public.channel_sessions
+  add column if not exists conversa_nova_cria_negocio boolean not null default true;
+
+comment on column public.channel_sessions.conversa_nova_cria_negocio is
+  'Issue #4670: a conversa nova que chega por esta conexão abre negócio no funil padrão? true (DEFAULT, e o estado de toda instalação de antes) = sim, como sempre foi. false = a conversa e o contato nascem, o Inbox e a IA seguem, e só o card não nasce; criar à mão (crm_create_lead, painel da conversa, ficha do contato) continua igual.';
 
 -- ---- llm_calls: passos e composição da chamada (migration 9105) ----
 alter table public.llm_calls add column if not exists passos smallint;
