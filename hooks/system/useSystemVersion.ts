@@ -69,6 +69,11 @@ export interface SystemVersion {
     last_step: string | null;
     /** Quando o pedido foi registrado — a tela conta o tempo a partir daqui. */
     dispatched_at?: string;
+    /**
+     * Quando o agente vai executar o pedido que espera a janela de manutenção
+     * (#4334). Nulo/ausente = sem janela, o pedido roda no próximo ciclo.
+     */
+    scheduled_for?: string | null;
     /** Versão que estava instalada quando o run começou. */
     from_version: string;
     /** Versão que o run tentou instalar. */

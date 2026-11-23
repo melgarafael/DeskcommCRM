@@ -21,6 +21,7 @@ import { ConversasDosNumeros } from "./ConversasDosNumeros";
 import { LeadFieldsForm, type ControleDosCamposDoNegocio } from "./LeadFieldsForm";
 import { RevisaoDoDocumento } from "./RevisaoDoDocumento";
 import { ScoreSlot } from "./ScoreSlot";
+import { ClassificacaoComercial } from "./ClassificacaoComercial";
 import { LeadTimeline } from "./LeadTimeline";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
@@ -234,6 +235,9 @@ export function LeadDossier({
   // que a rota de decisão exige (`requireRole("agent")`). Abaixo disso a fila
   // ainda aparece — ler o que a IA leu é informação —, mas sem os botões.
   const podeConfirmarDoDocumento = podeEditarTarefas;
+  // Classificar como não comercial é decisão sobre o negócio: a rota exige
+  // `requireRole("agent")` + `requireSupportWrite`, a MESMA régua de editar
+  // tarefas (suporte temporário lê, não escreve).
 
   /**
    * As props da linha do tempo, montadas UMA vez e usadas nos dois estados da
@@ -344,6 +348,19 @@ export function LeadDossier({
      desenhado — nem separador, nem faixa vazia. */
   const atalhosDoNegocio = (
     <AtalhosDoNegocio atalhos={atalhosDoCard} lead={lead} contactId={lead.contact_id} />
+  );
+
+  /* #4191, item 1 do mantenedor: a ROTA (`POST`/`DELETE …/classificacao-comercial`)
+     existia e nenhuma tela a chamava. Aqui a ficha passa a chamá-la, e o texto
+     sai do dicionário (`useT` dentro do componente). O `key` remonta o bloco
+     quando a classificação muda — o estado local não sobrevive à linha nova.
+     Nas duas molduras (gaveta e página inteira), como os atalhos. */
+  const classificacaoComercial = (
+    <ClassificacaoComercial
+      key={`${lead.id}:${lead.nao_comercial_em ?? "comercial"}`}
+      lead={lead}
+      podeEditar={podeEditarTarefas}
+    />
   );
 
   const conversa = (
@@ -560,6 +577,7 @@ export function LeadDossier({
         </header>
 
         {atalhosDoNegocio}
+        {classificacaoComercial}
         {conversa}
 
         <div className="grid grid-cols-1 gap-x-6 gap-y-4 lg:grid-cols-2" data-testid="negocio-colunas">
@@ -622,6 +640,7 @@ export function LeadDossier({
         {cabecalhoVivo}
         {carimboDoScore}
         {atalhosDoNegocio}
+        {classificacaoComercial}
         {conversa}
         {contato}
         {numeros}

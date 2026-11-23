@@ -301,7 +301,6 @@ const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
   "conversations/[id]": () => import("@/app/api/v1/conversations/[id]/route"),
   "conversations/[id]/aviso-de-mensagem": () =>
     import("@/app/api/v1/conversations/[id]/aviso-de-mensagem/route"),
-  "conversations/[id]/close": () => import("@/app/api/v1/conversations/[id]/close/route"),
   "conversations/[id]/draft-reply": () => import("@/app/api/v1/conversations/[id]/draft-reply/route"),
   "conversations/[id]/messages": () => import("@/app/api/v1/conversations/[id]/messages/route"),
   "conversations/[id]/notes": () => import("@/app/api/v1/conversations/[id]/notes/route"),
@@ -312,8 +311,6 @@ const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
   "conversations/[id]/participants": () =>
     import("@/app/api/v1/conversations/[id]/participants/route"),
   "conversations/[id]/passagens": () => import("@/app/api/v1/conversations/[id]/passagens/route"),
-  "conversations/[id]/pause-ai": () => import("@/app/api/v1/conversations/[id]/pause-ai/route"),
-  "conversations/[id]/reactivate-bot": () => import("@/app/api/v1/conversations/[id]/reactivate-bot/route"),
   "conversations/[id]/retention": () => import("@/app/api/v1/conversations/[id]/retention/route"),
   "conversations/[id]/sector": () => import("@/app/api/v1/conversations/[id]/sector/route"),
   "conversations/[id]/snooze": () => import("@/app/api/v1/conversations/[id]/snooze/route"),
@@ -599,13 +596,6 @@ const SO_DE_SESSAO: readonly CasoDeSessao[] = [
     params: { id: CONVERSA_A },
   },
   {
-    rota: "conversations/[id]/close",
-    metodo: "POST",
-    caminho: `/api/v1/conversations/${CONVERSA_A}/close`,
-    params: { id: CONVERSA_A },
-    corpo: {},
-  },
-  {
     rota: "conversations/[id]/draft-reply",
     metodo: "POST",
     caminho: `/api/v1/conversations/${CONVERSA_A}/draft-reply`,
@@ -619,8 +609,10 @@ const SO_DE_SESSAO: readonly CasoDeSessao[] = [
     params: { id: CONVERSA_A, noteId: NOTA_A },
   },
   // draft-reply GET e POST usam o pool do Postgres da requisição (e o POST, a
-  // IA); aviso-de-mensagem pergunta "avisar ESTA pessoa", e reactivate-bot
-  // decide pelo dono da conversa: nenhum tem sentido sem uma pessoa na sessão.
+  // IA); aviso-de-mensagem pergunta "avisar ESTA pessoa": nenhum tem sentido
+  // sem uma pessoa na sessão. (close, pause-ai e reactivate-bot saíram daqui no
+  // #4517: aceitam token com `conversations:write`, e a receita de seis casos
+  // delas está em `tests/unit/conversa-por-token-4517.test.ts`.)
   {
     rota: "conversations/[id]/draft-reply",
     metodo: "GET",
@@ -642,20 +634,6 @@ const SO_DE_SESSAO: readonly CasoDeSessao[] = [
     caminho: `/api/v1/conversations/${CONVERSA_A}/participants`,
     params: { id: CONVERSA_A },
     corpo: { user_id: PESSOA_DA_SESSAO },
-  },
-  {
-    rota: "conversations/[id]/pause-ai",
-    metodo: "POST",
-    caminho: `/api/v1/conversations/${CONVERSA_A}/pause-ai`,
-    params: { id: CONVERSA_A },
-    corpo: {},
-  },
-  {
-    rota: "conversations/[id]/reactivate-bot",
-    metodo: "POST",
-    caminho: `/api/v1/conversations/${CONVERSA_A}/reactivate-bot`,
-    params: { id: CONVERSA_A },
-    corpo: {},
   },
   {
     rota: "conversations/[id]/transfer",
@@ -1071,8 +1049,9 @@ describe("o ramo do token em conversas e conversation-tags", () => {
  * ESTREITA: id em forma de UUID, âncora nos dois lados.
  *
  * Irmãos literais de `[id]` (ls app/api/v1/conversations/[id]/) que NÃO ganharam
- * porta nesta fatia: aviso-de-mensagem, claim, close, draft-reply, export,
- * mark-read, pause-ai, reactivate-bot, release.
+ * porta nesta fatia: aviso-de-mensagem, claim, draft-reply, export,
+ * mark-read, release. (close, pause-ai, reactivate-bot e reopen ganharam porta
+ * no #4517 — receita em `tests/unit/conversa-por-token-4517.test.ts`.)
  * Irmãos de nível raiz sem porta: bulk, counts.
  * Fora deste teste, porque já tinham porta antes da R2 (`[^/]+` ou UUID):
  * drafts, media, open-with-contact.
@@ -1094,6 +1073,11 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     `/api/v1/conversations/${UUID}/snooze`,
     `/api/v1/conversations/${UUID}/transfer`,
     `/api/v1/conversations/${UUID}/usable-for-rag`,
+    // #4517: comandos de conversa por token (`conversations:write`).
+    `/api/v1/conversations/${UUID}/close`,
+    `/api/v1/conversations/${UUID}/pause-ai`,
+    `/api/v1/conversations/${UUID}/reactivate-bot`,
+    `/api/v1/conversations/${UUID}/reopen`,
   ])("libera %s para Bearer", (caminho) => {
     expect(isPublicPath(caminho)).toBe(true);
   });
@@ -1111,12 +1095,9 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     // irmão literal do mesmo nível que NÃO ganhou porta
     `/api/v1/conversations/${UUID}/aviso-de-mensagem`,
     `/api/v1/conversations/${UUID}/claim`,
-    `/api/v1/conversations/${UUID}/close`,
     `/api/v1/conversations/${UUID}/draft-reply`,
     `/api/v1/conversations/${UUID}/export`,
     `/api/v1/conversations/${UUID}/mark-read`,
-    `/api/v1/conversations/${UUID}/pause-ai`,
-    `/api/v1/conversations/${UUID}/reactivate-bot`,
     `/api/v1/conversations/${UUID}/release`,
     // irmão literal da raiz que NÃO ganhou porta
     "/api/v1/conversations/bulk",

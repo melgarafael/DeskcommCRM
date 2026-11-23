@@ -96,6 +96,14 @@ export const MODULOS_OPCIONAIS = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  // #4594 (fatia 1): o menu de boas-vindas com opções numeradas. Assume a
+  // ENTRADA da conversa sem chamar modelo nenhum — é o atendimento de quem
+  // não quer gastar token para receber "bom dia". Entra desligado porque muda
+  // quem responde primeiro, e quem já atende por IA ou à mão não pode acordar
+  // com um menu que não configurou.
+  "menu_de_atendimento",
+  // #4461/#4613 (main): agências administram clientes; catálogo por feed.
+  // O `amigo` é módulo de TABELA — entra na lista geral, nunca na de flag.
   "agencias",
   "catalogo_por_feed",
   "amigo",
@@ -132,6 +140,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "canal_bot",
   "campanha_por_email",
   "revisao_por_km",
+  "menu_de_atendimento",
   "agencias",
   "catalogo_por_feed",
 ] as const satisfies readonly ModuloOpcional[];
@@ -150,6 +159,15 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
  *    capacidade que a empresa use.
  *  - `honorarios` e `financeiro` já ficam fora por mecanismo: são módulos de
  *    TABELA (ADR-0002), provisionados por instalação (F3 do #3868).
+ *
+ * `catalogo_por_feed` entrou na camada no #4871 (F2), junto com o cron que o
+ * consome: é um módulo por FLAG cujo efeito é o SERVIDOR sair para a internet a
+ * cada 2 h e reescrever preço do catálogo de UMA empresa. Numa instalação que
+ * hospeda várias, a exceção da empresa é o que impede o feed da que desligou de
+ * continuar sendo buscado. `cadencias` NÃO entra: é módulo de TABELA, e desligar
+ * por empresa ali é a mesma conversa de `honorarios`/`financeiro` (F3) — o que a
+ * empresa desliga hoje é a capacidade dela (`settings.cadencias.enabled`), já
+ * lida por `cadenciasLigadas`.
  */
 export const MODULOS_POR_EMPRESA = [
   "banco_externo",
@@ -161,6 +179,7 @@ export const MODULOS_POR_EMPRESA = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  "catalogo_por_feed",
 ] as const satisfies readonly (typeof MODULOS_OPCIONAIS_POR_FLAG)[number][];
 export type ModuloPorEmpresa = (typeof MODULOS_POR_EMPRESA)[number];
 
@@ -249,6 +268,12 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // Desligado, o km gravado não projeta nada e o roteiro não faz consulta a mais
   // (`lib/revisao-por-km/modulo.ts`).
   revisao_por_km: "MODULO_REVISAO_POR_KM",
+  // #4594 (fatia 1): o menu de atendimento sem IA. A chave da INSTALAÇÃO é a
+  // porta de fora; a da empresa é `settings.menu_de_atendimento.ativa`. As duas
+  // são necessárias — o administrador do servidor decide se oferece, a empresa
+  // decide se usa. Desligada aqui, `atenderMenuSemIa` devolve `tratado: false`
+  // e a mensagem segue o caminho de hoje (`lib/atendimento/menu/atender.ts`).
+  menu_de_atendimento: "MODULO_MENU_DE_ATENDIMENTO",
   // Doc 321 (1A): a agência que administra as empresas dos clientes (#4034, de
   // @micaelecamily8-cyber). É a única porta DE PROPÓSITO entre empresas, e serve
   // a quem revende o CRM como agência, não à maioria. Desligado, as rotas de

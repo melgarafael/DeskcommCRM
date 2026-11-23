@@ -78,7 +78,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const { data: run, error: runError } = await db
     .from("system_update_runs")
     .select(
-      "id, status, last_step, dispatched_at, finished_at, from_version, to_version, log_tail, disputa_de_banco, retentativas_do_banco, passada_do_banco, requested_by",
+      "id, status, last_step, dispatched_at, scheduled_for, finished_at, from_version, to_version, log_tail, disputa_de_banco, retentativas_do_banco, passada_do_banco, requested_by",
     )
     .order("dispatched_at", { ascending: false })
     .limit(1)
@@ -295,10 +295,14 @@ export async function GET(_req: NextRequest): Promise<Response> {
           // clique e o agente pegar o pedido é uma lista de quatro círculos
           // vazios, parada, sem nada que se mexa.
           dispatched_at: run.dispatched_at,
+          // Quando o agente vai executar o pedido que espera a janela de
+          // manutenção (#4334). A tela diz "agendada para 02h00" em vez de
+          // contar a espera — e o prazo do `unknown` conta a partir daqui.
+          scheduled_for: run.scheduled_for ?? null,
           // `unknown` é derivado aqui, não gravado: um agente morto não
           // consegue anunciar a própria morte.
           status:
-            run.status === "dispatched" && isRunStale(run.dispatched_at, now)
+            run.status === "dispatched" && isRunStale(run.dispatched_at, now, run.scheduled_for)
               ? ("unknown" as const)
               : (run.status as RunStatus),
           last_step: (run.last_step as RunStep | null) ?? null,

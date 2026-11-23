@@ -82948,6 +82948,82 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
+-- ---- o negócio sai do follow-up e entra na anonimização (migration 9451) ----
+-- Espelho de supabase/migrations/20261122010336_9451_saida_do_followup_e_lgpd_do_nao_comercial.sql.
+-- #4195, itens 2 e 3 do que o mantenedor cobrou na #4191. Mora AQUI — antes do
+-- rótulo da cascata 9243 e do bloco da VARREDURA anon — por duas razões que o
+-- próprio arquivo cobra: cria FUNÇÃO (a VARREDURA anon proíbe `create function`
+-- depois dela) e o invariante `lgpd-alcanca-fichas-fundidas` compara, por
+-- IGUALDADE, o trecho do baseline que vai do primeiro comentário da 9243 até a
+-- VARREDURA — bloco novo nesse intervalo reprovaria aquele teste.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`, função `create or replace` e gatilho `drop`/`create`.
+
+alter table public.followup_enrollments
+  add column if not exists lead_id uuid;
+
+-- Troca da FK num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em
+-- autocommit, e um `add` que falhasse depois do `drop` solto deixaria a coluna
+-- sem a FK.
+do $x$ begin
+  alter table public.followup_enrollments
+    drop constraint if exists followup_enrollments_lead_id_fkey;
+  alter table public.followup_enrollments
+    add constraint followup_enrollments_lead_id_fkey
+    foreign key (lead_id) references public.crm_leads(id) on delete set null;
+end $x$;
+
+create index if not exists idx_followup_enrollments_lead
+  on public.followup_enrollments (organization_id, lead_id)
+  where lead_id is not null;
+
+comment on column public.followup_enrollments.lead_id is
+  'O NEGÓCIO dono desta inscrição (#4195, migration 9451). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
+
+update public.followup_enrollments e
+   set lead_id = d.lead_id
+  from public.demandas d
+ where e.lead_id is null
+   and e.service_boundary->>'demanda_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   and d.id = (e.service_boundary->>'demanda_id')::uuid
+   and d.organization_id = e.organization_id
+   and d.contact_id = e.contact_id
+   and d.lead_id is not null;
+
+create or replace function public.fn_lgpd_redigir_classificacao_comercial()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.crm_leads l
+     set nao_comercial_motivo = 'anonimizado',
+         nao_comercial_por = null
+   where l.contact_id = new.id
+     and l.organization_id = new.organization_id
+     and l.nao_comercial_em is not null
+     and (l.nao_comercial_motivo is distinct from 'anonimizado'
+          or l.nao_comercial_por is not null);
+  return null;
+end;
+$$;
+
+comment on function public.fn_lgpd_redigir_classificacao_comercial() is
+  'Redige motivo e autoria da classificação não comercial quando o contato é anonimizado (#4195). Mantém nao_comercial_em: a decisão é elegibilidade, não conteúdo.';
+
+revoke all on function public.fn_lgpd_redigir_classificacao_comercial() from public, anon, authenticated;
+
+drop trigger if exists trg_lgpd_redigir_classificacao_comercial on public.contacts;
+create trigger trg_lgpd_redigir_classificacao_comercial
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_lgpd_redigir_classificacao_comercial();
+
+notify pgrst, 'reload schema';
+
 -- ---- resumo das 7h só quando houver agendamento (migration 9434, #4988) ----
 -- Espelho idempotente da 9434 (ver o cabeçalho dela).
 -- 1. A ESCOLHA DO DONO. Nasce desligada: quem já recebe o resumo todo dia não
@@ -83303,6 +83379,25 @@ update public.crm_leads l
   ) s
  where l.id = s.lead_id
    and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
+
+-- ---- atualização agendada pela janela de manutenção (migration 9457) ----
+alter table public.system_update_runs
+  add column if not exists scheduled_for timestamptz;
+
+comment on column public.system_update_runs.scheduled_for is
+  'Quando o agent.sh vai executar este pedido, se ele espera a janela de manutenção (SYSTEM_UPDATE_WINDOW, #4334). Gravada pelo agente (run_scheduled) a cada ciclo de espera; nula = sem janela. A cerca das extensões e o "desfecho desconhecido" da tela contam os 15 min a partir do mais tarde entre dispatched_at e esta coluna.';
+
+-- `greatest` ignora o nulo: sem agendamento, é a régua de sempre (dispatched_at).
+create or replace function public.fn_extensions_core_update_in_progress()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from public.system_update_runs
+    where status='dispatched'
+      and greatest(dispatched_at, scheduled_for) > now() - interval '15 minutes');
+$$;
+
+revoke execute on function public.fn_extensions_core_update_in_progress() from public, anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
@@ -88736,6 +88831,26 @@ comment on column public.channel_sessions.zernio_webhook_id is
 comment on column public.channel_sessions.zernio_credencial_da_instalacao is
   'true = a sessão fala com o provedor pela chave da INSTALAÇÃO (platform_config), resolvida na hora; zernio_token_encrypted fica nulo. false = chave própria da organização, cifrada em zernio_token_encrypted. Migration 9093.';
 
+-- ---- a CONEXÃO decide se a conversa nova cria negócio (migration 9459) ----
+-- Espelho da 9459 (issue #4670); o porquê inteiro está no cabeçalho da migration.
+-- Coluna, e não `metadata`: a leitura acontece uma vez por card que nasce, no
+-- caminho quente da ingestão, e a ausência de chave em jsonb teria de significar
+-- LIGADO — o oposto da chave vizinha (`guardar_historico`, #999), que é a razão
+-- de a regra não poder morar num leitor que adivinha.
+--
+-- ⚠️ `default true` é o que torna a atualização invisível: toda instalação de
+-- hoje continua criando card em todo número. No Postgres 11+ um default
+-- não-volátil não reescreve a tabela, então a coluna entra sem varredura.
+--
+-- Não cria função e não concede nada a `anon`: pode ficar depois da VARREDURA
+-- anon. Reaplicável por `add column if not exists` — o `update.sh` roda o
+-- apêndice inteiro a cada atualização (`tests/unit/baseline-reaplicavel.test.ts`).
+alter table public.channel_sessions
+  add column if not exists conversa_nova_cria_negocio boolean not null default true;
+
+comment on column public.channel_sessions.conversa_nova_cria_negocio is
+  'Issue #4670: a conversa nova que chega por esta conexão abre negócio no funil padrão? true (DEFAULT, e o estado de toda instalação de antes) = sim, como sempre foi. false = a conversa e o contato nascem, o Inbox e a IA seguem, e só o card não nasce; criar à mão (crm_create_lead, painel da conversa, ficha do contato) continua igual.';
+
 -- ---- llm_calls: passos e composição da chamada (migration 9105) ----
 alter table public.llm_calls add column if not exists passos smallint;
 alter table public.llm_calls add column if not exists entrada_do_primeiro_passo integer;
@@ -88850,6 +88965,39 @@ alter table public.followup_flow_pointers
 
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
+
+-- ---- negócio não comercial (migration 9414) ----
+-- #4191: o negócio pode ser classificado como NÃO comercial sem desfecho — não
+-- vira perda, não é apagado, e sai do Radar comercial. Mesmo texto da migration
+-- 9414; fica no apêndice porque o `create table` do bloco 0019 é pulado em toda
+-- instalação que já tem a tabela.
+alter table public.crm_leads
+  add column if not exists nao_comercial_em timestamptz,
+  add column if not exists nao_comercial_motivo text,
+  add column if not exists nao_comercial_por uuid;
+
+-- Troca do CHECK num bloco só, pelo mesmo motivo da FK da 9451: sem ele, um
+-- `add` que falhasse no update.sh deixaria a tabela sem a regra.
+do $x$ begin
+  alter table public.crm_leads
+    drop constraint if exists crm_leads_nao_comercial_coerente;
+  alter table public.crm_leads
+    add constraint crm_leads_nao_comercial_coerente check (
+      nao_comercial_em is null
+      or (nao_comercial_motivo is not null and length(btrim(nao_comercial_motivo)) > 0)
+    );
+end $x$;
+
+comment on column public.crm_leads.nao_comercial_em is
+  'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9414). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
+comment on column public.crm_leads.nao_comercial_motivo is
+  'Por que o negócio foi classificado como não comercial (issue #4191). Texto declarado pela equipe (golpe, spam, contato sem finalidade comercial…), sem vocabulário fechado no banco: a lista está em discussão na issue e um CHECK travaria a correção de um caso novo.';
+comment on column public.crm_leads.nao_comercial_por is
+  'Quem classificou o negócio como não comercial (issue #4191). Sem FK, como created_by_user_id: apagar a pessoa não pode apagar a decisão.';
+
+create index if not exists crm_leads_nao_comerciais_idx
+  on public.crm_leads (organization_id, nao_comercial_em desc)
+  where nao_comercial_em is not null;
 
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
@@ -89550,6 +89698,20 @@ create index if not exists idx_conversations_fila_espera
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
+-- ---- 9454 — a campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1) ----
+-- Espelho de supabase/migrations/20261122023040_9454_janela_da_campanha_de_prospeccao.sql.
+-- A janela mora em `config.janela` (jsonb, validada pelo schema estrito); a
+-- coluna abaixo é só o "quem pausou", que é estado do motor e não configuração.
+alter table public.prospecting_campaigns
+  add column if not exists pausada_pela_janela boolean not null default false;
+
+comment on column public.prospecting_campaigns.pausada_pela_janela is
+  'A campanha foi pausada pela JANELA dela (#4830)? true = o tick a retoma sozinho na próxima abertura; false = pausa de quem opera (ou início/retomada/arquivamento) e ninguém a retoma sem clique.';
+
+create index if not exists prospecting_janela_pausada
+  on public.prospecting_campaigns(organization_id)
+  where status = 'paused' and pausada_pela_janela;
+
 notify pgrst, 'reload schema';
 
 -- ---- funil de entrada por número (migration 9430) ----
@@ -89675,4 +89837,45 @@ comment on column public.crm_metas.alvo is
 comment on table public.crm_metas is
   'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
-notify pgrst, 'reload schema';
+-- ---- teto do dia só na abordagem (migration 9455, #3851) ----
+-- Opção POR CANAL (#3851): ligada, o teto diário conta e barra só a 1ª mensagem
+-- a pessoa nova; o follow-up de quem já foi abordado não gasta nem espera o
+-- teto. O porquê inteiro está no cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists teto_so_abordagem boolean;
+comment on column public.channel_knobs.teto_so_abordagem is
+  'true = o teto diário (warm-up e daily_message_limit) conta só a 1ª mensagem a pessoa nova; follow-up de quem já foi abordado não gasta nem espera o teto. NULL/false = régua de sempre (conta todo disparo). Resposta nunca passa pelo teto (9061). Opção POR CANAL (#3851).';
+
+alter table public.pacing_ledger
+  add column if not exists abordagem boolean not null default true;
+comment on column public.pacing_ledger.abordagem is
+  'true = 1ª mensagem a pessoa nova (abordagem). false = follow-up de quem já foi abordado. Só a coluna `teto_so_abordagem` do canal faz o teto do dia ler isto; resposta é marcada por `resposta` e nunca conta (#3851).';
+
+-- ---- teto próprio do follow-up (migration 9456, #4063) ----
+-- A opção `teto_so_abordagem` tira o teto de ABORDAGEM do follow-up — era o
+-- pedido — e com isso o follow-up ficava sem teto nenhum: 200, 300, 400 no mesmo
+-- dia saíam todos. `followup_daily_cap` é o teto de SEGURANÇA desse volume,
+-- separado do de abordagem, lido pelo mesmo `loadChannelKnobs` e só armado com a
+-- opção ligada. NULL = default do motor (200/dia). O porquê inteiro está no
+-- cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists followup_daily_cap integer;
+
+comment on column public.channel_knobs.followup_daily_cap is
+  'Teto diário PRÓPRIO do follow-up (disparo que não é abordagem nem resposta), separado do teto de abordagem. Só arma com teto_so_abordagem ligado; desligado, o follow-up conta no teto de sempre. NULL = default do motor (200/dia). Inteiro > 0; valor inválido cai no default com warn (#4063, refs #3851).';
+
+do $followup_daily_cap$ begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_knobs_followup_daily_cap_check'
+       and conrelid = 'public.channel_knobs'::regclass
+  ) then
+    alter table public.channel_knobs
+      add constraint channel_knobs_followup_daily_cap_check
+      check (followup_daily_cap is null or followup_daily_cap > 0);
+  end if;
+end $followup_daily_cap$;

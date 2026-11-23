@@ -145,6 +145,14 @@ export interface LeadRow {
   recurring_value_cents?: number | null;
   recurring_period?: string | null;
   tags?: string[];
+  /**
+   * #4191 — a classificação comercial, que o contrato do quadro passou a
+   * entregar para a ficha desenhar o bloco sem uma segunda consulta. Opcionais:
+   * a maioria dos casos do quadro não fala de negócio classificado.
+   */
+  nao_comercial_em?: string | null;
+  nao_comercial_motivo?: string | null;
+  nao_comercial_por?: string | null;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -226,6 +234,15 @@ export interface DbOpts {
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
   readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
+  /**
+   * Resposta de uma RPC por nome — o que o PostgREST devolveria de `data`/`error`.
+   *
+   * Sem entrada, a RPC responde `{data: null, error: null}`, que é o caso de uma
+   * função que não devolve linha. Quem precisa do RETORNO de uma RPC (o
+   * `fn_conversation_assign` do menu de atendimento devolve a conversa atribuída,
+   * #4594) declara aqui em vez de injetar um segundo dublê de banco.
+   */
+  rpcResult?: (nome: string, args: unknown) => { data: unknown; error: { message: string } | null } | null;
   /**
    * Fluxos de follow-up da org (issue #3603) — é deles que sai a lista read-only
    * de «quais fluxos disparam ao entrar nesta etapa». O `trigger_config` vai
@@ -720,7 +737,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
   // comportamento ("o arquivamento não é desfeito por causa do rastro").
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
-    return { data: null, error: null };
+    const declarada = opts.rpcResult?.(nome, args);
+    return declarada ?? { data: null, error: null };
   };
 
   // A sessão do cookie (#2995): `getUser()` é a primeira coisa que a rota do
