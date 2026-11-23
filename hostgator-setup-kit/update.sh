@@ -334,6 +334,22 @@ else
   c_ylw "Vou atualizar para a versão $TARGET_TAG com segurança."
 fi
 
+# ── 1.4 Espaço em disco: a atualização cabe? (#4837) ────────────────────────
+# Antes do preflight porque é local e instantâneo, e antes de QUALQUER escrita
+# porque é o último ponto em que recusar ainda é barato. No incidente que
+# originou esta guarda, o pull morreu no meio com o disco cheio: o app ficou em
+# `Created` e a volta automática falhou seis vezes seguidas — e cada tentativa
+# gravava mais um backup de 1,6 GB, apertando ainda mais o mesmo disco.
+#
+# A conta é conservadora de propósito (imagens em uso + último backup + 20%):
+# quem tem espaço de sobra nem percebe; quem está no limite recebe o número, o
+# motivo e o que fazer, em vez de um `no space left on device` no meio do pull.
+step "Conferindo o espaço em disco"
+if ! checar_espaco_para_atualizacao; then
+  refuse "$(mensagem_de_espaco_curto)"
+fi
+c_grn "✓ espaço em disco: $(kb_em_gb "$ESPACO_LIVRE_KB") livres; esta atualização pede $(kb_em_gb "$ESPACO_NECESSARIO_KB")"
+
 # ── 1.5 Preflight: dá para atualizar sem derrubar o que está no ar? (#1955) ──
 # MEDIDO numa instalação real, reproduzido 2x: sem esta pergunta o update parava
 # os serviços e só descobria a hora que o registro não respondia — aí o fallback
@@ -1072,6 +1088,15 @@ fi
 step "Conferindo as automações"
 ensure_encryption_key .env
 setup_event_log_drain_cron
+
+# ── 8. Devolver o espaço das imagens antigas (#4837) ────────────────────────
+# Só chega aqui quem PROVOU que a versão nova está de pé: o caminho de volta sai
+# antes, com `exit 1` no passo 6, e a imagem da versão anterior é justamente
+# para onde ele vai. Podar antes da prova trocaria "atualização falhou" por
+# "atualização falhou e não há como voltar". Falha da poda é aviso, nunca
+# aborto: a atualização já está concluída, e espaço é o que menos importa agora.
+step "Liberando espaço das imagens antigas"
+podar_imagens_nao_usadas || true
 
 # ── Fim: o banco que não terminou limpo é a ÚLTIMA coisa na tela ─────────────
 # Na v1.27.3 de uma VPS real o aviso do passo 4 ficou soterrado por centenas de
