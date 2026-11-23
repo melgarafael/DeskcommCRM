@@ -211,3 +211,15 @@ Peça: a janela do chat e a aba de administração. Cada resposta nomeia o artef
 Horário de atendimento (janela por dia, feriados, mensagem fora do expediente e captura offline: F3 da issue), agente, passagem para humano e teto do visitante anônimo (F4), origem do negócio e relatório (F5). Também não cobre o corte dos tokens já emitidos ao girar a chave, que a F1 deixou declarado como pendência.
 
 **Origem do site:** a lista de domínios só vale dentro da janela (`frame-ancestors`). Quem chama as rotas públicas direto, sem navegador, não é barrado por ela; o que protege essas rotas são o token, o limite por IP e o teto de corpo da F1. A issue pedia validar a origem na entrada, e isso fica registrado aqui como diferença aberta para o Rafael decidir.
+
+## Plano de sabotagem (não rodar — veredito pelo CI)
+
+Sobre o commit verde da Tarefa 8, sabotar de propósito e confirmar que os testes ficam vermelhos:
+
+1. **Tirar a exclusão do `DENY` em `/chat/` em `next.config.ts`** → o teste da Tarefa 3 (frame-ancestors / CSP) e o e2e C6 (site fora da lista) devem ficar vermelhos: o iframe passa a ser bloqueado globalmente pelo `X-Frame-Options: DENY`.
+2. **Montar o `frame-ancestors` com `*` (ou remover a lista de domínios)** → o teste da Tarefa 3 e o e2e C6 devem ficar vermelhos: qualquer domínio consegue embutir a janela.
+3. **Tirar o `if (config.pausado === true) return null;` de `conexaoPelaChave`/`conexaoPeloId`** → o e2e C8 (chat pausado → rotas públicas dão 404) deve ficar vermelho: as rotas continuam entregando a conexão mesmo pausada.
+4. **Esquecer o `moduloLigado` numa rota pública** → o e2e C1 (módulo desligado → 404) deve ficar vermelho: as rotas respondem mesmo com o módulo desligado.
+
+Controle verde: restaurar cada sabotagem e confirmar que os testes voltam ao verde. Cada sabotagem tem seu próprio commit de controle (verde) antes da próxima.
+
