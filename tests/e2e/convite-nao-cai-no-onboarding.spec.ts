@@ -11,7 +11,8 @@
  * ─── O que esta spec mede ───────────────────────────────────────────────────
  *
  * A jornada que o issue pede: dono sem onboarding concluído → convite → aceite →
- * a URL final NÃO é `/onboarding/*`. O dono é semeado aqui (org sem
+ * a casca do CRM aparece e a URL final NÃO é `/onboarding/*`; o dono semeado
+ * segue indo ao `/onboarding`. O dono é semeado aqui (org sem
  * `onboarded_at`, vínculo de admin sem `invited_by`), o convite sai pela rota
  * real (`POST /api/v1/team/invite`) e o aceite é o botão real da tela.
  *
@@ -86,8 +87,15 @@ test("quem aceita convite de uma empresa ainda em configuração cai no CRM, nã
       accepted_at: new Date().toISOString(),
     });
 
-    // O dono convida pela rota real e recebe o link do convite.
+    // O dono convida pela rota real e recebe o link do convite. Antes, a
+    // guarda do outro lado: o dono semeado (sem `invited_by`) continua indo ao
+    // assistente — a regra nova não tirou o wizard de quem vai terminá-lo.
     await entrar(page, donoEmail);
+    await page.goto("/app");
+    await expect(page, "o dono da empresa em configuração deixou de ir ao onboarding").toHaveURL(
+      /\/onboarding(\/|$)/,
+      { timeout: 60_000 },
+    );
     const resposta = await page.request.post("/api/v1/team/invite", {
       data: { invitations: [{ email: convidadoEmail, role: "agent" }] },
     });
@@ -108,10 +116,12 @@ test("quem aceita convite de uma empresa ainda em configuração cai no CRM, nã
     await convidado.getByRole("button", { name: "Aceitar convite", exact: true }).click();
 
     // ── o que o issue pede: o destino final não é o onboarding ────────────
-    await convidado.waitForURL(
-      (url) => !url.pathname.startsWith("/team/accept-invite/"),
-      { timeout: 60_000 },
-    );
+    // Espera a casca do CRM aparecer antes de olhar o caminho: só sair da tela
+    // de aceite pegava o `/app` de passagem, antes do layout mandar ao wizard.
+    await expect(
+      convidado.locator('[data-casca="raiz"]'),
+      "o convidado não chegou à casca do CRM",
+    ).toBeVisible({ timeout: 60_000 });
     expect(
       new URL(convidado.url()).pathname,
       "o convidado foi mandado para o onboarding da empresa que não é dele",
