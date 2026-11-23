@@ -554,6 +554,14 @@ export const listConversationsQuerySchema = z.object({
    */
   pessoais: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
   /**
+   * A ORDEM DA FILA. `espera` (padrão do schema) = quem espera há mais tempo
+   * primeiro, a fila de banco. `recentes` = a conversa que acabou de chegar em
+   * cima — sem isso, numa Fila com dezenas de esperas antigas o contato novo
+   * caía depois da primeira página (50) e ninguém o via. Só vale na Fila; nas
+   * outras visões a ordem é sempre a da última mensagem.
+   */
+  ordem_fila: z.enum(["espera", "recentes"]).optional(),
+  /**
    * Só as que têm mensagem não lida para o dono.
    *
    * NASCEU FORA DO CONTRATO E POR ISSO FORA DE TODO MECANISMO. Era `onlyUnread`,

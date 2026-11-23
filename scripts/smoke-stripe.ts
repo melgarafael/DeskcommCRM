@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     });
     assinatura = String(criada.id);
 
-    const s = await adaptador.lerSituacao({ clienteRef: cliente });
+    const s = await adaptador.lerSituacao({ clienteRef: cliente, organizacao: orgId });
     const dias = s.proximoVencimento ? (s.proximoVencimento.getTime() - Date.now()) / 86_400_000 : -1;
     if (!s.existe || s.emAtraso || !s.jaPagou || s.assinaturasVivas !== 1) falha(`lerSituacao: ${s.statusBruto}`);
     if (dias < 27 || dias > 32) falha(`current_period_end do item não é o fim do mês pago (dias=${dias.toFixed(1)})`);
@@ -100,11 +100,11 @@ async function main(): Promise<void> {
     ok("trocarPlano: preço novo no item, nenhuma fatura de proração");
 
     await adaptador.cancelarNoFim(assinatura);
-    const c = await adaptador.lerSituacao({ clienteRef: cliente });
+    const c = await adaptador.lerSituacao({ clienteRef: cliente, organizacao: orgId });
     if (!c.cancelaNoFim || !c.existe) falha("cancelarNoFim não aparece na leitura");
     ok("cancelarNoFim: segue ativa até o fim do período");
 
-    const portal = await adaptador.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: "https://example.com/app" });
+    const portal = await adaptador.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: "https://example.com/app", organizacao: orgId });
     if (!portal?.startsWith("https://billing.stripe.com/")) falha("portal sem URL da Stripe");
     ok("portal do cliente aberto com a configuração da instalação");
 

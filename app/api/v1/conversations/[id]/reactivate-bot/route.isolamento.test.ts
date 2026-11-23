@@ -121,7 +121,15 @@ function clienteFalso(estado: Estado) {
         }
         // Respostas são snapshots independentes, como no HTTP do PostgREST.
         const data = aplica()[0] ?? null;
-        if (tabela === "conversations" && colunas === "assigned_to_user_id") {
+        // A instrumentação pegava a consulta de UMA coluna que a rota fazia
+        // (`select("assigned_to_user_id")`) para decidir o dono. O handler
+        // extraído (#4517) já lê a conversa inteira em `lerConversa`, e essa
+        // leitura traz o dono junto: o gancho passou a valer para QUALQUER
+        // leitura de conversa que traga `assigned_to_user_id`, senão ele fica
+        // cego e os dois casos abaixo devolvem 200 sem medir nada. O que os
+        // casos provam continua o mesmo — erro na leitura não vira conversa
+        // vaga, e troca de dono entre leitura e releitura não é atropelada.
+        if (tabela === "conversations" && colunas.includes("assigned_to_user_id")) {
           if (estado.erroNaLeituraDoDono) return { data: null, error: { message: "indisponível" } };
           estado.aposLeituraDoDono?.();
         }
