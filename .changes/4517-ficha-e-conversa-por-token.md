@@ -11,10 +11,12 @@ conversa, o único caminho era transferir — e transferir troca o responsável 
 conversa e o do negócio, transformando pausa em tomada de carteira.
 
 Agora existem as duas portas, com escopo próprio, concedido por quem emite o
-token na tela de Tokens de API. Na ficha, `contacts:write` grava na hora, com a
-mesma régua da tela (documento do país, consentimento, trava de anonimização e
-auditoria); sem esse escopo, a edição continua virando proposta, e a resposta
-diz isso com o nome do campo que precisa de permissão. No atendimento,
+token na tela de Tokens de API. Na ficha, pela ferramenta do agente e do MCP
+(`crm_update_contact`), `contacts:write` grava na hora, com a mesma régua da
+tela (documento do país, consentimento, trava de anonimização e auditoria); sem
+esse escopo, a edição continua virando proposta, e a resposta diz isso com o
+nome do campo que precisa de permissão. A rota REST da ficha
+(`PATCH /api/v1/contacts/{id}`) não muda: segue pedindo `mcp:write`. No atendimento,
 `conversations:write` pausa e retoma a IA e encerra e reabre a conversa: pausar
 não assume a conversa sem dono, nem muda o dono do negócio, e retomar não solta
 o responsável humano — quando ele existe, a resposta avisa que o automático

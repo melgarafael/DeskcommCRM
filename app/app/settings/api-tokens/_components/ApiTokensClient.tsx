@@ -78,7 +78,7 @@ const SCOPES: { id: string; label: string }[] = [
   // `contacts:write` de propósito: desligar o atendimento automático muda QUEM
   // responde o cliente, não o cadastro. Sem esta linha, a permissão não existe
   // para ser marcada e as quatro rotas nascem inalcançáveis em produção.
-  { id: "conversations:write", label: "Pausar e retomar o atendimento automático" },
+  { id: "conversations:write", label: "Pausar e retomar a IA, encerrar e reabrir conversas" },
   { id: "leads:read", label: "Ler leads" },
   { id: "leads:write", label: "Criar e editar leads" },
   { id: "messages:read", label: "Ler mensagens" },
