@@ -133,7 +133,7 @@ describe("a credencial do Efi", () => {
 describe("o transporte do Efi", () => {
   it("⭐ a credencial vai só no Basic do /authorize e o token só no Bearer — nunca na URL", async () => {
     const { adaptador, chamadas } = montar({ "GET /v1/subscription/8021": assinaturaLida() });
-    await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     const [autorizacao, leitura] = chamadas;
     expect(autorizacao?.rota).toBe("POST /v1/authorize");
     expect(autorizacao?.headers.get("authorization")).toBe(`Basic ${Buffer.from(`${CLIENTE_ID}:${SEGREDO_DO_CLIENTE}`).toString("base64")}`);
@@ -148,8 +148,8 @@ describe("o transporte do Efi", () => {
 
   it("o token é reaproveitado entre chamadas (uma autorização por processo)", async () => {
     const { adaptador, chamadas } = montar({ "GET /v1/subscription/8021": assinaturaLida() });
-    await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
-    await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
+    await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     expect(chamadas.filter((c) => c.rota === "POST /v1/authorize")).toHaveLength(1);
   });
 
@@ -160,7 +160,7 @@ describe("o transporte do Efi", () => {
       "POST /v1/plan": { status: 502, corpo: {} },
       [ROTA_DAS_COBRANCAS]: { corpo: { code: 200, data: [] } },
     });
-    await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     expect(chamadas.filter((c) => c.rota === "GET /v1/subscription/8021")).toHaveLength(2);
     expect(esperas).toHaveLength(1);
 
@@ -432,7 +432,7 @@ describe("o ajuste proporcional", () => {
 describe("a leitura do estado", () => {
   it("⭐ pela assinatura: paga, ativa, com o preço do provedor em centavos", async () => {
     const { adaptador, chamadas } = montar({ "GET /v1/subscription/8021": assinaturaLida() });
-    const s = await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    const s = await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     expect(s).toMatchObject({
       assinaturaRef: "8021",
       existe: true,
@@ -450,13 +450,13 @@ describe("a leitura do estado", () => {
 
   it("`new` sem pagamento não é cobrança viva: é o link emitido", async () => {
     const { adaptador } = montar({ "GET /v1/subscription/8021": assinaturaLida({ status: "new", history: [{ charge_id: 1, status: "new" }] }) });
-    const s = await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    const s = await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     expect(s).toMatchObject({ existe: false, assinaturasVivas: 1, jaPagou: false });
   });
 
   it("assinatura cancelada é terminal", async () => {
     const { adaptador } = montar({ "GET /v1/subscription/8021": assinaturaLida({ status: "canceled" }) });
-    const s = await adaptador.lerSituacao({ clienteRef: REF, assinaturaRef: "8021" });
+    const s = await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG, assinaturaRef: "8021" });
     expect(s).toMatchObject({ cancelada: true, assinaturasVivas: 0 });
   });
 
@@ -484,7 +484,7 @@ describe("a leitura do estado", () => {
         },
       },
     });
-    const s = await adaptador.lerSituacao({ clienteRef: REF });
+    const s = await adaptador.lerSituacao({ clienteRef: REF, organizacao: ORG });
     expect(s).toMatchObject({ assinaturaRef: null, existe: true, emAtraso: true, jaPagou: true, linkDePagamento: "https://x/2", assinaturasVivas: 1 });
     // Só a empresa desta linha é consultada.
     expect(chamadas.find((c) => c.rota === ROTA_DAS_COBRANCAS)?.url.searchParams.get("custom_id")).toBe(ORG);
@@ -500,7 +500,7 @@ describe("a leitura do estado", () => {
 
   it("⭐ outra empresa não é tocada: a leitura de uma só pergunta pela dela", async () => {
     const { adaptador, chamadas } = montar({ [ROTA_DAS_COBRANCAS]: { corpo: { code: 200, data: [] } } });
-    await adaptador.lerSituacao({ clienteRef: `org:${OUTRA_ORG}` });
+    await adaptador.lerSituacao({ clienteRef: `org:${OUTRA_ORG}`, organizacao: OUTRA_ORG });
     const consulta = chamadas.find((c) => c.rota === ROTA_DAS_COBRANCAS)?.url.searchParams.get("custom_id");
     expect(consulta).toBe(OUTRA_ORG);
     expect(consulta).not.toBe(ORG);
@@ -544,7 +544,7 @@ describe("as ações que o Efi aceita", () => {
         },
       },
     });
-    expect(await adaptador.urlDeGerenciar({ clienteRef: REF, urlDeVolta: "https://x" })).toBe("https://x/1");
+    expect(await adaptador.urlDeGerenciar({ clienteRef: REF, urlDeVolta: "https://x", organizacao: ORG })).toBe("https://x/1");
   });
 });
 
