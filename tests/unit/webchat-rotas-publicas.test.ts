@@ -458,7 +458,7 @@ describe("POST /api/v1/webchat/mensagens", () => {
     });
   });
 
-  it.each([{ nome: "x".repeat(121) }, { nome: "Ana202Egpj.exe" }, { nome: "Ana\u0000" }])(
+  it.each([{ nome: "x".repeat(121) }, { nome: "Ana\u202Egpj.exe" }, { nome: "Ana\u0000" }])(
     "contato inválido (%j) dá 422 e nada é ingerido",
     async (contato) => {
       const r = await resposta(
