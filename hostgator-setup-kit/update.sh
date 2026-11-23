@@ -41,13 +41,12 @@ enter_project
 # da descrição de arquivo aberta, e o pai é o dono) — o update nunca rodaria.
 # Por isso a trava HERDADA é detectada e reaproveitada: o filho não re-toma nem
 # sai. Só o caminho do terminal toma um cadeado próprio.
+#
+# O cadeado NÃO é solto em gatilho nenhum: quem o solta é o kernel, quando o
+# processo termina. Soltá-lo no `trap ... INT TERM HUP` seria pior que inútil —
+# o `restaurar_servicos` não chama `exit`, então depois de um Ctrl-C o script
+# SEGUE rodando, já sem o cadeado.
 TRAVA_PROPRIA=""
-soltar_trava_de_atualizacao() {  # chamada pelos gatilhos de saída; idempotente
-  [ -n "$TRAVA_PROPRIA" ] || return 0
-  TRAVA_PROPRIA=""
-  exec 9>&- 2>/dev/null || true
-  return 0
-}
 # O descritor já aberto aponta para o NOSSO `.update.lock`? `exec 8>&N` falha
 # quando o fd está fechado, e é assim que "herdado" se distingue de "não
 # existe". O `readlink` cobre o caso de quem chama o update.sh de dentro de um
@@ -121,9 +120,7 @@ aviso_rede_do_supabase
 DIAGNOSTICO_ARQUIVO="$PROJECT_DIR/.deskcomm-update-diagnostico.log"
 UPDATE_STATUS="em andamento"
 UPDATE_ETAPA="início, antes de decidir a versão"
-# O cadeado sai DEPOIS do diagnóstico: as duas funções leem `$?` na entrada, e
-# soltar primeiro entregaria a elas o 0 do `exec 9>&-` no lugar do desfecho real.
-trap 'diagnostico_de_atualizacao; soltar_trava_de_atualizacao' EXIT
+trap diagnostico_de_atualizacao EXIT
 
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
 while [ $# -gt 0 ]; do
@@ -497,11 +494,7 @@ fi
 # EXIT nao basta: interrupcao (Ctrl+C, cron matando a rodada, reinicio da
 # maquina) nao passa por ele em todos os casos — e o desfecho seria a
 # instalacao com as pecas do banco paradas, que foi o que se mediu.
-#
-# O cadeado (#5052) é devolvido no mesmo gatilho, DEPOIS do `restaurar_servicos`:
-# ele lê `$?` na entrada, e liberar primeiro trocaria o desfecho real pelo 0 do
-# `exec`.
-trap 'restaurar_servicos; soltar_trava_de_atualizacao' EXIT INT TERM HUP
+trap restaurar_servicos EXIT INT TERM HUP
 
 step "Atualizando o banco de dados"
 # O que sobrou de errado no banco, para ser repetido no FIM da execução.
