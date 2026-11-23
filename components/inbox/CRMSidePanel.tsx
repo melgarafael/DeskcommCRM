@@ -63,6 +63,10 @@ import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import { AnotacoesDoCliente } from "@/components/inbox/AnotacoesDoCliente";
+import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
+import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
+import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -620,9 +624,25 @@ function ValorDoNegocio({
 }) {
   const t = useT();
   const edit = useEditLead(lead.pipeline_id);
-  const [texto, setTexto] = useState(() =>
-    lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda),
+  // Com venda registrada, o valor é a SOMA das vendas (o banco grava em
+  // `value_cents`, migration 9450): o campo vira leitura e o "+" registra mais.
+  const { data: vendas } = useVendasDoNegocio(lead.id);
+  const vendasDoNegocio = Array.isArray(vendas) ? vendas : [];
+  const valorPelasVendas = vendasDoNegocio.length > 0;
+  const somaDasVendas = vendasDoNegocio.reduce(
+    (soma, v) => soma + (v.currency.toUpperCase() === moeda.toUpperCase() ? v.valor_cents : 0),
+    0,
   );
+  const textoDoBanco = lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda);
+  const [texto, setTexto] = useState(textoDoBanco);
+  // O valor relido entra no campo quando a pessoa não o mexeu: apagar a última
+  // venda devolve o valor digitado (decisão 2B do doc 396), e o campo volta com
+  // ELE, não com a soma que estava em memória.
+  const [textoCarregado, setTextoCarregado] = useState(textoDoBanco);
+  if (textoCarregado !== textoDoBanco) {
+    setTextoCarregado(textoDoBanco);
+    if (texto === textoCarregado) setTexto(textoDoBanco);
+  }
   const [erro, setErro] = useState<string | null>(null);
   // O eco do quadro: dinheiro nunca é interpretado em silêncio.
   const entendido = texto.trim() === "" ? null : lerCampoDeMoeda(texto, moeda);
@@ -655,6 +675,39 @@ function ValorDoNegocio({
         <span className="block text-xs font-medium text-text">{t("Valor do negócio")}</span>
         <p className="text-xs text-muted-foreground" data-testid="inbox-valor-somente-leitura">
           {formatMoney(lead.value_cents, lead.currency)}
+        </p>
+      </div>
+    );
+  }
+
+  const maisVenda = (
+    <BotaoRegistrarVenda
+      leadId={lead.id}
+      titulo={lead.title}
+      moeda={moeda.toUpperCase()}
+      className="size-8 border border-border"
+      testId="inbox-valor-registrar-venda"
+      aoRegistrar={onSalvo}
+    />
+  );
+
+  if (valorPelasVendas) {
+    return (
+      <div className="space-y-1" data-testid="inbox-valor-do-negocio">
+        <span className="block text-xs font-medium text-text">
+          {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
+        </span>
+        <div className="flex items-center gap-1">
+          <p
+            className="flex h-8 flex-1 items-center rounded-md border border-border bg-surface-elevated px-3 text-xs"
+            data-testid="inbox-valor-pelas-vendas"
+          >
+            {formatValorDoNegocio(somaDasVendas, moeda)}
+          </p>
+          {maisVenda}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {t("Soma de")} {vendasDoNegocio.length} {t("venda(s) registrada(s)")}
         </p>
       </div>
     );
@@ -696,6 +749,7 @@ function ValorDoNegocio({
         >
           {t("Salvar")}
         </Button>
+        {maisVenda}
       </div>
       {entendido !== null && (
         <p className="text-[10px] text-muted-foreground">= {formatValorDoNegocio(entendido, moeda)}</p>
@@ -1352,6 +1406,20 @@ export function CRMSidePanel({
       editor continuam os mesmos (`ChipDeEtiqueta`, `ContactTagsEditor`), na
       mesma posição do fluxo: logo abaixo do contato.
     */
+    /* O bloco de notas da equipe sobre o cliente — o mesmo campo
+       "Observações da equipe" da aba Diagnóstico da ficha. */
+    anotacoes: contactId && !contact?.is_anonymized ? (
+      <>
+        <AnotacoesDoCliente
+          key={contactId}
+          contactId={contactId}
+          usuarioId={user.id}
+          podeEditar={podeEditarValor && !readonly}
+        />
+        <Separator />
+      </>
+    ) : null,
+
     "tags-do-contato": (
       <section data-testid="inbox-tags-do-contato" className="space-y-2">
         {tags.length > 0 && (
@@ -1562,6 +1630,7 @@ export function CRMSidePanel({
              do navegador) e repassaria a largura da faixa em nowrap da barra de
              etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
              rola é só a faixa (`BarraDeEtapas`). */
+          <>
           <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
@@ -1572,6 +1641,29 @@ export function CRMSidePanel({
             moedaDaOrg={activeOrg?.currency ?? MOEDA_PADRAO}
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
+          {/* As VENDAS do negócio ativo (Orken CRM): registrar a compra daqui,
+              sem sair da conversa. Mesma seção do negócio aberto no funil. */}
+          {negocioAtivoId && (
+            <div className="mt-3" data-testid="inbox-vendas">
+              <h4 className="mb-1 text-xs font-semibold text-text">{t("Vendas")}</h4>
+              <VendasDoNegocio
+                leadId={negocioAtivoId}
+                titulo={leads.find((l) => l.id === negocioAtivoId)?.title ?? null}
+                moeda={(
+                  leads.find((l) => l.id === negocioAtivoId)?.currency ??
+                  activeOrg?.currency ??
+                  MOEDA_PADRAO
+                ).toUpperCase()}
+                // Apagar venda é `agent`+, o mesmo piso do campo Valor ao lado
+                // (`podeEditarValor`): com `readonly` sozinho, o viewer via a lixeira
+                // e levava 403 ao clicar (prova pela tela do #5087).
+                somenteLeitura={readonly || !podeEditarValor}
+                semRegistrar
+                aoMudar={recarregar}
+              />
+            </div>
+          )}
+          </>
         ) : (
           <SemLista
             vazio={t("Sem negócios.")}

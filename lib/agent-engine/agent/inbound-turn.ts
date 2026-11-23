@@ -239,7 +239,7 @@ import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
-import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
+import { eTetoDoDia, janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
@@ -5791,7 +5791,7 @@ async function executarTurnoDoAgente(
             // `rescheduleJob` já usado pra janela horária), em vez de deixar o lead sem
             // resposta até a próxima mensagem dele chegar (ou nunca).
             if (
-              (chain.code === 'warmup_cap' || chain.code === 'daily_cap') &&
+              eTetoDoDia(chain.code) &&
               chain.nextAllowedAt !== undefined
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
@@ -7190,8 +7190,12 @@ async function executarTurnoDoAgente(
     // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
     // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
     // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
+    //
+    // A opção "não atender em feriado nacional" muda o texto (#5039): desligada,
+    // o bloco não proíbe compromisso e manda seguir os horários livres da Agenda.
     const feriadoBlock = blocoDoFeriado(
       await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+      { fechadoEmFeriado: agentConfig?.naoAtenderEmFeriadoNacional === true },
     );
     const openingSuffixes = [
       agoraBlock,

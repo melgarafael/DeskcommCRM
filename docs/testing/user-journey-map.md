@@ -395,6 +395,9 @@ Evidência: `.superpowers/evidence/ia-360-w3/`.
 | J8.11 | O aviso respeita o motivo | quem pediu para PARAR recebe confirmação da parada, não oferta de atendente | FAIL(BUG-06) → PASS |
 | J8.12 | O aviso respeita a equipe real | conta sem ninguém configurado não recebe promessa de contato | FAIL(BUG-06) → PASS |
 | J8.13 | A passagem por SENTIMENTO abre item na Central | `triggerHandoff` não abria nenhum — cliente sem resposta E time sem sinal | FAIL(BUG-07) → PASS |
+| J8.14 | A opção "Continuar a conversa assim que a equipe devolver ao automático" aparece no editor do agente, desligada, e sobrevive a salvar e recarregar | `trigger_config.resume_on_handback` lido de volta na tela | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
+| J8.15 | Com a opção ligada e a última fala da equipe, "Devolver ao automático" põe UM turno de retomada na fila do agente | `job_queue` `followup_turn` `mode='retomada'` com `source_event_id` = o `ai.handoff_resolved` da devolução | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
+| J8.16 | Com o cliente tendo escrito por último, a mesma devolução NÃO põe turno de retomada (o turno de resposta cuida) | nenhum `followup_turn` de retomada para a conversa | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
 
 Bugs desta jornada estão detalhados em `HANDOFF-ia-360.md` (BUG-01 a BUG-05) e em
 `HANDOFF-handoff-avisa-o-lead.md` (BUG-06, BUG-07).

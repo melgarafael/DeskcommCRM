@@ -800,3 +800,35 @@ describe("tela de atualização — release publicada que ainda não pode ser of
     expect(screen.getByText(/hostgator-setup-kit\/update\.sh/)).toBeInTheDocument();
   });
 });
+
+describe("pedido que espera a janela de manutenção (#4334)", () => {
+  const pedido = (scheduledFor: string | null) => ({
+    ...CHANGELOG_LONGO,
+    run: {
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "dispatched",
+      last_step: null,
+      from_version: "1.0.0",
+      to_version: "1.5.0",
+      log_tail: "",
+      dispatched_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      scheduled_for: scheduledFor,
+    },
+  });
+
+  it("⭐ diz a hora agendada e não oferece o botão de pedir de novo", () => {
+    const agendado = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    renderTela(pedido(agendado.toISOString()));
+    const hora = `${String(agendado.getHours()).padStart(2, "0")}h${String(agendado.getMinutes()).padStart(2, "0")}`;
+    expect(screen.getByText(`Atualização agendada para ${hora}`)).toBeInTheDocument();
+    expect(screen.getByTestId("atualizacao-agendada")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
+    expect(screen.queryByText("Pedido enviado — esperando o servidor pegar")).toBeNull();
+  });
+
+  it("CONTROLE — sem agendamento, a espera de sempre", () => {
+    renderTela(pedido(null));
+    expect(screen.getByText("Pedido enviado — esperando o servidor pegar")).toBeInTheDocument();
+    expect(screen.queryByTestId("atualizacao-agendada")).toBeNull();
+  });
+});

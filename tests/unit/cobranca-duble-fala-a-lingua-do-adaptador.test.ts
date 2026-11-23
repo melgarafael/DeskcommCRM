@@ -74,7 +74,7 @@ describe("dublê do e2e × adaptador Stripe", () => {
     expect(duble.clienteDaOrg(ORG)).toBe(cliente);
     expect(await s.clienteExiste(cliente)).toBe(true);
     expect(await s.clienteExiste("cus_de_outra_conta")).toBe(false);
-    expect(await s.lerSituacao({ clienteRef: cliente })).toMatchObject({ existe: false, assinaturasVivas: 0, jaPagou: false, cancelada: false, emAtraso: false });
+    expect(await s.lerSituacao({ clienteRef: cliente, organizacao: ORG })).toMatchObject({ existe: false, assinaturasVivas: 0, jaPagou: false, cancelada: false, emAtraso: false });
 
     const inicio = await s.iniciarAssinatura({ clienteRef: cliente, orgId: ORG, plano: ESSENCIAL, trialAte: null, urlDeVolta: VOLTA, chaveIdempotencia: "contrato-1" });
     expect(inicio.url.startsWith(`${duble.base}/checkout/`)).toBe(true);
@@ -82,7 +82,7 @@ describe("dublê do e2e × adaptador Stripe", () => {
     expect(pago.status).toBe(303);
     expect(pago.headers.get("location")).toContain("/app/settings/billing");
 
-    const vivo = await s.lerSituacao({ clienteRef: cliente });
+    const vivo = await s.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(vivo).toMatchObject({ existe: true, assinaturasVivas: 1, jaPagou: true, emAtraso: false, cancelada: false, cancelaNoFim: false, linkDePagamento: null, emTesteNoProvedorAte: null });
     const dias = ((vivo.proximoVencimento?.getTime() ?? 0) - Date.now()) / 86_400_000;
     expect(dias).toBeGreaterThan(29);
@@ -99,18 +99,18 @@ describe("dublê do e2e × adaptador Stripe", () => {
     expect(s.verificarWebhook(`${primeiro.corpo} `, new Headers({ "stripe-signature": primeiro.assinatura }), preparo.segredo, new Date())).toBeNull();
 
     const link = await duble.atrasar(cliente);
-    expect(await s.lerSituacao({ clienteRef: cliente })).toMatchObject({ existe: true, emAtraso: true, linkDePagamento: link });
+    expect(await s.lerSituacao({ clienteRef: cliente, organizacao: ORG })).toMatchObject({ existe: true, emAtraso: true, linkDePagamento: link });
     expect((await fetch(`${link}/pagar`, { method: "POST", redirect: "manual" })).status).toBe(303);
-    const quitado = await s.lerSituacao({ clienteRef: cliente });
+    const quitado = await s.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(quitado).toMatchObject({ existe: true, emAtraso: false, linkDePagamento: null });
 
     await s.trocarPlano({ assinaturaRef: quitado.assinaturaRef!, plano: PROFISSIONAL });
     expect(duble.assinaturaPrincipal(cliente)).toMatchObject({ unit_amount: 9990, proration_behavior: "none" });
 
-    expect((await s.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: VOLTA }))?.startsWith(`${duble.base}/portal/`)).toBe(true);
+    expect((await s.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: VOLTA, organizacao: ORG }))?.startsWith(`${duble.base}/portal/`)).toBe(true);
 
     await s.cancelarNoFim(quitado.assinaturaRef!);
-    expect(await s.lerSituacao({ clienteRef: cliente })).toMatchObject({ existe: true, cancelaNoFim: true, cancelada: false });
+    expect(await s.lerSituacao({ clienteRef: cliente, organizacao: ORG })).toMatchObject({ existe: true, cancelaNoFim: true, cancelada: false });
   });
 
   it("teste grátis de 3 dias vira trial_end no provedor: em teste lá, sem existir ainda, e o produto repetido é aceito", async () => {
@@ -119,7 +119,7 @@ describe("dublê do e2e × adaptador Stripe", () => {
     const fim = new Date(Date.now() + 3 * 86_400_000);
     const inicio = await s.iniciarAssinatura({ clienteRef: cliente, orgId: ORG_EM_TESTE, plano: ESSENCIAL, trialAte: fim, urlDeVolta: VOLTA, chaveIdempotencia: "contrato-2" });
     expect((await fetch(`${inicio.url}/pagar`, { method: "POST", redirect: "manual" })).status).toBe(303);
-    const situacao = await s.lerSituacao({ clienteRef: cliente });
+    const situacao = await s.lerSituacao({ clienteRef: cliente, organizacao: ORG_EM_TESTE });
     expect(situacao).toMatchObject({ existe: false, assinaturasVivas: 1, jaPagou: false });
     expect(Math.abs((situacao.emTesteNoProvedorAte?.getTime() ?? 0) - fim.getTime())).toBeLessThan(2_000);
   });

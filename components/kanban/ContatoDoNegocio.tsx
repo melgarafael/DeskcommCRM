@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useContactList } from "@/hooks/contacts/useContactList";
-import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
 import { useEditLead } from "@/hooks/kanban/useUpdateLead";
@@ -29,16 +28,8 @@ import {
   useRemoverParticipante,
 } from "@/hooks/leads/useParticipantesDoNegocio";
 import type { ContatoRelacionado } from "@/app/api/v1/leads/[id]/contatos-relacionados/route";
-import {
-  aplicarLinks,
-  EXEMPLO_DE_LINK,
-  lerLinks,
-  normalizarLink,
-  TIPOS_DE_LINK,
-  tiposInvalidos,
-  type LinksDoContato,
-  type TipoDeLink,
-} from "@/lib/leads/links-de-contato";
+import { FormularioDeLinks } from "@/components/contacts/FormularioDeLinks";
+import { useTiposDeLink } from "@/hooks/leads/useTiposDeLink";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { Contact } from "@/lib/types/contacts";
 
@@ -318,6 +309,9 @@ function ContatoVinculado({
 }) {
   const t = useT();
   const { data, isLoading, isError } = useContact(contactId);
+  // A escolha da organização (#5128): quando ela não existe ou a leitura falha,
+  // o hook devolve o catálogo inteiro — o comportamento de sempre.
+  const tiposDeLink = useTiposDeLink();
   const contato = data?.data;
 
   return (
@@ -340,7 +334,12 @@ function ContatoVinculado({
                 (ou editado em outra tela), o formulário reinicia com o valor do
                 servidor, sem um efeito de sincronização que pisaria no que a
                 pessoa está digitando. */}
-            <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
+            <FormularioDeLinks
+              key={contato.updated_at}
+              contato={contato}
+              pipelineId={pipelineId}
+              tiposPermitidos={tiposDeLink}
+            />
           </TabsContent>
         </Tabs>
       )}
@@ -814,84 +813,3 @@ function DadosDoContato({ contato }: { contato: Contact }) {
   );
 }
 
-function FormularioDeLinks({ contato, pipelineId }: { contato: Contact; pipelineId: string }) {
-  const t = useT();
-  const qc = useQueryClient();
-  const atualizar = useUpdateContact(contato.id);
-  const [valores, setValores] = useState<LinksDoContato>(() => lerLinks(contato.custom_fields));
-  // O erro só aparece DEPOIS da primeira tentativa de salvar: "exemplo" ainda
-  // sem ".com" não é um erro de quem está no meio da digitação.
-  const [tentouSalvar, setTentouSalvar] = useState(false);
-  const invalidos = new Set<TipoDeLink>(tiposInvalidos(valores));
-
-  function definir(tipo: TipoDeLink, valor: string) {
-    setValores((atual) => ({ ...atual, [tipo]: valor }));
-  }
-
-  async function salvar(e: FormEvent) {
-    e.preventDefault();
-    setTentouSalvar(true);
-    if (invalidos.size > 0) {
-      toast.error(t("Confira os links marcados: só endereços http(s) valem."));
-      return;
-    }
-    try {
-      // O PATCH troca o `custom_fields` INTEIRO — `aplicarLinks` devolve o
-      // objeto completo, com os campos que não são link preservados.
-      await atualizar.mutateAsync({
-        custom_fields: aplicarLinks(contato.custom_fields, valores),
-      });
-      // O card do funil lê estes links do quadro, não do contato: sem reler o
-      // quadro, salvar aqui pareceria "não fez nada" no card.
-      await qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
-      toast.success(t("Links salvos."));
-    } catch {
-      // `useUpdateContact` já mostra o erro da API; aqui só não deixar a
-      // rejeição escapar como erro não tratado.
-    }
-  }
-
-  return (
-    <form onSubmit={salvar} className="space-y-3" data-testid="formulario-de-links">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {TIPOS_DE_LINK.map(({ id, rotulo }) => {
-          const href = normalizarLink(valores[id]);
-          const erro = tentouSalvar && invalidos.has(id);
-          return (
-            <div key={id} className="space-y-1">
-              <Label htmlFor={`link-${id}`} className="text-xs">
-                {t(rotulo)}
-              </Label>
-              <div className="flex gap-1">
-                <Input
-                  id={`link-${id}`}
-                  value={valores[id] ?? ""}
-                  onChange={(e) => definir(id, e.target.value)}
-                  maxLength={1000}
-                  placeholder={EXEMPLO_DE_LINK}
-                  aria-invalid={erro || undefined}
-                  className={erro ? "border-destructive" : undefined}
-                />
-                {href && (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`${t("Abrir")} ${t(rotulo)}`}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-text-muted hover:text-text"
-                  >
-                    ↗
-                  </a>
-                )}
-              </div>
-              {erro && <p className="text-[11px] text-destructive">{t("Endereço inválido.")}</p>}
-            </div>
-          );
-        })}
-      </div>
-      <Button type="submit" size="sm" disabled={atualizar.isPending}>
-        {atualizar.isPending ? t("Salvando…") : t("Salvar links")}
-      </Button>
-    </form>
-  );
-}

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Situacao } from "@/lib/cobranca/provedores/contrato";
 
+import { criarAdaptadorAsaas } from "@/lib/cobranca/provedores/asaas";
+
 import { aplicarLeitura, traduzirSituacao, type AssinaturaAtual } from "./estado";
 
 const AGORA = new Date("2026-10-10T12:00:00Z");
@@ -230,5 +232,39 @@ describe("aplicarLeitura — o resto da linha", () => {
   it("checkout concluído (há assinatura viva) limpa o link de checkout; sem assinatura viva, mantém", () => {
     expect(aplicarLeitura(atual(), situacao({ assinaturasVivas: 1 }), AGORA).limparCheckout).toBe(true);
     expect(aplicarLeitura(atual(), situacao(), AGORA).limparCheckout).toBe(false);
+  });
+
+  it("⭐ #4862 (ciclo fechado, adaptador real → aplicarLeitura): provedor_assinatura_id NUNCA recebe assinatura com externalReference nulo", async () => {
+    // A máquina é pura e só confia na `assinaturaRef` que o provedor devolveu.
+    // Este teste fecha o ciclo com o ADAPTADOR ASAAS DE VERDADE: o cliente
+    // adotado do painel (#4768) tem a assinatura dele, sem vínculo, VIVA e mais
+    // recente; a nossa foi removida. Se a leitura não filtrar o vínculo, a
+    // referência do painel cai aqui e vira a coluna que `trocarPlano` e
+    // `cancelarNoFim` usam — agir sobre a assinatura de outra integração.
+    const org = "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b";
+    const linhas = [
+      { object: "subscription", id: "sub_nossa", status: "ACTIVE", deleted: true, cycle: "MONTHLY", dateCreated: "2026-09-01", externalReference: org },
+      { object: "subscription", id: "sub_do_painel", status: "ACTIVE", deleted: false, cycle: "MONTHLY", dateCreated: "2026-10-04", externalReference: null },
+    ];
+    const adaptador = criarAdaptadorAsaas({
+      lerChave: async () => ["$aact", "hmlg", "000ChaveDeMentiraDoSandbox00"].join("_"),
+      baseUrl: "http://127.0.0.1:3995/v3",
+      fetch: (async (entrada: RequestInfo | URL) => {
+        const url = new URL(entrada instanceof Request ? entrada.url : String(entrada));
+        const corpo = url.pathname.endsWith("/subscriptions")
+          ? { object: "list", hasMore: false, data: linhas.filter((l) => url.searchParams.get("includeDeleted") === "true" || l.deleted !== true) }
+          : { object: "list", hasMore: false, data: [] };
+        return Response.json(corpo);
+      }) as typeof fetch,
+      marca: "estado-teste",
+    });
+    const s = await adaptador.lerSituacao({ clienteRef: "cus_1", organizacao: org });
+    // 1) nada do painel sai na leitura.
+    expect(JSON.stringify(s)).not.toContain("sub_do_painel");
+    expect(s.assinaturaRef).toBe("sub_nossa");
+    // 2) e a gravação recebe a NOSSA, nunca a sem vínculo.
+    const r = aplicarLeitura(atual({ estado: "ativa", provedorAssinaturaId: null }), s, AGORA);
+    expect(r.provedorAssinaturaId).toBe("sub_nossa");
+    expect(r.provedorAssinaturaId).not.toBe("sub_do_painel");
   });
 });

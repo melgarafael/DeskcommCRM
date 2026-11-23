@@ -154,6 +154,36 @@ export function padraoDasCamadasNoAmbiente(
   };
 }
 
+/**
+ * O estado EFETIVO das QUATRO camadas configuráveis, para a tela que precisa
+ * dizer o que o motor faz hoje (#1041).
+ *
+ * `camadasEfetivas` abaixo responde só pelas três de `CAMADAS_SEMANTICAS`:
+ * `restricao_comercial` fica de fora porque falha FECHADA e é lida por
+ * `comercialExigeHumano` (`lib/escalacao/assunto-comercial.ts`), não por aqui.
+ * A coluna "o que ele nunca faz" do onboarding promete as quatro, então precisa
+ * das quatro — com a MESMA precedência (`camadaLigada`): linha da organização
+ * quando existe, padrão do ambiente quando não existe.
+ *
+ * ⚠️ Isto LÊ; não muda padrão de camada nenhuma. A tela que passa a dizer
+ * "desligada" é a consequência, não a causa: `afirmacao_clinica` e
+ * `restricao_comercial` nascem desligadas, e `promessa_semantica` só liga com
+ * `PROMISE_SEMANTIC_ENABLED=true` — ligar qualquer uma por padrão para a
+ * promessa da tela ficar bonita seria comportamento novo sem pedido.
+ */
+export function estadoEfetivoDasCamadas(
+  rows: ReadonlyArray<{ layer: string; enabled: boolean }>,
+  padrao: Record<CamadaConfiguravel, boolean> = padraoDasCamadasNoAmbiente(),
+): Record<CamadaConfiguravel, boolean> {
+  const porCamada = new Map(rows.map((r) => [r.layer, r.enabled]));
+  return {
+    promessa_semantica: camadaLigada(porCamada.get("promessa_semantica") ?? null, padrao.promessa_semantica),
+    jailbreak: camadaLigada(porCamada.get("jailbreak") ?? null, padrao.jailbreak),
+    afirmacao_clinica: camadaLigada(porCamada.get("afirmacao_clinica") ?? null, padrao.afirmacao_clinica),
+    restricao_comercial: camadaLigada(porCamada.get("restricao_comercial") ?? null, padrao.restricao_comercial),
+  };
+}
+
 /** O que vale para a organização, fora do worker: a escolha dela, ou o padrão do ambiente. */
 export function camadasEfetivas(
   rows: ReadonlyArray<{ layer: string; enabled: boolean }>,

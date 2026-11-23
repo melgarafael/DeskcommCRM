@@ -182,6 +182,7 @@
       "GET /api/v1/reports/activities",
       "GET /api/v1/reports/comercial",
       "GET /api/v1/reports/financeiro",
+      "GET /api/v1/reports/painel-de-vendas",
       "GET /api/v1/reports/tags",
       "GET /api/v1/reports/vendas/export",
       "PATCH /api/v1/metrics/atrito"
@@ -218,6 +219,7 @@
       "GET /api/v1/attendants/sectors",
       "GET /api/v1/settings/atendimento",
       "GET /api/v1/settings/campanhas",
+      "GET /api/v1/settings/links-de-contato",
       "GET /api/v1/settings/proposal-templates",
       "GET /api/v1/settings/proposal-templates/[id]",
       "GET /api/v1/settings/proposals",
@@ -232,6 +234,7 @@
       "PATCH /api/v1/settings/atendimento",
       "PATCH /api/v1/settings/campanhas",
       "PATCH /api/v1/settings/catalogo",
+      "PATCH /api/v1/settings/links-de-contato",
       "PATCH /api/v1/settings/proposal-templates/[id]",
       "PATCH /api/v1/settings/proposals",
       "PATCH /api/v1/settings/prospeccao",
@@ -322,6 +325,7 @@
       "POST /api/v1/conversations/[id]/participants",
       "POST /api/v1/conversations/[id]/pause-ai",
       "POST /api/v1/conversations/[id]/reactivate-bot",
+      "POST /api/v1/conversations/[id]/reopen",
       "POST /api/v1/conversations/[id]/snooze",
       "POST /api/v1/conversations/[id]/transfer",
       "POST /api/v1/conversations/[id]/transferir-agente",
@@ -353,6 +357,7 @@
     ],
     "negocios": [
       "DELETE /api/v1/leads/[id]/attachments",
+      "DELETE /api/v1/leads/[id]/classificacao-comercial",
       "DELETE /api/v1/leads/[id]/contatos-relacionados",
       "DELETE /api/v1/proposals/[id]",
       "GET /api/v1/lead-captures",
@@ -384,6 +389,7 @@
       "POST /api/v1/leads",
       "POST /api/v1/leads/[id]/attachments",
       "POST /api/v1/leads/[id]/checklist/[id]",
+      "POST /api/v1/leads/[id]/classificacao-comercial",
       "POST /api/v1/leads/[id]/clone",
       "POST /api/v1/leads/[id]/contact",
       "POST /api/v1/leads/[id]/contatos-relacionados",
@@ -940,7 +946,7 @@
         {
           "nome": "pacingKnobsUpdateSchema",
           "origem": "@/lib/ai/pacing-knobs",
-          "hash": "f777500f9c95c198"
+          "hash": "6527814232d1f88a"
         }
       ],
       "resposta": []
@@ -1150,7 +1156,7 @@
         {
           "nome": "listConversationsQuerySchema",
           "origem": "@/lib/schemas",
-          "hash": "19cf1a29d188dca0"
+          "hash": "92d560e6e1b357dd"
         }
       ],
       "resposta": []
@@ -1670,6 +1676,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/reports/painel-de-vendas": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "7ab3a0cdc9f09a29"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/reports/tags": {
       "corpo": [
         {
@@ -1726,6 +1742,16 @@
           "nome": "patchSchema",
           "origem": "local",
           "hash": "74c95be5b1a8424d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/links-de-contato": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "0a53a4ee909f3cec"
         }
       ],
       "resposta": []

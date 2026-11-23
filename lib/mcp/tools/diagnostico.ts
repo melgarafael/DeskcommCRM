@@ -63,24 +63,21 @@ import {
 import type { Actor } from "@/lib/api/handlers/types";
 import { defsDoPadraoDoFunil } from "@/lib/leads/padrao-do-campo";
 
-import { McpAuthError } from "../auth";
+import { ESCOPO_CONTATOS_ESCRITA } from "@/lib/api/escopos-do-token";
+import { exigeEscopoDoTokenDeIntegracao } from "../escopo-do-token";
 import type { McpContext, McpToolDefinition } from "../types";
 
 /** A função do banco que mescla `custom_fields` numa instrução só. */
 export const FUNCAO_DE_MESCLA = "fn_contato_anotar_campos";
 
 /**
- * O escopo que um TOKEN DE INTEGRAÇÃO precisa para gravar direto na ficha. É o
- * `contacts:write` ("Criar e editar contatos") que a tela de tokens já oferece.
- *
- * Fica aqui, e não num módulo compartilhado, porque o PR #4534 cria
- * `lib/api/escopos-do-token.ts` (`ESCOPO_CONTATOS_ESCRITA`) e
- * `lib/mcp/escopo-do-token.ts` (`exigeEscopoDoTokenDeIntegracao`) com esta mesma
- * régua: criar os dois arquivos aqui daria conflito de "adicionado dos dois
- * lados". Quando os dois PRs estiverem na `main`, esta função vira uma chamada
- * àquela.
+ * O escopo que um TOKEN DE INTEGRAÇÃO precisa para gravar direto na ficha é o
+ * `contacts:write`, o mesmo da edição de cadastro (#4517). A régua mora em
+ * `lib/api/escopos-do-token.ts` + `lib/mcp/escopo-do-token.ts` desde que o #4534
+ * entrou — antes disso esta função era uma cópia local justamente para não
+ * colidir com a criação daqueles dois arquivos.
  */
-export const ESCOPO_DA_FICHA = "contacts:write";
+export const ESCOPO_DA_FICHA = ESCOPO_CONTATOS_ESCRITA;
 
 /**
  * `ctx.tokenScopes` só existe no MCP externo (`lib/mcp/server.ts`); o agente da
@@ -88,9 +85,7 @@ export const ESCOPO_DA_FICHA = "contacts:write";
  * `actor.type`: um token com `actor:ai_agent` vira `ai_agent` e passaria batido.
  */
 export function exigeEscopoDaFicha(ctx: Pick<McpContext, "tokenScopes">): void {
-  if (ctx.tokenScopes === undefined) return;
-  if (ctx.tokenScopes.includes(ESCOPO_DA_FICHA)) return;
-  throw new McpAuthError(-32002, 403, `Token missing required scope '${ESCOPO_DA_FICHA}'.`, "forbidden_role");
+  exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_DA_FICHA);
 }
 
 /**

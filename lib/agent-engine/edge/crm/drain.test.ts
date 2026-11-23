@@ -532,11 +532,74 @@ it('coalescência exclui job em hold (held_run_after) — sessão morta não seq
   });
   await drainTick({ query } as unknown as pg.Pool, debounceKnobs, log);
 
-  const coalescencia = calls.find((s) => s.includes('select id, payload from job_queue'));
+  const coalescencia = calls.find((s) =>
+    s.includes('select id, payload, created_at, run_after from job_queue'),
+  );
   expect(coalescencia, 'a query de coalescência deveria ter rodado').toBeTruthy();
   expect(coalescencia).toContain('held_run_after');
   // Sem o job em hold como falso-positivo, o turno segue e enfileira um job novo.
   expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(true);
+});
+
+/**
+ * #196 (b): a carona EMPURRA a janela do job da rajada.
+ *
+ * O drain não decide sozinho — ele entrega o `debounceMaxMs` (o
+ * `INBOUND_BURST_MAX_MS` da instalação) e o módulo de debounce faz o UPDATE. O
+ * que este caso prende é o FIO: sem o knob chegando aqui, a janela volta a ser
+ * ancorada e o defeito do #196 volta em silêncio.
+ */
+it('carona na rajada estende o run_after do job — e o teto do knob chega na consulta', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  const agora = Date.now();
+  const created = new Date(agora - 12_000);
+  const runAfter = new Date(agora - 4_000); // janela ancorada JÁ vencida
+  const query = vi.fn().mockImplementation((sql: string, p: unknown[] = []) => {
+    calls.push(sql);
+    params.push(p);
+    if (sql.includes('as tem_leitor')) return { rows: [{ settings: {}, tem_leitor: true }] };
+    if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(12_000)] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('media_derived_status')) return { rows: [{ type: 'text', media_derived_status: null }] };
+    // O job da rajada segue PENDENTE e dentro do teto: é o caso do #196.
+    if (sql.includes('select id, payload, created_at, run_after from job_queue')) {
+      return { rows: [{ id: 'job-rajada', payload: {}, created_at: created, run_after: runAfter }] };
+    }
+    if (sql.includes('update job_queue set run_after')) return { rows: [] };
+    return { rows: [] };
+  });
+
+  await drainTick(
+    { query } as unknown as pg.Pool,
+    { ...knobs, debounceMs: 8_000, debounceMaxMs: 45_000 },
+    log,
+  );
+
+  const consulta = calls.findIndex((s) =>
+    s.includes('select id, payload, created_at, run_after from job_queue'),
+  );
+  expect(consulta, 'a consulta de carona deveria ter rodado').toBeGreaterThanOrEqual(0);
+  expect(params[consulta], 'o teto vai como parâmetro do SELECT').toEqual([
+    event.organization_id,
+    event.payload.contact_id,
+    45_000,
+  ]);
+
+  const estender = calls.findIndex((s) => s.includes('update job_queue set run_after'));
+  expect(estender, 'a carona tinha de empurrar a janela — sem isso o #196 volta').toBeGreaterThan(
+    consulta,
+  );
+  const [jobId, novoRunAfter, org] = params[estender]!;
+  expect(jobId).toBe('job-rajada');
+  expect(org).toBe(event.organization_id);
+  // `run_after = agora + debounce` (8s), porque o teto (45s desde o created_at)
+  // está longe: quem manda é a janela curta.
+  expect(Date.parse(String(novoRunAfter))).toBeGreaterThan(runAfter.getTime());
+  expect(Date.parse(String(novoRunAfter)) - agora).toBeLessThanOrEqual(8_000 + 1_000);
+  expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(false);
 });
 
 
@@ -956,7 +1019,9 @@ function poolDaJanela(
         ],
       };
     }
-    if (sql.includes('select id, payload from job_queue')) return { rows: candidato ? [candidato] : [] };
+    if (sql.includes('select id, payload, created_at, run_after from job_queue')) {
+      return { rows: candidato ? [candidato] : [] };
+    }
     if (sql.includes('update job_queue')) return { rows: [{ id: candidato?.id }], rowCount: 1 };
     if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
     return { rows: [] };

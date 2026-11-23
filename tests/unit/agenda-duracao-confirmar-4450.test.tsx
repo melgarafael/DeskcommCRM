@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import type { Agendamento, Pessoa } from "@/components/agenda/tipos";
 import { ApiError } from "@/lib/api/types";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 /**
  * O PATCH, registrado à mão em vez de `vi.fn`: o espião do vitest observa a
@@ -296,5 +297,57 @@ describe("confirmar a nova duração", () => {
     // Gravamos (rev 4) e um colega gravou de novo (rev 5) antes da nossa releitura.
     rerender(elemento([{ ...maria("15:15"), revision: 5 }]));
     expect(rotuloDoCard()).toContain("14:00 às 15:15");
+  });
+});
+
+describe("Esc cancela a nova duração (#5106)", () => {
+  it("Esc durante o gesto com o mouse desfaz a prévia, e soltar não pergunta nem grava", () => {
+    render(elemento([maria()]));
+    const alca = screen.getByTestId("alca-duracao-a1");
+    fireEvent.pointerDown(alca, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: y("14:30"),
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 1,
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: y("15:00"),
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
+    fireEvent.pointerMove(window, {
+      pointerId: 1,
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: y("15:30"),
+    });
+    // Mover depois do Esc não traz a prévia de volta.
+    expect(screen.queryByTestId("fantasma-da-duracao")).toBeNull();
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 10, clientY: y("15:30") });
+
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(chamadas).toHaveLength(0);
+    expect(rotuloDoCard()).toContain("14:00 às 14:30");
+  });
+
+  it("Esc com a pergunta aberta a fecha sem gravar", () => {
+    render(elemento([maria()]));
+    puxarAte("15:00");
+    expect(screen.getByTestId("confirmar-duracao")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByTestId("confirmar-duracao")).toBeNull();
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('em espanhol, a pergunta diz "a HH:MM"', () => {
+    expect(`${traduzir("Mudar a duração de", "es")} X ${traduzir("para", "es")} 14:00`).toBe(
+      "Cambiar la duración de X a 14:00",
+    );
   });
 });

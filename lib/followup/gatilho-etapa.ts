@@ -112,6 +112,8 @@ export interface GatilhoEtapaDb {
     pointer_id: string;
     version_id: string;
     contact_id: string;
+    /** #4191: o negócio que mudou de etapa — ver `gatilho-lead.ts`. */
+    lead_id?: string | null;
     current_node_id: string;
     /**
      * ⚠️ OMITIDO DE PROPÓSITO quando o enrollment nasce vencido — e é sempre o
@@ -246,6 +248,8 @@ export async function aplicaGatilhoDeEtapa(
       pointer_id: pointer.id,
       version_id: pointer.active_version_id,
       contact_id: contatoId,
+      // #4191: a inscrição nasce do NEGÓCIO que mudou de etapa, não do contato.
+      lead_id: negocioId,
       current_node_id: noDeGatilho.id,
       // `next_eval_at` NÃO vai: o default do banco decide. Ver o comentário na
       // interface e a migration 0147.
