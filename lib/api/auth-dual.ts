@@ -82,6 +82,14 @@ export type AuthDual =
        * `redigirContatoParaModulo`. Sessão e outros tokens não têm o campo e veem tudo.
        */
       contatoVisivel?: boolean;
+      /**
+       * Só sessão: o papel efetivo na organização ativa (`requireRole`). Campo
+       * ADITIVO, e não `actor.role`: o ator de sessão alimenta centenas de rotas,
+       * e quem lê `actor.role` (ex.: `lib/contacts/conversa-do-criador.ts`)
+       * mudaria de comportamento. A rota que precisa do papel no handler o põe
+       * no ator ela mesma (`close`, `reactivate-bot` — regra do #3436).
+       */
+      papelDaSessao?: Role;
     }
   | { ok: false; response: Response };
 
@@ -240,6 +248,7 @@ export async function resolveAuthDual(
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
+    papelDaSessao: authz.org.role,
   };
 }
 
