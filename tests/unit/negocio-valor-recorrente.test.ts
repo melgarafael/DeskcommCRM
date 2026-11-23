@@ -32,6 +32,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /* ── dublês de infraestrutura (mesmo molde do teste de auditoria do #1755) ── */
 
+// O bloco de anotações lê o contato por conta própria; aqui o assunto é o valor do negócio.
+vi.mock("@/components/inbox/AnotacoesDoCliente", () => ({ AnotacoesDoCliente: () => null }));
 // A seção de vendas tem consulta própria (TanStack Query); aqui ela não é o assunto.
 vi.mock("@/components/vendas/VendasDoNegocio", () => ({ VendasDoNegocio: () => null }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));

@@ -323,6 +323,7 @@
       "POST /api/v1/conversations/[id]/participants",
       "POST /api/v1/conversations/[id]/pause-ai",
       "POST /api/v1/conversations/[id]/reactivate-bot",
+      "POST /api/v1/conversations/[id]/reopen",
       "POST /api/v1/conversations/[id]/snooze",
       "POST /api/v1/conversations/[id]/transfer",
       "POST /api/v1/conversations/[id]/transferir-agente",
