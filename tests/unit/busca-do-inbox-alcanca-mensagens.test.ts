@@ -13,14 +13,22 @@ import { listConversationsQuerySchema } from "@/lib/schemas";
  * à mão para responder "onde ele falou sobre X?".
  *
  * ─── O que é provado aqui, e o que NÃO é ────────────────────────────────────
- * Aqui se prova a FORMA: que a rota consulta `messages.body`, que escopa a
- * consulta por organização, que deixa de fora mensagem oculta/revogada, que
- * soma as conversas casadas ao MESMO `or=` da lista e que devolve o trecho na
- * linha. A RLS não se prova com dublê — quem a mede contra o Postgres é
- * `tests/invariants/busca-em-mensagens-respeita-visibilidade.test.ts`.
+ * Aqui se prova a FORMA: que a rota pergunta ao banco quais MENSAGENS casam
+ * (`fn_mensagens_da_busca`, com a organização como argumento), que relê essas
+ * linhas sob a RLS de `messages` deixando de fora oculta/revogada, que soma as
+ * conversas casadas ao MESMO `or=` da lista e que devolve o trecho na linha.
+ *
+ * O casamento de texto saiu de dentro da RLS na 9458 (`security definer`), no
+ * molde de `fn_contatos_da_busca` (#4326): `ilike` não é `leakproof` e a versão
+ * anterior varria `messages` inteira sob a política. Quem prova que a função
+ * confere a organização e que o plano usa o índice é
+ * `tests/invariants/busca-do-inbox-usa-indice.test.ts`; quem prova que o
+ * resultado respeita a visibilidade contra o Postgres é
+ * `tests/invariants/busca-em-mensagens-respeita-visibilidade.test.ts`. Aqui a
+ * função é dublê.
  *
  * É por isso que a linha "a conversa que a pessoa NÃO enxerga não aparece" aqui
- * é o que o dublê devolve: a consulta de mensagens roda no client da SESSÃO, e
+ * é o que o dublê devolve: a leitura das mensagens roda no client da SESSÃO, e
  * `messages_select` (0035) delega para `fn_can_view_conversation` — a MESMA
  * função que a lista usa. O dublê representa o banco já filtrado; a prova de
  * que ele filtra está no invariante.
@@ -64,12 +72,18 @@ function clienteFalso(base: {
 }) {
   const pedidos: Record<string, Pedido[]> = {};
   const client = {
-    // A main moveu o casamento de CONTATO para `fn_contatos_da_busca` (#4326):
-    // o dublê devolve os ids de `contacts` como a função devolveria — e nada
-    // quando o caso não passa contato nenhum, que é o de toda busca por texto.
+    // Duas funções, dois formatos de retorno — e o dublê responde pelo NOME,
+    // como o PostgREST: `fn_contatos_da_busca` (#4326) devolve `contact_id` e
+    // `fn_mensagens_da_busca` (9458) devolve `message_id`.
     rpc(funcao: string, args: Record<string, unknown>) {
       pedidos.rpc ??= [];
       pedidos.rpc.push({ metodo: funcao, args: [args] });
+      if (funcao === "fn_mensagens_da_busca") {
+        const casadas = (base.messages ?? []).map((m) => ({
+          message_id: (m as { id: string }).id,
+        }));
+        return Promise.resolve({ data: casadas, error: null });
+      }
       const casados = (base.contacts ?? []).map((c) => ({
         contact_id: (c as { id: string }).id,
       }));
@@ -122,6 +136,9 @@ const orDaLista = (pedidos: Record<string, Pedido[]>): string => {
   return String(chamada!.args[0]);
 };
 
+const chamadaDaBuscaDeMensagens = (pedidos: Record<string, Pedido[]>) =>
+  (pedidos.rpc ?? []).find((p) => p.metodo === "fn_mensagens_da_busca");
+
 describe("a busca do Inbox alcança o texto das mensagens (#1355)", () => {
   it("a conversa cujo termo só existe numa mensagem ANTIGA volta na busca, com o trecho", async () => {
     const { resultado, pedidos } = await buscar({
@@ -144,14 +161,26 @@ describe("a busca do Inbox alcança o texto das mensagens (#1355)", () => {
       messages: [MENSAGEM_ANTIGA],
     });
 
+    // Sem a organização como ARGUMENTO da função, o casamento de texto varreria
+    // a base inteira: `security definer` não passa pela RLS, e quem reimplementa
+    // a régua no TypeScript é o segundo lugar que diverge.
+    const chamada = chamadaDaBuscaDeMensagens(pedidos);
+    expect(chamada, "o casamento de texto não foi perguntado à função da 9458").toBeDefined();
+    // `p_termo` vai como a pessoa digitou (o `*` de duas palavras é que vira `%`,
+    // porque no `like` do SQL ele seria literal).
+    expect(chamada!.args[0]).toMatchObject({ p_org: ORG, p_termo: "tangerina" });
+
     const daMensagem = pedidos.messages ?? [];
     const tem = (metodo: string, ...args: unknown[]) =>
       daMensagem.some((p) => p.metodo === metodo && JSON.stringify(p.args) === JSON.stringify(args));
 
-    // Sem o filtro manual de organização, o MCP (admin client, que bypassa a
-    // RLS) varreria a base inteira.
-    expect(tem("eq", "organization_id", ORG), "a consulta de mensagens não é escopada").toBe(true);
-    expect(tem("ilike", "body", "%tangerina%"), "a busca não olha o corpo").toBe(true);
+    // A releitura é por IGUALDADE de id (leakproof, logo o índice da PK entra) e
+    // é ela que passa pela RLS de `messages`: a função diz quais ids PODEM
+    // casar, a política diz quais a pessoa vê.
+    expect(
+      tem("in", "id", [MENSAGEM_ANTIGA.id]),
+      "as mensagens não foram relidas por id — consulta nova nasceria sem RLS",
+    ).toBe(true);
     // Mensagem oculta no CRM e mensagem revogada: o fio não as mostra, a busca
     // não pode devolvê-las pela porta dos fundos.
     expect(tem("is", "revoked_at", null)).toBe(true);
@@ -203,7 +232,7 @@ describe("a busca do Inbox alcança o texto das mensagens (#1355)", () => {
       .filter((p) => p.metodo === "or" || p.metodo === "ilike")
       .map((p) => JSON.stringify(p.args))
       .join("|");
-    expect(texto, "a busca por conteúdo saiu junto", ).toContain("last_message_preview");
+    expect(texto, "a busca por conteúdo saiu junto").toContain("last_message_preview");
     expect(texto, "sem casamento, nada de `id.in` deve ir para a URL").not.toContain("id.in.");
     expect(resultado.conversations[0]?.busca_em_mensagem).toBeUndefined();
   });
@@ -214,7 +243,11 @@ describe("a busca do Inbox alcança o texto das mensagens (#1355)", () => {
       "ta",
     );
 
-    expect(pedidos.messages ?? [], "termo de 2 letras foi ao corpo das mensagens").toHaveLength(0);
+    expect(
+      chamadaDaBuscaDeMensagens(pedidos),
+      "termo de 2 letras foi ao corpo das mensagens",
+    ).toBeUndefined();
+    expect(pedidos.messages ?? [], "termo de 2 letras leu a tabela de mensagens").toHaveLength(0);
     expect(JSON.stringify(pedidos.conversations), "a busca de hoje sumiu junto").toContain(
       "last_message_preview",
     );
