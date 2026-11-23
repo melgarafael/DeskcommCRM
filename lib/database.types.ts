@@ -16092,6 +16092,15 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      fn_conversation_release_if_idle: {
+        Args: {
+          p_conversation_id: string;
+          p_expected_assignee: string;
+          p_organization_id: string;
+          p_sem_sinal_humano_desde: string;
+        };
+        Returns: boolean;
+      };
       fn_conversation_scope: {
         Args: Record<PropertyKey, never>;
         Returns: {
