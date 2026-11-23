@@ -340,3 +340,59 @@ it("com o cache do app (30 s), gerar nova chave troca o código na tela sem reca
   await waitFor(() => expect((screen.getByLabelText("Código para colar no site") as HTMLTextAreaElement).value).toContain("wck_nova"));
   expect(h.get).toHaveBeenCalledTimes(2);
 });
+
+it("salvar formato e posicao manda o PATCH com ambos os valores", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Formato");
+
+  const formato = screen.getByLabelText("Formato") as HTMLSelectElement;
+  const posicao = screen.getByLabelText("Posição") as HTMLSelectElement;
+
+  fireEvent.change(formato, { target: { value: "painel" } });
+  fireEvent.change(posicao, { target: { value: "esquerda" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar formato" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { formato: "painel" } }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Salvar posição" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { posicao: "esquerda" } }),
+  );
+});
+
+it("formato ou posicao invalido mostra erro e não envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Formato");
+
+  const formato = screen.getByLabelText("Formato") as HTMLSelectElement;
+  const posicao = screen.getByLabelText("Posição") as HTMLSelectElement;
+
+  // Valor inválido: força o select a um valor fora da lista (simula digitação direta no DOM)
+  fireEvent.change(formato, { target: { value: "qualquer_coisa" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar formato" }));
+  expect(screen.getByText(/Mudou o formato/)).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { formato: "qualquer_coisa" } });
+
+  fireEvent.change(posicao, { target: { value: "centro" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar posição" }));
+  expect(screen.getByText(/Vale para bolha/)).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { posicao: "centro" } });
+});
+
+it("codigo para colar mostra o formato e posicao salvos", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      ...comConexao,
+      config: { ...comConexao.config, formato: "painel", posicao: "esquerda" },
+    },
+  });
+  mount();
+  const codigo = (await screen.findByLabelText("Código para colar no site")) as HTMLTextAreaElement;
+  expect(codigo.value).toContain("&f=painel");
+  expect(codigo.value).toContain("&p=esquerda");
+});

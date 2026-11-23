@@ -23,3 +23,31 @@ describe("configuracaoDoChatSchema: pausado", () => {
     expect(configuracaoDoChatSchema.safeParse({ titulo: "Oi" }).success).toBe(true);
   });
 });
+
+describe("configuracaoDoChatSchema: formato e posicao", () => {
+  it("aceita formato e posicao validos", () => {
+    expect(
+      configuracaoDoChatSchema.safeParse({ formato: "painel", posicao: "esquerda" }).success,
+    ).toBe(true);
+  });
+
+  it("aceita somente formato", () => {
+    expect(configuracaoDoChatSchema.safeParse({ formato: "pagina" }).success).toBe(true);
+  });
+
+  it("aceita somente posicao", () => {
+    expect(configuracaoDoChatSchema.safeParse({ posicao: "esquerda" }).success).toBe(true);
+  });
+
+  it("recusa formato fora da lista", () => {
+    expect(configuracaoDoChatSchema.safeParse({ formato: "invalido" }).success).toBe(false);
+  });
+
+  it("recusa posicao fora da lista", () => {
+    expect(configuracaoDoChatSchema.safeParse({ posicao: "centro" }).success).toBe(false);
+  });
+
+  it("formato e posicao sao opcionais: ausente continua valido", () => {
+    expect(configuracaoDoChatSchema.safeParse({ pausado: true }).success).toBe(true);
+  });
+});

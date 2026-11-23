@@ -44,6 +44,8 @@ const MAXIMO_DE_DOMINIOS = 20;
 type ModoDeColeta = "oculto" | "opcional" | "obrigatorio";
 type Campo = "nome" | "telefone" | "email";
 const CAMPOS: Campo[] = ["nome", "telefone", "email"];
+type FormatoDoChat = "bolha" | "painel" | "embutido" | "pagina";
+type PosicaoDoChat = "direita" | "esquerda";
 
 interface Config {
   titulo?: string;
@@ -52,6 +54,10 @@ interface Config {
   coleta?: Partial<Record<Campo, ModoDeColeta>>;
   /** Chat pausado pela organização (`metadata.webchat.pausado`). */
   pausado?: boolean;
+  /** Formato da janela do chat (`metadata.webchat.formato`). */
+  formato?: FormatoDoChat;
+  /** Posição da janela do chat (`metadata.webchat.posicao`). */
+  posicao?: PosicaoDoChat;
 }
 
 interface Estado {
@@ -195,7 +201,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [ocupado, setOcupado] = useState(false);
   const [girarAberto, setGirarAberto] = useState(false);
   const [pausaAberta, setPausaAberta] = useState(false);
+  const [formatoAberto, setFormatoAberto] = useState(false);
   const pausado = estado.config.pausado === true;
+  const formatoInicial: FormatoDoChat = estado.config.formato ?? "bolha";
+  const posicaoInicial: PosicaoDoChat = estado.config.posicao ?? "direita";
+  const [formato, setFormato] = useState<FormatoDoChat>(formatoInicial);
+  const [posicao, setPosicao] = useState<PosicaoDoChat>(posicaoInicial);
 
   // Aparência: campo em branco é "não mudar". Só vai o que foi preenchido.
   const corPreenchida = cor.trim() !== "";
@@ -208,6 +219,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
 
   // Coleta: o servidor troca o objeto `coleta` inteiro, então vai sempre com os três campos.
   const coletaMudou = CAMPOS.some((campo) => coleta[campo] !== coletaAtual(estado.config)[campo]);
+
+  // Formato e posição: campo em branco não acontece (são selects), então vai sempre com o valor atual.
+  const formatoValido = ["bolha", "painel", "embutido", "pagina"].includes(formato);
+  const posicaoValida = ["direita", "esquerda"].includes(posicao);
+  const formatoMudou = formato !== estado.config.formato;
+  const posicaoMudou = posicao !== estado.config.posicao;
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -280,7 +297,10 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   let link = "";
   let codigoMontado = true;
   try {
-    codigo = codigoParaColar(origem, estado.public_key ?? "");
+    codigo = codigoParaColar(origem, estado.public_key ?? "", {
+      formato,
+      posicao,
+    });
     link = linkDireto(origem, estado.public_key ?? "");
   } catch {
     codigoMontado = false;
@@ -395,6 +415,78 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         <div>
           <Button onClick={() => salvar({ config: { coleta } })} disabled={ocupado || !coletaMudou}>
             {t("Salvar coleta")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Formato da janela")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Como a janela aparece para quem visita o seu site.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-formato">{t("Formato")}</Label>
+          <select
+            id="canal-chat-formato"
+            value={formato}
+            onChange={(e) => setFormato(e.target.value as FormatoDoChat)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="bolha">{t("Bolha no canto")}</option>
+            <option value="painel">{t("Painel na lateral")}</option>
+            <option value="embutido">{t("Embutido numa área do site")}</option>
+            <option value="pagina">{t("Página inteira")}</option>
+          </select>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Mudou o formato? Cole o código novo no seu site (abaixo). Embutido não mostra a bolha: o iframe fica dentro de um elemento da sua página.",
+          )}
+        </p>
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: { formato } }, () => {
+                setFormatoAberto(false);
+              })
+            }
+            disabled={ocupado || !formatoMudou || !formatoValido}
+          >
+            {t("Salvar formato")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Posição")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Lado da tela onde a janela fica aberta.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-posicao">{t("Posição")}</Label>
+          <select
+            id="canal-chat-posicao"
+            value={posicao}
+            onChange={(e) => setPosicao(e.target.value as PosicaoDoChat)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="direita">{t("Direita")}</option>
+            <option value="esquerda">{t("Esquerda")}</option>
+          </select>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("Vale para bolha, painel e página inteira.")}
+        </p>
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: { posicao } }, () => {
+                setFormatoAberto(false);
+              })
+            }
+            disabled={ocupado || !posicaoMudou || !posicaoValida}
+          >
+            {t("Salvar posição")}
           </Button>
         </div>
       </section>

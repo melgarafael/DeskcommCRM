@@ -43,6 +43,26 @@
     }
   }
 
+  /** Formato do `?f=`, se bater na lista fixa. Senão, null. */
+  function formatoDoScript(src) {
+    try {
+      var f = new URL(src).searchParams.get("f");
+      return f !== null && ["bolha", "painel", "embutido", "pagina"].indexOf(f) !== -1 ? f : null;
+    } catch (erro) {
+      return null;
+    }
+  }
+
+  /** Posição do `?p=`, se bater na lista fixa. Senão, null. */
+  function posicaoDoScript(src) {
+    try {
+      var p = new URL(src).searchParams.get("p");
+      return p !== null && ["direita", "esquerda"].indexOf(p) !== -1 ? p : null;
+    } catch (erro) {
+      return null;
+    }
+  }
+
   /**
    * Referrer reduzido a origem + caminho: sem query e sem fragmento, cortado em 200 caracteres.
    * Não é URL http(s) válida: string vazia.
@@ -112,6 +132,22 @@
     return achado;
   }
 
+  /** Seletor do elemento alvo do formato `embutido`, lido de `data-webchat-alvo` no próprio script. */
+  function alvoDoScript(src) {
+    try {
+      var scripts = document.querySelectorAll("script[src]");
+      for (var i = 0; i < scripts.length; i++) {
+        if (/\/webchat\.js(\?|$)/.test(scripts[i].src)) {
+          var alvo = scripts[i].getAttribute("data-webchat-alvo");
+          if (typeof alvo === "string" && alvo !== "") return alvo;
+        }
+      }
+    } catch (erro) {
+      // ignora
+    }
+    return null;
+  }
+
   function montar() {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     if (window.__webchatMontado) return;
@@ -125,6 +161,9 @@
     if (!src) return;
     var origem = origemDoScript(src);
     var chave = chaveDoScript(src);
+    var formato = formatoDoScript(src);
+    var posicao = posicaoDoScript(src);
+    var alvo = alvoDoScript(src);
     if (!origem || !chave) return;
 
     window.__webchatMontado = true;
@@ -260,6 +299,10 @@
     }
 
     bolha.addEventListener("click", function () {
+      if (formato === "pagina") {
+        window.open(origem + "/chat/" + chave, "_blank", "noopener,noreferrer");
+        return;
+      }
       abrirOuFechar(!aberto);
     });
 
@@ -292,6 +335,16 @@
     });
 
     window.addEventListener("resize", aplicarTamanho);
+
+    // Embutido: o iframe vive dentro do elemento alvo marcado no próprio script.
+    // Sem alvo achado: não cria nada e não lança.
+    if (formato === "embutido") {
+      var elementoAlvo = document.querySelector(alvo);
+      if (!elementoAlvo) return;
+      elementoAlvo.appendChild(iframe);
+      atualizar();
+      return;
+    }
 
     var raiz = document.body || document.documentElement;
     raiz.appendChild(iframe);
