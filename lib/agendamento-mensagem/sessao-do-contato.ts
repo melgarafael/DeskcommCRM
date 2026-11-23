@@ -35,6 +35,7 @@ export function escolherConversaConectada(conversas: readonly ConversaDoContato[
     return tb - ta;
   });
   const escolhida = ordenadas[0];
+  if (!escolhida) return null;
   return { conversation_id: escolhida.id, channel_session_id: escolhida.channel_session_id };
 }
 

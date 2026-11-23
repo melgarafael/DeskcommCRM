@@ -25,11 +25,33 @@ let sessionFilters: Array<[string, unknown]>;
 function admin() {
   return {
     from(table: string) {
+      if (table === "conversations") {
+        // A escolha da conversa conectada lê as conversas do contato (com a sessão embutida).
+        const query = {
+          select: () => query,
+          eq: (column: string, value: unknown) => {
+            sessionFilters.push([column, value]);
+            return query;
+          },
+          then(resolve: (value: unknown) => unknown) {
+            const linhas = [
+              {
+                id: "conv-1",
+                channel_session_id: "session-1",
+                last_inbound_at: null,
+                created_at: null,
+                channel_sessions: { status: sessionStatus },
+              },
+            ];
+            return Promise.resolve({ data: sessionError ? null : linhas, error: sessionError }).then(resolve);
+          },
+        };
+        return query;
+      }
       if (table === "user_organizations" || table === "channel_sessions") {
         const query = {
           select: () => query,
           eq: (column: string, value: unknown) => {
-            if (table === "channel_sessions") sessionFilters.push([column, value]);
             return query;
           },
           is: () => query,
@@ -97,6 +119,7 @@ beforeEach(() => {
     organization_id: "org-1",
     organizations: { status: "active" },
     contact_id: "contact-1",
+    conversation_id: "conv-1",
     channel_session_id: "session-1",
     created_by_user_id: "user-1",
     body: "Scheduled text",
@@ -128,8 +151,8 @@ describe("scheduled messages and connection lookup failures", () => {
       expect(sendMessageHandler).not.toHaveBeenCalled();
       expect(audit).not.toHaveBeenCalled();
       expect(sessionFilters).toEqual([
-        ["id", "session-1"],
         ["organization_id", "org-1"],
+        ["contact_id", "contact-1"],
       ]);
 
       sessionError = null;
