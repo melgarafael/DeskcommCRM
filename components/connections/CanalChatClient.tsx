@@ -215,8 +215,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
     try {
       await apiClient.patch(ROTA, corpo);
       toast.success(t("Alterações salvas."));
-      const atualizado = await aoMudar();
-      aoConcluir?.(atualizado);
+      try {
+        const atualizado = await aoMudar();
+        aoConcluir?.(atualizado);
+      } catch {
+        // refetch falhou após PATCH bem-sucedido: não sobrescreve o toast de sucesso
+      }
     } catch (e) {
       toast.error(avisoDeErro(e, t));
     } finally {
@@ -418,11 +422,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         </div>
         <div>
           <Button
-            onClick={() =>
+            onClick={() => {
+              const enviado = listaDominios.join("\n");
               salvar({ allowed_origins: listaDominios }, (atualizado) =>
-                setDominios(atualizado.allowed_origins.join("\n")),
-              )
-            }
+                setDominios((prev) => (prev === enviado ? atualizado.allowed_origins.join("\n") : prev)),
+              );
+            }}
             disabled={ocupado || !dominiosMudaram || acimaDoLimite}
           >
             {t("Salvar domínios")}

@@ -37,6 +37,9 @@ const comConexao = {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  h.get.mockReset();
+  h.post.mockReset();
+  h.patch.mockReset();
 });
 
 function mount() {
