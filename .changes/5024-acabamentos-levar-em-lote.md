@@ -13,5 +13,5 @@ A janela de levar em lote passou a tratar o singular: com um negócio selecionad
 continua como estava.
 
 A descrição em espanhol do negócio levado passou a citar o rótulo canônico do produto,
-**Movido a otro embudo**, em vez de "Llevado a otro embudo" — o mesmo texto que o diálogo de um
-card só já usava.
+**Movido a otro embudo** — o mesmo texto que o diálogo de um card só já usava — em vez do
+rótulo antigo.
