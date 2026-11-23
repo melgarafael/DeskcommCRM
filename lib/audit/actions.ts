@@ -161,6 +161,16 @@ export const AUDIT_ACTIONS = [
   // automático numa conversa não tinha rota e, portanto, não tinha ação de
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
+  // #4517 — os pares POR TOKEN dos três comandos de conversa. Ação própria, e
+  // não a mesma da pessoa, porque o FATO é diferente: a integração pausa sem
+  // assumir a conversa, retoma sem soltar o dono e fecha sem a tela. `actorUserId`
+  // vem nulo e `actorApiTokenId` diz QUAL token — a pergunta "quem desligou o
+  // automático deste cliente?" tem de ter resposta nominal, não "foi o sistema".
+  "conversation.ai_paused_by_token",
+  "conversation.ai_resumed_by_token",
+  "conversation.closed_by_token",
+  "conversation.reopened",
+  "conversation.reopened_by_token",
   // Ligar a IA numa conversa que tem dono, sem soltar o dono (#3967), é decisão
   // auditável nos dois sentidos: quem ligou, em que conversa, e quando desligou.
   // O par existe para que "por que a IA falou nessa conversa que é minha?"
@@ -373,6 +383,9 @@ export const AUDIT_ACTIONS = [
   "channel.social_webhook_ressincronizado",
   "channel.ai_access_updated",
   "channel.acervo_updated",
+  // #4670: o interruptor "conversas novas criam negócio" do cartão da conexão.
+  // Por CONEXÃO — nunca da organização inteira.
+  "channel.negocio_da_conversa_updated",
   // A importação do histórico do número (#999): prévia, início, cancelamento e
   // retomada depois de erro (rotas), e o fim, concluída ou em erro (cron). A
   // rodada que só anda o cursor não audita.

@@ -20270,6 +20270,14 @@ export const DICIONARIO: Traducoes = {
   "O que mais ocupou a operação": { es: "Lo que más ocupó la operación" },
   "O período passou do limite de leitura: os números contam só as conversas mais recentes.": { es: "El período superó el límite de lectura: los números cuentan solo las conversaciones más recientes." },
   "Guardar o histórico anterior à vinculação": { es: "Guardar el historial anterior al vínculo" },
+  "Conversas novas criam negócio no funil": { es: "Las conversaciones nuevas crean negocio en el embudo" },
+  "Ligado: cada conversa nova neste número abre um card no funil.": {
+    es: "Activo: cada conversación nueva en este número abre una ficha en el embudo.",
+  },
+  "Desligado: a conversa chega, o contato nasce, a IA atende — só o card não nasce. Criar o negócio à mão continua igual.": {
+    es: "Desactivado: la conversación llega, el contacto nace, la IA atiende; solo la ficha no nace. Crear el negocio a mano sigue igual.",
+  },
+  "Opção de negócio salva.": { es: "Opción de negocio guardada." },
   "Acervo ligado: o servidor do canal guarda as conversas deste número. Num número que já estava pareado, guarda daqui em diante; o histórico anterior (cerca de 1 ano) só chega numa vinculação nova. Ocupa disco lá e não é apagado quando o CRM anonimiza um contato.": {
     es: "Acervo activo: el servidor del canal guarda las conversaciones de este número. En un número que ya estaba vinculado, guarda de aquí en adelante; el historial anterior (cerca de 1 año) solo llega en una vinculación nueva. Ocupa disco allí y no se borra cuando el CRM anonimiza un contacto.",
   },
@@ -23219,6 +23227,12 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Anotações do cliente": { es: "Notas del cliente" },
+  "Editar anotação": { es: "Editar nota" },
+  "Anotação salva.": { es: "Nota guardada." },
+  "Adicionar anotação": { es: "Agregar nota" },
+  "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
+  "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
   // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },

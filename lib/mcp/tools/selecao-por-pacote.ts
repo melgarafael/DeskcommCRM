@@ -97,8 +97,45 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * do `crm_propose_lead_fields_from_document`, que consome o id que a listagem
  * devolve. Medido depois da mudança: onboarding 22 (era 24), evoluir 27 (voltou
  * ao valor que 27 atende), reter 34.
+ *
+ * ═══ 27 → 31: a fatia #4517 entrou ════════════════════════════════════════════
+ *
+ * O #4517 acrescentou cinco capacidades: a ficha editável (`crm_update_contact`,
+ * pacote `vender`) e os quatro comandos de conversa — pausar, retomar, encerrar
+ * e reabrir — nos pacotes `atender` e `escalar`. Medido no head desta linha, com
+ * o catálogo que TEM handler (`catalogoComHandler`), em 2026-11-18:
+ *
+ *  - o agente NASCE com 23 automáticas do `vender` (26 com as 3 críticas);
+ *  - `evoluir` — o menor segundo pacote — passou a exigir 28 a partir do
+ *    default; `escalar` 41, `reter` 50, `atender` 50, `organizar` 48;
+ *  - `atender` SOZINHO passou a exigir 31 (29 automáticas + 2 críticas).
+ *
+ * A conta do #4534 com a agenda e as tarefas empilhadas media 31 por outro
+ * caminho; este PR deixou de ser empilhado (o #4698 mergeou a agenda e o #4523 é
+ * dono das tarefas), então o número aqui é medido só com a fatia que sobrou.
+ *
+ * ═══ 31, e não 32: o número é o que ESTA fatia mede ═══════════════════════════
+ *
+ * Uma versão deste branch levou o teto a 32 citando uma decisão do dono de
+ * 2026-11-19 que não tem documento, e o #4523 (que chegava a 32 pelo
+ * `organizar`) voltou a 27. Medido com `vagasExigidasPeloPacote([],
+ * TOOL_CATALOG, pacote)` (automáticas + críticas), a main mesclada:
+ *
+ *   pacote       main (teto 27)   #4534
+ *   atender              20        31
+ *   escalar              13        18
+ *   evoluir               5         5
+ *   organizar            22        27
+ *   reter                10        27
+ *   vender               24        26
+ *
+ * 31 é o menor teto em que nenhum pacote sozinho estoura — e o maior em que o
+ * `atender` sozinho ainda é recusado quando a crítica já ocupa uma vaga ("faltam
+ * 1 vaga", `tests/unit/teto-do-atender-bate-com-a-recusa-da-spec.test.ts` e
+ * `tests/e2e/capacidades-do-agente.spec.ts`). Com 32 essa recusa deixa de
+ * existir. Se o `organizar` do #4523 precisar de 32, ele sobe com a medição dele.
  */
-export const TETO_TOOLS_POR_AGENTE = 27;
+export const TETO_TOOLS_POR_AGENTE = 31;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {

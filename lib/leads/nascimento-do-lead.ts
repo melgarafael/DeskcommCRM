@@ -56,6 +56,7 @@ import { marcaDaOrigem, origemDeCampanhaDaConversa } from "@/lib/campanhas/orige
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 
 import { logger } from "@/lib/logger";
+import { conversaAbreNegocio } from "@/lib/channels/negocio-da-conversa";
 import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 
 import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
@@ -118,6 +119,10 @@ const ORIGEM_PADRAO: OrigemDoNascimento = ORIGEM_DO_WHATSAPP;
  */
 export type MotivoSemLead =
   | "ja_existe" // o contato já tem lead aberto: um por demanda, não um por mensagem
+  // #4670: a CONEXÃO por onde a conversa entrou está com "conversas novas criam
+  // negócio" desligada. Não é recusa da pessoa nem falha: a conversa, o contato,
+  // o Inbox e a IA seguem iguais — só o card não nasce.
+  | "conexao_nao_cria_negocio"
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "contato_interno" // #2353: equipe/sócio/família/fornecedor — tag interna, não é negócio
@@ -129,7 +134,7 @@ export type MotivoSemLead =
   // #4076: o negócio PERDIDO recente voltou a aberto — a conversa é a MESMA
   // demanda, não uma nova. Não é "nenhum card": `leadId` vem preenchido.
   | "reaberto"
-  | "erro"; // qualquer falha de escrita
+  | "erro"; // qualquer falha de escrita — e, desde a #4670, falha ao LER a conexão
 
 export type NascimentoDoLead =
   | { criado: true; leadId: string; pipelineId: string; stageId: string }
@@ -556,6 +561,59 @@ export async function garantirLeadDaConversa(
     .maybeSingle();
 
   if (existente) return { criado: false, motivo: "ja_existe" };
+
+  // 2b · #4670 · A CONEXÃO decide se a conversa nova abre negócio.
+  //
+  // Vem logo depois do "já existe" e ANTES de tudo que decide destino (funil,
+  // etapa, reabertura de perdido): se este número não abre negócio, nada abaixo
+  // tem o que decidir. Vem depois do "já existe" porque o card que já existe é
+  // um fato do contato — desligar a chave num número não fecha nem esconde o que
+  // já nasceu ali, e o passo 2 responde antes com o motivo dele.
+  //
+  // A chave é POR CONEXÃO, e a conexão sai da conversa (`channel_session_id`).
+  // Isso é o que faz este ponto único cobrir os quatro chamadores sem editá-los:
+  // pós-entrada, mensagem do celular, ligação do voice-agent e conversa aberta
+  // pelo CRM passam todos por aqui.
+  //
+  // ⚠️ FALHA DE LEITURA NÃO CRIA O CARD NESTA MENSAGEM. É a única recusa
+  // `fail-closed` deste arquivo, e o motivo é o custo assimétrico: o card que a
+  // chave mandou não criar não se desfaz sozinho (alguém teria de perceber e
+  // apagar à mão), enquanto não criar agora se desfaz na próxima mensagem — o
+  // nascimento já é idempotente por contato, pelo advisory lock da RPC do passo
+  // 4. O erro fica no motivo, não no silêncio.
+  //
+  // Conversa ausente NÃO é falha de leitura (ver `conversaAbreNegocio`): o
+  // voice-agent passa o id da linha da CHAMADA neste campo, e recusar ali faria
+  // toda ligação de número novo parar de abrir demanda.
+  const decisaoDaConexao = await conversaAbreNegocio(db, organizationId, conversationId);
+  if ("erro" in decisaoDaConexao) {
+    logger.warn("[nascimento-do-lead] não foi possível ler a conexão — o card NÃO nasce nesta mensagem", {
+      organization_id: organizationId,
+      contact_id: contactId,
+      conversation_id: conversationId,
+      error: decisaoDaConexao.erro,
+    });
+    return { criado: false, motivo: "erro", detalhe: `conexão: ${decisaoDaConexao.erro}` };
+  }
+  if (decisaoDaConexao.colunaAusente) {
+    // Instalação que subiu o código sem rodar a migration: a chave não existe, e
+    // ausência não é "desligado" — é o comportamento de sempre.
+    logger.warn("[nascimento-do-lead] coluna da chave da conexão ausente — migration pendente?", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+    });
+  }
+  if (!decisaoDaConexao.cria) {
+    // Registrado como as outras recusas: o log diz qual conexão recusou, para
+    // quem procura "por que este contato não está no funil" achar a resposta
+    // sem abrir o banco.
+    logger.info("[nascimento-do-lead] a conexão não cria negócio para conversa nova", {
+      organization_id: organizationId,
+      contact_id: contactId,
+      conversation_id: conversationId,
+    });
+    return { criado: false, motivo: "conexao_nao_cria_negocio" };
+  }
 
   // 3 · onde entra
   //
