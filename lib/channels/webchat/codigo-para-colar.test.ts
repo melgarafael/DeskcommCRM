@@ -86,13 +86,13 @@ describe("codigoParaColar: formato e posicao", () => {
 
   it("formato invalido recusa", () => {
     expect(() =>
-      codigoParaColar("https://crm.exemplo.com.br", CHAVE, { formato: "invalido" }),
+      codigoParaColar("https://crm.exemplo.com.br", CHAVE, { formato: "invalido" as never }),
     ).toThrow();
   });
 
   it("posicao invalida recusa", () => {
     expect(() =>
-      codigoParaColar("https://crm.exemplo.com.br", CHAVE, { posicao: "centro" }),
+      codigoParaColar("https://crm.exemplo.com.br", CHAVE, { posicao: "centro" as never }),
     ).toThrow();
   });
 

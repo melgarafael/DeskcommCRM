@@ -22962,7 +22962,6 @@ export const DICIONARIO: Traducoes = {
   "Página inteira": { es: "Página entera" },
   "Mudou o formato? Cole o código novo no seu site (abaixo). Embutido não mostra a bolha: o iframe fica dentro de um elemento da sua página.": { es: "¿Cambió el formato? Pegue el código nuevo en su sitio (abajo). Insertado no muestra la burbuja: el iframe queda dentro de un elemento de su página." },
   "Salvar formato": { es: "Guardar formato" },
-  "Posição": { es: "Posición" },
   "Lado da tela onde a janela fica aberta.": { es: "Lado de la pantalla donde se abre la ventana." },
   "Direita": { es: "Derecha" },
   "Esquerda": { es: "Izquierda" },

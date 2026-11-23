@@ -34,24 +34,26 @@ function chaveConferida(chave: string): string {
  * Parâmetros opcionais de formato e posição, só o que difere do padrão.
  * Valores são conferidos contra as listas (outro valor = erro).
  */
+const FORMATOS_ACEITOS: readonly string[] = ["bolha", "painel", "embutido", "pagina"];
+const POSICOES_ACEITAS: readonly string[] = ["direita", "esquerda"];
+
 function parametrosParaUrl(parametros?: {
   formato?: FormatoDoChat;
   posicao?: PosicaoDoChat;
 }): string {
+  const formato: string | undefined = parametros?.formato;
+  const posicao: string | undefined = parametros?.posicao;
   const partes: string[] = [];
-  if (parametros?.formato && parametros.formato !== FORMATO_PADRAO) {
-    if (!["bolha", "painel", "embutido", "pagina"].includes(parametros.formato)) {
-      throw new Error("formato_invalido");
-    }
-    partes.push(`f=${encodeURIComponent(parametros.formato)}`);
+  if (formato !== undefined && formato !== FORMATO_PADRAO) {
+    if (!FORMATOS_ACEITOS.includes(formato)) throw new Error("formato_invalido");
+    partes.push(`&f=${encodeURIComponent(formato)}`);
   }
-  if (parametros?.posicao && parametros.posicao !== POSICAO_PADRAO) {
-    if (parametros.posicao !== "direita" && parametros.posicao !== "esquerda") {
-      throw new Error("posicao_invalida");
-    }
-    partes.push(`p=${encodeURIComponent(parametros.posicao)}`);
+  if (posicao !== undefined && posicao !== POSICAO_PADRAO) {
+    if (!POSICOES_ACEITAS.includes(posicao)) throw new Error("posicao_invalida");
+    partes.push(`&p=${encodeURIComponent(posicao)}`);
   }
-  return partes.length ? `?${partes.join("&")}` : "";
+  // Já vem com o `&` na frente: o endereço do script sempre começa por `?k=<chave>`.
+  return partes.join("");
 }
 
 /** A linha que o cliente cola no site: carrega o widget com a chave dele. */

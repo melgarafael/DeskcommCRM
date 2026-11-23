@@ -24,6 +24,9 @@ interface ModuloDaBolha {
     origemDoCrm: string,
     iframe: { contentWindow: unknown },
   ) => boolean;
+  formatoDoScript: (src: string) => string | null;
+  posicaoDoScript: (src: string) => string | null;
+  alvoDoScript: (src: string) => string | null;
 }
 
 // import.meta.url não é um file: dentro do jsdom; a raiz do repositório é o cwd do vitest.
@@ -502,6 +505,20 @@ describe("montagem no DOM", () => {
 
 describe("formato e posição - montagem no DOM", () => {
   const SRC_CRM = "https://crm.exemplo.com.br/webchat.js";
+
+  afterEach(() => {
+    document.querySelectorAll("script[src], iframe, button, div").forEach((el) => el.remove());
+    delete (window as unknown as Record<string, unknown>).__webchatMontado;
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+  });
+
+  function montarComSrc(src: string): void {
+    const script = document.createElement("script");
+    script.src = src;
+    document.head.appendChild(script);
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    requerer(CAMINHO);
+  }
 
   function montarComSrcEAttr(src: string, attrNome: string, attrValor: string): void {
     const script = document.createElement("script");
