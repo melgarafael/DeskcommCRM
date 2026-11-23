@@ -154,6 +154,7 @@ async function responderLista(
     // é o único lugar que pode esquecer sem erro nenhum. A cerca
     // `rota-le-todo-filtro-do-schema` cobra a chave.
     pessoais: url.searchParams.get("pessoais") ?? undefined,
+    ordem_fila: url.searchParams.get("ordem_fila") ?? undefined,
     cursor: url.searchParams.get("cursor") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
   });
