@@ -5,6 +5,11 @@
  * usage into cents, FRACIONADO (sem arredondar). Cached in-memory for 5 min — stale catalog data
  * never crashes.
  *
+ * Exceção: os ids com promoção datada (Gemini 3.5/3.6/3.7/3.8 Flash, migrations
+ * 0649 e 9462; Gemini 4 Argon, migration 0703 — e o prefixo `provider/`) não usam a
+ * linha. Ela já guarda a tarifa POSTERIOR à promo, para a lista mostrá-la. O
+ * gasto sai de `costCentsComVirada`, o mesmo corte de `costCents`.
+ *
  * Custo DESCONHECIDO nunca é contado como grátis: quando o modelo não é
  * achado (nem após a normalização do id) — ou o catálogo o conhece mas não tem
  * preço — devolve `null`, e não 0. É o mesmo contrato do seam
@@ -17,6 +22,7 @@
  * IMPORTANT: distinct from `lib/ai/cost.ts` which still serves the legacy
  * `ai_pricing` table used by the EPIC-06 RAG worker.
  */
+import { costCentsComVirada } from "@/lib/agent-engine/edge/llm/pricing";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { multiplicadorDoDegrau } from "@/lib/ai/custo-escalonado";
@@ -66,6 +72,11 @@ export interface ComputeCostInput {
   model: string;
   inputTokens?: number;
   outputTokens?: number;
+  /**
+   * Instante da chamada. Sem ele, agora. Os ids com promoção datada (e o
+   * prefixo `provider/`) usam o corte de `costCents`, não a linha da tabela.
+   */
+  em?: Date;
 }
 
 function acharLinha(
@@ -119,6 +130,22 @@ function avisarSemPreco(provider: string, modelo: string): void {
  * caro entrar no teto como gratuito (defeito do #1880, agora calado em null).
  */
 export async function computeCostCents(input: ComputeCostInput): Promise<number | null> {
+  const comDegrau = (cents: number) =>
+    cents * multiplicadorDoDegrau(input.model, input.inputTokens);
+
+  // Ids com promoção datada guardam no catálogo a tarifa posterior à promo
+  // (0649, 0703, 9462). O gasto gravado em ai_agent_runs tem de seguir `costCents`
+  // (promo estritamente antes do corte). Outro modelo segue a linha do catálogo.
+  const pelaVirada = costCentsComVirada(
+    input.model,
+    {
+      inputTokens: input.inputTokens ?? 0,
+      outputTokens: input.outputTokens ?? 0,
+    },
+    input.em ?? new Date(),
+  );
+  if (pelaVirada !== null) return comDegrau(pelaVirada);
+
   const pricing = await loadPricing();
   const row = acharLinha(pricing, input);
   if (!row) {
@@ -151,7 +178,7 @@ export async function computeCostCents(input: ComputeCostInput): Promise<number 
   // real em 14 dias: 1.122¢ registrados contra ~103¢ de custo. E o teto de
   // gasto (`cost_budget_cents`, em agent.ts) compara com ESTE número. A
   // coluna `ai_agent_runs.cost_cents` é `numeric(10,4)`.
-  return cents * multiplicadorDoDegrau(input.model, input.inputTokens);
+  return comDegrau(cents);
 }
 
 /** Test-only: drop the in-memory pricing cache. */
