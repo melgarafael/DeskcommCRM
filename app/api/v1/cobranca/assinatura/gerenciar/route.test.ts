@@ -32,7 +32,7 @@ beforeEach(() => {
 describe("gerenciar o pagamento", () => {
   it("⭐ devolve o portal do provedor, com volta para Plano e cobrança", async () => {
     expect((await (await POST()).json()).data).toEqual({ url: "https://billing.stripe.com/p/session/x" });
-    expect(h.gerenciar).toHaveBeenCalledWith({ clienteRef: "cus_1", urlDeVolta: expect.stringMatching(/\/cobranca\/volta\?para=painel$/) });
+    expect(h.gerenciar).toHaveBeenCalledWith({ clienteRef: "cus_1", urlDeVolta: expect.stringMatching(/\/cobranca\/volta\?para=painel$/), organizacao: "15151515-0000-4000-8000-000000000001" });
   });
 
   it("sem assinatura no provedor, ou provedor sem portal: 409 sem_portal", async () => {

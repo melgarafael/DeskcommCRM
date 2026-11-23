@@ -174,6 +174,8 @@ describe("checkout da assinatura", () => {
     h.ad.lerSituacao.mockResolvedValue({ assinaturasVivas: 1, linkDePagamento: "https://invoice.stripe.com/i/x" });
     const res = await assinar();
     expect(await codigo(res)).toMatchObject({ code: "pagamento_em_andamento", details: { link_de_pagamento: "https://invoice.stripe.com/i/x" } });
+    // #4862: o "já tem assinatura viva" é medido pelo vínculo da empresa, não pelo cliente inteiro.
+    expect(h.ad.lerSituacao).toHaveBeenCalledWith({ clienteRef: "cus_1", organizacao: ORG });
     expect(updates().at(-1)).toEqual({ checkout_expira_em: null });
     expect(h.ad.iniciarAssinatura).not.toHaveBeenCalled();
   });
