@@ -198,3 +198,67 @@ describe("montarJanela: HTML", () => {
     expect(html).toContain("resize: none");
   });
 });
+
+/** Extrai o objeto JSON do elemento <script id="webchat-config"> do HTML. */
+function dadosDaJanela(html: string): unknown {
+  const casou = /<script type="application\/json" id="webchat-config">([\s\S]*?)<\/script>/.exec(
+    html,
+  );
+  expect(casou).not.toBeNull();
+  return JSON.parse(casou![1]!);
+}
+
+describe("montarJanela: dados da janela (Tarefa 10a)", () => {
+  it("com tudo ausente, o JSON tem os padroes", () => {
+    const dados = dadosDaJanela(janela().html) as Record<string, unknown>;
+    expect(dados.avatar).toBeNull();
+    expect(dados.autoAbrirSegundos).toBe(0);
+    expect(dados.som).toBe(false);
+    expect(dados.respostasRapidas).toEqual([]);
+  });
+
+  it("com tudo preenchido, tem os valores", () => {
+    const dados = dadosDaJanela(
+      janela({
+        config: {
+          avatar_url: "https://example.com/avatar.png",
+          auto_abrir_segundos: 30,
+          som: true,
+          respostas_rapidas: ["Sim", "Nao"],
+        },
+      }).html,
+    ) as Record<string, unknown>;
+    expect(dados.avatar).toBe("https://example.com/avatar.png");
+    expect(dados.autoAbrirSegundos).toBe(30);
+    expect(dados.som).toBe(true);
+    expect(dados.respostasRapidas).toEqual(["Sim", "Nao"]);
+  });
+
+  it("respostas_rapidas com </script> nao fecha a tag do config", () => {
+    const { html } = janela({
+      config: { respostas_rapidas: ["fim </script><img src=x onerror=alert(1)>"] },
+    });
+    // Duas tags de fechamento: a do config e a do script externo. Nenhuma a mais.
+    expect(html.split("</script>").length - 1).toBe(2);
+    expect(html).not.toContain("<img src=x");
+  });
+
+  it("valor com < dentro de respostas_rapidas sai escapado no JSON", () => {
+    const dados = dadosDaJanela(
+      janela({ config: { respostas_rapidas: ["texto <tag> e & mais"] } }).html,
+    ) as Record<string, unknown>;
+    expect(dados.respostasRapidas).toEqual(["texto <tag> e & mais"]);
+  });
+});
+
+describe("montarJanela: CSP com avatar (Tarefa 10a)", () => {
+  it("com avatar, o CSP permite https em img-src", () => {
+    const { csp } = janela({ config: { avatar_url: "https://example.com/a.png" } });
+    expect(csp).toContain("img-src 'self' https: data:");
+  });
+
+  it("sem avatar, o CSP e identico ao de hoje", () => {
+    const { csp } = janela();
+    expect(csp).toContain("img-src 'self' https: data:");
+  });
+});

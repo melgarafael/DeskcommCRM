@@ -72,6 +72,36 @@ export const configuracaoDoChatSchema = z
      * "painel" e "pagina". Ausente = "direita".
      */
     posicao: z.enum(["direita", "esquerda"]).optional(),
+    /**
+     * URL da imagem do avatar da janela (F2-B, Tarefa 10a). Somente https, no
+     * máximo 300 caracteres. Ausente = sem avatar.
+     */
+    avatar_url: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => {
+        try {
+          return new URL(v).protocol === "https:";
+        } catch {
+          return false;
+        }
+      })
+      .optional(),
+    /**
+     * Abrir a janela sozinho após N segundos (F2-B, Tarefa 10a). 0 desliga.
+     * Intervalo 0 a 120.
+     */
+    auto_abrir_segundos: z.number().int().min(0).max(120).optional(),
+    /**
+     * Tocar som ao chegar uma resposta (F2-B, Tarefa 10a).
+     */
+    som: z.boolean().optional(),
+    /**
+     * Respostas rápidas do visitante (F2-B, Tarefa 10a). Até 5 strings, cada
+     * uma de 1 a 80 caracteres após trim.
+     */
+    respostas_rapidas: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
   })
   .strict();
 

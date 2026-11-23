@@ -207,6 +207,25 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [formato, setFormato] = useState<FormatoDoChat>(formatoInicial);
   const [posicao, setPosicao] = useState<PosicaoDoChat>(posicaoInicial);
 
+  // Ajustes da janela (Tarefa 10a): estado inicial vem da configuracao; vazio = "não mudar".
+  const avatarInicial = estado.config.avatar_url ?? "";
+  const autoAbrirInicial = estado.config.auto_abrir_segundos ?? 0;
+  const somInicial = estado.config.som ?? false;
+  const respostasInicial = (estado.config.respostas_rapidas ?? []).join("\n");
+  const [avatarUrl, setAvatarUrl] = useState(avatarInicial);
+  const [autoAbrirSegundos, setAutoAbrirSegundos] = useState(String(autoAbrirInicial));
+  const [som, setSom] = useState(somInicial);
+  const [respostasRapidas, setRespostasRapidas] = useState(respostasInicial);
+  const [erroAjustes, setErroAjustes] = useState("");
+
+  // Uma resposta rápida por linha, aparadas e sem linha vazia. A validação de verdade é do servidor.
+  function linhasDeResposta(texto: string): string[] {
+    return texto
+      .split(/\r?\n/)
+      .map((linha) => linha.trim())
+      .filter((linha) => linha !== "");
+  }
+
   // Aparência: campo em branco é "não mudar". Só vai o que foi preenchido.
   const corPreenchida = cor.trim() !== "";
   const corValida = !corPreenchida || CORES_HEX.test(cor.trim());
@@ -224,6 +243,51 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const posicaoValida = ["direita", "esquerda"].includes(posicao);
   const formatoMudou = formato !== formatoInicial;
   const posicaoMudou = posicao !== posicaoInicial;
+
+  // Ajustes da janela: validação no cliente, mesmas regras do schema. Campo em branco não muda.
+  const avatarPreenchido = avatarUrl.trim() !== "";
+  const avatarValida = !avatarPreenchido || avatarUrl.trim().startsWith("https://");
+
+  const autoAbrirPreenchido = autoAbrirSegundos.trim() !== "";
+  const autoAbrirAtual = autoAbrirPreenchido ? autoAbrirSegundos.trim() : "0";
+  let autoAbrirValido = true;
+  let autoAbrirParaEnviar: number | undefined;
+  if (autoAbrirPreenchido) {
+    const n = Number(autoAbrirSegundos);
+    autoAbrirValido = Number.isInteger(n) && n >= 0 && n <= 120;
+    autoAbrirParaEnviar = n;
+  }
+
+  const respostasLinhas = linhasDeResposta(respostasRapidas);
+  const respostasValidas =
+    respostasLinhas.length <= 5 && respostasLinhas.every((linha) => linha.length >= 1 && linha.length <= 80);
+
+  const ajustes: Record<string, unknown> = {};
+  if (avatarPreenchido) ajustes.avatar_url = avatarUrl.trim();
+  if (autoAbrirParaEnviar !== undefined) ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
+  ajustes.som = som;
+  if (respostasRapidas.trim() !== "") ajustes.respostas_rapidas = respostasLinhas;
+
+  const ajustesMudou =
+    avatarUrl.trim() !== avatarInicial ||
+    autoAbrirAtual !== String(autoAbrirInicial) ||
+    som !== somInicial ||
+    respostasRapidas.trim() !== respostasInicial;
+
+  const ajustesValidos = avatarValida && autoAbrirValido && respostasValidas;
+  const ajustesInvalidos = (avatarPreenchido && !avatarValida) || !autoAbrirValido || !respostasValidas;
+
+  if (ajustesInvalidos) {
+    setErroAjustes(
+      !avatarValida && avatarPreenchido
+        ? "Use https:// na URL do avatar."
+        : !autoAbrirValido && autoAbrirPreenchido
+          ? "Use um numero inteiro de 0 a 120 segundos."
+          : "Use ate 5 respostas rapidas, de 1 a 80 caracteres cada.",
+    );
+  } else {
+    setErroAjustes("");
+  }
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -482,6 +546,99 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             disabled={ocupado || !posicaoMudou || !posicaoValida}
           >
             {t("Salvar posição")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Ajustes da janela")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Como a janela se comporta para quem visita o seu site.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-avatar">{t("Avatar")}</Label>
+          <Input
+            id="canal-chat-avatar"
+            value={avatarUrl}
+            maxLength={300}
+            placeholder={estado.config.avatar_url ?? ""}
+            onChange={(e) => setAvatarUrl(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("URL da imagem do avatar (somente https).")}
+          </p>
+          {!avatarValida && avatarPreenchido && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use https:// na URL do avatar.")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-auto-abrir">{t("Abrir sozinho após (segundos)")}</Label>
+          <Input
+            id="canal-chat-auto-abrir"
+            type="number"
+            value={autoAbrirSegundos}
+            maxLength={3}
+            onChange={(e) => setAutoAbrirSegundos(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Vazio ou 0 desliga a abertura automática.")}
+          </p>
+          {!autoAbrirValido && autoAbrirPreenchido && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use um numero inteiro de 0 a 120 segundos.")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-som">{t("Tocar som ao chegar resposta")}</Label>
+          <input
+            id="canal-chat-som"
+            type="checkbox"
+            checked={som}
+            onChange={(e) => setSom(e.target.checked)}
+            className="h-4 w-4 rounded border-input"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-respostas-rapidas">{t("Respostas rápidas do chat")}</Label>
+          <Textarea
+            id="canal-chat-respostas-rapidas"
+            rows={4}
+            value={respostasRapidas}
+            placeholder="Sim\nNão\nTalvez"
+            onChange={(e) => setRespostasRapidas(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.")}
+          </p>
+          {!respostasValidas && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use até 5 respostas rápidas, de 1 a 80 caracteres cada.")}
+            </p>
+          )}
+        </div>
+        {erroAjustes && (
+          <p role="alert" className="text-xs text-destructive">{erroAjustes}</p>
+        )}
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: ajustes }, () => {
+                setAvatarUrl(avatarInicial);
+                setAutoAbrirSegundos(String(autoAbrirInicial));
+                setSom(somInicial);
+                setRespostasRapidas(respostasInicial);
+              })
+            }
+            disabled={
+              ocupado ||
+              !ajustesMudou ||
+              !ajustesValidos
+            }
+          >
+            {t("Salvar ajustes")}
           </Button>
         </div>
       </section>

@@ -157,6 +157,11 @@ export function montarJanela(entrada: EntradaDaJanela): JanelaMontada {
     },
     versaoDoAviso: TEXTO_DO_AVISO_VERSAO,
     controlador: { razaoSocial: controlador.razaoSocial, politicaUrl: politica },
+    // Ajustes da janela (Tarefa 10a): valores com padrao quando ausentes.
+    avatar: config.avatar_url ?? null,
+    autoAbrirSegundos: config.auto_abrir_segundos ?? 0,
+    som: config.som ?? false,
+    respostasRapidas: config.respostas_rapidas ?? [],
   };
 
   const html = `<!doctype html>
