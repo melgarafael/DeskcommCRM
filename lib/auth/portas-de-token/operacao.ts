@@ -78,6 +78,13 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/conversations/[id]/sector",
   "/api/v1/conversations/[id]/snooze",
   "/api/v1/conversations/[id]/usable-for-rag",
+  // COMANDOS DE CONVERSA (#4517): pausar/retomar a IA e encerrar/reabrir. A rota
+  // cobra `conversations:write` (`lib/auth/escopo-das-escritas.ts`), sem trocar o
+  // responsável — o que a integração fazia por transferência.
+  "/api/v1/conversations/[id]/pause-ai",
+  "/api/v1/conversations/[id]/reactivate-bot",
+  "/api/v1/conversations/[id]/close",
+  "/api/v1/conversations/[id]/reopen",
   // LEADS (tarefa 3 da R2). Quem autentica é a própria rota, por `resolveAuthDual`
   // (sessão OU Bearer `dsk_…`, a organização vinda da linha do token): `mcp:read`
   // no GET e `mcp:write` na escrita, com o papel que a sessão já exige

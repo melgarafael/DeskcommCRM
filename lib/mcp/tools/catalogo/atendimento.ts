@@ -105,6 +105,29 @@ export const TOOLS_ATENDIMENTO = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_update_contact",
+    category: "write",
+    // O RÓTULO É A PROMESSA, não a ferramenta: diz o que muda na ficha do
+    // cliente e nada sobre MCP, token ou escopo — o gate de catálogo reprova
+    // jargão e conta os 60 caracteres.
+    rotulo: "Corrigir os dados do cliente",
+    explicacao:
+      "Atualiza o cadastro do cliente: nome, como prefere ser chamado, e-mail, telefone, nascimento, " +
+      "tipo e endereço. Se a integração tiver a permissão de editar cadastro, a correção entra na " +
+      "hora; sem ela, fica como proposta esperando alguém confirmar — e só nome, e-mail, telefone e " +
+      "nascimento podem entrar assim.",
+    oQueToca: "Cadastro de clientes",
+    // `atencao`, e não `critico`: não sai mensagem para o cliente, a alteração
+    // é auditada com o token que a fez e é reversível pela própria tela (o
+    // histórico da ficha guarda o valor anterior). Grava por cima, sim — é o
+    // motivo de o escopo ser separado e de a tela de tokens mostrar a linha.
+    risco: "atencao",
+    // "vender" pela mesma aritmética do `crm_propose_contact_field` logo acima:
+    // "atender" é o pacote no teto, e corrigir cadastro não é trabalho de
+    // atendimento em curso. Continua alcançável pelo modo avançado.
+    pacotes: ["vender"],
+  },
+  {
     name: "crm_list_conversations",
     category: "read",
     rotulo: "Listar conversas",
@@ -112,6 +135,57 @@ export const TOOLS_ATENDIMENTO = declararTools([
       "Mostra as conversas em andamento, quem está cuidando de cada uma e a posição de cada cliente na fila de espera.",
     oQueToca: "Atendimento",
     risco: "seguro",
+    pacotes: ["atender", "escalar"],
+  },
+  {
+    name: "crm_pause_ai",
+    category: "write",
+    rotulo: "Pausar a IA nesta conversa",
+    explicacao:
+      "Desliga o atendimento automático de uma conversa: a IA deixa de responder o cliente até " +
+      "alguém retomar. O responsável pela conversa e o dono do negócio não mudam — pausar não " +
+      "transfere o atendimento para ninguém.",
+    oQueToca: "Atendimento",
+    // `atencao`: o efeito é visível para o cliente (ele deixa de ser respondido), mas
+    // é reversível num clique e NÃO mexe em dono, negócio nem cadastro.
+    risco: "atencao",
+    pacotes: ["atender", "escalar"],
+  },
+  {
+    name: "crm_resume_ai",
+    category: "write",
+    rotulo: "Deixar a IA responder de novo",
+    explicacao:
+      "Religa o atendimento automático de uma conversa pausada. Se uma pessoa é responsável pela " +
+      "conversa, a IA continua sem responder e o retorno avisa — retomar aqui não tira a conversa " +
+      "de quem está com ela.",
+    oQueToca: "Atendimento",
+    risco: "atencao",
+    pacotes: ["atender", "escalar"],
+  },
+  {
+    name: "crm_close_conversation",
+    category: "write",
+    rotulo: "Encerrar a conversa",
+    explicacao:
+      "Encerra o atendimento de uma conversa, igual ao botão da tela: registra o fim, libera a " +
+      "fila e para de contar o tempo de espera. A conversa pode ser reaberta depois, e reabrir é " +
+      "uma ferramenta separada.",
+    oQueToca: "Atendimento",
+    // `atencao`, não `critico`: encerrar é o gesto mais comum do dia e é reversível
+    // pela própria ferramenta de reabrir. `critico` seria encerrar SEM poder voltar.
+    risco: "atencao",
+    pacotes: ["atender", "escalar"],
+  },
+  {
+    name: "crm_reopen_conversation",
+    category: "write",
+    rotulo: "Reabrir conversa encerrada",
+    explicacao:
+      "Reabre uma conversa que tinha sido encerrada, igual ao botão da tela. O atendimento volta a " +
+      "contar a partir de agora e a conversa volta para a fila de quem estava com ela.",
+    oQueToca: "Atendimento",
+    risco: "atencao",
     pacotes: ["atender", "escalar"],
   },
   {

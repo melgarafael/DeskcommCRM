@@ -1,7 +1,9 @@
 import { expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { decidirRajada, janelaDeRajada, debounceEfetivo, TETO_DEBOUNCE_MS } from './debounce';
+import { loadEnv } from '../../env';
+
+import { decidirRajada, janelaDeRajada, debounceEfetivo, tetoDaRajada, TETO_DEBOUNCE_MS } from './debounce';
 
 const alvo = { organizationId: 'org1', contactId: 'contato1' };
 /** Instante fixo: a janela é aritmética e o teste não depende do relógio. */
@@ -25,7 +27,7 @@ it('mensagem dentro da janela viaja de carona no job pendente — sem abrir turn
 
   const decisao = await decidirRajada(pool, alvo, 500, AGORA);
 
-  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-pendente' });
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-pendente', janelaEstendidaAte: null });
   expect(chamadas).toHaveLength(1);
   expect(chamadas[0]).toContain("kind = 'inbound_turn'");
 });
@@ -94,7 +96,7 @@ it('cenário B: janela FECHADA — o adiado segue esperando e a mensagem viaja d
 
   const decisao = await decidirRajada(pool, alvo, 500, AGORA, async () => false);
 
-  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-adiado' });
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-adiado', janelaEstendidaAte: null });
 });
 
 it('job de debounce (sem o rastro) continua recebendo carona mesmo com a janela aberta', async () => {
@@ -103,7 +105,7 @@ it('job de debounce (sem o rastro) continua recebendo carona mesmo com a janela 
   const decisao = await decidirRajada(pool, alvo, 500, AGORA, async () => true);
 
   // Abrir a janela não pode desmontar a coalescência normal de 8 s.
-  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-de-debounce' });
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-de-debounce', janelaEstendidaAte: null });
 });
 
 it('adiado pela janela de DISPARO (retomada) não muda a coalescência da resposta', async () => {
@@ -116,7 +118,7 @@ it('adiado pela janela de DISPARO (retomada) não muda a coalescência da respos
 
   const decisao = await decidirRajada(pool, alvo, 500, AGORA, async () => true);
 
-  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-de-retomada' });
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-de-retomada', janelaEstendidaAte: null });
 });
 
 it('sem o quinto argumento (chamador antigo) nada muda — candidato adiado ainda coalesce', async () => {
@@ -124,7 +126,7 @@ it('sem o quinto argumento (chamador antigo) nada muda — candidato adiado aind
 
   const decisao = await decidirRajada(pool, alvo, 500, AGORA);
 
-  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-adiado' });
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-adiado', janelaEstendidaAte: null });
 });
 
 it('janelaDeRajada: sem debounce não há janela; com debounce a janela é agora + janela', () => {
@@ -156,4 +158,121 @@ it('debounceEfetivo: teto de 60s — valor ACIMA do teto é clamado no limite', 
 
 it('debounceEfetivo: valor NEGATIVO (dado sujo) clampa para 0, não quebra', () => {
   expect(debounceEfetivo(-5, ENV)).toBe(0);
+});
+// ── #196 (b): a janela ANDA e para no teto ────────────────────────────────
+/**
+ * Dublê que distingue as duas consultas do módulo e guarda os parâmetros —
+ * é nos parâmetros do UPDATE que se vê para onde a janela foi.
+ */
+function poolComJanela(
+  candidato: { id: string; criadoEm?: number; runAfterEm?: number; payload?: unknown },
+  opcoes: { updateFalha?: string } = {},
+): { pool: pg.Pool; updates: unknown[][] } {
+  const updates: unknown[][] = [];
+  const query = vi.fn().mockImplementation((sql: string, params: unknown[] = []) => {
+    if (sql.includes('select id, payload, created_at, run_after from job_queue')) {
+      return {
+        rows: [
+          {
+            id: candidato.id,
+            payload: candidato.payload ?? {},
+            created_at: candidato.criadoEm === undefined ? null : new Date(candidato.criadoEm),
+            run_after: candidato.runAfterEm === undefined ? null : new Date(candidato.runAfterEm),
+          },
+        ],
+      };
+    }
+    if (sql.includes('update job_queue set run_after')) {
+      updates.push(params);
+      if (opcoes.updateFalha !== undefined) throw new Error(opcoes.updateFalha);
+      return { rows: [] };
+    }
+    throw new Error(`consulta inesperada: ${sql}`);
+  });
+  return { pool: { query } as unknown as pg.Pool, updates };
+}
+
+it('a mensagem de carona EMPURRA a janela: run_after = agora + debounce, preso ao teto', async () => {
+  const { pool, updates } = poolComJanela({
+    id: 'job-rajada',
+    criadoEm: AGORA,
+    runAfterEm: AGORA + 8_000,
+  });
+
+  const decisao = await decidirRajada(pool, alvo, 8_000, AGORA + 12_100, undefined, 45_000);
+
+  expect(decisao).toEqual({
+    tipo: 'coalescido',
+    jobId: 'job-rajada',
+    janelaEstendidaAte: new Date(AGORA + 20_100),
+  });
+  expect(updates, 'uma escrita, e ela é do job da rajada').toEqual([
+    ['job-rajada', new Date(AGORA + 20_100).toISOString(), alvo.organizationId],
+  ]);
+});
+
+it('no TETO a janela para de andar — nenhum UPDATE depois de created_at + teto', async () => {
+  const { pool, updates } = poolComJanela({
+    id: 'job-rajada',
+    criadoEm: AGORA,
+    runAfterEm: AGORA + 45_000, // já encostado no teto
+  });
+
+  const decisao = await decidirRajada(pool, alvo, 8_000, AGORA + 44_000, undefined, 45_000);
+
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-rajada', janelaEstendidaAte: null });
+  expect(updates, 'escrever o mesmo horário seria UPDATE de graça a cada bolha').toHaveLength(0);
+});
+
+it('job adiado pela JANELA DE RESPOSTA nunca é ENCURTADO pela rajada', async () => {
+  // `run_after` às 07:00 (a janela de resposta), `created_at` de agora: a conta
+  // da rajada daria agora+8s, ou seja ADIANTARIA uma resposta combinada.
+  const amanha = AGORA + 12 * 60 * 60 * 1000;
+  const { pool, updates } = poolComJanela({ id: 'job-adiado', criadoEm: AGORA, runAfterEm: amanha });
+
+  const decisao = await decidirRajada(pool, alvo, 8_000, AGORA, undefined, 45_000);
+
+  expect(decisao).toEqual({ tipo: 'coalescido', jobId: 'job-adiado', janelaEstendidaAte: null });
+  expect(updates).toHaveLength(0);
+});
+
+it('falha no UPDATE não derruba a carona: devolve erroAoEstender e a mensagem já está no lote', async () => {
+  const { pool } = poolComJanela(
+    { id: 'job-rajada', criadoEm: AGORA, runAfterEm: AGORA + 8_000 },
+    { updateFalha: 'deadlock detected' },
+  );
+
+  const decisao = await decidirRajada(pool, alvo, 8_000, AGORA + 12_100, undefined, 45_000);
+
+  expect(decisao).toEqual({
+    tipo: 'coalescido',
+    jobId: 'job-rajada',
+    janelaEstendidaAte: null,
+    erroAoEstender: 'deadlock detected',
+  });
+});
+
+/**
+ * O default da instalação é parte da PROPOSTA do #196 e fica preso aqui: 45s
+ * (§ `INBOUND_BURST_MAX_MS` em `lib/agent-engine/env.ts` tem a justificativa —
+ * 29,6s medidos na issue, com margem). Se o valor mudar, muda com decisão.
+ */
+it('INBOUND_BURST_MAX_MS: 45s por default, e nunca abaixo da janela de debounce', () => {
+  // Só as três chaves que o schema exige; nenhuma delas entra nesta conta.
+  //
+  // O nome do banco é NEUTRO de propósito (`/db`, como em `lib/agent-engine/env.test.ts`):
+  // a catraca de marca (`tests/unit/branding.test.ts`) varre `lib/` inteiro, `.ts`
+  // inclusive, e reprova o nome do produto hardcoded em arquivo fora de
+  // `MARCA_CONGELADA`. Fixture de teste não é lugar de gravar a marca.
+  const env = loadEnv({
+    NODE_ENV: 'test',
+    SUPABASE_DB_URL: 'postgres://user:pass@127.0.0.1:5432/db',
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    SUPABASE_SERVICE_ROLE_KEY: 'chave-de-teste',
+  });
+  expect(env.INBOUND_BURST_MAX_MS).toBe(45_000);
+  expect(env.INBOUND_DEBOUNCE_MS).toBe(8_000);
+  expect(tetoDaRajada(env.INBOUND_BURST_MAX_MS, env.INBOUND_DEBOUNCE_MS)).toBe(45_000);
+  // Teto menor que a janela não encurta a janela (ver `tetoDaRajada`).
+  expect(tetoDaRajada(1_000, 8_000)).toBe(8_000);
 });

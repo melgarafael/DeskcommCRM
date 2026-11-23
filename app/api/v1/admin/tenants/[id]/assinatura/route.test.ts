@@ -243,6 +243,8 @@ describe("DELETE — tornar isenta (PR 2: sem lerSituacao)", () => {
     m.org = { id: TENANT, status: "suspended", suspended_kind: "cobranca" };
     h.adaptador.lerSituacao.mockResolvedValueOnce({ assinaturasVivas: 1 });
     expect((await (await DELETE(pedido("DELETE"), ctx())).json()).error.code).toBe("assinatura_viva_no_provedor");
+    // #4862: a contagem de vivas é a DA EMPRESA, não a do cliente no provedor.
+    expect(h.adaptador.lerSituacao).toHaveBeenCalledWith({ clienteRef: "cus_1", organizacao: TENANT });
     expect(escritas()).toEqual([]);
     expect(h.banco.rpcs).toEqual([]);
     expect(h.audit).not.toHaveBeenCalled();

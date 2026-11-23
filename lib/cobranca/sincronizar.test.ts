@@ -127,6 +127,14 @@ describe("sincronizar", () => {
     expect(enviarAviso).toHaveBeenCalledOnce();
   });
 
+  it("⭐ #4862 a leitura é PEDIDA com a organização: o Asaas filtra assinatura e cobrança pelo vínculo dela", async () => {
+    await rodar();
+    // O #4056 acrescentou a referência da assinatura da linha (o Efi lê por ela e
+    // não tem cliente); o #4862 acrescentou a organização (o cliente pode ter sido
+    // adotado do painel). A leitura leva os dois, e cada provedor ignora o que não usa.
+    expect(ler).toHaveBeenCalledWith({ clienteRef: "cus_1", organizacao: ORG, assinaturaRef: "sub_1" });
+  });
+
   it("⭐ trial vencido: aviso final há 49 h passa direto pela tolerância de 7 — suspensa, com mensagem de ASSINAR", async () => {
     m.linha = {
       ...LINHA, provedor: null, provedor_cliente_id: null, provedor_assinatura_id: null,
