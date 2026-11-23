@@ -54,23 +54,19 @@ export async function lerAtribuicao(
   admin: SupabaseClient,
   organizationId: string,
   contactId: string | null,
-  negocioDaEtapaGoogle?: { source_metadata: unknown },
+  negocioDaEtapaGoogle?: { source_metadata?: unknown },
 ): Promise<LeituraDeAtribuicao> {
   if (!contactId) return { temAtribuicao: false, motivo: "sem_contato" };
 
-  const contatos = admin.from("contacts");
-  const consulta = negocioDaEtapaGoogle
-    ? contatos.select("phone_number")
-    : contatos.select("phone_number, source_metadata");
-  const { data, error } = await consulta
+  const { data: linha, error } = await admin
+    .from("contacts")
+    .select(negocioDaEtapaGoogle ? "phone_number" : "phone_number, source_metadata")
     .eq("id", contactId)
     .eq("organization_id", organizationId)
-    .maybeSingle();
+    .maybeSingle<{ phone_number: string | null; source_metadata?: unknown }>();
 
   if (error) throw new Error("Não foi possível ler a origem do contato.");
-  if (!data) return { temAtribuicao: false, motivo: "sem_contato" };
-
-  const linha = data as { phone_number: string | null; source_metadata: unknown };
+  if (!linha) return { temAtribuicao: false, motivo: "sem_contato" };
   const metadata = negocioDaEtapaGoogle
     ? negocioDaEtapaGoogle.source_metadata
     : linha.source_metadata;

@@ -105,14 +105,23 @@ export async function processarConversao(
   const etapaGoogle = qualificacao !== undefined && !qualificacao.eventoMeta;
 
   // ⚠️ Filtro de organização junto do id: o client é service-role e bypassa RLS.
-  const negocios = admin.from("crm_leads");
-  const consulta = etapaGoogle
-    ? negocios.select("id, status, value_cents, currency, closed_at, contact_id, source_metadata")
-    : negocios.select("id, status, value_cents, currency, closed_at, contact_id");
-  const { data, error } = await consulta
+  const campos = etapaGoogle
+    ? "id, status, value_cents, currency, closed_at, contact_id, source_metadata"
+    : "id, status, value_cents, currency, closed_at, contact_id";
+  const { data: lead, error } = await admin
+    .from("crm_leads")
+    .select(campos)
     .eq("id", row.entity_id)
     .eq("organization_id", row.organization_id)
-    .maybeSingle();
+    .maybeSingle<{
+      id: string;
+      status: string;
+      value_cents: number | null;
+      currency: string | null;
+      closed_at: string | null;
+      contact_id: string | null;
+      source_metadata?: unknown;
+    }>();
 
   if (error) {
     // Erro de leitura é transitório por natureza (rede/banco). Marcar `error`
@@ -124,17 +133,7 @@ export async function processarConversao(
       detail: `leitura do lead falhou: ${error.message}`,
     };
   }
-  if (!data) return ok("skipped", "lead_inexistente");
-
-  const lead = data as {
-    source_metadata: unknown;
-    id: string;
-    status: string;
-    value_cents: number | null;
-    currency: string | null;
-    closed_at: string | null;
-    contact_id: string | null;
-  };
+  if (!lead) return ok("skipped", "lead_inexistente");
 
   // O filtro que faz `lead.stage_changed` valer a pena escutar: a grande maioria
   // das mudanças de etapa não é fechamento, e sai por aqui sem tocar no banco de
