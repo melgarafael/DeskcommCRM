@@ -9,16 +9,19 @@ a prova pela tela fica com o mantenedor, no PR para a main; o roteiro abaixo é 
 
 ## Contexto
 
-O módulo `canal_webchat` nasce desligado. Quem liga é o DONO DA INSTALAÇÃO em
-`/admin/sistema` (não o admin da empresa). Só depois o admin da empresa entra em
-Conexões › "Chat no site" para criar a conexão.
+O módulo `canal_webchat` nasce desligado e, por enquanto, está em
+`MODULOS_AINDA_NAO_LIGAVEIS` (`lib/instalacao/modulos.ts`): nem `/admin/sistema` nem o
+bloco por empresa deixam ligá-lo. Nesta prova o módulo é ligado **por fixture**, gravando
+`platform_config.MODULO_CANAL_WEBCHAT = 'ligado'` direto no banco (o mesmo molde da
+cobrança antes da PR 3a). Depois o admin da empresa entra em Conexões › "Chat no site"
+para criar a conexão. Quando o módulo sair da lista, o C2 passa a ligar pela tela.
 
 ## Casos
 
 | # | Caso | Expectativa | Observação |
 |---|------|-------------|-------------------|
 | C1 | Módulo desligado → nenhuma diferença | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404  | 
-| C2 | Dono liga o módulo; admin da empresa cria a conexão | A aba "Chat no site" aparece em Conexões; cadastrar o domínio do servidor de teste gera a chave `wck_...`  | 
+| C2 | Módulo ligado por fixture; admin da empresa cria a conexão | A aba "Chat no site" aparece em Conexões; cadastrar o domínio do servidor de teste gera a chave `wck_...`  | 
 | C3 | Servidor de teste serve a página com o código colado | A bolha aparece no canto da página; abrir a janela carrega `/chat/<chave>`  | 
 | C4 | Visitante conversa | Aceitar o aviso de LGPD (controlador + link de política), enviar mensagem; a conversa aparece no Inbox com o selo "Chat no site"; responder pelo Inbox e a resposta aparece na janela  | 
 | C5 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela  | 

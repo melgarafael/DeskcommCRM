@@ -21,6 +21,7 @@ import { followupSaidaDaEtapaHandler } from "@/lib/followup/saida-da-etapa.handl
 import { followupGatilhoLeadHandler } from "@/lib/followup/gatilho-lead.handler";
 import { followupGatilhoCasoHandler } from "@/lib/followup/gatilho-caso.handler";
 import { casoNaCentralHandler } from "@/lib/escalacao/caso-na-central.handler";
+import { retomadaAoDevolverHandler } from "@/lib/escalacao/retomada-ao-devolver.handler";
 import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
 import { mediaDeriveHandler } from "@/workers/media-derive-worker.handler";
 import { CONSUMIDORES_DOS_CANAIS } from "@/lib/channels/consumidores";
@@ -85,6 +86,10 @@ export function ensureHandlersRegistered(): void {
   // lado do outro consumidor de `ai.case_opened` que só escreve no banco, e
   // longe do aviso ao suporte, que sai por rede de terceiro.
   registerHandler(casoNaCentralHandler);
+  // Retomar ao devolver: escrita curta no banco (um job na fila do agente).
+  // DEPOIS da reatividade, que consome o MESMO `ai.handoff_resolved` e retoma o
+  // follow-up pausado — a decisão cede a vez a ele (uma voz só).
+  registerHandler(retomadaAoDevolverHandler);
   // Escrita curta no banco, idempotente pelo vínculo do lead: abre a comanda
   // do negócio ganho (#1477). Antes de todo consumidor que sai por rede de
   // terceiro, pelo mesmo critério dos vizinhos de cima.

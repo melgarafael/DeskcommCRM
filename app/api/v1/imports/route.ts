@@ -4,6 +4,8 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { audit } from "@/lib/audit";
 import { processCompaniesPeopleImport } from "@/lib/crm-b2b/import-process";
+import { previaDaImportacao, totaisDaPrevia, type LinhaClassificada } from "@/lib/crm-b2b/import-previa";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
 import {
   IMPORT_MAX_BYTES,
@@ -33,6 +35,11 @@ export const dynamic = "force-dynamic";
  * da LINHA do token, nunca do corpo. Pelo token não há pessoa: as colunas de
  * autor (`created_by`, `created_by_user_id`) ficam nulas e o audit grava o id do
  * token em `actor_api_token_id`.
+ *
+ * PRÉVIA (A23, #4888): com `previa=true` nada é gravado — a resposta traz os totais
+ * por veredito e as linhas que ficariam de fora, com o motivo e de quem é o que já
+ * existe. Sem `previa`, o servidor classifica DE NOVO (a base pode ter mudado desde
+ * a prévia) e grava só as linhas `nova`; as demais ficam no lote com o motivo.
  *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */
@@ -129,6 +136,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     const supabase = authz.supabase;
+
+    // A23: a classificação vale para a prévia E para a gravação.
+    const classificadas = await previaDaImportacao(supabase, {
+      organizationId: authz.organizationId,
+      sheet: parsed.sheet,
+      mapping,
+    });
+    if (form.get("previa") === "true") {
+      const donos = await nomesDosAtendentes(
+        authz.organizationId,
+        classificadas.map((l) => l.existente?.donoId),
+      );
+      return ok(
+        {
+          previa: totaisDaPrevia(classificadas),
+          headers: parsed.sheet.headers,
+          suggested_mapping: suggestColumnMapping(parsed.sheet.headers),
+          linhas_fora: linhasDeFora(classificadas, parsed.sheet, donos),
+        },
+        { requestId },
+      );
+    }
+
     const { data: batch, error: batchErr } = await supabase
       .from("import_batches")
       .insert({
@@ -156,6 +186,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       sheet: parsed.sheet,
       mapping,
       enrichCompanies: form.get("enrich") !== "false",
+      classificacao: new Map(classificadas.map((l) => [l.rowNumber, l])),
     });
 
     await audit({
@@ -181,4 +212,35 @@ export async function POST(req: NextRequest): Promise<Response> {
   } catch (e) {
     return handleRouteError(e, requestId);
   }
+}
+
+/** O que o CSV de "ficaram de fora" precisa: a linha original, o veredito e de quem é o que já existe. */
+function linhasDeFora(
+  classificadas: readonly LinhaClassificada[],
+  sheet: { headers: string[]; rows: string[][]; rowNumbers?: number[] },
+  donos: ReadonlyMap<string, string | null>,
+) {
+  const porNumero = new Map(classificadas.map((l) => [l.rowNumber, l]));
+  const fora: Array<{
+    linha: number;
+    status: string;
+    motivo: string | null;
+    existente_nome: string | null;
+    de_quem: string | null;
+    valores: string[];
+  }> = [];
+  sheet.rows.forEach((valores, i) => {
+    const numero = sheet.rowNumbers?.[i] ?? i + 2;
+    const v = porNumero.get(numero);
+    if (!v || v.status === "nova" || v.status === "anexada") return;
+    fora.push({
+      linha: numero,
+      status: v.status,
+      motivo: v.motivo,
+      existente_nome: v.existente?.nome ?? null,
+      de_quem: v.existente?.donoId ? (donos.get(v.existente.donoId) ?? null) : null,
+      valores,
+    });
+  });
+  return fora;
 }

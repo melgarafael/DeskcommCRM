@@ -187,6 +187,7 @@ import {
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
   ehRespostaDeRobo,
+  iaVetadaNoEnvio,
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
@@ -239,7 +240,7 @@ import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
-import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
+import { eTetoDoDia, janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
@@ -851,6 +852,15 @@ export const DEFAULT_MAX_SENDS_PER_TURN = 3;
 export class JobSettledError extends Error {
   override readonly name = 'job_settled';
 }
+
+/**
+ * O `reason` do `unavailable` que a guarda de envio devolve quando uma pessoa
+ * assumiu a conversa no meio do turno (ver `pessoaAssumiuDuranteOTurno` em
+ * `executarTurnoDoAgente`). Nomeado para que o tratamento do `unavailable` saiba
+ * separar "canal fora" (erro do run, a fila re-tenta) de "a pessoa chegou"
+ * (desfecho correto, nada a re-tentar).
+ */
+export const MOTIVO_PESSOA_ASSUMIU_NO_TURNO = 'pessoa_assumiu_a_conversa';
 
 // Shape que o drain (F2-05) grava no payload do job — organization/lead vêm da
 // ROW do job (fonte confiável), nunca daqui; o payload só carrega ponteiros do CRM.
@@ -4242,6 +4252,44 @@ async function executarTurnoDoAgente(
   // ligada, NADA mais sai dele, nem a pergunta pendente do roteiro (que segue
   // feita para o turno da mensagem nova). Ver `perguntaDoRoteiroPodeSair`.
   let turnoDescartado = false;
+  // UMA PESSOA ASSUMIU DURANTE O TURNO. O gate do começo do turno já barra a
+  // conversa que está com gente; o que sobra é a janela entre a decisão de falar
+  // e a entrega física (modelo, tools, digitação, intervalo entre bolhas). Esta
+  // guarda roda IMEDIATAMENTE antes de cada envio ao canal — texto, bolha, voz,
+  // template e pergunta do roteiro — e, quando a pessoa chegou, descarta o turno
+  // inteiro pelo MESMO mecanismo da resposta obsoleta (`turnoDescartado`): nada
+  // mais sai, e nem a "correção do turno mudo" nem o fail-safe de silêncio (que
+  // abriria caso) disparam, porque o silêncio foi a decisão certa.
+  //
+  // ⚠️ O desfecho é `unavailable` com motivo próprio, e NUNCA `blocked`. `blocked`
+  // é o veto de opt-out irrevogável: o fim do turno cancela o job E todos os
+  // follow-ups agendados do contato (`applySendOutcome` →
+  // `cancelPendingCronsForLead`) e diz ao modelo que o cliente pediu para não
+  // receber mensagens. Uma pessoa assumir não é nada disso.
+  const pessoaAssumiuDuranteOTurno = async (): Promise<boolean> => {
+    if (preview) return false;
+    if (!(await iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId))) return false;
+    if (!turnoDescartado) {
+      runLog.info('envio abortado — uma pessoa assumiu a conversa durante o turno', {
+        conversation_id: input.conversationId,
+      });
+    }
+    turnoDescartado = true;
+    return true;
+  };
+  const ENVIO_ABORTADO_PELA_PESSOA: ChannelSendResult = {
+    kind: 'unavailable',
+    reason: MOTIVO_PESSOA_ASSUMIU_NO_TURNO,
+  };
+  const ERRO_PESSOA_ASSUMIU = {
+    ok: false as const,
+    error: {
+      code: 'pessoa_assumiu_a_conversa',
+      message:
+        'Uma pessoa da equipe assumiu esta conversa agora; esta mensagem NÃO foi enviada. ' +
+        'NÃO chame send_message de novo neste turno — encerre agora.',
+    },
+  };
   // TURNO MUDO: quantas vezes o modelo chamou `send_message` e se passou a conversa à
   // equipe. Os dois dizem que o silêncio foi decisão — só sem eles o motor pede a
   // correção do turno que terminou sem falar com o cliente (ver depois da chamada principal).
@@ -4851,7 +4899,8 @@ async function executarTurnoDoAgente(
           now: clock(),
           sleep: deps.sleep,
           lgpd,
-          send: (finalBody: string) => {
+          send: async (finalBody: string) => {
+            if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
             pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
             seq += 1;
             return liveChannel().send({
@@ -4882,6 +4931,9 @@ async function executarTurnoDoAgente(
         }
         const outcome = chain.outcome;
         outcomes.push(outcome);
+        if (outcome.kind === 'unavailable' && outcome.reason === MOTIVO_PESSOA_ASSUMIU_NO_TURNO) {
+          return ERRO_PESSOA_ASSUMIU;
+        }
         if (outcome.kind === 'failed' && outcome.permanente === true) {
           falhaPermanenteNoTurno = true;
           return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
@@ -5356,31 +5408,34 @@ async function executarTurnoDoAgente(
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
             if (!voz || falado === null) return null;
-            seq += 1;
-            const seqDesteEnvio = seq;
-            return liveChannel().send({
-              tenantId,
-              leadId,
-              jobId: liveJob().id,
-              jobClaim: claimOfJob(liveJob()),
-              agentOperation,
-              seq: seqDesteEnvio,
-              envioSeq: envioSeqDoEnvio,
-              conversationId: input.conversationId,
-              // `body` continua sendo o texto FALADO — é ele que entra no
-              // hash de idempotência do ledger (ver o comentário de
-              // `SendMessageInput.voz` em send-message.ts).
-              body: falado,
-              voz: {
-                textoOriginal: texto,
-                apiKey: voz.apiKey,
-                voiceId: voz.voiceId,
-                ...(voz.modelId ? { modelId: voz.modelId } : {}),
-                formato: voz.formato,
-                upload: (audio, mimeType) =>
-                  uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
-              },
-            });
+            return (async (): Promise<ChannelSendResult> => {
+              if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
+              seq += 1;
+              const seqDesteEnvio = seq;
+              return liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq: seqDesteEnvio,
+                envioSeq: envioSeqDoEnvio,
+                conversationId: input.conversationId,
+                // `body` continua sendo o texto FALADO — é ele que entra no
+                // hash de idempotência do ledger (ver o comentário de
+                // `SendMessageInput.voz` em send-message.ts).
+                body: falado,
+                voz: {
+                  textoOriginal: texto,
+                  apiKey: voz.apiKey,
+                  voiceId: voz.voiceId,
+                  ...(voz.modelId ? { modelId: voz.modelId } : {}),
+                  formato: voz.formato,
+                  upload: (audio, mimeType) =>
+                    uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
+                },
+              });
+            })();
           };
           // #4590 — este turno RESPONDE a alguém que escreveu? É o que decide a
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
@@ -5568,10 +5623,11 @@ async function executarTurnoDoAgente(
               // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
               // por ele e não mistura o envio seguinte.
               const seqDoEnvio = seq + 1;
-              const enviar = (
+              const enviar = async (
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 seq += 1;
                 return liveChannel().send({
                   tenantId,
@@ -5791,7 +5847,7 @@ async function executarTurnoDoAgente(
             // `rescheduleJob` já usado pra janela horária), em vez de deixar o lead sem
             // resposta até a próxima mensagem dele chegar (ou nunca).
             if (
-              (chain.code === 'warmup_cap' || chain.code === 'daily_cap') &&
+              eTetoDoDia(chain.code) &&
               chain.nextAllowedAt !== undefined
             ) {
               pacingCapVeto = { code: chain.code, nextAllowedAt: chain.nextAllowedAt };
@@ -5924,6 +5980,10 @@ async function executarTurnoDoAgente(
                 },
               };
             case 'unavailable':
+              // Uma pessoa assumiu no meio do turno (`pessoaAssumiuDuranteOTurno`):
+              // não é falha do canal, não há o que re-tentar — re-tentar só rodaria
+              // de novo um turno que o gate do começo já vai pular.
+              if (outcome.reason === MOTIVO_PESSOA_ASSUMIU_NO_TURNO) return ERRO_PESSOA_ASSUMIU;
               // transiente (transporte/tool do canal): ensina o modelo a parar; o
               // job re-tenta com a MESMA idempotency_key (ledger ficou 'requested').
               noteRunError(
@@ -7102,8 +7162,12 @@ async function executarTurnoDoAgente(
               // mesmas duas escolhas do aviso de escalação.
               enforceCommercialRestriction: false,
               enforceSpinning: false,
-              send: (finalBody: string) =>
-                liveChannel().send({
+              // A pessoa que assumiu entre a leitura do turno e este aviso
+              // também cala a frase da troca: é um envio ao canal como os
+              // outros (`unavailable` → o aviso conta como não enviado).
+              send: async (finalBody: string) => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
+                return liveChannel().send({
                   tenantId,
                   leadId,
                   jobId: liveJob().id,
@@ -7112,7 +7176,8 @@ async function executarTurnoDoAgente(
                   seq: SEQ_DA_PASSAGEM_AO_CLIENTE,
                   conversationId: input.conversationId,
                   body: finalBody,
-                }),
+                });
+              },
             });
             return chain.status === 'vetoed' ? 'blocked' : chain.outcome.kind;
           },
@@ -7190,8 +7255,12 @@ async function executarTurnoDoAgente(
     // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
     // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
     // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
+    //
+    // A opção "não atender em feriado nacional" muda o texto (#5039): desligada,
+    // o bloco não proíbe compromisso e manda seguir os horários livres da Agenda.
     const feriadoBlock = blocoDoFeriado(
       await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+      { fechadoEmFeriado: agentConfig?.naoAtenderEmFeriadoNacional === true },
     );
     const openingSuffixes = [
       agoraBlock,
@@ -7750,7 +7819,8 @@ async function executarTurnoDoAgente(
               ...(deps.knobs.disclosureMode !== undefined
                 ? { disclosureMode: deps.knobs.disclosureMode }
                 : {}),
-              send: (finalBody: string) => {
+              send: async (finalBody: string) => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
                 seq += 1;
                 return liveChannel().send({

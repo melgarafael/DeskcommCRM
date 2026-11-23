@@ -76,6 +76,20 @@ export type AuthDual =
       apiTokenId?: string;
       /** Só token de módulo com JWT de contexto válido: a pessoa (`sub`) de quem a tela agiu. */
       pessoaDoModulo?: string;
+      /**
+       * Só token de MÓDULO: a área `contatos` (leitura) foi declarada e consentida? Sem ela, a rota que
+       * embute contato na resposta (conversa, negócio, agenda) passa a resposta por
+       * `redigirContatoParaModulo`. Sessão e outros tokens não têm o campo e veem tudo.
+       */
+      contatoVisivel?: boolean;
+      /**
+       * Só sessão: o papel efetivo na organização ativa (`requireRole`). Campo
+       * ADITIVO, e não `actor.role`: o ator de sessão alimenta centenas de rotas,
+       * e quem lê `actor.role` (ex.: `lib/contacts/conversa-do-criador.ts`)
+       * mudaria de comportamento. A rota que precisa do papel no handler o põe
+       * no ator ela mesma (`close`, `reactivate-bot` — regra do #3436).
+       */
+      papelDaSessao?: Role;
     }
   | { ok: false; response: Response };
 
@@ -135,6 +149,7 @@ export async function resolveAuthDual(
     // certo (declarado ∩ consentido, lido do banco agora). Sem porta conhecida, recusa.
     let papelDoBearer: Role = auth.role;
     let pessoaDoModulo: string | undefined;
+    let contatoVisivel: boolean | undefined;
     if (auth.actor.type === "module") {
       const decisao = await autorizarModulo({
         organizationId: auth.organizationId,
@@ -151,6 +166,8 @@ export async function resolveAuthDual(
           }),
         };
       }
+
+      contatoVisivel = decisao.contatoVisivel;
 
       // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto manager, papel ATUAL da
       // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). `admin` nunca.
@@ -218,6 +235,7 @@ export async function resolveAuthDual(
       scopes: auth.scopes,
       apiTokenId: auth.apiTokenId,
       ...(pessoaDoModulo ? { pessoaDoModulo } : {}),
+      ...(contatoVisivel !== undefined ? { contatoVisivel } : {}),
     };
   }
 
@@ -230,6 +248,7 @@ export async function resolveAuthDual(
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
+    papelDaSessao: authz.org.role,
   };
 }
 

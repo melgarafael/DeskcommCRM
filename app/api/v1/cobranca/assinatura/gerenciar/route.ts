@@ -39,7 +39,7 @@ export async function POST() {
     return fail("rate_limited", "Muitas tentativas seguidas. Aguarde um minuto e tente de novo.", 429, { requestId, headers: { "Retry-After": "60" } });
   }
   try {
-    const url = await adaptador(linha.provedor).urlDeGerenciar({ clienteRef: linha.provedor_cliente_id, urlDeVolta: urlDoPainelDaEmpresa() });
+    const url = await adaptador(linha.provedor).urlDeGerenciar({ clienteRef: linha.provedor_cliente_id, urlDeVolta: urlDoPainelDaEmpresa(), organizacao: authz.org.orgId });
     return url ? ok({ url }, { requestId }) : semPortal();
   } catch (e) {
     const r = recusaDoProvedor(e);

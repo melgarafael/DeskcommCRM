@@ -251,3 +251,58 @@ describe("a premissa do índice", () => {
     );
   });
 });
+
+describe("POST /api/v1/ai/agents — criação por canal", () => {
+  const voz = { name: "Recepção por telefone", channel: "voice" };
+
+  it("cria o agente de voz desativado e sem versão, com auditoria na organização ativa", async () => {
+    const banco = bancoFake();
+    deps.admin.mockReturnValue(banco);
+    const system_prompt = "Atenda as ligações da recepção com cordialidade.";
+
+    const res = await POST(pedido({ ...voz, system_prompt }));
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({
+      data: { ...voz, organization_id: ORG, is_active: false, system_prompt },
+    });
+    expect(banco.insercoes).toEqual([
+      {
+        tabela: "ai_agents",
+        payload: expect.objectContaining({
+          ...voz,
+          organization_id: ORG,
+          is_active: false,
+          system_prompt,
+        }),
+      },
+    ]);
+    expect(deps.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai_agent.created",
+        organizationId: ORG,
+        metadata: expect.objectContaining({ channel: "voice" }),
+      }),
+    );
+  });
+
+  it("devolve o mesmo conflito de nome para voz", async () => {
+    deps.admin.mockReturnValue(bancoFake());
+    expect((await POST(pedido(voz))).status).toBe(201);
+    const res = await POST(pedido(voz));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: { code: "agent_name_taken" } });
+  });
+
+  it.each([
+    { ...voz, channel: "outro" },
+    { ...CORPO, channel: "voice" },
+    { ...voz, organization_id: ORG_VIZINHA },
+  ])("recusa payload incompatível antes de gravar (%j)", async (corpo) => {
+    const banco = bancoFake();
+    deps.admin.mockReturnValue(banco);
+    expect((await POST(pedido(corpo))).status).toBe(422);
+    expect(banco.insercoes).toHaveLength(0);
+  });
+});

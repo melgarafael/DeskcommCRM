@@ -776,7 +776,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const { data: candidatos } = await admin
     .from("ai_agents")
     .select(
-      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, published_version_id, archived_at, paused_at",
+      "id, organization_id, model, system_prompt, config, guardrails, active_kb_version_id, is_active, is_default, kind, channel, published_version_id, archived_at, paused_at",
     )
     .eq("organization_id", input.organizationId)
     .eq("is_active", true)

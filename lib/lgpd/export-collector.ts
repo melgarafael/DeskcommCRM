@@ -396,6 +396,22 @@ export interface ScheduledMessageRow {
   created_at: string;
 }
 
+/**
+ * Venda registrada no negócio do titular (#5087). A anonimização limpa
+ * `observacao` e `tags`; valor, moeda e dia ficam (registro do dinheiro). O
+ * pedido de acesso entrega a linha inteira — mesma régua da comanda (`sales`).
+ */
+export interface VendaRegistradaRow {
+  id: string;
+  lead_id: string | null;
+  valor_cents: number;
+  currency: string;
+  data: string;
+  tags: string[];
+  observacao: string | null;
+  created_at: string;
+}
+
 export interface TaskRow {
   id: string;
   title: string;
@@ -827,6 +843,8 @@ export interface ExportPayload {
    * byte o de antes (fixtures de `lgpd-texto-segue-o-pais.test.tsx`).
    */
   scheduled_messages?: ScheduledMessageRow[];
+  /** Presente só quando há linha, como `scheduled_messages`. */
+  vendas_registradas?: VendaRegistradaRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
@@ -2039,6 +2057,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Vendas registradas — contact_id direto em vendas_registradas (#5087). A
+  // venda de negócio herda o contato do negócio ao nascer (POST /api/v1/vendas),
+  // e é por esse contact_id que a anonimização a limpa.
+  let vendas_registradas: VendaRegistradaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("vendas_registradas")
+      .select("id, lead_id, valor_cents, currency, data, tags, observacao, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("data", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] vendas registradas load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("vendas_registradas", data, 500);
+      vendas_registradas = data;
+    }
+  }
+
   // Chamadas de voz — `contact_id` direto em `voice_calls` (migration 0232).
   //
   // O que existe aqui é o REGISTRO da ligação, nunca o áudio: gravação está
@@ -2743,6 +2784,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     proposals,
     tasks,
     ...(scheduled_messages.length > 0 ? { scheduled_messages } : {}),
+    ...(vendas_registradas.length > 0 ? { vendas_registradas } : {}),
     webhook_captures,
     audit_log_extract,
     reply_drafts,

@@ -114,7 +114,7 @@ function pacote(papelDaPessoa: string | null) {
       disabled_at: null,
       removed_at: null,
       extension_artifacts: {
-        manifest: { profile: "connected", permissions: ["area.contatos.leitura", "area.contatos.escrita"] },
+        manifest: { profile: "connected", host_api: { min: 2, max: 2 }, permissions: ["area.contatos.leitura", "area.contatos.escrita"] },
       },
     },
     organization_extensions: {

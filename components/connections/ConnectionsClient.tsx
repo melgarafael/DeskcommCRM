@@ -31,6 +31,7 @@ import { PairingOptions } from "./PairingOptions";
 import { ChannelAcervo } from "./ChannelAcervo";
 import { ChannelHistorico } from "./ChannelHistorico";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { NegocioDaConversa } from "./NegocioDaConversa";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -686,6 +687,15 @@ export function ConnectionsClient({
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                {/* #4670: a chave é POR CONEXÃO — o cartão de cada número tem o
+                    interruptor, e não há nada disso em Configurações da
+                    organização, onde só caberia desligar para todo mundo. */}
+                <NegocioDaConversa channelId={c.id} />
+                {/* Os dois são do cartão da conexão e não se substituem: o
+                    interruptor acima decide SE a conversa nova vira negócio; o
+                    seletor abaixo decide EM QUAL funil/etapa ela nasce quando
+                    nasce. Desligar o de cima torna o de baixo inerte — ele
+                    continua guardando a escolha para quando religarem. */}
                 <FunilDeEntradaDoNumero channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}

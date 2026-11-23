@@ -122,7 +122,7 @@ function clienteStub(estado: Estado) {
           // A etapa de DESTINO do lote.
           maybeSingle: () =>
             Promise.resolve({
-              data: { id: PERDIDO_ID, name: "Perdido", is_lost: true, is_won: false },
+              data: { id: PERDIDO_ID, name: "Perdido", pipeline_id: PIPELINE_ID, is_lost: true, is_won: false },
               error: null,
             }),
           // Os NOMES das etapas envolvidas (origem de cada card + destino).

@@ -18,6 +18,13 @@ import { devolverAtendimentoAoAgente, type OrigemDaRetomada } from "@/lib/escala
 import type { Actor } from "@/lib/api/handlers/types";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
+// A limpeza do setor tem a sua própria prova (`devolucao-limpa-setor-da-ia.test.ts`);
+// aqui se prova QUANDO a devolução a chama — e que falhar nela não derruba nada.
+const limparSetor = vi.fn();
+vi.mock("@/lib/atendimento/setor-da-conversa", () => ({
+  limparSetorDaIaNaDevolucao: (...a: unknown[]) => limparSetor(...a),
+}));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ cliente: "servico" }) }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const CONV = "44444444-4444-4444-8444-444444444444";
@@ -640,5 +647,87 @@ describe("devolver o atendimento ao agente", () => {
     if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
     expect(cap.updates, "a conversa fechou e a trava CONTINUA — é isso que a tela conta").toEqual([]);
     expect(cap.rpc).toEqual([]);
+  });
+});
+
+/**
+ * A DEVOLUÇÃO GRAVA A MARCA QUE SEGURA O RODÍZIO, E UMA PESSOA ENCERRA A
+ * CLASSIFICAÇÃO DA IA (D6 numa instalação de teste, 2026-11-20).
+ */
+describe("a marca da retomada e a classificação da IA", () => {
+  async function retomarComo(
+    cenario: CenarioBanco,
+    cap: Captura,
+    extra: { origem?: OrigemDaRetomada; limparClassificacaoDaIa?: boolean },
+  ) {
+    return devolverAtendimentoAoAgente(
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: fazerSupabase(cenario, cap) as any,
+        organizationId: ORG,
+        actor: USUARIO,
+        requestId: "req-1",
+      },
+      { conversationId: CONV, ...extra },
+    );
+  }
+
+  it("⭐ a marca `ia_retomada` sai na MESMA escrita da devolução, sem perder o metadata que já existia", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    const cenario = cenarioComAtendimentoHumano({
+      conversa: conversaPassadaAHumano({ metadata: { setor_origem: "ia", outra_chave: 1 } }),
+    });
+    await retomarComo(cenario, cap, { limparClassificacaoDaIa: true });
+    const naConversa = cap.updates.find((u) => u.tabela === "conversations");
+    const metadata = naConversa?.valores.metadata as Record<string, unknown>;
+    expect(naConversa?.valores).toMatchObject({ assignee_kind: "ai", bot_silenced_until: null });
+    expect(metadata.outra_chave).toBe(1);
+    expect(metadata.setor_origem).toBe("ia");
+    expect(metadata.ia_retomada).toMatchObject({ por: "pessoa" });
+    expect(Number.isFinite(Date.parse(String((metadata.ia_retomada as { em: string }).em)))).toBe(true);
+  });
+
+  it("a devolução automática também marca — por `automatica` — e NÃO limpa a classificação", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    await retomarComo(cenarioComAtendimentoHumano(), cap, { origem: { automatica: { minutos: 60 } } });
+    const metadata = cap.updates.find((u) => u.tabela === "conversations")?.valores.metadata as Record<
+      string,
+      unknown
+    >;
+    expect(metadata.ia_retomada).toMatchObject({ por: "automatica" });
+    expect(limparSetor).not.toHaveBeenCalled();
+  });
+
+  it("sem o pedido explícito (ex.: a reação à derivação técnica) a classificação fica", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    await retomarComo(cenarioComAtendimentoHumano(), cap, {});
+    expect(limparSetor).not.toHaveBeenCalled();
+  });
+
+  it("uma PESSOA devolveu: a limpeza é chamada uma vez, para esta conversa e organização, com o cliente de serviço para o módulo", async () => {
+    limparSetor.mockReset();
+    limparSetor.mockResolvedValue({ limpou: true, de: "setor-tecnico" });
+    const cap = novaCaptura();
+    const res = await retomarComo(cenarioComAtendimentoHumano(), cap, { limparClassificacaoDaIa: true });
+    expect(res.ok).toBe(true);
+    expect(limparSetor).toHaveBeenCalledTimes(1);
+    expect(limparSetor.mock.calls[0]![0]).toMatchObject({
+      organizationId: ORG,
+      conversationId: CONV,
+      admin: { cliente: "servico" },
+      ator: { tipo: "user", userId: ATENDENTE },
+    });
+  });
+
+  it("a limpeza falhar (ou lançar) NÃO derruba a devolução: o comando já voltou para a IA", async () => {
+    limparSetor.mockReset();
+    limparSetor.mockRejectedValue(new Error("banco fora"));
+    const cap = novaCaptura();
+    const res = await retomarComo(cenarioComAtendimentoHumano(), cap, { limparClassificacaoDaIa: true });
+    expect(res.ok).toBe(true);
+    expect(cap.rpc.map((r) => r.fn)).toContain("emit_event");
   });
 });

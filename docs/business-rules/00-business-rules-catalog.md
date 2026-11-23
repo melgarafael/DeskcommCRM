@@ -212,6 +212,7 @@ owner: Rafael Melgaço
 - **Regra**: GIVEN `channel_session` com `created_at` < 30 dias; WHEN tentativa de envio outbound do dia ultrapassa o limite (default 300); THEN próximo envio é abortado com erro `daily_limit_exceeded`.
 - **O que conta**: só o que o número INICIA — primeira mensagem, follow-up, prospecção e campanha. A resposta a quem escreveu (turno de resposta, resposta a caso, resposta aprovada no modo assistido, aviso de escalação de resposta e aviso fora do horário) não conta e não é barrada pelo limite; ela segue presa à janela de resposta e ao intervalo entre mensagens. Decisão do dono em 31/10/2026 (doc 246, opção A; migration 9061, `pacing_ledger.resposta`). Prospecção prevalece: abordagem fria nunca é tratada como resposta.
 - **Enforcement**: `decidePacing` (`lib/agent-engine/pacing/engine.ts`) sobre a contagem de `pacing_ledger` em que `resposta = false`.
+- **Opção por número — teto só na abordagem** (doc 275, opção A, 05/11/2026; #3851/#4063): a chave **Teto do dia só na abordagem**, na ficha de proteção de envio, é desligada de fábrica (`channel_knobs.teto_so_abordagem`, NULL = desligada). Desligada, nada muda: o limite conta tudo o que o número inicia. Ligada, o limite conta só a primeira mensagem a uma pessoa nova (`pacing_ledger.abordagem`), e "já recebeu" é **deste número**: quem outro número da empresa abordou é pessoa nova aqui. O follow-up a quem já recebeu deixa de gastar esse limite e passa a ter teto próprio de segurança, **200 por dia** (`channel_knobs.followup_daily_cap`, NULL = 200, fora da tela; veto `followup_cap`, que adia o turno para o dia seguinte). Intervalo entre mensagens, janela horária, prospecção, campanha, opt-out e a identificação (disclosure, que segue contando pela empresa) não mudam. Quem liga: `manager`+, pela mesma rota da ficha (`PUT /api/v1/ai/pacing`), com auditoria.
 - **Override**: Tenant admin com aprovação de super-admin pode aumentar limite — ação auditada com justificativa.
 
 ### W-07 — Janela horária default 7h-22h, domingo LIBERADO
@@ -263,7 +264,7 @@ owner: Rafael Melgaço
 
 ## 4. Pipeline & Lead (P)
 
-### P-01 — Lead vive em UM pipeline; mover entre pipelines não é suportado
+### P-01 — Lead vive em UM pipeline; mover entre pipelines é cópia, salvo ao esvaziar um funil
 - **Origem**: Sub-PRD 02 §3.2
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN lead criado; WHEN qualquer endpoint tenta mudar `pipeline_id` da linha; THEN retorna 422 `pipeline_immutable_use_clone`. Pra "mover" entre funis, o caminho é `POST /api/v1/leads/[id]/clone`: cria o negócio no funil destino (etapa aberta informada, ou a primeira) com os dados da origem e encerra a origem como `lost`.
@@ -271,14 +272,14 @@ owner: Rafael Melgaço
 - **Automação (issue #992)**: a ação `create_or_move_lead` de uma regra com gatilho de CONTATO, ao encontrar negócio ABERTO do contato em OUTRO funil, TRANSFERE pelo mesmo caminho — clona para o funil da regra e encerra a origem como `lost` com `moved_to_another_pipeline` — em vez de criar um segundo negócio. Negócio aberto no MESMO funil segue sendo movido de etapa (nada é encerrado, nada é criado) e, sem negócio aberto, a ação cria, como antes. Guardado por `tests/unit/automacao-troca-de-funil-transfere-o-negocio.test.ts`.
 - **Estado de origem exigido**: só `status = 'open'` é clonado (422 `lead_not_open`); clonar um negócio `won` reescreveria a origem como `lost`, apagando o desfecho.
 - **Enforcement**: API (interceptor) + DB check constraint.
-- **Exceção**: Nenhuma. Decisão deliberada (mover entre pipelines é semanticamente diferente — clonar deixa explícito).
+- **Exceção (doc de decisão 400, opção B; #4802 item 3, PR #4852)**: ao ARQUIVAR ou EXCLUIR um funil, `POST /api/v1/pipelines/[id]/negocios` com `escolha: "transferir"` muda de funil os negócios **em andamento** (`status = 'open'`) sem cópia — o mesmo registro, com conversas, tarefas, propostas, anexos e linha do tempo. Vai por `fn_mover_leads_em_lote`, que grava o `pipeline_id` da própria etapa de destino (migration 9466). Ganhos e perdidos **não** mudam de funil: ficam no funil arquivado, em modo leitura; para excluí-lo de vez, a escolha é `remover`. É a ÚNICA porta: o lote do quadro (`POST /api/v1/leads/bulk`), o arrasto (`/move`) e o `moveLeadHandler` seguem recusando etapa de outro funil com 422 `pipeline_immutable_use_clone`. Fora desse caso, a decisão original vale (mover entre pipelines é semanticamente diferente — clonar deixa explícito).
 
 ### P-02 — Status `won/lost` derivado de stage com flag
 - **Origem**: Sub-PRD 02 §3.8
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN lead movido pra stage com `is_won=true`; WHEN o move commita; THEN trigger `fn_crm_lead_close_on_stage` muda `lead.status='won'` + `closed_at=now()`. Idem pra `is_lost=true → status='lost'`.
 - **Enforcement**: DB trigger.
-- **Exceção**: Reabertura (mudar pra stage sem flag) volta `status='open'` + `closed_at=null`.
+- **Exceção**: Reabertura (mudar pra stage sem flag) volta `status='open'` + `closed_at=null`. Sem exceção para troca de funil (doc de decisão 400, opção B): a transferência do arquivar/excluir só leva negócio em andamento, então o gatilho não precisa distinguir o caso.
 
 ### P-03 — `lost_reason` obrigatório em transição pra `lost`
 - **Origem**: Sub-PRD 02 §3.8

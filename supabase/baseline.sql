@@ -9590,7 +9590,7 @@ alter table public.channel_sessions
   add column if not exists telegram_bot_id text,
   add column if not exists telegram_token_encrypted bytea;
 
--- webchat (migration 9444, chat no site — Spec 36 F1): a chave pública e as origens
+-- webchat (migration 9468, chat no site — Spec 36 F1): a chave pública e as origens
 -- nascem ANTES das constraints abaixo. A função das origens também, porque o CHECK
 -- de `webchat_allowed_origins` a referencia.
 alter table public.channel_sessions
@@ -9628,7 +9628,7 @@ alter table public.channel_sessions
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
   -- (9342) somados AQUI — UM bloco só por constraint (não duplicar drop+add
   -- por migration).
-  -- 'webchat' (9444, chat no site) somado aqui também.
+  -- 'webchat' (9468, chat no site) somado aqui também.
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text, 'webchat'::text]));
 end
 $x$;
@@ -9649,7 +9649,7 @@ alter table public.channel_sessions
     (provider = 'datafy'     and datafy_phone_number_id is not null) or
     -- Bot do Telegram (migration 9342): endereça pelo id do robô.
     (provider = 'telegram'   and telegram_bot_id      is not null) or
-    -- Chat no site (9444): endereça pela chave pública do widget.
+    -- Chat no site (9468): endereça pela chave pública do widget.
     (provider = 'webchat'    and webchat_public_key   is not null)
   );
 end
@@ -70475,6 +70475,262 @@ grant execute on function public.fn_extensions_set_consent(uuid,uuid,uuid,intege
 
 notify pgrst, 'reload schema';
 
+-- ---- modulo conectado: eventos que o módulo busca (migration 9445) ----
+-- Espelho idempotente da 9445 (racional completo no arquivo da migration): `extension_module_events`,
+-- `extension_module_cursors`, os quatro gatilhos de evento e `fn_extensions_events_allowed|read|ack`. Fica DEPOIS do
+-- apêndice da 9442 e ANTES da VARREDURA anon (função nova não pode vir depois dela).
+
+create table if not exists public.extension_module_events (
+  id bigint generated always as identity primary key,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  kind text not null check (kind in ('contact_anonymized', 'module_disabled', 'organization_suspended')),
+  -- Sem FK: o contato pode ser apagado depois e o fato (o id foi anonimizado) continua valendo para o módulo.
+  subject_id uuid,
+  installation_id uuid references public.extension_installations(id) on delete cascade,
+  occurred_at timestamptz not null default now(),
+  constraint extension_module_events_coerencia check (
+    (kind <> 'contact_anonymized' or subject_id is not null)
+    and (kind <> 'module_disabled' or installation_id is not null)
+  )
+);
+
+create index if not exists extension_module_events_org_id on public.extension_module_events(organization_id, id);
+-- O mesmo contato anonimizado duas vezes (ou por dois caminhos) gera um evento só.
+create unique index if not exists extension_module_events_contato_unico
+  on public.extension_module_events(organization_id, subject_id) where kind = 'contact_anonymized';
+
+create table if not exists public.extension_module_cursors (
+  installation_id uuid not null references public.extension_installations(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  last_event_id bigint not null default 0,
+  last_read_at timestamptz not null default now(),
+  primary key (installation_id, organization_id)
+);
+
+alter table public.extension_module_events enable row level security;
+alter table public.extension_module_cursors enable row level security;
+revoke all on public.extension_module_events, public.extension_module_cursors
+  from public, anon, authenticated, service_role;
+grant select on public.extension_module_events to service_role;
+grant select, insert, update on public.extension_module_cursors to service_role;
+
+-- (a) Contato anonimizado: a mesma virada `false → true` que `trg_lgpd_secoes_de_modulo` já usa, pelos DOIS
+-- caminhos de anonimização (a cascata e `fn_lgpd_anonymize_contact`).
+create or replace function public.fn_extensions_evento_contato_anonimizado()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.extension_module_events(organization_id, kind, subject_id)
+    values (new.organization_id, 'contact_anonymized', new.id)
+    on conflict (organization_id, subject_id) where kind = 'contact_anonymized' do nothing;
+  return null;
+end $$;
+
+-- (b) Vínculo organização × módulo que deixa de estar ligado: UPDATE de `enabled` (true → false) ou DELETE de
+-- linha ligada. Só módulo `connected` (o declarativo não tem quem busque). Se a instalação já está desligada ou
+-- removida, o evento já saiu pelo gatilho (c): não duplica. No DELETE em cascata da organização a linha da
+-- organização já não existe e o evento não nasce (a FK o recusaria; o módulo some com a organização).
+create or replace function public.fn_extensions_evento_vinculo_desligado()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_emite boolean;
+begin
+  if tg_op = 'DELETE' and not exists (select 1 from public.organizations o where o.id = old.organization_id) then
+    return null;
+  end if;
+  select (a.manifest->>'profile' = 'connected' and i.disabled_at is null and i.removed_at is null) into v_emite
+    from public.extension_installations i join public.extension_artifacts a on a.id = i.artifact_id
+    where i.id = old.installation_id;
+  if coalesce(v_emite, false) then
+    insert into public.extension_module_events(organization_id, kind, installation_id)
+      values (old.organization_id, 'module_disabled', old.installation_id);
+  end if;
+  return null;
+end $$;
+
+-- (c) Instalação `connected` que passa de ativa a desligada ou removida: um evento por vínculo ainda ligado.
+-- Só a PASSAGEM de ativa a inativa emite (desligar e depois remover é um fato só).
+create or replace function public.fn_extensions_evento_instalacao_desligada()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.extension_artifacts a where a.id = new.artifact_id and a.manifest->>'profile' = 'connected') then
+    insert into public.extension_module_events(organization_id, kind, installation_id)
+      select e.organization_id, 'module_disabled', new.id
+        from public.organization_extensions e
+        where e.installation_id = new.id and e.enabled;
+  end if;
+  return null;
+end $$;
+
+-- (d) Organização suspensa ou anonimizada (D4: `redacted` também; a LGPD apaga a organização e o módulo precisa saber).
+create or replace function public.fn_extensions_evento_organizacao_suspensa()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.extension_module_events(organization_id, kind) values (new.id, 'organization_suspended');
+  return null;
+end $$;
+
+revoke execute on function public.fn_extensions_evento_contato_anonimizado() from public, anon, authenticated;
+revoke execute on function public.fn_extensions_evento_vinculo_desligado() from public, anon, authenticated;
+revoke execute on function public.fn_extensions_evento_instalacao_desligada() from public, anon, authenticated;
+revoke execute on function public.fn_extensions_evento_organizacao_suspensa() from public, anon, authenticated;
+
+drop trigger if exists trg_extensions_evento_contato_anonimizado on public.contacts;
+create trigger trg_extensions_evento_contato_anonimizado
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized and not old.is_anonymized)
+  execute function public.fn_extensions_evento_contato_anonimizado();
+
+drop trigger if exists trg_extensions_evento_vinculo_desligado_upd on public.organization_extensions;
+create trigger trg_extensions_evento_vinculo_desligado_upd
+  after update of enabled on public.organization_extensions
+  for each row
+  when (old.enabled and not new.enabled)
+  execute function public.fn_extensions_evento_vinculo_desligado();
+
+drop trigger if exists trg_extensions_evento_vinculo_desligado_del on public.organization_extensions;
+create trigger trg_extensions_evento_vinculo_desligado_del
+  after delete on public.organization_extensions
+  for each row
+  when (old.enabled)
+  execute function public.fn_extensions_evento_vinculo_desligado();
+
+drop trigger if exists trg_extensions_evento_instalacao_desligada on public.extension_installations;
+create trigger trg_extensions_evento_instalacao_desligada
+  after update of disabled_at, removed_at on public.extension_installations
+  for each row
+  when (old.disabled_at is null and old.removed_at is null and (new.disabled_at is not null or new.removed_at is not null))
+  execute function public.fn_extensions_evento_instalacao_desligada();
+
+drop trigger if exists trg_extensions_evento_organizacao_suspensa on public.organizations;
+create trigger trg_extensions_evento_organizacao_suspensa
+  after update of status on public.organizations
+  for each row
+  when (new.status in ('suspended', 'redacted') and old.status is distinct from new.status)
+  execute function public.fn_extensions_evento_organizacao_suspensa();
+
+-- Quem pode LER os eventos da organização como este módulo (regra D2): o vínculo está ligado e a instalação
+-- está ativa, OU o par foi desativado há menos de 30 dias (a LGPD não fica presa: um módulo desligado ainda
+-- apaga os dados dos contatos anonimizados). Depois de 30 dias, recusa. Organização suspensa continua lendo.
+create or replace function public.fn_extensions_events_allowed(p_organization uuid, p_installation uuid)
+returns boolean language sql stable security invoker set search_path = '' as $$
+  select case when p_organization is null or p_installation is null then false else
+    exists (
+      select 1 from public.organization_extensions e
+        join public.extension_installations i on i.id = e.installation_id
+        where e.organization_id = p_organization and e.installation_id = p_installation
+          and e.enabled and i.disabled_at is null and i.removed_at is null
+    )
+    or exists (
+      select 1 from public.extension_module_events v
+        where v.organization_id = p_organization and v.installation_id = p_installation
+          and v.kind = 'module_disabled' and v.occurred_at > now() - interval '30 days'
+    )
+  end;
+$$;
+
+create or replace function public.fn_extensions_events_read(p_organization uuid, p_installation uuid, p_after bigint, p_limit integer)
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
+declare
+  v_limit integer; v_events jsonb; v_last bigint; v_more boolean;
+begin
+  if p_organization is null or p_installation is null or p_after is null or p_after < 0
+    or p_limit is null or p_limit < 1 then
+    raise exception using errcode='P0001', message='extension_invalid_input';
+  end if;
+  if not public.fn_extensions_events_allowed(p_organization, p_installation) then
+    raise exception using errcode='P0001', message='extension_events_forbidden';
+  end if;
+  v_limit := least(p_limit, 100);
+  with q as (
+    select v.id, v.kind, v.subject_id, v.installation_id, v.occurred_at
+      from public.extension_module_events v
+      where v.organization_id = p_organization and v.id > p_after
+        and (v.kind <> 'module_disabled' or v.installation_id = p_installation)
+      order by v.id
+      limit v_limit + 1
+  ), pagina as (
+    select * from q order by id limit v_limit
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'kind', p.kind, 'subject_id', p.subject_id,
+           'installation_id', p.installation_id, 'occurred_at', p.occurred_at) order by p.id), '[]'::jsonb),
+         coalesce(max(p.id), p_after),
+         (select count(*) from q) > v_limit
+    into v_events, v_last, v_more
+    from pagina p;
+  return jsonb_build_object('events', v_events, 'last_id', v_last, 'has_more', v_more);
+end $$;
+
+-- O módulo reconhece o que leu. O cursor nunca regride e nunca passa do último evento que este par enxerga.
+create or replace function public.fn_extensions_events_ack(p_organization uuid, p_installation uuid, p_event_id bigint)
+returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_max bigint; v_cursor bigint;
+begin
+  if p_organization is null or p_installation is null or p_event_id is null or p_event_id < 0 then
+    raise exception using errcode='P0001', message='extension_invalid_input';
+  end if;
+  if not public.fn_extensions_events_allowed(p_organization, p_installation) then
+    raise exception using errcode='P0001', message='extension_events_forbidden';
+  end if;
+  select coalesce(max(v.id), 0) into v_max from public.extension_module_events v
+    where v.organization_id = p_organization and (v.kind <> 'module_disabled' or v.installation_id = p_installation);
+  insert into public.extension_module_cursors as c(installation_id, organization_id, last_event_id, last_read_at)
+    values (p_installation, p_organization, least(p_event_id, v_max), now())
+    on conflict (installation_id, organization_id) do update
+      set last_event_id = greatest(c.last_event_id, excluded.last_event_id),
+          last_read_at = now()
+    returning last_event_id into v_cursor;
+  return jsonb_build_object('last_event_id', v_cursor);
+end $$;
+
+revoke execute on function public.fn_extensions_events_allowed(uuid,uuid) from public, anon, authenticated;
+revoke execute on function public.fn_extensions_events_read(uuid,uuid,bigint,integer) from public, anon, authenticated;
+revoke execute on function public.fn_extensions_events_ack(uuid,uuid,bigint) from public, anon, authenticated;
+grant execute on function public.fn_extensions_events_allowed(uuid,uuid) to service_role;
+grant execute on function public.fn_extensions_events_read(uuid,uuid,bigint,integer) to service_role;
+grant execute on function public.fn_extensions_events_ack(uuid,uuid,bigint) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- modulo conectado: atraso do módulo (migration 9446) ----
+-- Espelho idempotente da 9446 (racional no arquivo da migration): `fn_extensions_events_lag`.
+
+create or replace function public.fn_extensions_events_lag(p_installation uuid)
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  with orgs as (
+    select e.organization_id from public.organization_extensions e
+      where e.installation_id = p_installation and e.enabled
+    union
+    select c.organization_id from public.extension_module_cursors c
+      where c.installation_id = p_installation
+  ), linhas as (
+    select o.organization_id, c.last_event_id, c.last_read_at,
+           (select count(*) from public.extension_module_events v
+              where v.organization_id = o.organization_id and v.id > coalesce(c.last_event_id, 0)
+                and (v.kind <> 'module_disabled' or v.installation_id = p_installation)) as lag,
+           (select count(*) from public.extension_module_events v
+              where v.organization_id = o.organization_id and v.id > coalesce(c.last_event_id, 0)
+                and v.kind = 'contact_anonymized') as contacts_pending,
+           (select min(v.occurred_at) from public.extension_module_events v
+              where v.organization_id = o.organization_id and v.id > coalesce(c.last_event_id, 0)
+                and (v.kind <> 'module_disabled' or v.installation_id = p_installation)) as oldest_unread_at
+      from orgs o
+      left join public.extension_module_cursors c
+        on c.installation_id = p_installation and c.organization_id = o.organization_id
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'last_event_id', l.last_event_id, 'last_read_at', l.last_read_at, 'lag', l.lag,
+           'contacts_pending', l.contacts_pending, 'oldest_unread_at', l.oldest_unread_at
+         ) order by l.lag desc, l.last_read_at nulls first), '[]'::jsonb)
+    from linhas l;
+$$;
+
+revoke execute on function public.fn_extensions_events_lag(uuid) from public, anon, authenticated;
+grant execute on function public.fn_extensions_events_lag(uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
 -- Integridade de organização, funil e etapa (9111)
 -- manifest: Exige a mesma organização/funil/etapa em todo caminho SQL, sem reparar legado automaticamente.
 -- Operator controls statement/lock timeout; applying/validating takes locks and needs a reviewed target window.
@@ -75606,6 +75862,24 @@ do $crm_lead_activities_select$ begin
                     )
                )
           )
+      )
+      -- #4852: a linha que SOBREVIVEU ao negócio (`lead_id` anulado pelo
+      -- ON DELETE SET NULL da 9466) não tem lead-pai para o `exists` acima. Sem
+      -- este braço ela fica na tabela e o admin da própria empresa conta ZERO
+      -- pelo contato — o histórico "preservado" que ninguém lê. O escopo é a
+      -- ORGANIZAÇÃO da linha, e só para quem já lê a organização inteira
+      -- (`org_wide_read`: viewer/manager/admin, ou `visibility_mode = 'all'`):
+      -- o histórico de um negócio apagado é registro da empresa, não do funil de
+      -- quem o tinha. Agente restrito continua sem vê-lo — a alternativa seria
+      -- abrir, por um braço novo, tudo o que o `exists` fecha.
+      or (
+        crm_lead_activities.lead_id is null
+        and (
+          (select public.fn_is_platform_admin())
+          or crm_lead_activities.organization_id in (
+               select s.organization_id from public.fn_lead_scope() s where s.org_wide_read
+             )
+        )
       )
     );
 end $crm_lead_activities_select$;
@@ -82746,7 +83020,83 @@ grant  execute on function public.decrypt_cpf(uuid) to authenticated, service_ro
 revoke execute on function public.decrypt_cpf(uuid, text) from public, anon;
 grant  execute on function public.decrypt_cpf(uuid, text) to authenticated, service_role;
 
--- ---- canal de chat no site (migration 9444, Spec 36 F1) ----
+-- ---- o negócio sai do follow-up e entra na anonimização (migration 9451) ----
+-- Espelho de supabase/migrations/20261122010336_9451_saida_do_followup_e_lgpd_do_nao_comercial.sql.
+-- #4195, itens 2 e 3 do que o mantenedor cobrou na #4191. Mora AQUI — antes do
+-- rótulo da cascata 9243 e do bloco da VARREDURA anon — por duas razões que o
+-- próprio arquivo cobra: cria FUNÇÃO (a VARREDURA anon proíbe `create function`
+-- depois dela) e o invariante `lgpd-alcanca-fichas-fundidas` compara, por
+-- IGUALDADE, o trecho do baseline que vai do primeiro comentário da 9243 até a
+-- VARREDURA — bloco novo nesse intervalo reprovaria aquele teste.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`, função `create or replace` e gatilho `drop`/`create`.
+
+alter table public.followup_enrollments
+  add column if not exists lead_id uuid;
+
+-- Troca da FK num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em
+-- autocommit, e um `add` que falhasse depois do `drop` solto deixaria a coluna
+-- sem a FK.
+do $x$ begin
+  alter table public.followup_enrollments
+    drop constraint if exists followup_enrollments_lead_id_fkey;
+  alter table public.followup_enrollments
+    add constraint followup_enrollments_lead_id_fkey
+    foreign key (lead_id) references public.crm_leads(id) on delete set null;
+end $x$;
+
+create index if not exists idx_followup_enrollments_lead
+  on public.followup_enrollments (organization_id, lead_id)
+  where lead_id is not null;
+
+comment on column public.followup_enrollments.lead_id is
+  'O NEGÓCIO dono desta inscrição (#4195, migration 9451). Nulo = inscrição anterior à coluna ou fluxo sem negócio: a guarda de cobrança trata como legado e NÃO cala o contato por falta de vínculo.';
+
+update public.followup_enrollments e
+   set lead_id = d.lead_id
+  from public.demandas d
+ where e.lead_id is null
+   and e.service_boundary->>'demanda_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   and d.id = (e.service_boundary->>'demanda_id')::uuid
+   and d.organization_id = e.organization_id
+   and d.contact_id = e.contact_id
+   and d.lead_id is not null;
+
+create or replace function public.fn_lgpd_redigir_classificacao_comercial()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.crm_leads l
+     set nao_comercial_motivo = 'anonimizado',
+         nao_comercial_por = null
+   where l.contact_id = new.id
+     and l.organization_id = new.organization_id
+     and l.nao_comercial_em is not null
+     and (l.nao_comercial_motivo is distinct from 'anonimizado'
+          or l.nao_comercial_por is not null);
+  return null;
+end;
+$$;
+
+comment on function public.fn_lgpd_redigir_classificacao_comercial() is
+  'Redige motivo e autoria da classificação não comercial quando o contato é anonimizado (#4195). Mantém nao_comercial_em: a decisão é elegibilidade, não conteúdo.';
+
+revoke all on function public.fn_lgpd_redigir_classificacao_comercial() from public, anon, authenticated;
+
+drop trigger if exists trg_lgpd_redigir_classificacao_comercial on public.contacts;
+create trigger trg_lgpd_redigir_classificacao_comercial
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_lgpd_redigir_classificacao_comercial();
+
+notify pgrst, 'reload schema';
+
+-- ---- canal de chat no site (migration 9468, Spec 36 F1) ----
 -- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
 -- `channel_sessions_webchat_allowed_origins_check` e `conversations_channel_check`)
 -- e as colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
@@ -82950,6 +83300,559 @@ revoke all     on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid
 grant  execute on function public.fn_definir_resumo_do_aviso_de_agendamento(uuid,boolean) to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ---- contas de relatório do Google Ads (migration 9448, #5041) ----
+-- Espelho idempotente de supabase/migrations/20261121152735_9448_contas_de_relatorio_do_google_ads.sql.
+-- Cria função: precisa ficar antes da VARREDURA anon (0116).
+-- manifest: Guarda autorizações de relatórios do Google Ads por organização e conta anunciante para consultar várias contas sem mudar o destino das conversões.
+
+create table if not exists public.google_ads_reporting_accounts (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  customer_id text not null check (customer_id ~ '^[0-9]{10}$'),
+  login_customer_id text check (login_customer_id ~ '^[0-9]{10}$'),
+  label text not null check (char_length(btrim(label)) between 1 and 80),
+  refresh_token_encrypted bytea not null,
+  primary key (organization_id, customer_id)
+);
+
+-- O servidor verifica a organização e só entrega os metadados da conta à UI.
+alter table public.google_ads_reporting_accounts enable row level security;
+revoke all privileges on table public.google_ads_reporting_accounts from public, anon, authenticated;
+grant select, insert, update, delete on table public.google_ads_reporting_accounts to service_role;
+
+-- O retorno do Google não traz o cookie SameSite=Strict do CRM. Revalida no
+-- banco a sessão e o poder de quem iniciou antes de substituir sua credencial.
+create or replace function public.fn_google_ads_admin_do_relatorio(
+  p_org uuid, p_actor uuid, p_session uuid, p_suporte uuid
+) returns boolean language sql stable security definer set search_path = '' as $$
+  select public.fn_org_operante(p_org)
+    and exists (select 1 from auth.sessions s where s.id = p_session and s.user_id = p_actor
+      and (s.not_after is null or s.not_after > now()))
+    and case when p_suporte is not null then
+      public.fn_support_callback_write_allowed(p_org, p_actor, p_session)
+      and (exists (select 1 from public.platform_support_sessions s where s.id = p_suporte
+             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
+             and s.ended_at is null and s.access_mode = 'full' and s.expires_at > now())
+        or exists (select 1 from public.agencia_sessoes s where s.id = p_suporte
+             and s.organization_id = p_org and s.actor_user_id = p_actor and s.auth_session_id = p_session
+             and s.ended_at is null and s.expires_at > now()))
+    else
+      exists (select 1 from public.user_organizations u where u.organization_id = p_org
+        and u.user_id = p_actor and u.role = 'admin' and u.accepted_at is not null and u.revoked_at is null)
+      or exists (select 1 from public.platform_admins a where a.user_id = p_actor
+        and a.revoked_at is null and a.scope = 'full')
+    end;
+$$;
+revoke all on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_google_ads_admin_do_relatorio(uuid,uuid,uuid,uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- vendas registradas (migration 9449) ----
+--
+-- Espelho idempotente da migration 9449. Cria função, então fica ANTES da
+-- VARREDURA anon.
+-- manifest: Vendas registradas — a venda como registro próprio, com valor, data e tags, ligada ao negócio e ao contato; o mesmo negócio aceita várias vendas (recompra), e a venda conta no painel em qualquer etapa do card. Anonimizar o contato redige a observação e as tags das vendas dele (gatilho na virada de is_anonymized).
+--
+-- ─── O que esta tabela responde ────────────────────────────────────────────
+-- "O cliente comprou, quanto e quando" — independente de onde o card está no
+-- funil. Até aqui a venda só existia como NEGÓCIO GANHO (`crm_leads.status =
+-- 'won'`, um valor e uma data por card): a recompra exigia card novo, e o card
+-- que vendeu mas seguiu em outra etapa (pós-venda, entrega) não contava.
+--
+-- ─── Por que não a comanda (`sales`) ───────────────────────────────────────
+-- A comanda pertence ao módulo opcional Financeiro (tabelas nascem na
+-- instalação do módulo), com caixa, itens e comissão. Quem só quer registrar
+-- "vendeu R$ 180 em 20/11, tag atacado" não instala um módulo de caixa. Se a
+-- proposta #4860 (comanda → Vendas) entrar na versão oficial, esta tabela é o
+-- que migra para lá: uma linha por venda, com valor, moeda e data.
+--
+-- ─── As cercas no próprio banco ────────────────────────────────────────────
+--  - valor em centavos inteiros, não negativo; `currency` ISO-4217 (3 letras),
+--    a do NEGÓCIO quando há negócio (a soma do Valor só conta essa moeda);
+--  - a venda aponta para negócio e contato por FK; que o negócio e o contato
+--    são da MESMA organização da venda é conferido pela rota antes de gravar
+--    (a organização vem do cookie, nunca do corpo);
+--  - `data` é o DIA da venda na parede da empresa (date, não instante): o
+--    relatório filtra por dia de calendário, sem conversão de fuso;
+--  - tags normalizadas por quem grava (rota), guardadas em text[] com GIN.
+--
+-- ─── Leitura pela RLS, escrita só pela rota ────────────────────────────────
+-- `authenticated` só LÊ, pela organização (mesma régua das tabelas de módulo
+-- recentes). Gravar e apagar passam por `/api/v1/vendas`, que confere papel,
+-- organização do cookie e o negócio, e audita.
+
+create table if not exists public.vendas_registradas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid,
+  contact_id uuid,
+  valor_cents bigint not null,
+  currency text not null default 'BRL',
+  data date not null,
+  tags text[] not null default '{}',
+  observacao text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vendas_registradas_valor_nao_negativo check (valor_cents >= 0),
+  constraint vendas_registradas_currency_iso check (currency ~ '^[A-Z]{3}$'),
+  constraint vendas_registradas_observacao_curta check (observacao is null or char_length(observacao) <= 500),
+  constraint vendas_registradas_dono check (lead_id is not null or contact_id is not null)
+);
+
+-- A coluna nasceu `moeda` na primeira versão do #5087 e virou `currency` (a
+-- doutrina: dinheiro é `_cents` + `currency` ISO-4217). Quem já aplicou a
+-- versão antiga recebe o rename; quem instala do zero não tem o que trocar.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'moeda')
+     and not exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'vendas_registradas' and column_name = 'currency') then
+    alter table public.vendas_registradas rename column moeda to currency;
+  end if;
+  if exists (select 1 from pg_constraint where conname = 'vendas_registradas_moeda_iso')
+     and not exists (select 1 from pg_constraint where conname = 'vendas_registradas_currency_iso') then
+    alter table public.vendas_registradas
+      rename constraint vendas_registradas_moeda_iso to vendas_registradas_currency_iso;
+  end if;
+end $$;
+
+-- FKs em bloco idempotente (a migration roda de novo sem erro). Negócio ou
+-- contato apagado não apaga a venda: o registro do dinheiro fica, sem o elo.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_lead_fk') then
+    alter table public.vendas_registradas
+      add constraint vendas_registradas_lead_fk
+      foreign key (lead_id) references public.crm_leads(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'vendas_registradas_contact_fk') then
+    alter table public.vendas_registradas
+      add constraint vendas_registradas_contact_fk
+      foreign key (contact_id) references public.contacts(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists idx_vendas_registradas_org_data
+  on public.vendas_registradas (organization_id, data desc);
+create index if not exists idx_vendas_registradas_lead
+  on public.vendas_registradas (organization_id, lead_id, data desc);
+create index if not exists idx_vendas_registradas_contato
+  on public.vendas_registradas (organization_id, contact_id, data desc);
+create index if not exists idx_vendas_registradas_tags
+  on public.vendas_registradas using gin (tags);
+
+comment on table public.vendas_registradas is
+  'Venda registrada no negócio ou no contato: valor em centavos, currency, dia da venda e tags. Várias por negócio (recompra). Conta no painel de vendas em qualquer etapa do card; negócio ganho sem venda registrada continua contando pelo próprio valor.';
+
+alter table public.vendas_registradas enable row level security;
+
+drop policy if exists tenant_isolation_vendas_registradas_select on public.vendas_registradas;
+create policy tenant_isolation_vendas_registradas_select
+  on public.vendas_registradas
+  for select to authenticated using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+revoke all on public.vendas_registradas from public, anon, authenticated;
+grant select on public.vendas_registradas to authenticated;
+grant all on public.vendas_registradas to service_role;
+
+-- ─── LGPD: anonimizar o contato redige as vendas dele ──────────────────────
+-- `observacao` é texto livre sobre o cliente e as tags também podem nomeá-lo;
+-- valor, moeda e dia FICAM, porque são o registro do dinheiro. A porta é a
+-- virada de `is_anonymized` em `contacts` (o desenho da 0391), por onde passam
+-- os dois caminhos de anonimização. `after` + `return null`: não altera a linha.
+create or replace function public.fn_vendas_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.is_anonymized and not coalesce(old.is_anonymized, false) then
+    update public.vendas_registradas
+       set observacao = null,
+           tags = '{}',
+           updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id;
+  end if;
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_vendas_do_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_vendas_do_contato_anonimizado on public.contacts;
+create trigger trg_vendas_do_contato_anonimizado
+  after update of is_anonymized on public.contacts
+  for each row execute function public.fn_vendas_do_contato_anonimizado();
+
+notify pgrst, 'reload schema';
+
+-- ---- valor do negócio pelas vendas (migration 9450) ----
+--
+-- Espelho idempotente da migration 9450. Cria função, então fica ANTES da
+-- VARREDURA anon.
+-- manifest: O valor do negócio segue as vendas registradas — com ao menos uma venda, `crm_leads.value_cents` passa a ser a SOMA das vendas na moeda do negócio, gravada por gatilho a cada venda registrada, alterada ou apagada. O valor que estava DIGITADO fica guardado (`valor_digitado_cents`) e volta quando a última venda é apagada (decisão 2B do doc 396); `valor_pelas_vendas` diz se o Valor está sendo derivado. O gatilho trava a linha do negócio antes de somar, para duas vendas simultâneas não perderem uma da soma. Antes o card mostrava um valor e o painel outro, e havia dois lugares para dizer "quanto vendeu". Idempotente.
+
+alter table public.crm_leads
+  add column if not exists valor_pelas_vendas boolean not null default false,
+  add column if not exists valor_digitado_cents bigint;
+
+comment on column public.crm_leads.valor_pelas_vendas is
+  'true = o Valor (value_cents) é a soma das vendas registradas, gravada pelo gatilho fn_valor_do_negocio_pelas_vendas; o campo fica em leitura.';
+comment on column public.crm_leads.valor_digitado_cents is
+  'O Valor digitado antes da primeira venda registrada. Volta para value_cents quando a última venda é apagada.';
+
+create or replace function public.fn_valor_do_negocio_pelas_vendas()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_lead  uuid;
+  v_moeda text;
+  v_qtd   integer;
+  v_total bigint;
+begin
+  -- Os negócios afetados: o de antes (UPDATE/DELETE) e o de agora (INSERT/UPDATE),
+  -- em ordem de id: venda que troca de negócio trava os dois sempre na mesma ordem.
+  for v_lead in
+    select distinct x
+      from unnest(array[
+        case when tg_op <> 'INSERT' then old.lead_id end,
+        case when tg_op <> 'DELETE' then new.lead_id end
+      ]) as x
+     where x is not null
+     order by x
+  loop
+    -- A trava vem ANTES da soma: em READ COMMITTED, duas vendas simultâneas no
+    -- mesmo negócio somariam cada uma no seu retrato, e a segunda gravaria um
+    -- total sem a primeira. Com a linha travada, a soma de quem espera já
+    -- enxerga a venda que acabou de entrar.
+    select upper(coalesce(l.currency, o.currency, 'BRL'))
+      into v_moeda
+      from public.crm_leads l
+      join public.organizations o on o.id = l.organization_id
+     where l.id = v_lead
+       for update of l;
+    if not found then
+      continue;
+    end if;
+
+    -- Só a moeda do negócio entra na soma: somar real com dólar seria inventar número.
+    select count(*), coalesce(sum(v.valor_cents) filter (where v.currency = v_moeda), 0)
+      into v_qtd, v_total
+      from public.vendas_registradas v
+     where v.lead_id = v_lead;
+
+    if v_qtd > 0 then
+      -- Primeira venda: guarda o valor digitado antes de trocá-lo pela soma.
+      update public.crm_leads
+         set valor_digitado_cents = case when valor_pelas_vendas then valor_digitado_cents else value_cents end,
+             valor_pelas_vendas = true,
+             value_cents = v_total
+       where id = v_lead
+         and (not valor_pelas_vendas or value_cents is distinct from v_total);
+    else
+      -- A última venda saiu: o valor digitado volta (decisão 2B do doc 396).
+      update public.crm_leads
+         set value_cents = valor_digitado_cents,
+             valor_pelas_vendas = false,
+             valor_digitado_cents = null
+       where id = v_lead
+         and valor_pelas_vendas;
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_valor_do_negocio_pelas_vendas() from public, anon, authenticated;
+
+drop trigger if exists trg_valor_do_negocio_pelas_vendas on public.vendas_registradas;
+create trigger trg_valor_do_negocio_pelas_vendas
+  after insert or update of lead_id, valor_cents, currency or delete
+  on public.vendas_registradas
+  for each row execute function public.fn_valor_do_negocio_pelas_vendas();
+
+-- Auto-cura: negócios que já têm venda registrada passam a mostrar a soma, e o
+-- valor digitado fica guardado (só na primeira vez: re-aplicar não o sobrescreve).
+update public.crm_leads l
+   set valor_digitado_cents = case when l.valor_pelas_vendas then l.valor_digitado_cents else l.value_cents end,
+       valor_pelas_vendas = true,
+       value_cents = s.total
+  from (
+    select v.lead_id,
+           coalesce(sum(v.valor_cents) filter (
+             where v.currency = upper(coalesce(l2.currency, o.currency, 'BRL'))
+           ), 0) as total
+      from public.vendas_registradas v
+      join public.crm_leads l2 on l2.id = v.lead_id
+      join public.organizations o on o.id = l2.organization_id
+     group by v.lead_id
+  ) s
+ where l.id = s.lead_id
+   and (not l.valor_pelas_vendas or l.value_cents is distinct from s.total);
+
+-- ---- atualização agendada pela janela de manutenção (migration 9457) ----
+alter table public.system_update_runs
+  add column if not exists scheduled_for timestamptz;
+
+comment on column public.system_update_runs.scheduled_for is
+  'Quando o agent.sh vai executar este pedido, se ele espera a janela de manutenção (SYSTEM_UPDATE_WINDOW, #4334). Gravada pelo agente (run_scheduled) a cada ciclo de espera; nula = sem janela. A cerca das extensões e o "desfecho desconhecido" da tela contam os 15 min a partir do mais tarde entre dispatched_at e esta coluna.';
+
+-- `greatest` ignora o nulo: sem agendamento, é a régua de sempre (dispatched_at).
+create or replace function public.fn_extensions_core_update_in_progress()
+returns boolean language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from public.system_update_runs
+    where status='dispatched'
+      and greatest(dispatched_at, scheduled_for) > now() - interval '15 minutes');
+$$;
+
+revoke execute on function public.fn_extensions_core_update_in_progress() from public, anon, authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- preço do Gemini 3.5 Flash (migration 9462, #5090) ----
+-- manifest: atualiza ai_models e ai_pricing do Gemini 3.5 Flash para 150/750 centavos por milhão, alinhando ao motor e ao roteamento oficial do Google pelo 3.6 Flash (#5090).
+-- Espelho de supabase/migrations/20261123102811_9462_preco_gemini_35_flash.sql. Vem depois da semente
+-- da 0101 (150/900), então vence no install e no update. Não cria função.
+-- Alinha ai_models e ai_pricing ao motor (#4968).
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('google', 'gemini-3.5-flash', 'Gemini 3.5 Flash',
+   'Roteado ao 3.6 Flash. Preço de catálogo: tarifa de 01/01/2027 (US$ 1,50/US$ 7,50); o motor cobra a promo até essa data (UTC).',
+   150, 750, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gemini-3.5-flash', 150, 750, 'catálogo 9462 — alinhado ao motor e ao roteamento pelo 3.6 Flash (#5090)')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
+
+notify pgrst, 'reload schema';
+
+-- ---- o histórico do negócio sobrevive ao negócio, e o lote leva o funil junto (migration 9466, #4802) ----
+-- Espelho de supabase/migrations/20261123160550_9466_transferencia_de_negocios_entre_funis.sql
+-- (o porquê inteiro está no cabeçalho dela; doc de decisão 400, opção B).
+--
+-- ⚠️ POSIÇÃO: este bloco é a ÚLTIMA definição de `fn_mover_leads_em_lote` (parte do
+-- corpo da 9058, o TOPO da etapa). Cria função, então fica ANTES da cascata da
+-- 9243 e da VARREDURA anon (0116). O braço da linha órfã na policy
+-- `crm_lead_activities_select` NÃO está aqui: ele mora no próprio bloco da policy
+-- por escopo, mais acima — uma segunda definição diferente faria a primeira
+-- valer, a cada `update.sh`, como versão intermediária
+-- (`baseline-nao-constroi-o-que-derruba`).
+--
+-- ⚠️ A TROCA DA FK vai num bloco DO só, com o preenchimento do contato ANTES: o
+-- `update.sh` reaplica sem ON_ERROR_STOP e em autocommit, e uma falha entre o
+-- `drop constraint` e o `add constraint` deixaria a tabela sem a FK (lição do
+-- #2670). O gatilho que apaga o histórico sem contato nasce antes da troca: com
+-- o CASCADE ainda de pé ele é inofensivo (apaga o que a cascata apagaria). O
+-- gatilho em `contacts` (o negócio saiu antes, o contato sai depois) também:
+-- com o CASCADE de pé, `lead_id` nulo não existe e ele não apaga nada.
+create or replace function public.fn_mover_leads_em_lote(
+  p_organization_id uuid,
+  p_lead_ids uuid[],
+  p_stage_id uuid,
+  p_lost_reason text default null
+) returns table (lead_id uuid, from_stage_id uuid, pipeline_id uuid)
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_min numeric;
+  v_total int;
+  -- Motivo em branco é ausência de motivo, nunca um motivo de uma letra.
+  v_motivo text := nullif(btrim(coalesce(p_lost_reason, '')), '');
+  v_coluna_motivo text := '';
+  v_filtro_novos text := '';
+  v_filtro_preservados text := 'false';
+  -- #4802 (item 3): o funil de destino sai da ETAPA, não de um argumento: assim
+  -- não existe chamada em que os dois discordem.
+  v_pipeline_destino uuid;
+begin
+  select s.pipeline_id
+    into v_pipeline_destino
+    from public.crm_stages s
+   where s.id = p_stage_id
+     and s.organization_id = p_organization_id;
+
+  if v_pipeline_destino is null then
+    raise exception 'stage_not_found: a etapa % não é da organização %', p_stage_id, p_organization_id
+      using errcode = '23503';
+  end if;
+
+  -- Quantos cards o lote tem DE VERDADE. O predicado é o MESMO do `alvo` da
+  -- escrita (organização + ids): contar por `array_length(p_lead_ids)` somaria
+  -- id de outra organização — que o `alvo` descarta —, e a posição do primeiro
+  -- card sairia de uma conta que inclui card que não vai ser movido.
+  select count(*)
+    into v_total
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.id = any(p_lead_ids);
+
+  -- Onde o lote ENCOSTA: o primeiro card da etapa de destino, sem contar os que
+  -- já estão no lote. `null` é a etapa vazia — e aí o lote ocupa o miolo de
+  -- sempre (1000, 2000, …), pelo `coalesce` da escrita.
+  select min(l.position_in_stage)
+    into v_min
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.stage_id = p_stage_id
+     and not (l.id = any(p_lead_ids));
+
+  -- Só com motivo a gravar a coluna entra na escrita (0263; ver o cabeçalho) —
+  -- e só quem NÃO estava perdido recebe a coluna (#2887). Sem motivo, o ramo dos
+  -- novos leva o lote inteiro e o dos preservados não casa nenhuma linha.
+  if v_motivo is not null then
+    v_coluna_motivo := ', lost_reason = $4';
+    v_filtro_novos := ' and l.status is distinct from ''lost''';
+    v_filtro_preservados := 'l.status = ''lost''';
+  end if;
+
+  return query execute format($f$
+  with alvo as (
+    select l.id,
+           l.stage_id    as from_stage_id,
+           l.pipeline_id as pipeline_id,
+           -- A ordem do lote no destino é a ordem em que ele estava no quadro:
+           -- etapa, depois posição. `id` só desempata para o resultado ser
+           -- determinístico (dois cards podem legitimamente empatar hoje —
+           -- é justamente o estado que a migration 0209 deixa de produzir).
+           row_number() over (order by l.stage_id, l.position_in_stage, l.id) as ordem
+      from public.crm_leads l
+     where l.organization_id = $1
+       and l.id = any($2)
+  ),
+  novos as (
+    update public.crm_leads l
+       set stage_id          = $3,
+           -- #4802 (item 3): o funil vem da ETAPA de destino ($7), nunca de um
+           -- argumento que pudesse divergir dela.
+           pipeline_id       = $7,
+           -- O TOPO da etapa (issue #3461): o lote inteiro encosta ACIMA do
+           -- primeiro card e mantém entre si a ordem de origem. $5 é esse
+           -- primeiro card; $6, o tamanho do lote. Etapa vazia ($5 nulo) cai
+           -- no `coalesce` e ocupa 1000, 2000, … como um card criado à mão.
+           position_in_stage = coalesce($5 - (($6 - a.ordem + 1) * 1000), a.ordem * 1000),
+           updated_at        = now()%s
+      from alvo a
+     where l.id = a.id
+       and l.organization_id = $1%s
+    returning l.id, a.from_stage_id, a.pipeline_id
+  ),
+  preservados as (
+    update public.crm_leads l
+       set stage_id          = $3,
+           pipeline_id       = $7,
+           position_in_stage = coalesce($5 - (($6 - a.ordem + 1) * 1000), a.ordem * 1000),
+           updated_at        = now()
+      from alvo a
+     where l.id = a.id
+       and l.organization_id = $1
+       and %s
+    returning l.id, a.from_stage_id, a.pipeline_id
+  )
+  select n.id, n.from_stage_id, n.pipeline_id from novos n
+  union all
+  select p.id, p.from_stage_id, p.pipeline_id from preservados p
+  $f$, v_coluna_motivo, v_filtro_novos, v_filtro_preservados)
+  using p_organization_id, p_lead_ids, p_stage_id, v_motivo, v_min, v_total, v_pipeline_destino;
+end;
+$$;
+
+comment on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) is
+  'Move um lote de leads para uma etapa dando a cada um posição DISTINTA no TOPO da coluna de destino (issue #3461): o lote encosta acima do primeiro card (`min - 1000` por card, na ordem em que estava no quadro). Etapa vazia continua nascendo em 1000, 2000, … Existe porque gravar a mesma position_in_stage em N linhas quebra o midpoint() do arrasto seguinte (prev === next → NaN) e deixa a ordem do quadro indefinida. `p_lost_reason` (0263, issue #917) grava o motivo da perda na MESMA escrita quando a etapa de destino é de perda. #2887: a coluna só entra na escrita de quem NÃO estava perdido. #4802 (item 3): `pipeline_id` acompanha a etapa — sai da própria etapa de destino —, e é o que permite a transferência em massa de negócios entre funis usar ESTE caminho em vez de um segundo update em massa. Devolve uma linha por card movido, com a etapa de ORIGEM, para o handler emitir a atividade de timeline de cada um.';
+
+revoke all     on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from public;
+revoke execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) from anon;
+grant  execute on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text)
+  to authenticated, service_role;
+
+create or replace function public.fn_crm_lead_apaga_historico_sem_contato()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from public.crm_lead_activities a
+   where a.lead_id = old.id
+     and a.organization_id = old.organization_id
+     and a.contact_id is null;
+  return old;
+end;
+$$;
+revoke execute on function public.fn_crm_lead_apaga_historico_sem_contato() from public, anon;
+revoke execute on function public.fn_crm_lead_apaga_historico_sem_contato() from authenticated;
+
+drop trigger if exists trg_crm_leads_apaga_historico_sem_contato on public.crm_leads;
+create trigger trg_crm_leads_apaga_historico_sem_contato
+  before delete on public.crm_leads
+  for each row execute function public.fn_crm_lead_apaga_historico_sem_contato();
+
+-- O outro lado do mesmo buraco: o negócio sai primeiro, a linha fica só com o
+-- `contact_id`, e DEPOIS o contato é apagado. `crm_lead_activities_contact_id_fkey`
+-- é ON DELETE SET NULL, então a linha ficaria sem negócio e sem contato — fora do
+-- alcance da anonimização para sempre. O gatilho apaga, junto com o contato, a
+-- linha que só ele segurava; vale para todo caminho que apaga contato, não só
+-- para `fn_apagar_contato_com_historico`. Linha que ainda tem negócio fica (o
+-- SET NULL a deixa com o negócio, e o gatilho de `crm_leads` acima a alcança se o
+-- negócio sair depois). Mesmo molde do de cima: definer porque `authenticated`
+-- não tem DELETE na timeline, sem seletor, não é chamável pela REST, sem HTTP.
+create or replace function public.fn_contato_apaga_historico_sem_negocio()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.crm_lead_activities a
+   where a.lead_id is null
+     and a.contact_id = old.id
+     and a.organization_id = old.organization_id;
+  return old;
+end;
+$$;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from public, anon;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from authenticated;
+
+drop trigger if exists trg_contacts_apaga_historico_sem_negocio on public.contacts;
+create trigger trg_contacts_apaga_historico_sem_negocio
+  before delete on public.contacts
+  for each row execute function public.fn_contato_apaga_historico_sem_negocio();
+
+do $historico9466$ begin
+  update public.crm_lead_activities a
+     set contact_id = l.contact_id
+    from public.crm_leads l
+   where a.lead_id = l.id
+     and a.organization_id = l.organization_id
+     and a.contact_id is null
+     and l.contact_id is not null;
+
+  alter table public.crm_lead_activities
+    alter column lead_id drop not null;
+  alter table public.crm_lead_activities
+    drop constraint if exists crm_lead_activities_lead_id_fkey;
+  alter table public.crm_lead_activities
+    add constraint crm_lead_activities_lead_id_fkey
+    foreign key (lead_id) references public.crm_leads(id) on delete set null;
+end $historico9466$;
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
@@ -88383,6 +89286,26 @@ comment on column public.channel_sessions.zernio_webhook_id is
 comment on column public.channel_sessions.zernio_credencial_da_instalacao is
   'true = a sessão fala com o provedor pela chave da INSTALAÇÃO (platform_config), resolvida na hora; zernio_token_encrypted fica nulo. false = chave própria da organização, cifrada em zernio_token_encrypted. Migration 9093.';
 
+-- ---- a CONEXÃO decide se a conversa nova cria negócio (migration 9459) ----
+-- Espelho da 9459 (issue #4670); o porquê inteiro está no cabeçalho da migration.
+-- Coluna, e não `metadata`: a leitura acontece uma vez por card que nasce, no
+-- caminho quente da ingestão, e a ausência de chave em jsonb teria de significar
+-- LIGADO — o oposto da chave vizinha (`guardar_historico`, #999), que é a razão
+-- de a regra não poder morar num leitor que adivinha.
+--
+-- ⚠️ `default true` é o que torna a atualização invisível: toda instalação de
+-- hoje continua criando card em todo número. No Postgres 11+ um default
+-- não-volátil não reescreve a tabela, então a coluna entra sem varredura.
+--
+-- Não cria função e não concede nada a `anon`: pode ficar depois da VARREDURA
+-- anon. Reaplicável por `add column if not exists` — o `update.sh` roda o
+-- apêndice inteiro a cada atualização (`tests/unit/baseline-reaplicavel.test.ts`).
+alter table public.channel_sessions
+  add column if not exists conversa_nova_cria_negocio boolean not null default true;
+
+comment on column public.channel_sessions.conversa_nova_cria_negocio is
+  'Issue #4670: a conversa nova que chega por esta conexão abre negócio no funil padrão? true (DEFAULT, e o estado de toda instalação de antes) = sim, como sempre foi. false = a conversa e o contato nascem, o Inbox e a IA seguem, e só o card não nasce; criar à mão (crm_create_lead, painel da conversa, ficha do contato) continua igual.';
+
 -- ---- llm_calls: passos e composição da chamada (migration 9105) ----
 alter table public.llm_calls add column if not exists passos smallint;
 alter table public.llm_calls add column if not exists entrada_do_primeiro_passo integer;
@@ -88497,6 +89420,39 @@ alter table public.followup_flow_pointers
 
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
+
+-- ---- negócio não comercial (migration 9414) ----
+-- #4191: o negócio pode ser classificado como NÃO comercial sem desfecho — não
+-- vira perda, não é apagado, e sai do Radar comercial. Mesmo texto da migration
+-- 9414; fica no apêndice porque o `create table` do bloco 0019 é pulado em toda
+-- instalação que já tem a tabela.
+alter table public.crm_leads
+  add column if not exists nao_comercial_em timestamptz,
+  add column if not exists nao_comercial_motivo text,
+  add column if not exists nao_comercial_por uuid;
+
+-- Troca do CHECK num bloco só, pelo mesmo motivo da FK da 9451: sem ele, um
+-- `add` que falhasse no update.sh deixaria a tabela sem a regra.
+do $x$ begin
+  alter table public.crm_leads
+    drop constraint if exists crm_leads_nao_comercial_coerente;
+  alter table public.crm_leads
+    add constraint crm_leads_nao_comercial_coerente check (
+      nao_comercial_em is null
+      or (nao_comercial_motivo is not null and length(btrim(nao_comercial_motivo)) > 0)
+    );
+end $x$;
+
+comment on column public.crm_leads.nao_comercial_em is
+  'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9414). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
+comment on column public.crm_leads.nao_comercial_motivo is
+  'Por que o negócio foi classificado como não comercial (issue #4191). Texto declarado pela equipe (golpe, spam, contato sem finalidade comercial…), sem vocabulário fechado no banco: a lista está em discussão na issue e um CHECK travaria a correção de um caso novo.';
+comment on column public.crm_leads.nao_comercial_por is
+  'Quem classificou o negócio como não comercial (issue #4191). Sem FK, como created_by_user_id: apagar a pessoa não pode apagar a decisão.';
+
+create index if not exists crm_leads_nao_comerciais_idx
+  on public.crm_leads (organization_id, nao_comercial_em desc)
+  where nao_comercial_em is not null;
 
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
@@ -89197,6 +90153,20 @@ create index if not exists idx_conversations_fila_espera
 comment on index public.idx_conversations_fila_espera is
   'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
 
+-- ---- 9454 — a campanha de prospecção ganha janela própria e pausa/retoma sozinha (issue #4830, saída 1) ----
+-- Espelho de supabase/migrations/20261122023040_9454_janela_da_campanha_de_prospeccao.sql.
+-- A janela mora em `config.janela` (jsonb, validada pelo schema estrito); a
+-- coluna abaixo é só o "quem pausou", que é estado do motor e não configuração.
+alter table public.prospecting_campaigns
+  add column if not exists pausada_pela_janela boolean not null default false;
+
+comment on column public.prospecting_campaigns.pausada_pela_janela is
+  'A campanha foi pausada pela JANELA dela (#4830)? true = o tick a retoma sozinho na próxima abertura; false = pausa de quem opera (ou início/retomada/arquivamento) e ninguém a retoma sem clique.';
+
+create index if not exists prospecting_janela_pausada
+  on public.prospecting_campaigns(organization_id)
+  where status = 'paused' and pausada_pela_janela;
+
 notify pgrst, 'reload schema';
 
 -- ---- funil de entrada por número (migration 9430) ----
@@ -89322,5 +90292,54 @@ comment on column public.crm_metas.alvo is
 comment on table public.crm_metas is
   'Meta mensal da organização por indicador (#3025 fatia 1, valor na #4796). `pipeline_id` nulo + `vendedor_id` nulo = meta da EMPRESA; `pipeline_id` preenchido = meta do funil; `vendedor_id` preenchido = meta do vendedor. Leitura org-scoped; escrita manager+ (Server Action definirMetaMensal, com auditoria).';
 
-notify pgrst, 'reload schema';
+-- ---- teto do dia só na abordagem (migration 9455, #3851) ----
+-- Opção POR CANAL (#3851): ligada, o teto diário conta e barra só a 1ª mensagem
+-- a pessoa nova; o follow-up de quem já foi abordado não gasta nem espera o
+-- teto. O porquê inteiro está no cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists teto_so_abordagem boolean;
+comment on column public.channel_knobs.teto_so_abordagem is
+  'true = o teto diário (warm-up e daily_message_limit) conta só a 1ª mensagem a pessoa nova; follow-up de quem já foi abordado não gasta nem espera o teto. NULL/false = régua de sempre (conta todo disparo). Resposta nunca passa pelo teto (9061). Opção POR CANAL (#3851).';
 
+alter table public.pacing_ledger
+  add column if not exists abordagem boolean not null default true;
+comment on column public.pacing_ledger.abordagem is
+  'true = 1ª mensagem a pessoa nova (abordagem). false = follow-up de quem já foi abordado. Só a coluna `teto_so_abordagem` do canal faz o teto do dia ler isto; resposta é marcada por `resposta` e nunca conta (#3851).';
+
+-- ---- teto próprio do follow-up (migration 9456, #4063) ----
+-- A opção `teto_so_abordagem` tira o teto de ABORDAGEM do follow-up — era o
+-- pedido — e com isso o follow-up ficava sem teto nenhum: 200, 300, 400 no mesmo
+-- dia saíam todos. `followup_daily_cap` é o teto de SEGURANÇA desse volume,
+-- separado do de abordagem, lido pelo mesmo `loadChannelKnobs` e só armado com a
+-- opção ligada. NULL = default do motor (200/dia). O porquê inteiro está no
+-- cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists followup_daily_cap integer;
+
+comment on column public.channel_knobs.followup_daily_cap is
+  'Teto diário PRÓPRIO do follow-up (disparo que não é abordagem nem resposta), separado do teto de abordagem. Só arma com teto_so_abordagem ligado; desligado, o follow-up conta no teto de sempre. NULL = default do motor (200/dia). Inteiro > 0; valor inválido cai no default com warn (#4063, refs #3851).';
+
+do $followup_daily_cap$ begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_knobs_followup_daily_cap_check'
+       and conrelid = 'public.channel_knobs'::regclass
+  ) then
+    alter table public.channel_knobs
+      add constraint channel_knobs_followup_daily_cap_check
+      check (followup_daily_cap is null or followup_daily_cap > 0);
+  end if;
+end $followup_daily_cap$;
+
+-- ---- Embedded Signup do app da Meta da instalação (migration 9463, #4074) ----
+-- Espelho de supabase/migrations/20261123133915_9463_embedded_signup_do_app_da_meta.sql.
+-- App ID e Configuration ID não são segredo (vão ao navegador no FB.init/FB.login).
+-- Fica DEPOIS da VARREDURA anon porque `platform_meta_app` (0257) só é criada
+-- depois dela; não cria função, então pode.
+alter table public.platform_meta_app
+  add column if not exists app_id text,
+  add column if not exists config_id text;

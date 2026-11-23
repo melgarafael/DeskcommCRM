@@ -63,6 +63,8 @@ export interface TriggerValue {
     exclude_sources?: string[];
   };
   concurrency: "one_per_conversation" | "one_per_contact";
+  /** Retomar ao devolver — ausente = desligado (o padrão). */
+  resume_on_handback?: boolean;
 }
 
 interface Props {
@@ -493,6 +495,23 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone,
         <p className="text-xs text-muted-foreground">
           {t(
             "Com dois agentes neste número, atende o primeiro na ordem de prioridade que aceita o contato. Se nenhum aceitar, o sistema não responde: a mensagem fica na caixa de entrada para uma pessoa.",
+          )}
+        </p>
+      </div>
+
+      <div className="space-y-1 rounded-md border border-border/60 p-3">
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={value.resume_on_handback === true}
+            onCheckedChange={(v) => onChange({ ...value, resume_on_handback: v })}
+            disabled={disabled}
+            id="resume_on_handback"
+          />
+          <Label htmlFor="resume_on_handback">{t("Continuar a conversa assim que a equipe devolver ao automático")}</Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.",
           )}
         </p>
       </div>

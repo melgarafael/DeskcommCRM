@@ -51,7 +51,7 @@ export const dynamic = "force-dynamic";
 export interface AssignableAgent {
   agent_id: string;
   name: string;
-  /** null quando o agente ainda não tem versão publicada. */
+  /** null para agentes sem versão, como os de telefonia. */
   version_number: number | null;
 }
 
@@ -97,7 +97,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       paused_at: string | null;
       archived_at: string | null;
     }>
-  ).filter(agenteAtende);
+  // O runtime da telefonia lê is_active no cadastro e não usa a versão.
+  ).filter((agente) => channel === "voice" ? agente.is_active === true : agenteAtende(agente));
 
   const publishedIds = rows.map((a) => a.published_version_id).filter((v): v is string => !!v);
   const versionById = new Map<string, number>();

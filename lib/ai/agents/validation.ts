@@ -89,6 +89,12 @@ const triggerConfigSchema = z
         exclude_sources: [],
       }),
     concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
+    // Retomar ao devolver: quando a equipe devolve o atendimento ao automático
+    // e a última fala é dela, o agente continua NA HORA, sem esperar o cliente
+    // escrever (lib/escalacao/retomada-ao-devolver.ts). Opcional e sem default
+    // de propósito: versão antiga sem o campo lê como desligado, e salvar uma
+    // versão não grava a chave em quem nunca mexeu.
+    resume_on_handback: z.boolean().optional(),
   })
   .strict();
 

@@ -195,7 +195,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const { data: lead, error: leadErr } = await supabase
     .from("crm_leads")
-    .select("id, pipeline_id")
+    .select("id, pipeline_id, contact_id")
     .eq("id", leadId)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -283,6 +283,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   void emitLeadActivity(supabase, {
     organizationId: orgId,
     leadId,
+    // O contato vai na linha: é por ele que a anonimização (LGPD) alcança o
+    // histórico de um negócio apagado (migration 9466).
+    contactId: lead.contact_id ?? null,
     type: "document_attached",
     sourceModule: "leads/attachments",
     sourceId: attachmentId,

@@ -160,6 +160,11 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // `requireRole` de sessão.
   "/api/v1/settings/agenda-apresentacao",
   "/api/v1/settings/campanhas",
+  // #5128 — `links-de-contato`: GET com `config:read` (a ficha e o funil precisam
+  // da escolha para não mostrar o que a empresa escondeu) e PATCH com
+  // `config:write`, papel admin em ambos (`tokenRole`). Caminho literal, sem
+  // segmento dinâmico.
+  "/api/v1/settings/links-de-contato",
   { caminho: "/api/v1/settings/proposal-templates/[slug]", segmentos: { slug: "[a-z0-9_]{1,100}" }, amostras: { slug: "empresa_minha_proposta" } },
   "/api/v1/settings/proposal-templates",
   "/api/v1/settings/proposals",
