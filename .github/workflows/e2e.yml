@@ -946,6 +946,7 @@ jobs:
         publico-por-origem-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
+        retomar-ao-devolver.spec.ts
         etapa-avisa-na-central.spec.ts
         gatilho-de-caso.spec.ts
         conversa-do-caso.spec.ts

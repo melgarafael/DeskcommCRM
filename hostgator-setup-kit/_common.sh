@@ -3396,7 +3396,10 @@ trocar_segredo_do_cron_vazado() {
   # andamento (quem a dirige ainda fala com a senha velha), nem duas vezes ao
   # mesmo tempo (update.sh no terminal e agent.sh no cron).
   local tem_cadeado=""
-  if command -v flock >/dev/null 2>&1; then
+  # O update.sh de terminal já segura o `.update.lock` (#5052): um `flock -n`
+  # num descritor novo falharia contra o próprio processo e a troca sairia calada.
+  if [ -n "${TRAVA_PROPRIA:-}" ]; then :
+  elif command -v flock >/dev/null 2>&1; then
     exec 8>"${dir}/.update.lock"
     flock -n 8 || { exec 8>&-; return 0; }
     tem_cadeado=1
