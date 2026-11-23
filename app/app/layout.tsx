@@ -197,7 +197,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // `admin`). Ele segue para o CRM; o wizard continua acessível pela URL.
       //
       // A marca de "entrou por convite" é `user_organizations.invited_by`, que
-      // só o aceite de convite preenche (`fn_accept_team_invite`). Ficam no
+      // o aceite de convite (`fn_accept_team_invite`) e a criação de membro pela
+      // Equipe (`app/api/v1/team/users/route.ts`) preenchem. Ficam no
       // wizard os vínculos sem `invited_by` (dono criado pelo cadastro,
       // `bootstrap-owner`, provisionamento externo, vínculo antigo ou criado à
       // mão) e o DONO de um tenant aberto pelo painel de plataforma, que entra
