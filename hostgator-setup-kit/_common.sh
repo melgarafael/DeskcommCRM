@@ -3928,7 +3928,7 @@ podar_backups() {  # podar_backups <diretório> <manter por tipo>
         apagados=$(( apagados + 1 ))
         c_dim "  apagado: ${lista[$i]##*/}"
       else
-        c_ylw "⚠ não consegui apagar ${lista[$i]##*} — ele segue no disco"
+        c_ylw "⚠ não consegui apagar ${lista[$i]##*/} — ele segue no disco"
       fi
     done
   done
@@ -3980,10 +3980,12 @@ podar_versoes_antigas_das_nossas_imagens() {
     docker image ls --format '{{.Repository}}:{{.Tag}}' "$refs" 2>/dev/null | while IFS= read -r img; do
       [ -n "$img" ] || continue
       tag="${img##*:}"
-      # Só tag de versão (vX.Y.Z). `stable`, `latest`, `local` e `<none>` são
+      # Só tag de versão. As nossas imagens são publicadas e gravadas no .env
+      # SEM o `v` (update.sh: VERSAO_ALVO="${TARGET_TAG#v}"); o `v[0-9]*` fica
+      # para tag escrita à mão. `stable`, `latest`, `local` e `<none>` são
       # canais móveis ou lixo de build: mexer neles muda o que o compose sobe.
       case "$tag" in
-        v[0-9]*) ;;
+        v[0-9]*|[0-9]*.[0-9]*.[0-9]*) ;;
         *) continue ;;
       esac
       if [ "$tag" = "$atual" ] || [ "$tag" = "$anterior" ]; then continue; fi
