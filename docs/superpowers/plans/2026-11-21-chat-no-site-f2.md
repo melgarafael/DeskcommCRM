@@ -149,7 +149,7 @@ O horário (janela por dia, feriados, mensagem fora do expediente, captura offli
 ### Task 8: Prova pela tela da F2-A, documentos e fechamento
 
 **Files:**
-- Create: `tests/e2e/chat-no-site.spec.ts`, `docs/testing/chat-no-site.md`, `.changes/chat-no-site-parte-2.md`
+- Create: `docs/testing/chat-no-site.md` (roteiro de prova pela tela; a spec automatizada ficou de fora: a primeira versão era inválida e a prova fica com o mantenedor), `.changes/chat-no-site-parte-2.md`
 - Modify: `.github/workflows/e2e.yml` (a spec entra em um `SPECS_PARTE_N`), `docs/architecture/canal-do-chat-no-site.architecture.json`, `docs/specs/36-spec-chat-no-site.md` (estado da F2 e a decisão sobre a pausa)
 
 - [ ] **Step 1: Spec de ponta a ponta**, como um leigo: banco fresco, envs opcionais ausentes, módulo ligado em `/admin/sistema`; na aba, ativar o chat e cadastrar o domínio de um servidor de teste; abrir a página de teste com o código colado; ver a bolha, abrir, aceitar o aviso, mandar uma mensagem; ver a conversa no Inbox com o canal "Chat no site" e responder; ver a resposta na janela. Casos extras: site fora da lista não mostra a janela (o iframe não carrega); girar a chave faz a página antiga receber "indisponível" ao abrir conversa nova.
