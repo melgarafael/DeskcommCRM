@@ -366,6 +366,12 @@ PIN_FALTANDO="$(pin_incompleto .env)" || PIN_FALTANDO=""
 # e o próximo ciclo (5 minutos) pega.
 exec 9>"$LOCK"
 flock -n 9 || exit 0
+# #5052 — o `update.sh` chamado daqui é FILHO e herda este descritor, então a
+# trava já é dele. Esta variável é o contrato explícito disso: o `update.sh` a
+# lê e reaproveita o fd herdado em vez de abrir um novo, que faria o botão
+# travar contra o próprio pai (o cadeado é da descrição de arquivo). Não muda
+# nada do que se observa daqui: sem o cadeado, o agente segue saindo calado.
+export DESKCOMM_UPDATE_LOCK_FD=9
 
 # ── 3. O app caiu logo após uma atualização? (#2757) ───────────────────────
 #

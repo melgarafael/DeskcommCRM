@@ -231,7 +231,14 @@ cd "$PROJ" || exit 1
 # versionado. Versionado, toda escrita do kit nele antes do checkout (o par
 # VAPID nasce antes da decisão de versão) virava "alteração local" e a
 # atualização recusava — um defeito do fixture, não do produto.
-printf '.env*\n' > .gitignore
+#
+# `.update.lock` entra pela MESMA razão, e é o espelho do `.gitignore` real
+# (linha 155, "Marcas de execução do kit"): desde a #5052 é o PRÓPRIO update.sh
+# que cria esse arquivo, antes do backup. Sem a linha aqui, o `git add -A` do
+# caso 4 versionava o cadeado da execução anterior, e o preflight recusava a
+# troca de versão por "arquivo fora do git que a versão nova traz" — o defeito
+# seria do fixture, não do produto (medido: 52 provas vermelhas).
+printf '.env*\n.update.lock\n' > .gitignore
 git init --quiet
 git add -A
 git commit --quiet -m "v0.9.0"
