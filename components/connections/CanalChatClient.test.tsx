@@ -363,25 +363,25 @@ it("salvar formato e posicao manda o PATCH com ambos os valores", async () => {
   );
 });
 
-it("formato ou posicao invalido mostra erro e não envia", async () => {
+it("salvar formato e salvar posição só ligam quando algo mudou", async () => {
   h.get.mockResolvedValue({ data: comConexao });
-  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
   mount();
   await screen.findByLabelText("Formato");
 
-  const formato = screen.getByLabelText("Formato") as HTMLSelectElement;
-  const posicao = screen.getByLabelText("Posição") as HTMLSelectElement;
+  const salvarFormato = screen.getByRole("button", { name: "Salvar formato" }) as HTMLButtonElement;
+  const salvarPosicao = screen.getByRole("button", { name: "Salvar posição" }) as HTMLButtonElement;
+  expect(salvarFormato.disabled).toBe(true);
+  expect(salvarPosicao.disabled).toBe(true);
 
-  // Valor inválido: força o select a um valor fora da lista (simula digitação direta no DOM)
-  fireEvent.change(formato, { target: { value: "qualquer_coisa" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar formato" }));
-  expect(screen.getByText(/Mudou o formato/)).toBeTruthy();
-  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { formato: "qualquer_coisa" } });
+  fireEvent.change(screen.getByLabelText("Formato"), { target: { value: "embutido" } });
+  expect(salvarFormato.disabled).toBe(false);
+  fireEvent.change(screen.getByLabelText("Formato"), { target: { value: "bolha" } });
+  expect(salvarFormato.disabled).toBe(true);
 
-  fireEvent.change(posicao, { target: { value: "centro" } });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar posição" }));
-  expect(screen.getByText(/Vale para bolha/)).toBeTruthy();
-  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { posicao: "centro" } });
+  fireEvent.change(screen.getByLabelText("Posição"), { target: { value: "esquerda" } });
+  expect(salvarPosicao.disabled).toBe(false);
+  fireEvent.click(salvarPosicao);
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { posicao: "esquerda" } }));
 });
 
 it("codigo para colar mostra o formato e posicao salvos", async () => {

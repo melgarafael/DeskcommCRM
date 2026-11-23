@@ -201,7 +201,6 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [ocupado, setOcupado] = useState(false);
   const [girarAberto, setGirarAberto] = useState(false);
   const [pausaAberta, setPausaAberta] = useState(false);
-  const [formatoAberto, setFormatoAberto] = useState(false);
   const pausado = estado.config.pausado === true;
   const formatoInicial: FormatoDoChat = estado.config.formato ?? "bolha";
   const posicaoInicial: PosicaoDoChat = estado.config.posicao ?? "direita";
@@ -223,8 +222,8 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   // Formato e posição: campo em branco não acontece (são selects), então vai sempre com o valor atual.
   const formatoValido = ["bolha", "painel", "embutido", "pagina"].includes(formato);
   const posicaoValida = ["direita", "esquerda"].includes(posicao);
-  const formatoMudou = formato !== estado.config.formato;
-  const posicaoMudou = posicao !== estado.config.posicao;
+  const formatoMudou = formato !== formatoInicial;
+  const posicaoMudou = posicao !== posicaoInicial;
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -446,9 +445,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         <div>
           <Button
             onClick={() =>
-              salvar({ config: { formato } }, () => {
-                setFormatoAberto(false);
-              })
+              salvar({ config: { formato } })
             }
             disabled={ocupado || !formatoMudou || !formatoValido}
           >
@@ -480,9 +477,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         <div>
           <Button
             onClick={() =>
-              salvar({ config: { posicao } }, () => {
-                setFormatoAberto(false);
-              })
+              salvar({ config: { posicao } })
             }
             disabled={ocupado || !posicaoMudou || !posicaoValida}
           >
