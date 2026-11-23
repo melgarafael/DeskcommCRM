@@ -22,6 +22,10 @@ import { usePainelDeVendas, type RespostaDoPainelDeVendas } from "@/hooks/report
 import { PainelDeVendas } from "./painel-de-vendas";
 
 const TZ = "America/Sao_Paulo";
+
+function abrirPeriodo() {
+  fireEvent.click(screen.getByTestId("periodo-do-painel"));
+}
 const NOVEMBRO = { de: "2026-11-01", ate: "2026-11-20" };
 const FUNIL_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -58,6 +62,7 @@ function resposta(patch: Partial<RespostaDoPainelDeVendas> = {}): RespostaDoPain
         tags: ["atacado"],
         centavos: 18_000,
         dia: "2026-11-20",
+        vendedor_user_id: null,
       },
     ],
     vendas_no_recorte: 34,
@@ -117,6 +122,8 @@ describe("PainelDeVendas — cartões e período", () => {
     render(<PainelDeVendas periodoInicial={NOVEMBRO} tz={TZ} />);
 
     expect(vi.mocked(usePainelDeVendas)).toHaveBeenCalledWith({ ...NOVEMBRO, pipelineId: "", tag: "" });
+    expect(texto("periodo-do-painel")).toContain("01/11/2026 - 20/11/2026");
+    abrirPeriodo();
     expect(screen.getByTestId("atalho-mes").getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByTestId("atalho-mes_passado"));
@@ -176,12 +183,40 @@ describe("PainelDeVendas — recorte, rankings e lista", () => {
 
     // Resposta ANTIGA (keepPreviousData) sem a tag: não zera.
     responder(resposta({ opcoes: { pipeline_ids: [FUNIL_A], tags: ["varejo"] } }), true);
+    abrirPeriodo();
     fireEvent.click(screen.getByTestId("atalho-mes_passado"));
     expect(vi.mocked(usePainelDeVendas).mock.lastCall?.[0]).toMatchObject({ tag: "atacado" });
 
     // Resposta do período ATUAL sem a tag: zera.
     responder(resposta({ opcoes: { pipeline_ids: [FUNIL_A], tags: ["varejo"] } }), false);
+    abrirPeriodo();
     fireEvent.click(screen.getByTestId("atalho-mes_passado"));
     expect(vi.mocked(usePainelDeVendas).mock.lastCall?.[0]).toMatchObject({ tag: "" });
+  });
+
+  it("no calendário, dois cliques escolhem o período (fora de ordem, eles trocam)", () => {
+    responder(resposta());
+    render(<PainelDeVendas periodoInicial={NOVEMBRO} tz={TZ} />);
+
+    abrirPeriodo();
+    fireEvent.click(screen.getByTestId("dia-2026-11-15"));
+    fireEvent.click(screen.getByTestId("dia-2026-11-03"));
+    expect(vi.mocked(usePainelDeVendas)).toHaveBeenLastCalledWith({ de: "2026-11-03", ate: "2026-11-15", pipelineId: "", tag: "" });
+
+    // "Restaurar filtros" volta ao período inicial.
+    fireEvent.click(screen.getByTestId("painel-limpar"));
+    expect(vi.mocked(usePainelDeVendas)).toHaveBeenLastCalledWith({ ...NOVEMBRO, pipelineId: "", tag: "" });
+  });
+
+  it("a lista diz quem vendeu cada venda", () => {
+    const base = resposta();
+    responder(resposta({
+      lista: base.lista.map((v) => ({ ...v, vendedor_user_id: "u1" })),
+      vendedores: { u1: "Maria Vendedora" },
+    }));
+    render(<PainelDeVendas periodoInicial={NOVEMBRO} tz={TZ} />);
+
+    expect(texto("lista-do-painel")).toContain("Vendedor");
+    expect(screen.getAllByTestId("vendedor-da-venda")[0]!.textContent).toBe("Maria Vendedora");
   });
 });
