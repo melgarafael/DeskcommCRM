@@ -20,6 +20,91 @@ source "$KIT_DIR/_common.sh"
 # shellcheck source=manutencao.sh
 source "$KIT_DIR/manutencao.sh"
 enter_project
+
+# ── Cadeado: uma atualização por vez, inclusive contra o painel (#5052) ─────
+# O `.update.lock` existia, mas só o `agent.sh` (o botão "Atualizar agora") o
+# tomava: o `update.sh` rodado pelo terminal entrava sem cadeado nenhum, e duas
+# atualizações podiam aplicar o `supabase/baseline.sql` no MESMO banco ao mesmo
+# tempo — o par de erros do incidente 1.118 → 1.119 (`cannot change name of
+# input parameter`), em duas aplicações defasadas em 2,75–3,5 s (medido no
+# #5030). O baseline é DDL: uma aplicação pode dropar o que a outra recém-criou,
+# e o banco fica sem a regra, sem erro visível na tela.
+#
+# O cadeado é tomado AQUI, antes de tudo, para a ordem valer de ponta a ponta:
+# cadeado → backup → código → banco. Tomá-lo depois do backup (:303) não
+# serviria — dois backups concorrentes disputariam a mesma pasta (#4222), e a
+# corrida que interessa é a do banco.
+#
+# 🔴 O caminho do BOTÃO passa por aqui também, e chega com o cadeado na mão: o
+# `agent.sh` abre o fd 9, trava e chama este script como FILHO. Tentar `flock -n`
+# num descritor NOVO ali faria o botão travar contra o próprio pai (o cadeado é
+# da descrição de arquivo aberta, e o pai é o dono) — o update nunca rodaria.
+# Por isso a trava HERDADA é detectada e reaproveitada: o filho não re-toma nem
+# sai. Só o caminho do terminal toma um cadeado próprio.
+#
+# O cadeado NÃO é solto em gatilho nenhum: quem o solta é o kernel, quando o
+# processo termina. Soltá-lo no `trap ... INT TERM HUP` seria pior que inútil —
+# o `restaurar_servicos` não chama `exit`, então depois de um Ctrl-C o script
+# SEGUE rodando, já sem o cadeado.
+TRAVA_PROPRIA=""
+# O descritor já aberto aponta para o NOSSO `.update.lock`? `exec 8>&N` falha
+# quando o fd está fechado, e é assim que "herdado" se distingue de "não
+# existe". O `readlink` cobre o caso de quem chama o update.sh de dentro de um
+# processo que já segura o cadeado sem declarar o fd (o `agent.sh` declara).
+trava_herdada() {  # imprime o número do fd herdado; 1 quando não há
+  local fd="${DESKCOMM_UPDATE_LOCK_FD:-9}" alvo aponta
+  ( exec 8>&"$fd" ) 2>/dev/null || return 1
+  if [ -n "${DESKCOMM_UPDATE_LOCK_FD:-}" ]; then printf '%s' "$fd"; return 0; fi
+  alvo="$(readlink -f "$PROJECT_DIR/.update.lock" 2>/dev/null || printf '%s' "$PROJECT_DIR/.update.lock")"
+  aponta="$(readlink -f "/proc/self/fd/$fd" 2>/dev/null || true)"
+  [ -n "$aponta" ] && [ "$aponta" = "$alvo" ] || return 1
+  printf '%s' "$fd"
+}
+# A recusa é DIDÁTICA de propósito: quem roda o update.sh no terminal precisa
+# saber que quem está trabalhando é o painel, e que a saída foi limpa. Sai com 0
+# porque nada falhou — a atualização vai acontecer, só não é esta execução (o
+# `agent.sh` sai do mesmo jeito quando não pega o cadeado).
+recusar_por_trava_ocupada() {
+  c_ylw "⚠ Já há uma atualização em andamento pelo painel (ou por outro terminal) — esta execução saiu sem fazer nada."
+  c_ylw "  O cadeado é o '$PROJECT_DIR/.update.lock'. Duas atualizações ao mesmo tempo aplicariam o"
+  c_ylw "  mesmo supabase/baseline.sql no MESMO banco em paralelo — foi o que produziu o par de erros"
+  c_ylw "  'cannot change name of input parameter' do incidente 1.118 → 1.119."
+  c_ylw "  Não parei serviço, não baixei código, não toquei no backup nem no banco."
+  c_ylw "  Espere a atualização em andamento terminar e rode este comando de novo."
+  c_ylw "  Para acompanhar a que está rodando:  tail -f $PROJECT_DIR/.update.log"
+  exit 0
+}
+tomar_trava_de_atualizacao() {
+  local fd="" alvo="$PROJECT_DIR/.update.lock"
+  if ! command -v flock >/dev/null 2>&1; then
+    # Host sem util-linux (o kit não instala pacote nenhum): seguir como antes é
+    # melhor que inventar uma recusa que o operador não consegue resolver — e o
+    # `agent.sh` já sai sem o flock, então a corrida do painel não existe por
+    # esse caminho.
+    c_ylw "⚠ O comando 'flock' não existe neste servidor: sigo SEM o cadeado que impede duas atualizações ao mesmo tempo. Não clique em \"Atualizar agora\" no painel enquanto esta estiver rodando."
+    return 0
+  fi
+  if fd="$(trava_herdada)"; then
+    # Trava herdada do agent.sh: o cadeado já é desta execução. `flock -n` aqui
+    # só CONFIRMA — falhar significa que o fd herdado não é dono de nada e
+    # outro processo é, o que é a mesma corrida que a trava própria barra.
+    if ! flock -n "$fd"; then recusar_por_trava_ocupada; fi
+    DESKCOMM_UPDATE_LOCK_FD="$fd"; export DESKCOMM_UPDATE_LOCK_FD
+    return 0
+  fi
+  exec 9>"$alvo"
+  # `-n` e não bloqueante: quem não pegou SAI. Ficar na fila faria a segunda
+  # atualização rodar logo depois da primeira, aplicando um baseline que já não
+  # precisa e reiniciando o app de novo, sem ninguém ter pedido.
+  if ! flock -n 9; then
+    exec 9>&-
+    recusar_por_trava_ocupada
+  fi
+  TRAVA_PROPRIA=1
+  DESKCOMM_UPDATE_LOCK_FD=9; export DESKCOMM_UPDATE_LOCK_FD
+}
+tomar_trava_de_atualizacao
+
 aviso_rede_do_supabase
 
 # ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
@@ -46,57 +131,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-
-# ── 0--. O MESMO cadeado do agent.sh, durante TODA a atualização (#5116) ─────
-#
-# O `agent.sh` (cron de 5 min) segura `.update.lock` e, quando o app não
-# responde em dois healthchecks seguidos logo após uma atualização, volta a
-# versão sozinho. O `update.sh` rodado no TERMINAL não segurava nada: a vigília
-# pegava o cadeado, encontrava o app fora do ar — porque ESTA atualização o
-# derrubou — e rodava `update.sh --to <anterior> --force` em PARALELO, no meio
-# do build. Medido numa VPS real: 14:07 começou a atualização, 14:15 o agente
-# decidiu voltar, 14:17 a volta terminou (código na versão anterior, baseline
-# dela reaplicado sobre o banco da nova) e 14:24 o build da primeira falhou e
-# subiu o app na versão nova com o `.env` já regravado — o estado misturado do
-# relato (código antigo, .env e contêineres novos).
-#
-# Com o cadeado aqui, o cron sai em silêncio no `flock -n` dele (agent.sh) e o
-# watchdog não conta healthcheck de uma troca que o próprio update está
-# causando. O cadeado fica na mão até o processo sair: cobre imagem, `.env`,
-# baseline e a vigília.
-#
-# O caso que NÃO pode quebrar é o da atualização pelo botão da tela: aí o
-# `update.sh` é FILHO do `agent.sh`, que já segura o cadeado e espera este
-# processo terminar. Abrir o arquivo de novo criaria outra descrição de arquivo
-# e o `flock -n` perderia para o próprio pai. Por isso o agente exporta
-# `DESKCOMM_UPDATE_LOCK_HELD` e o fd herdado é conferido aqui antes de tentar.
-UPDATE_LOCK="${PROJECT_DIR}/.update.lock"
-if [ -n "${DESKCOMM_UPDATE_LOCK_HELD:-}" ] \
-   && [ "$(readlink "/proc/$$/fd/9" 2>/dev/null)" = "$UPDATE_LOCK" ]; then
-  : # cadeado herdado de quem me chamou (o agent.sh espera este processo)
-elif ! command -v flock >/dev/null 2>&1; then
-  # Sem `flock` (instalação sem util-linux) o cadeado não existe — e o
-  # watchdog só depende dele pelo mesmo binário, que também não roda. Seguir é
-  # melhor que recusar uma atualização inteira por causa disso.
-  c_ylw "⚠ 'flock' não encontrado: sigo sem o cadeado da atualização."
-else
-  exec 9>"$UPDATE_LOCK"
-  if flock -n 9; then
-    : # cadeado é meu até o processo sair
-  else
-    c_ylw "⚠ Já existe uma atualização em andamento nesta instalação."
-    c_ylw "  Não mexi em nada: nem imagem, nem .env, nem banco. O andamento está em .update.log"
-    c_ylw "  (o cadeado mora no processo: se ele não estiver rodando, o arquivo não trava nada)."
-    # O diagnóstico de saída é honesto sobre o que aconteceu: sem isto ele
-    # escreveria "concluído" para uma execução que não fez nada.
-    UPDATE_STATUS="recusada: outra atualização em andamento"
-    exit 0
-  fi
-fi
-# Os filhos desta execução (a troca da senha do cron, que abre o MESMO arquivo)
-# já estão cobertos por este cadeado: quem abrir o arquivo de novo perderia
-# para o pai, então eles leem esta marca em vez de pegar o `flock`.
-export DESKCOMM_UPDATE_LOCK_HELD=1
 
 # ── 0-. Esta cópia do repo é a dona dos contêineres? ─────────────────────────
 # Antes do cron e antes do git: uma segunda cópia que atualiza por cima recria o

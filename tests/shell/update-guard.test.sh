@@ -232,12 +232,12 @@ cd "$PROJ" || exit 1
 # VAPID nasce antes da decisão de versão) virava "alteração local" e a
 # atualização recusava — um defeito do fixture, não do produto.
 #
-# `.update.lock` entrou pelo mesmo motivo, com o cadeado da #5116: agora TODO
-# `update.sh` cria esse arquivo no diretório do projeto (antes só o agent.sh
-# criava). No repositório de verdade ele já está no `.gitignore` — é marca de
-# execução, não código. Aqui o `.gitignore` é mínimo de propósito, e sem esta
-# linha o `git add -A` do caso 4 versiona o cadeado: a versão alvo passa a
-# "trazer" o arquivo, e a guarda de alterações locais recusa a atualização.
+# `.update.lock` entra pela MESMA razão, e é o espelho do `.gitignore` real
+# (linha 155, "Marcas de execução do kit"): desde a #5052 é o PRÓPRIO update.sh
+# que cria esse arquivo, antes do backup. Sem a linha aqui, o `git add -A` do
+# caso 4 versionava o cadeado da execução anterior, e o preflight recusava a
+# troca de versão por "arquivo fora do git que a versão nova traz" — o defeito
+# seria do fixture, não do produto (medido: 52 provas vermelhas).
 printf '.env*\n.update.lock\n' > .gitignore
 git init --quiet
 git add -A

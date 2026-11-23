@@ -31,6 +31,8 @@ describe('followupTurnPayloadSchema: só payloads bem formados entram no runner'
   it('modo legítimo de re-entrada (agent/template) é aceito', () => {
     expect(followupTurnPayloadSchema.safeParse({ mode: 'agent' }).success).toBe(true);
     expect(followupTurnPayloadSchema.safeParse({ mode: 'template' }).success).toBe(true);
+    // Retomar ao devolver (lib/escalacao/retomada-ao-devolver.ts).
+    expect(followupTurnPayloadSchema.safeParse({ mode: 'retomada' }).success).toBe(true);
   });
 
   it('modo FORJADO fora do enum é recusado (nunca entra no runner)', () => {
