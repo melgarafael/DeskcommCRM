@@ -22642,7 +22642,6 @@ export const DICIONARIO: Traducoes = {
   "Use até 20 domínios.": { es: "Use hasta 20 dominios." },
   "Disponibilidade": { es: "Disponibilidad" },
   "Com o chat pausado, a janela não abre no seu site e ninguém consegue começar uma conversa. As conversas já feitas continuam no Inbox.": { es: "Con el chat pausado, la ventana no se abre en su sitio y nadie puede empezar una conversación. Las conversaciones ya hechas siguen en el Inbox." },
-  "Pausado": { es: "Pausado" },
   "Pausar o chat": { es: "Pausar el chat" },
   "Retomar o chat": { es: "Reanudar el chat" },
   "Pausar o chat?": { es: "¿Pausar el chat?" },

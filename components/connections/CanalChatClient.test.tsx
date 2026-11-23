@@ -92,7 +92,7 @@ it("copiar sem permissão do navegador avisa em vez de falhar em silêncio", asy
   Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
   mount();
   await screen.findByLabelText("Código para colar no site");
-  fireEvent.click(screen.getAllByRole("button", { name: "Copiar código" })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: "Copiar código" })[0]!);
   await waitFor(() => expect(toast.error).toHaveBeenCalled());
 });
 

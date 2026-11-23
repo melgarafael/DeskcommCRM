@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Script da bolha do chat no site (`public/webchat.js`, spec 36, F2, Task 4).
  *

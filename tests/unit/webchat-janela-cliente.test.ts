@@ -417,9 +417,9 @@ describe("janela no DOM", () => {
     await esperarTudo();
 
     const [primeira, segunda] = corposDeMensagens(r.chamadas);
-    expect(primeira.aceite).toEqual({ versao: "v1" });
-    expect(primeira.contato).toEqual({ nome: "Ana", telefone: "+5511999999999" });
-    expect(segunda.aceite).toBeUndefined();
+    expect(primeira!.aceite).toEqual({ versao: "v1" });
+    expect(primeira!.contato).toEqual({ nome: "Ana", telefone: "+5511999999999" });
+    expect(segunda!.aceite).toBeUndefined();
     expect(segunda.contato).toBeUndefined();
   });
 

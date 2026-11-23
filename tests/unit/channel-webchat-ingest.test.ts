@@ -299,8 +299,8 @@ describe("aceite de LGPD na primeira mensagem", () => {
     expect(comAceiteDeNovo).toMatchObject({ status: "ingested" });
     const mensagens = linhasDaTabela(falso, "messages");
     expect(mensagens).toHaveLength(3);
-    expect(mensagens[1]?.metadata?.webchat_aceite).toBeUndefined();
-    expect(mensagens[2]?.metadata?.webchat_aceite).toBeUndefined();
+    expect((mensagens[1]?.metadata as Record<string, unknown> | undefined)?.webchat_aceite).toBeUndefined();
+    expect((mensagens[2]?.metadata as Record<string, unknown> | undefined)?.webchat_aceite).toBeUndefined();
     expect(mensagens[0]?.metadata).toEqual({ webchat_aceite: { versao: "v1", em: AGORA.toISOString() } });
   });
 
