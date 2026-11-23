@@ -49,6 +49,8 @@ interface Config {
   saudacao?: string;
   cor?: string;
   coleta?: Partial<Record<Campo, ModoDeColeta>>;
+  /** Chat pausado pela organização (`metadata.webchat.pausado`). */
+  pausado?: boolean;
 }
 
 interface Estado {

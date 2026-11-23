@@ -1,5 +1,5 @@
 /**
- * A conexão do chat no site a partir do que o VISITANTE manda (spec 36, F1, Task 8).
+ * A conexão do chat no site a partir do que o VISITANTE manda (spec 36, F1).
  *
  * `conexaoPelaChave` lê a chave pública (`wck_`) de `sessao`; `conexaoPeloId` lê o id
  * da conexão que vem assinado no token de visitante, em `mensagens`. Nas duas, a

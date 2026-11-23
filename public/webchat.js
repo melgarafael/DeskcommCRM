@@ -1,8 +1,8 @@
 /*
- * Bolha do chat no site (spec 36, F2, Task 4).
+ * Bolha do chat no site (spec 36, F2).
  *
  * O operador cola uma linha no site do cliente:
- *   <script src="https://<crm>/webchat.js?k=wck_..." defer></script>
+ *   <script src="https://<crm>/webchat.js?k=wck_..." async></script>
  * O script cria uma bolha no canto da tela e um iframe com a janela do chat
  * (`/chat/<chave>`, ver lib/channels/webchat/janela-html.ts). A origem do CRM sai do
  * próprio `src` do script, nunca de parâmetro. Não grava nada no site: sem cookie, sem

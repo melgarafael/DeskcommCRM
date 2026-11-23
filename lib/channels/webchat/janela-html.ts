@@ -1,12 +1,12 @@
 /**
- * A janela do chat no site (spec 36, F2, Task 3): o HTML que `GET /chat/<chave>` devolve.
+ * A janela do chat no site (spec 36, F2): o HTML que `GET /chat/<chave>` devolve.
  *
  * Função PURA: não lê banco, não lê env. Quem reúne os dados é a rota. Daqui saem duas
  * coisas: o HTML, e a política de conteúdo (CSP) que a própria resposta carrega. A CSP traz
  * `frame-ancestors` com as origens da conexão: é isso que decide quem pode embutir a janela,
  * no lugar do `X-Frame-Options: DENY` do painel.
  *
- * O comportamento da conversa (enviar, receber, aceite) é da Task 5, no arquivo
+ * O comportamento da conversa (enviar, receber, aceite) fica no arquivo
  * `/webchat-janela.js`. Aqui só há a estrutura e os dados que esse script lê.
  *
  * Todo texto que vem do banco passa por `escaparHtml`. A configuração vai em
@@ -144,7 +144,7 @@ export function montarJanela(entrada: EntradaDaJanela): JanelaMontada {
     `Ao enviar a primeira mensagem, você concorda com o tratamento dos seus dados por ` +
     `<strong>${escaparHtml(nomeDoControlador)}</strong>.${linkDaPolitica}`;
 
-  // A configuração que a Task 5 lê. Campo de coleta ausente vale `opcional`, como na F1.
+  // A configuração que o script da janela lê. Campo de coleta ausente vale `opcional`, como na F1.
   const dados = {
     chave,
     titulo,
@@ -191,3 +191,15 @@ ${logo}
 
   return { html, csp: montarCsp(origens) };
 }
+
+/**
+ * A página que `GET /chat/<chave>` devolve quando a janela não abre (chave que não existe, conexão
+ * arquivada, organização suspensa, módulo desligado, chat pausado, limite de aberturas ou erro).
+ * É HTML, e não o JSON de erro da API: o visitante vê isto dentro do quadro. Sem dado de nenhuma
+ * organização e sem diferença entre os casos, para a janela não dizer por que não abriu.
+ */
+export const PAGINA_INDISPONIVEL =
+  '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Chat indisponível</title>' +
+  "<style>body{font:14px/1.4 system-ui,sans-serif;margin:0;padding:24px;color:#444;text-align:center}</style>" +
+  "</head><body><p>Chat indisponível.</p></body></html>";

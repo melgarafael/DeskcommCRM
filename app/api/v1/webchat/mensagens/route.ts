@@ -31,10 +31,7 @@ const PROIBIDOS =
 const TELEFONE_INTERNACIONAL = /^\+[0-9]{8,15}$/;
 
 /**
- * O que o visitante informa no primeiro contato. Vazio é aceito (campo opcional em branco);
- * a ingestão decide o que fazer com ele. A hora do aceite não vem aqui: é a do servidor.
- */
-/**
+ * O que o visitante informa no primeiro contato. A hora do aceite não vem aqui: é a do servidor.
  * Formato inválido NÃO recusa aqui: vira vazio, e a ingestão decide. Campo `obrigatorio` que
  * ficou vazio recusa; campo opcional ou oculto segue sem ele. Só o nome acima do teto dá 422.
  * Único tratamento de texto: tirar espaço, parênteses, hífen e ponto do telefone. Nenhum DDI é inventado.

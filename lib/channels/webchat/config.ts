@@ -1,5 +1,5 @@
 /**
- * Schemas do chat no site que a rota de quem administra aceita (spec 36, F1, Task 7).
+ * Schemas do chat no site que a rota de quem administra aceita (spec 36, F1).
  *
  * A lista de origens e a chave são colunas (`webchat_allowed_origins`, `webchat_public_key`),
  * com CHECK no banco; a aparência e os textos vivem em `channel_sessions.metadata.webchat` e
@@ -48,7 +48,7 @@ export const configuracaoDoChatSchema = z
       .strict()
       .optional(),
     /**
-     * Pausa do chat (F2, Task 7). Fica na configuração, não em `channel_sessions.status`: o status
+     * Pausa do chat (F2). Fica na configuração, não em `channel_sessions.status`: o status
      * da conexão mexe em saúde do canal, vagas do plano e seletores. Pausado, a conexão pública
      * some (`conexaoPor` devolve `null`) e a organização continua vendo a conexão para retomar.
      */

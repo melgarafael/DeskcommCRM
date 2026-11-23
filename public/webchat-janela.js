@@ -1,6 +1,6 @@
 /*
  * Janela do chat no site: o comportamento da conversa que roda DENTRO do iframe
- * `/chat/<chave>` (spec 36, F2, Task 5).
+ * `/chat/<chave>` (spec 36, F2).
  *
  * O HTML vem de lib/channels/webchat/janela-html.ts: a estrutura e a configuração em
  * `#webchat-config`. Daqui saem o que a estrutura não traz (aceite, coleta, botão de fechar,

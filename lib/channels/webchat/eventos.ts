@@ -1,5 +1,5 @@
 /**
- * As respostas da conversa, entregues ao visitante por stream (spec 36, F1, Task 9).
+ * As respostas da conversa, entregues ao visitante por stream (spec 36, F1).
  *
  * A conversa sai do TOKEN de visitante: a organização e a conexão vêm da linha da conexão, e
  * a conversa é a de `channel = 'webchat'`, da conexão, com `provider_conversation_id` igual ao

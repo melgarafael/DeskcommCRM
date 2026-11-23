@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/chat/[chave]/route";
+import { PAGINA_INDISPONIVEL } from "@/lib/channels/webchat/janela-html";
 
 const h = vi.hoisted(() => ({
   banco: null as unknown,
@@ -111,7 +112,7 @@ function pedido(chave: string): [Request, { params: Promise<{ chave: string }> }
 
 async function resposta(chave: string): Promise<{ status: number; body: unknown }> {
   const res = await GET(...pedido(chave));
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: await res.text() };
 }
 
 describe("GET /chat/<chave>", () => {
@@ -140,7 +141,7 @@ describe("GET /chat/<chave>", () => {
     const malformada = await resposta("wck_com espaco");
     expect(malformada).toEqual({
       status: 404,
-      body: { error: { code: "not_found", message: "Not found." } },
+      body: PAGINA_INDISPONIVEL,
     });
     expect(consultado).toHaveBeenCalledTimes(0);
   });

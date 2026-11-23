@@ -1,5 +1,5 @@
 /**
- * GET /chat/<chave> — a janela do chat no site (spec 36, F2, Task 3).
+ * GET /chat/<chave> — a janela do chat no site (spec 36, F2).
  *
  * Pública: quem abre é o visitante, dentro de um iframe no site do cliente, sem sessão. A
  * chave pública (`wck_`) está na URL e não é segredo. Ela só identifica a conexão; a
@@ -12,12 +12,11 @@
  * Chave inexistente, conexão arquivada, organização suspensa e módulo desligado saem com o
  * MESMO 404 e o mesmo corpo, como em `sessao`. A rota não diz por que não abriu.
  */
-import { fail } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { conexaoPelaChave } from "@/lib/channels/webchat/conexao-pela-chave";
 import { descreverErro } from "@/lib/channels/webchat/entrada-publica";
-import { montarJanela } from "@/lib/channels/webchat/janela-html";
+import { montarJanela, PAGINA_INDISPONIVEL } from "@/lib/channels/webchat/janela-html";
 import { lerControladorDoChat } from "@/lib/legal/controlador-do-chat";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { logger } from "@/lib/logger";
@@ -32,8 +31,22 @@ const CHAVE = /^wck_[A-Za-z0-9_-]{1,64}$/;
 const LIMITE_POR_IP = 30;
 const JANELA_SEGUNDOS = 60;
 
+/** Todo "não abriu" sai como esta página, com o mesmo corpo: só o status e o `Retry-After` mudam. */
+function indisponivel(status: number, cabecalhos: Record<string, string> = {}) {
+  return new Response(PAGINA_INDISPONIVEL, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+      ...cabecalhos,
+    },
+  });
+}
+
 function naoEncontrado() {
-  return fail("not_found", "Not found.", 404);
+  return indisponivel(404);
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ chave: string }> }) {
@@ -41,9 +54,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ chave: s
     const ip = ipDoCliente(req.headers) ?? "sem-ip";
     const teto = await checkRateLimit(`webchat:janela:ip:${ip}`, LIMITE_POR_IP, JANELA_SEGUNDOS);
     if (!teto.allowed) {
-      return fail("rate_limited", "Too many requests.", 429, {
-        headers: { "Retry-After": String(JANELA_SEGUNDOS) },
-      });
+      return indisponivel(429, { "Retry-After": String(JANELA_SEGUNDOS) });
     }
 
     const { chave } = await params;
@@ -79,6 +90,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ chave: s
   } catch (erro) {
     // Sem a chave no log: ela identifica a conexão do cliente.
     logger.error("webchat: erro na janela do chat", { rota: "janela", ...descreverErro(erro) });
-    return fail("internal_error", "Internal error.", 500);
+    return indisponivel(500);
   }
 }

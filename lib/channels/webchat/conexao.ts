@@ -1,5 +1,5 @@
 /**
- * A conexão do chat no site de uma organização, do lado de quem administra (spec 36, F1, Task 7).
+ * A conexão do chat no site de uma organização, do lado de quem administra (spec 36, F1).
  *
  * O cliente é de service role e ignora a RLS: toda consulta leva `organization_id` À MÃO, e ele
  * vem da sessão de quem administra, nunca do corpo do pedido.
