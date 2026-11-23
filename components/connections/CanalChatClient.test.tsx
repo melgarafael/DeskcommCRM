@@ -271,33 +271,42 @@ it("com o chat pausado, mostra o Badge Pausado e retomar não pede confirmação
 });
 
 it("T6 (a): digitar domínios enquanto o PATCH está pendente mantém o que foi digitado", async () => {
-  h.get.mockResolvedValue({ data: comConexao });
-  // PATCH fica pendente até resolvermos à mão.
+  // A 1ª leitura é a da montagem; as seguintes (o refetch depois de salvar) trazem o que o servidor guardou.
+  const guardadoNoServidor = { ...comConexao, allowed_origins: ["https://servidor.exemplo.com.br"] };
+  h.get.mockResolvedValueOnce({ data: comConexao }).mockResolvedValue({ data: guardadoNoServidor });
   let resolverPatch!: (valor: unknown) => void;
-  h.patch.mockImplementation(() => new Promise((resolve) => { resolverPatch = resolve; }));
+  h.patch.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolverPatch = resolve;
+      }),
+  );
   mount();
-  await screen.findByLabelText("Domínios, um por linha");
+  const dominios = (await screen.findByLabelText("Domínios, um por linha")) as HTMLTextAreaElement;
 
-  const dominios = screen.getByLabelText("Domínios, um por linha") as HTMLTextAreaElement;
   fireEvent.change(dominios, { target: { value: "https://nova.exemplo.com.br" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar domínios" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { allowed_origins: ["https://nova.exemplo.com.br"] }),
+  );
 
-  // Enquanto o PATCH está pendente, o usuário altera de novo.
+  // O PATCH ainda está pendente: o usuário altera o campo de novo.
   fireEvent.change(dominios, { target: { value: "https://outra.exemplo.com.br" } });
 
-  // Resolve o PATCH com o valor do servidor (diferente do que o usuário digitou).
-  await resolverPatch!({ data: { id: "conexao-1", allowed_origins: ["https://servidor.exemplo.com.br"] } });
-  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { allowed_origins: ["https://nova.exemplo.com.br"] }));
+  // O servidor responde; o componente relê a conexão (2ª chamada ao GET) e devolve a lista guardada.
+  resolverPatch({ data: { id: "conexao-1" } });
+  await waitFor(() => expect(h.get).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Alterações salvas."));
+  await new Promise((r) => setTimeout(r, 20));
 
-  // O campo mantém o que o usuário digitou por último, não volta ao valor do servidor.
+  // Sem a correção, o campo voltaria para "https://servidor.exemplo.com.br".
   expect(dominios.value).toBe("https://outra.exemplo.com.br");
 });
 
 it("T6 (b): PATCH ok e refetch falha → 'Alterações salvas.' sem toast de erro", async () => {
-  h.get.mockResolvedValue({ data: comConexao });
+  // A 1ª leitura (montagem) funciona; o refetch depois de salvar é que falha.
+  h.get.mockResolvedValueOnce({ data: comConexao }).mockRejectedValue(new Error("rede caiu"));
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
-  // O refetch (GET) falha.
-  h.get.mockRejectedValueOnce(new Error("rede caiu"));
   mount();
   await screen.findByLabelText("Título");
 
@@ -305,6 +314,8 @@ it("T6 (b): PATCH ok e refetch falha → 'Alterações salvas.' sem toast de err
   fireEvent.click(screen.getByRole("button", { name: "Salvar aparência" }));
 
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Alterações salvas."));
-  // O toast de erro NÃO deve aparecer (o PATCH deu certo; só o refetch falhou).
+  await waitFor(() => expect(h.get).toHaveBeenCalledTimes(2));
+  await new Promise((r) => setTimeout(r, 20));
+  // O PATCH deu certo; só a releitura falhou: não é erro de salvar.
   expect(toast.error).not.toHaveBeenCalled();
 });
