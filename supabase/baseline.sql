@@ -89879,3 +89879,37 @@ do $followup_daily_cap$ begin
       check (followup_daily_cap is null or followup_daily_cap > 0);
   end if;
 end $followup_daily_cap$;
+
+notify pgrst, 'reload schema';
+
+-- ---- preço do Gemini 3.5 Flash (migration 9447, #5090) ----
+-- manifest: atualiza ai_models e ai_pricing do Gemini 3.5 Flash para 150/750 centavos por milhão, alinhando ao motor e ao roteamento oficial do Google pelo 3.6 Flash (#5090).
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+-- Alinha ai_models e ai_pricing ao motor (#4968).
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents, supports_tools)
+values
+  ('google', 'gemini-3.5-flash', 'Gemini 3.5 Flash',
+   'Preço de catálogo: tarifa oficial (US$ 1,50/US$ 7,50 por 1M tokens), atendido pelo Gemini 3.6 Flash.',
+   150, 750, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gemini-3.5-flash', 150, 750, 'catálogo 9447 — alinhado ao motor e ao roteamento pelo 3.6 Flash (#5090)')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
+
+notify pgrst, 'reload schema';
