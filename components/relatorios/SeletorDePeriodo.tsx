@@ -149,7 +149,7 @@ export function SeletorDePeriodo({
             >
               <ChevronLeft className="size-4" aria-hidden />
             </button>
-            <span className="text-sm font-medium capitalize">{nomeDoMes.format(new Date(`${mes}-01T00:00:00Z`))}</span>
+            <span className="inline-block text-sm font-medium first-letter:uppercase">{nomeDoMes.format(new Date(`${mes}-01T00:00:00Z`))}</span>
             <button
               type="button"
               aria-label={t("Próximo mês")}
