@@ -184,9 +184,9 @@ describe("Tailwind 4 — a ponte token → utilitário", () => {
 /**
  * Toda classe de cor precisa de um token que a gere — a lição da #5184.
  *
- * `text-danger`, `bg-danger/5` e `border-danger` estavam em 11 arquivos e NÃO
- * pintavam nada: o Tailwind 4 gera utilitário a partir das CHAVES do
- * `@theme inline`, e não existe `--color-danger` em lugar nenhum do
+ * A família `danger` — em classe de texto, de fundo e de borda — estava em 11
+ * arquivos e NÃO pintava nada: o Tailwind 4 gera utilitário a partir das
+ * CHAVES do `@theme inline`, e não existe `--color-danger` em lugar nenhum do
  * `app/globals.css` (o token da mesma cor se chama `--color-destructive`). Nem
  * erro, nem aviso: o texto herdava a cor da página, o fundo ficava
  * transparente.
@@ -234,7 +234,7 @@ describe("Tailwind 4 — toda classe de cor precisa de família de token (issue 
     FAMILIAS.add(d[1]!.split("-")[0]!);
   }
 
-  it("nenhuma classe de cor cita família inexistente — `text-danger` não emite CSS", () => {
+  it("nenhuma classe de cor cita família inexistente", () => {
     const achados = ocorrenciasDeClasse(
       listarFontes(["app", "components", "lib", "hooks"]),
       // A variante (`hover:`, `dark:`, `md:`, `data-[…]:`) entra pelo separador
@@ -558,7 +558,7 @@ function literaisDeClasse(fonte: string): { texto: string; indice: number }[] {
           : i;
     if (fim <= i) continue;
     // Dentro da expressão, todo literal é candidato — inclusive o que mora na
-    // interpolação de um template (`${ativo ? "text-danger" : ""}`).
+    // interpolação de um template (`${ativo ? "…" : ""}`).
     for (const lit of fonte
       .slice(i, fim)
       .matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g)) {
