@@ -1121,14 +1121,51 @@ construir_aqui_e_subir() {  # construir_aqui_e_subir [versão alvo] → 0 se sub
 # O prazo é a outra metade: sem ele o `docker ps` também trava (foi o que
 # prendeu o healthcheck no passo "▶ Containers") e nenhum destes sinais chega
 # a existir — o script simplesmente nunca termina.
+# ── O prazo de um comando (#1955, #5055) ────────────────────────────────────
+#
+# `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
+# comportamento continua o antigo, não nasce um erro novo. O `busybox` também
+# tem um `timeout`, mas sem `-k` — sondado UMA vez, na carga, para o kit não
+# trocar um travamento por "todo comando falha na hora" numa VPS mínima.
+if timeout -k 1 0.01 true >/dev/null 2>&1; then
+  COM_PRAZO_MATA=1
+else
+  COM_PRAZO_MATA=
+fi
+
 com_prazo() {  # com_prazo <segundos> <comando...>
   local prazo="$1"; shift
-  # `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
-  # comportamento continua o antigo, não nasce um erro novo.
+  # `</dev/null` (#5055) — quem roda sob prazo NÃO lê o terminal.
+  #
+  # O passo "Saúde interna do app" do healthcheck chega aqui pelo
+  # `app_health_probe 30`, que é
+  # `com_prazo 30 docker compose … exec -T app node -e …`, e o
+  # `docker compose exec -T` ENCAMINHA o stdin. O `timeout` põe o filho num
+  # grupo de processos fora do primeiro plano: ler o terminal de lá PARA o
+  # processo (SIGTTIN), e o TERM do prazo fica pendente num processo parado —
+  # o `timeout` espera por ele para sempre. Foi assim que o passo ficou parado
+  # em produção (v1.117.0) com `/api/v1/health` respondendo 200 `healthy` no
+  # mesmo instante. Nenhum chamador alimenta stdin (são `docker ps`, `info`,
+  # `buildx imagetools inspect`, `compose ps`): fechar o stdin não muda o que
+  # eles fazem e tira a leitura do terminal do caminho.
+  #
+  # `-k 5` (mesma issue) — estourado o prazo, o TERM pode ser ignorado, e o
+  # `$(…)` do healthcheck espera TODO processo que ainda tem o pipe aberto. O
+  # KILL 5s depois fecha essa porta em vez de deixar o passo pendurado.
+  #
+  # SEM `--foreground`, de propósito, e medido aqui (um comando que deixa um
+  # filho segurando o stdout): 1014 ms sem ele contra 20016 ms com ele,
+  # porque `--foreground` deixa de matar o grupo do filho. Como o stdin já
+  # está fechado, o motivo de existir dele (deixar o comando ler o tty) não
+  # se aplica, e é o grupo morto que libera a substituição de comando.
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$prazo" "$@"
+    if [ -n "$COM_PRAZO_MATA" ]; then
+      timeout -k 5 "$prazo" "$@" </dev/null
+    else
+      timeout "$prazo" "$@" </dev/null
+    fi
   else
-    "$@"
+    "$@" </dev/null
   fi
 }
 
