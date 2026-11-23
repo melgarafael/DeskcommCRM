@@ -1127,7 +1127,12 @@ construir_aqui_e_subir() {  # construir_aqui_e_subir [versão alvo] → 0 se sub
 # comportamento continua o antigo, não nasce um erro novo. O `busybox` também
 # tem um `timeout`, mas sem `-k` — sondado UMA vez, na carga, para o kit não
 # trocar um travamento por "todo comando falha na hora" numa VPS mínima.
-if timeout -k 1 0.01 true >/dev/null 2>&1; then
+#
+# O prazo da sonda é 5 s, não 10 ms (sugestão da revisão do #5161): o `true`
+# sai na hora, então o prazo só existe para não deixar a sonda pendurada; com
+# 10 ms, uma VPS sobrecarregada podia matar o `true` antes do exec e desligar
+# o `-k` em silêncio, justo na máquina em que ele importa.
+if timeout -k 1 5 true >/dev/null 2>&1; then
   COM_PRAZO_MATA=1
 else
   COM_PRAZO_MATA=
