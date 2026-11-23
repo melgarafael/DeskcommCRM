@@ -8989,6 +8989,13 @@ export const DICIONARIO: Traducoes = {
     es: "Leer transcripciones de audios y textos extraídos de archivos multimedia en el historial MCP (puede contener datos personales)",
   },
   "Enviar mensagens": { es: "Enviar mensajes" },
+  // #4516: as duas caixas de escopo de tarefa em `ApiTokensClient.tsx` são
+  // renderizadas por `t(s.label)`; sem estas linhas a tela de tokens fica em
+  // português para quem escolheu espanhol.
+  "Ler as tarefas da equipe": { es: "Leer las tareas del equipo" },
+  "Criar, editar, concluir, reabrir e APAGAR tarefas da equipe (sem esta caixa o token só lê)": {
+    es: "Crear, editar, completar, reabrir y ELIMINAR tareas del equipo (sin esta casilla el token solo lee)",
+  },
   "Integração pode enviar em nome de um atendente": {
     es: "La integración puede enviar en nombre de un asesor",
   },
@@ -20267,6 +20274,14 @@ export const DICIONARIO: Traducoes = {
   "O que mais ocupou a operação": { es: "Lo que más ocupó la operación" },
   "O período passou do limite de leitura: os números contam só as conversas mais recentes.": { es: "El período superó el límite de lectura: los números cuentan solo las conversaciones más recientes." },
   "Guardar o histórico anterior à vinculação": { es: "Guardar el historial anterior al vínculo" },
+  "Conversas novas criam negócio no funil": { es: "Las conversaciones nuevas crean negocio en el embudo" },
+  "Ligado: cada conversa nova neste número abre um card no funil.": {
+    es: "Activo: cada conversación nueva en este número abre una ficha en el embudo.",
+  },
+  "Desligado: a conversa chega, o contato nasce, a IA atende — só o card não nasce. Criar o negócio à mão continua igual.": {
+    es: "Desactivado: la conversación llega, el contacto nace, la IA atiende; solo la ficha no nace. Crear el negocio a mano sigue igual.",
+  },
+  "Opção de negócio salva.": { es: "Opción de negocio guardada." },
   "Acervo ligado: o servidor do canal guarda as conversas deste número. Num número que já estava pareado, guarda daqui em diante; o histórico anterior (cerca de 1 ano) só chega numa vinculação nova. Ocupa disco lá e não é apagado quando o CRM anonimiza um contato.": {
     es: "Acervo activo: el servidor del canal guarda las conversaciones de este número. En un número que ya estaba vinculado, guarda de aquí en adelante; el historial anterior (cerca de 1 año) solo llega en una vinculación nueva. Ocupa disco allí y no se borra cuando el CRM anonimiza un contacto.",
   },

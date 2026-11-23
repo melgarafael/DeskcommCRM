@@ -25,7 +25,7 @@ import type { AuthUser } from "@/lib/auth/types";
 import { McpAuthError } from "@/lib/mcp/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { criarTarefaHandler, listarTarefasHandler } from "./_handler";
+import { criarTarefaHandler, excluirTarefaHandler, listarTarefasHandler } from "./_handler";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
@@ -36,6 +36,8 @@ vi.mock("./_handler", () => ({
   LIMITE_MAXIMO_DA_LISTA: 500,
   listarTarefasHandler: vi.fn(async () => ({ tasks: [] })),
   criarTarefaHandler: vi.fn(async () => ({ task: { id: "t-1" } })),
+  editarTarefaHandler: vi.fn(async () => ({ task: { id: "t-1", status: "done" } })),
+  excluirTarefaHandler: vi.fn(async () => ({ deleted: true })),
 }));
 
 vi.mock("@/lib/mcp/auth", async () => {
@@ -248,6 +250,56 @@ describe("#4516 — POST /api/v1/tasks aceita Bearer com `tasks:write`", () => {
 
     expect(res.status).toBe(401);
     expect(criarTarefaHandler).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * APAGAR POR TOKEN É PAPEL DE GERÊNCIA (#4516).
+ *
+ * A régua vem da Spec 33/R2 e da decisão da fatia 5 (#4391): apagar recurso da
+ * organização por token é `manager`, mesmo que a escrita de rotina baste `agent`.
+ * Sem esta prova, baixar `tokenRole` para `agent` não deixaria nenhum vermelho.
+ */
+describe("#4516 — DELETE /api/v1/tasks/[id] exige token `manager`", () => {
+  const ID = "55555555-4516-4555-8555-555555555555";
+
+  function tokenCom(role: "agent" | "manager"): void {
+    vi.mocked(validateBearerToken).mockResolvedValue({
+      organizationId: ORG_ID,
+      role: role as never,
+      actor: { type: "api_token", id: "tok-4516", role: role as never },
+      apiTokenId: "tok-4516",
+      scopes: ["tasks:write"],
+    });
+  }
+
+  it("token `agent` com `tasks:write` → 403, e nada é apagado", async () => {
+    tokenCom("agent");
+    const { DELETE } = await import("./[id]/route");
+
+    const res = await DELETE(
+      req("DELETE", `/api/v1/tasks/${ID}`, undefined, { authorization: "Bearer dsk_a_b" }),
+      { params: Promise.resolve({ id: ID }) },
+    );
+
+    expect(res.status).toBe(403);
+    expect(excluirTarefaHandler).not.toHaveBeenCalled();
+  });
+
+  it("token `manager` com `tasks:write` → 200", async () => {
+    tokenCom("manager");
+    const { DELETE } = await import("./[id]/route");
+
+    const res = await DELETE(
+      req("DELETE", `/api/v1/tasks/${ID}`, undefined, { authorization: "Bearer dsk_a_b" }),
+      { params: Promise.resolve({ id: ID }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(excluirTarefaHandler).mock.calls[0]?.[1]).toMatchObject({
+      organization_id: ORG_ID,
+      apiTokenId: "tok-4516",
+    });
   });
 });
 

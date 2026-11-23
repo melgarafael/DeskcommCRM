@@ -48,6 +48,30 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_search_contacts": { tokens: 135, motivo: BASE },
   "crm_get_contact": { tokens: 188, motivo: BASE },
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
+  // #4517 — a ficha editável e os quatro comandos de conversa, medidos na
+  // criação (2026-11-12) e remedidos neste head em 2026-11-18. Os quatro comandos
+  // são pequenos de propósito: um input só (o id da conversa, mais a revisão
+  // opcional) e uma descrição que ensina o EFEITO, não a rota.
+  "crm_update_contact": {
+    tokens: 627,
+    motivo: "ferramenta nova de edição de ficha (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_pause_ai": {
+    tokens: 243,
+    motivo: "ferramenta nova de pausa da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_resume_ai": {
+    tokens: 244,
+    motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_close_conversation": {
+    tokens: 256,
+    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_reopen_conversation": {
+    tokens: 242,
+    motivo: "ferramenta nova de reabertura por token (#4517), medida na criação (2026-11-12)",
+  },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
   "crm_get_conversation_history": {
@@ -258,9 +282,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // `crm_complete_task` e 186 de `crm_delete_task`. As outras três da família
 // (`list/create/update`) são as da main (#4838) e já estão contadas nos 45919
 // acima — o `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main.
-// MEDIDO no merge com a main de 2026-11-22 (`b6c92fba97`), não somado à mão:
-// 46350 = 45919 + 431.
-const TETO_TOTAL = 46350;
+// MEDIDO na árvore mesclada com a main de 2026-11-23 (`03604fd978`), não somado à
+// mão: 47962 no catálogo completo (o teste imprime a tabela com a soma medida).
+const TETO_TOTAL = 47962;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
