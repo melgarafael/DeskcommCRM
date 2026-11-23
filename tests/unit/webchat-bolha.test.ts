@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 /**
  * Script da bolha do chat no site (`public/webchat.js`, spec 36, F2, Task 4).
  *
@@ -10,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 interface ModuloDaBolha {
@@ -294,7 +294,7 @@ describe("montagem no DOM", () => {
 
   it("mensagem com origin forjada é ignorada, mesmo com a janela certa", () => {
     const { bolha, iframe, janela } = montarNoDom();
-    bolha.click();
+    fireEvent.click(bolha);
 
     dispararMensagem({ tipo: "fechar" }, "https://atacante.exemplo.com", janela);
 
@@ -303,7 +303,7 @@ describe("montagem no DOM", () => {
 
   it("mensagem com source forjada é ignorada, mesmo com a origem certa", () => {
     const { bolha, iframe } = montarNoDom();
-    bolha.click();
+    fireEvent.click(bolha);
 
     dispararMensagem({ tipo: "fechar" }, ORIGEM_CRM, {});
 
@@ -355,7 +355,7 @@ describe("montagem no DOM", () => {
 
   it("fechar válido fecha o painel e devolve aria-expanded", () => {
     const { bolha, iframe, janela } = montarNoDom();
-    bolha.click();
+    fireEvent.click(bolha);
     expect(bolha.getAttribute("aria-expanded")).toBe("true");
 
     dispararMensagem({ tipo: "fechar" }, ORIGEM_CRM, janela);
@@ -384,12 +384,12 @@ describe("montagem no DOM", () => {
   it("clique alterna aria-expanded, visibilidade e o rótulo", () => {
     const { bolha, iframe } = montarNoDom();
 
-    bolha.click();
+    fireEvent.click(bolha);
     expect(iframe.style.display).toBe("block");
     expect(bolha.getAttribute("aria-expanded")).toBe("true");
     expect(bolha.getAttribute("aria-label")).toBe("Fechar chat");
 
-    bolha.click();
+    fireEvent.click(bolha);
     expect(iframe.style.display).toBe("none");
     expect(bolha.getAttribute("aria-expanded")).toBe("false");
     expect(bolha.getAttribute("aria-label")).toBe("Abrir chat");
@@ -397,7 +397,7 @@ describe("montagem no DOM", () => {
 
   it("Esc fecha o painel aberto", () => {
     const { bolha, iframe } = montarNoDom();
-    bolha.click();
+    fireEvent.click(bolha);
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
 

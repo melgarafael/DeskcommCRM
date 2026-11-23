@@ -79,9 +79,9 @@ describe("montarMensagem", () => {
 
   it("reaproveita o mensagem_id no reenvio da mesma mensagem, e não em outra", () => {
     const primeira = modulo.montarMensagem("oi");
-    const reenvio = modulo.montarMensagem(" oi ", { id: primeira.id!, texto: "oi" });
+    const reenvio = modulo.montarMensagem(" oi ", { id: primeira.id, texto: "oi" });
     expect(reenvio.id).toBe(primeira.id);
-    const outra = modulo.montarMensagem("outra", { id: primeira.id!, texto: "oi" });
+    const outra = modulo.montarMensagem("outra", { id: primeira.id, texto: "oi" });
     expect(outra.id).not.toBe(primeira.id);
   });
 });
@@ -420,7 +420,7 @@ describe("janela no DOM", () => {
     expect(primeira!.aceite).toEqual({ versao: "v1" });
     expect(primeira!.contato).toEqual({ nome: "Ana", telefone: "+5511999999999" });
     expect(segunda!.aceite).toBeUndefined();
-    expect(segunda.contato).toBeUndefined();
+    expect(segunda!.contato).toBeUndefined();
   });
 
   it("gravar a flag iniciada após o primeiro envio aceito", async () => {
@@ -448,8 +448,8 @@ describe("janela no DOM", () => {
     digitarEEnviar("Oi");
     await esperarTudo();
     const [envio] = corposDeMensagens(r.chamadas);
-    expect(envio.aceite).toBeUndefined();
-    expect(envio.contato).toBeUndefined();
+    expect(envio!.aceite).toBeUndefined();
+    expect(envio!.contato).toBeUndefined();
   });
 
   it("flag sem token ainda pede o aviso", async () => {
@@ -492,9 +492,9 @@ describe("janela no DOM", () => {
     await esperarTudo();
 
     const [primeira, reenvio] = corposDeMensagens(r.chamadas);
-    expect(reenvio.mensagem_id).toBe(primeira.mensagem_id);
-    expect(reenvio.aceite).toEqual({ versao: "v1" });
-    expect(reenvio.contato).toEqual({ nome: "Ana" });
+    expect(reenvio!.mensagem_id).toBe(primeira!.mensagem_id);
+    expect(reenvio!.aceite).toEqual({ versao: "v1" });
+    expect(reenvio!.contato).toEqual({ nome: "Ana" });
   });
 
   it("token_novo substitui o token usado na requisição seguinte", async () => {
@@ -513,8 +513,8 @@ describe("janela no DOM", () => {
     await esperarTudo();
 
     const envios = r.chamadas.filter((c) => c.url.endsWith("/mensagens"));
-    expect(envios[0].init.headers?.Authorization).toBe("Bearer T1");
-    expect(envios[1].init.headers?.Authorization).toBe("Bearer T2");
+    expect(envios[0]!.init.headers?.Authorization).toBe("Bearer T1");
+    expect(envios[1]!.init.headers?.Authorization).toBe("Bearer T2");
     expect(armazenamento.mapa.get("webchat:wck_teste")).toBe("T2");
   });
 
@@ -731,10 +731,10 @@ describe("janela no DOM", () => {
     await esperarTudo();
 
     const [primeira, reenvio] = corposDeMensagens(r.chamadas);
-    expect(primeira.aceite).toBeUndefined();
-    expect(reenvio.mensagem_id).toBe(primeira.mensagem_id);
-    expect(reenvio.aceite).toEqual({ versao: "v1" });
-    expect(reenvio.contato).toEqual({ nome: "Ana" });
+    expect(primeira!.aceite).toBeUndefined();
+    expect(reenvio!.mensagem_id).toBe(primeira!.mensagem_id);
+    expect(reenvio!.aceite).toEqual({ versao: "v1" });
+    expect(reenvio!.contato).toEqual({ nome: "Ana" });
   });
 
   it("a flag não é gravada após 5xx nem após 422", async () => {
