@@ -15,9 +15,9 @@ Conexões › "Chat no site" para criar a conexão.
 
 ## Casos
 
-| # | Caso | Expectativa | Onde a spec cobre |
+| # | Caso | Expectativa | Observação |
 |---|------|-------------|-------------------|
-| C1 | Módulo desligado → nenhuma diferença | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404; nenhum script servido  | 
+| C1 | Módulo desligado → nenhuma diferença | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404  | 
 | C2 | Dono liga o módulo; admin da empresa cria a conexão | A aba "Chat no site" aparece em Conexões; cadastrar o domínio do servidor de teste gera a chave `wck_...`  | 
 | C3 | Servidor de teste serve a página com o código colado | A bolha aparece no canto da página; abrir a janela carrega `/chat/<chave>`  | 
 | C4 | Visitante conversa | Aceitar o aviso de LGPD (controlador + link de política), enviar mensagem; a conversa aparece no Inbox com o selo "Chat no site"; responder pelo Inbox e a resposta aparece na janela  | 
