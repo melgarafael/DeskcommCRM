@@ -257,8 +257,6 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
-// O total é MEDIDO no merge com a main (40730 = 40675 medidos nela + 55 deste
-// PR, remedido em 2026-11-18 sobre a main de `9da6943cc2`), não somado à mão.
 // +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
 // `crm_list_tasks` e 919 de `crm_update_task`. MEDIDO no merge com a main de 19/11
 // (que já tinha 40730): 43286 (2026-11-19), não somado à mão.
