@@ -58,6 +58,8 @@ const autorizadoPelaCampanha: EstadoDeElegibilidade = {
   numeroDeTesteAutorizado: false,
   agora: AGORA,
   ttlMs: 21 * DIA,
+  // F4, Task 1: não se aplica nos testes desta regra (a contagem é dos loaders).
+  tetoDoAnonimo: null,
 };
 
 describe("a régua de elegibilidade continua mandando no cliente que veio da campanha", () => {
