@@ -271,7 +271,7 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 
 Contexto do código: Spec 36, F2-A; módulo `canal_webchat` desligado de fábrica; prova exige um
 administrador que ligue o módulo e crie a conexão em Conexões. Roteiro detalhado:
-`docs/testing/chat-no-site.md`; spec: `tests/e2e/chat-no-site.spec.ts`.
+`docs/testing/chat-no-site.md` (roteiro de prova pela tela, ainda sem spec automatizada e sem execução; a prova fica para o PR ao mantenedor).
 
 A spec está **escrita e NÃO executada ainda**: o e2e só roda em PR para a main; a prova
 pela tela fica para o CI do PR ao mantenedor.
