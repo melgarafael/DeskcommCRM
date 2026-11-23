@@ -54,10 +54,10 @@
 
 **Interfaces:**
 - Consumes: o campo `teto_anonimo` lido por `tetoDoAnonimoDoCanal` (Task 1).
-- Produces: `config.tetoAnonimo?: number` no schema Zod da configuração (inteiro, 1 a 200, opcional); a aba mostra "Respostas da IA para quem ainda não deixou contato" (padrão 20) com a explicação em uma frase; salvar usa o mesmo PATCH da aba.
+- Produces: `config.teto_anonimo?: number` (mesmo nome que `tetoDoAnonimoDoCanal` lê em `metadata.webchat.teto_anonimo`) no schema Zod da configuração (inteiro, 1 a 200, opcional); a aba mostra "Respostas da IA para quem ainda não deixou contato" (padrão 20) com a explicação em uma frase; salvar usa o mesmo PATCH da aba.
 
 - [ ] **Step 1: teste do schema** — 1 e 200 aceitos; 0, 201 e 1,5 recusados; ausente = padrão.
-- [ ] **Step 2: teste da aba** — o campo aparece com 20; digitar 5 e salvar manda `tetoAnonimo: 5`; valor inválido mostra o erro em português e não envia.
+- [ ] **Step 2: teste da aba** — o campo aparece com 20; digitar 5 e salvar manda `teto_anonimo: 5`; valor inválido mostra o erro em português e não envia.
 - [ ] **Step 3: implementar** schema, aba e chaves de tradução.
 - [ ] **Step 4: commit** — `feat(chat): teto de respostas da IA para anônimo configurável na aba`
 
@@ -68,3 +68,9 @@
 - [ ] **Step 1:** atualizar cada documento com o que existe de fato (teto no gate e na aba; o "pedir o contato" e o horário seguem pendentes).
 - [ ] **Step 2: Sabotagem** (sobre o commit verde, em PR à parte do fork, só fechar): (a) trocar `>=` por `>` na regra do gate; (b) fazer `tetoDoAnonimoDoCanal` devolver `null` para o canal de chat; (c) tirar o filtro `organization_id` da contagem. Previsão: `gate.test.ts`, `teto-do-anonimo.test.ts` e o teste do loader ficam vermelhos, cada ponto num grupo próprio.
 - [ ] **Step 3: commit** — `docs(chat): F4 mínima nos documentos`
+
+### Ajuste da Tarefa 3 (resposta do mantenedor no #5095, 23/11)
+
+- A "barreira de site" já está entregue (o `frame-ancestors` por conexão da F2-A). O que falta para ligar o módulo é só este teto.
+- O mantenedor vai pôr `canal_webchat` em `MODULOS_AINDA_NAO_LIGAVEIS` (`lib/instalacao/modulos.ts`) com um teste que reprova ligar. **O PR da F4 mínima só é aberto ao mantenedor depois que o #5095 entrar**, e ele tira `canal_webchat` dessa lista (e inverte o teste) como último commit.
+- O texto do fragmento `.changes/chat-no-site-parte-2a.md` é do mantenedor até lá; no PR da F4, o fragmento diz que o chat pode ser ligado.
