@@ -60,9 +60,15 @@ describe("configuracaoDoChatSchema: ajustes da janela (Tarefa 10a)", () => {
   });
 
   it("aceita avatar_url com ate 300 caracteres", () => {
-    const url = "https://" + "a".repeat(291) + ".com";
+    const url = "https://" + "a".repeat(288) + ".com";
     expect(url.length).toBe(300);
     expect(configuracaoDoChatSchema.safeParse({ avatar_url: url }).success).toBe(true);
+  });
+
+  it("recusa avatar_url com 301 caracteres", () => {
+    const url = "https://" + "a".repeat(289) + ".com";
+    expect(url.length).toBe(301);
+    expect(configuracaoDoChatSchema.safeParse({ avatar_url: url }).success).toBe(false);
   });
 
   it("recusa avatar_url http://", () => {

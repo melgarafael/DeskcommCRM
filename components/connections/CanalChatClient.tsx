@@ -216,7 +216,6 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [autoAbrirSegundos, setAutoAbrirSegundos] = useState(String(autoAbrirInicial));
   const [som, setSom] = useState(somInicial);
   const [respostasRapidas, setRespostasRapidas] = useState(respostasInicial);
-  const [erroAjustes, setErroAjustes] = useState("");
 
   // Uma resposta rápida por linha, aparadas e sem linha vazia. A validação de verdade é do servidor.
   function linhasDeResposta(texto: string): string[] {
@@ -266,7 +265,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   if (avatarPreenchido) ajustes.avatar_url = avatarUrl.trim();
   if (autoAbrirParaEnviar !== undefined) ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
   ajustes.som = som;
-  if (respostasRapidas.trim() !== "") ajustes.respostas_rapidas = respostasLinhas;
+  if (respostasRapidas.trim() !== respostasInicial) ajustes.respostas_rapidas = respostasLinhas;
 
   const ajustesMudou =
     avatarUrl.trim() !== avatarInicial ||
@@ -275,19 +274,6 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
     respostasRapidas.trim() !== respostasInicial;
 
   const ajustesValidos = avatarValida && autoAbrirValido && respostasValidas;
-  const ajustesInvalidos = (avatarPreenchido && !avatarValida) || !autoAbrirValido || !respostasValidas;
-
-  if (ajustesInvalidos) {
-    setErroAjustes(
-      !avatarValida && avatarPreenchido
-        ? "Use https:// na URL do avatar."
-        : !autoAbrirValido && autoAbrirPreenchido
-          ? "Use um numero inteiro de 0 a 120 segundos."
-          : "Use ate 5 respostas rapidas, de 1 a 80 caracteres cada.",
-    );
-  } else {
-    setErroAjustes("");
-  }
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -561,7 +547,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             id="canal-chat-avatar"
             value={avatarUrl}
             maxLength={300}
-            placeholder={estado.config.avatar_url ?? ""}
+            placeholder="https://example.com/avatar.png"
             onChange={(e) => setAvatarUrl(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
@@ -587,7 +573,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
           </p>
           {!autoAbrirValido && autoAbrirPreenchido && (
             <p role="alert" className="text-xs text-destructive">
-              {t("Use um numero inteiro de 0 a 120 segundos.")}
+              {t("Use um número inteiro de 0 a 120 segundos.")}
             </p>
           )}
         </div>
@@ -607,7 +593,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             id="canal-chat-respostas-rapidas"
             rows={4}
             value={respostasRapidas}
-            placeholder="Sim\nNão\nTalvez"
+            placeholder="Ex.: Sim"
             onChange={(e) => setRespostasRapidas(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
@@ -619,9 +605,6 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             </p>
           )}
         </div>
-        {erroAjustes && (
-          <p role="alert" className="text-xs text-destructive">{erroAjustes}</p>
-        )}
         <div>
           <Button
             onClick={() =>

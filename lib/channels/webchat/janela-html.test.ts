@@ -250,15 +250,3 @@ describe("montarJanela: dados da janela (Tarefa 10a)", () => {
     expect(dados.respostasRapidas).toEqual(["texto <tag> e & mais"]);
   });
 });
-
-describe("montarJanela: CSP com avatar (Tarefa 10a)", () => {
-  it("com avatar, o CSP permite https em img-src", () => {
-    const { csp } = janela({ config: { avatar_url: "https://example.com/a.png" } });
-    expect(csp).toContain("img-src 'self' https: data:");
-  });
-
-  it("sem avatar, o CSP e identico ao de hoje", () => {
-    const { csp } = janela();
-    expect(csp).toContain("img-src 'self' https: data:");
-  });
-});

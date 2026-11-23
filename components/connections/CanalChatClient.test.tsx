@@ -472,7 +472,7 @@ it("auto_abrir_segundos invalido mostra erro e nao envia", async () => {
   fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), { target: { value: "121" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
 
-  expect(screen.getByText("Use um numero inteiro de 0 a 120 segundos.")).toBeTruthy();
+  expect(screen.getByText("Use um número inteiro de 0 a 120 segundos.")).toBeTruthy();
   expect(h.patch).not.toHaveBeenCalled();
 });
 
@@ -487,8 +487,26 @@ it("mais de 5 respostas rapidas mostra erro e nao envia", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
 
-  expect(screen.getByText("Use ate 5 respostas rapidas, de 1 a 80 caracteres cada.")).toBeTruthy();
+  expect(screen.getByText("Use até 5 respostas rápidas, de 1 a 80 caracteres cada.")).toBeTruthy();
   expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("apagar respostas rapidas envia array vazio", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, respostas_rapidas: ["Sim"] } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Respostas rápidas do chat");
+
+  fireEvent.change(screen.getByLabelText("Respostas rápidas do chat"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, {
+      config: { respostas_rapidas: [] },
+    }),
+  );
 });
 
 it("salvar ajustes so liga quando algo mudou", async () => {
