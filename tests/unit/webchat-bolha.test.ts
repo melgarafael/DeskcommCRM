@@ -220,6 +220,59 @@ describe("origemDoScript", () => {
   });
 });
 
+describe("formato e posição - funções puras", () => {
+  it("formatoDoScript aceita só os quatro formatos da lista fixa", () => {
+    expect(modulo.formatoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=bolha")).toBe("bolha");
+    expect(modulo.formatoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=painel")).toBe("painel");
+    expect(modulo.formatoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=embutido")).toBe("embutido");
+    expect(modulo.formatoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=pagina")).toBe("pagina");
+  });
+
+  it.each([
+    ["f ausente", "https://crm.exemplo.com.br/webchat.js?k=wck_abc"],
+    ["f fora da lista", "https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=qualquer_coisa"],
+    ["f vazio", "https://crm.exemplo.com.br/webchat.js?k=wck_abc&f="],
+  ])("formatoDoScript devolve null para %s", (_nome, src) => {
+    expect(modulo.formatoDoScript(src)).toBeNull();
+  });
+
+  it("posicaoDoScript aceita direita e esquerda", () => {
+    expect(modulo.posicaoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&p=direita")).toBe("direita");
+    expect(modulo.posicaoDoScript("https://crm.exemplo.com.br/webchat.js?k=wck_abc&p=esquerda")).toBe("esquerda");
+  });
+
+  it.each([
+    ["p ausente", "https://crm.exemplo.com.br/webchat.js?k=wck_abc"],
+    ["p fora da lista", "https://crm.exemplo.com.br/webchat.js?k=wck_abc&p=centro"],
+    ["p vazio", "https://crm.exemplo.com.br/webchat.js?k=wck_abc&p="],
+  ])("posicaoDoScript devolve null para %s", (_nome, src) => {
+    expect(modulo.posicaoDoScript(src)).toBeNull();
+  });
+
+  it("alvoDoScript lê o data-webchat-alvo do script", () => {
+    const script = document.createElement("script");
+    script.src = "https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=embutido";
+    script.setAttribute("data-webchat-alvo", "#webchat-aqui");
+    document.head.appendChild(script);
+    try {
+      expect(modulo.alvoDoScript(script.src)).toBe("#webchat-aqui");
+    } finally {
+      script.remove();
+    }
+  });
+
+  it("alvoDoScript devolve null sem data-webchat-alvo", () => {
+    const script = document.createElement("script");
+    script.src = "https://crm.exemplo.com.br/webchat.js?k=wck_abc&f=embutido";
+    document.head.appendChild(script);
+    try {
+      expect(modulo.alvoDoScript(script.src)).toBeNull();
+    } finally {
+      script.remove();
+    }
+  });
+});
+
 describe("montagem no DOM", () => {
   const SRC_CRM = "https://crm.exemplo.com.br/webchat.js";
 
@@ -443,6 +496,119 @@ describe("montagem no DOM", () => {
       "document.cookie",
     ]) {
       expect(texto).not.toContain(proibido);
+    }
+  });
+});
+
+describe("formato e posição - montagem no DOM", () => {
+  const SRC_CRM = "https://crm.exemplo.com.br/webchat.js";
+
+  function montarComSrcEAttr(src: string, attrNome: string, attrValor: string): void {
+    const script = document.createElement("script");
+    script.src = src;
+    script.setAttribute(attrNome, attrValor);
+    document.head.appendChild(script);
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    requerer(CAMINHO);
+  }
+
+  it("bolha padrão fica à direita (right: 20px)", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc`);
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    expect(bolha).not.toBeNull();
+    expect(bolha.style.right).toBe("20px");
+    expect(bolha.style.left).toBe("");
+  });
+
+  it("posicao esquerda coloca a bolha à esquerda (left: 20px)", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&p=esquerda`);
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    expect(bolha).not.toBeNull();
+    expect(bolha.style.left).toBe("20px");
+    expect(bolha.style.right).toBe("");
+  });
+
+  it("valor de p fora da lista cai no padrão direita", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&p=centro`);
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    expect(bolha.style.right).toBe("20px");
+    expect(bolha.style.left).toBe("");
+  });
+
+  it("valor de f fora da lista cai no padrão bolha (cria bolha e iframe)", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&f=qualquer_coisa`);
+    expect(document.querySelector("button")).not.toBeNull();
+    expect(document.querySelector("iframe")).not.toBeNull();
+  });
+
+  it("painel aberto ocupa a altura da tela e 380px colado na lateral direita", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&f=painel`);
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    fireEvent.click(bolha);
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(iframe.style.height).toBe("100vh");
+    expect(iframe.style.width).toBe("380px");
+    expect(iframe.style.right).toBe("0px");
+    expect(iframe.style.top).toBe("0px");
+    expect(iframe.style.bottom).toBe("0px");
+  });
+
+  it("painel aberto com posicao esquerda fica colado na lateral esquerda", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&f=painel&p=esquerda`);
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    fireEvent.click(bolha);
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(iframe.style.left).toBe("0px");
+    expect(iframe.style.right).toBe("");
+    expect(iframe.style.height).toBe("100vh");
+    expect(iframe.style.width).toBe("380px");
+  });
+
+  it("embutido sem alvo não cria nada e não lança", () => {
+    expect(() => montarComSrc(`${SRC_CRM}?k=wck_abc&f=embutido`)).not.toThrow();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(document.querySelector("button")).toBeNull();
+  });
+
+  it("embutido com seletor inválido não lança e não cria nada", () => {
+    expect(() =>
+      montarComSrcEAttr(`${SRC_CRM}?k=wck_abc&f=embutido`, "data-webchat-alvo", "[["),
+    ).not.toThrow();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(document.querySelector("button")).toBeNull();
+  });
+
+  it("embutido com alvo cria o iframe dentro do elemento alvo e sem bolha", () => {
+    const alvo = document.createElement("div");
+    alvo.id = "webchat-aqui";
+    document.body.appendChild(alvo);
+    try {
+      montarComSrcEAttr(`${SRC_CRM}?k=wck_abc&f=embutido`, "data-webchat-alvo", "#webchat-aqui");
+      const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+      expect(iframe).not.toBeNull();
+      expect(alvo.contains(iframe)).toBe(true);
+      expect(document.querySelector("button")).toBeNull();
+    } finally {
+      alvo.remove();
+    }
+  });
+
+  it("pagina chama window.open com noopener,noreferrer e não abre o painel", () => {
+    const openSpy = vi.spyOn(window, "open");
+    try {
+      montarComSrc(`${SRC_CRM}?k=wck_abc&f=pagina`);
+      const bolha = document.querySelector("button") as HTMLButtonElement;
+      fireEvent.click(bolha);
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://crm.exemplo.com.br/chat/wck_abc",
+        "_blank",
+        "noopener,noreferrer",
+      );
+      // não abre o painel: o iframe continua escondido
+      const iframe = document.querySelector("iframe");
+      expect(iframe?.style.display).toBe("none");
+    } finally {
+      openSpy.mockRestore();
     }
   });
 });

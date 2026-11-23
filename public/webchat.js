@@ -200,7 +200,7 @@
     bolha.textContent = "Chat";
     estilo(bolha, {
       position: "fixed",
-      right: "20px",
+      [posicao === "esquerda" ? "left" : "right"]: "20px",
       bottom: "20px",
       zIndex: "2147483000",
       height: "48px",
@@ -245,7 +245,30 @@
     // Só o tamanho e a visibilidade do iframe mudam ao abrir e fechar.
     function aplicarTamanho() {
       var telaCheia = window.innerWidth <= LARGURA_TELA_CHEIA;
-      if (telaCheia) {
+      if (formato === "painel" && aberto) {
+        if (telaCheia) {
+          estilo(iframe, {
+            top: "0",
+            left: "0",
+            right: "0",
+            bottom: "0",
+            width: "100%",
+            height: "100%",
+            maxHeight: "none",
+            borderRadius: "0",
+          });
+        } else {
+          estilo(iframe, {
+            top: "0",
+            bottom: "0",
+            height: "100vh",
+            width: "380px",
+            maxHeight: "none",
+            borderRadius: "0",
+            [posicao === "esquerda" ? "left" : "right"]: "0",
+          });
+        }
+      } else if (telaCheia) {
         estilo(iframe, {
           top: "0",
           left: "0",
@@ -321,6 +344,8 @@
       if (dado.tipo === "pronto") {
         enviarContexto();
       } else if (dado.tipo === "fechar") {
+        // Em `embutido` o botão × / a mensagem `fechar` da janela é ignorada.
+        if (formato === "embutido") return;
         if (aberto) abrirOuFechar(false);
       } else if (
         dado.tipo === "nao-lidas" &&
@@ -337,9 +362,15 @@
     window.addEventListener("resize", aplicarTamanho);
 
     // Embutido: o iframe vive dentro do elemento alvo marcado no próprio script.
-    // Sem alvo achado: não cria nada e não lança.
+    // Sem alvo achado, seletor inválido ou elemento ausente: não cria nada e não lança.
     if (formato === "embutido") {
-      var elementoAlvo = document.querySelector(alvo);
+      var elementoAlvo = null;
+      try {
+        elementoAlvo = document.querySelector(alvo);
+      } catch (erro) {
+        // seletor inválido (ex: "[", "#[", etc.): não cria nada, sem erro
+        return;
+      }
       if (!elementoAlvo) return;
       elementoAlvo.appendChild(iframe);
       atualizar();
@@ -357,6 +388,9 @@
     module.exports = {
       origemDoScript: origemDoScript,
       chaveDoScript: chaveDoScript,
+      formatoDoScript: formatoDoScript,
+      posicaoDoScript: posicaoDoScript,
+      alvoDoScript: alvoDoScript,
       montarContexto: montarContexto,
       aceitarMensagem: aceitarMensagem,
     };
