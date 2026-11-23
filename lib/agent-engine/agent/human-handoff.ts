@@ -49,6 +49,7 @@ import {
   type OrigemDaPassagem,
 } from '@/lib/escalacao/passagem';
 import { traduzir } from '@/lib/i18n/dicionario';
+import { donoHumanoVetaIA, lerModoIaComDono } from '@/lib/ai/elegibilidade/ia-com-dono';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 import { CONVERSATION_TERMINAL_STATUSES } from '@/lib/schemas';
@@ -423,9 +424,9 @@ export async function isLeadInHandoff(
  *      (`donoHumanoVetaIA`, `lib/ai/elegibilidade/ia-com-dono.ts`) e que o item 1
  *      NÃO enxerga: o rodízio atribui sem gravar silêncio, e "Assumir" pode
  *      chegar por um caminho que ainda não gravou o `'infinity'`.
- * O modo "IA com o dono" (#3967) continua liberando o item 2 — é a mesma régua do
- * gate, escrita em SQL sobre a mesma chave (`metadata.ai_com_dono = true`, só o
- * booleano).
+ * O modo "IA com o dono" (#3967) continua liberando o item 2 pela MESMA função do
+ * gate (`donoHumanoVetaIA` + `lerModoIaComDono`), lida sobre a linha da conversa:
+ * uma segunda escrita da regra, em SQL, divergiria dela na primeira mudança.
  *
  * `organization_id` entra nas duas leituras: o pool é de serviço e não passa
  * pela RLS. Falha de leitura propaga — o envio não acontece com o estado
@@ -438,14 +439,18 @@ export async function iaVetadaNoEnvio(
   conversationId: string,
 ): Promise<boolean> {
   if (await isLeadInHandoff(db, tenantId, leadId, { conversationId })) return true;
-  const { rows } = await db.query<{ veto: boolean }>(
-    `select (v.assignee_kind = 'user'
-             and coalesce(v.metadata -> 'ai_com_dono', 'false'::jsonb) is distinct from 'true'::jsonb) as veto
+  const { rows } = await db.query<{ assignee_kind: string | null; metadata: unknown }>(
+    `select v.assignee_kind, v.metadata
        from conversations v
       where v.organization_id = $1 and v.id = $2`,
     [tenantId, conversationId],
   );
-  return rows[0]?.veto === true;
+  const conversa = rows[0];
+  if (!conversa) return false;
+  return donoHumanoVetaIA({
+    assigneeKind: conversa.assignee_kind,
+    iaComDono: lerModoIaComDono(conversa.metadata),
+  });
 }
 
 export interface HandoffIds {

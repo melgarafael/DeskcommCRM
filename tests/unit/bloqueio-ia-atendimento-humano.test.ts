@@ -160,7 +160,7 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
         // 1ª: isLeadInHandoff — sem trava de contato, sem silêncio em vigor.
         if (consultas.length === 1) return { rows: [{ handoff: false }], rowCount: 1 };
         // 2ª: a conversa tem dono humano e o modo "IA com o dono" está desligado.
-        return { rows: [{ veto: true }], rowCount: 1 };
+        return { rows: [{ assignee_kind: "user", metadata: {} }], rowCount: 1 };
       }),
     } as unknown as pg.Pool;
 
@@ -169,10 +169,19 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
     const doDono = consultas[1]!;
     expect(doDono.params).toEqual([ORG_A, CONV_ID]);
     expect(doDono.sql).toMatch(/v\.organization_id = \$1 and v\.id = \$2/);
-    expect(doDono.sql).toContain("assignee_kind = 'user'");
-    // A exceção do modo #3967 só aceita o BOOLEANO true, como `lerModoIaComDono`.
-    expect(doDono.sql).toContain("metadata -> 'ai_com_dono'");
-    expect(doDono.sql).toContain("'true'::jsonb");
+  });
+
+  // A exceção do modo #3967 é a MESMA régua do gate (`lerModoIaComDono`): só o
+  // BOOLEANO true libera. SABOTAGEM: trocar `lerModoIaComDono` por um teste de
+  // verdade (`!!metadata.ai_com_dono`) faz o caso da string reprovar.
+  it("3c. 'IA com o dono' libera só com o booleano true, como no gate", async () => {
+    const comDono = (metadata: unknown) => {
+      const respostas = [{ handoff: false }, { assignee_kind: "user", metadata }];
+      return { query: vi.fn(async () => ({ rows: [respostas.shift()], rowCount: 1 })) } as unknown as pg.Pool;
+    };
+    expect(await iaVetadaNoEnvio(comDono({ ai_com_dono: true }), ORG_A, CONTACT_ID, CONV_ID)).toBe(false);
+    expect(await iaVetadaNoEnvio(comDono({ ai_com_dono: "true" }), ORG_A, CONTACT_ID, CONV_ID)).toBe(true);
+    expect(await iaVetadaNoEnvio(comDono(null), ORG_A, CONTACT_ID, CONV_ID)).toBe(true);
   });
 
   it("3b. Conversa já silenciada: veta na primeira leitura, sem consultar o dono", async () => {
@@ -233,7 +242,7 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
 
   // 6. Requisito 4: fora do atendimento humano a IA segue normal.
   it("6. Conversa livre (sem trava, sem dono, ou com 'IA com o dono'): a IA segue entregando", async () => {
-    const respostas = [{ handoff: false }, { veto: false }];
+    const respostas = [{ handoff: false }, { assignee_kind: "ai", metadata: {} }];
     const query = vi.fn(async () => ({ rows: [respostas.shift()], rowCount: 1 }));
     const mockDb = { query } as unknown as pg.Pool;
     expect(await iaVetadaNoEnvio(mockDb, ORG_A, CONTACT_ID, CONV_ID)).toBe(false);
@@ -249,9 +258,10 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
 
   // 7. A IA já estava escrevendo quando a pessoa assumiu.
   //
-  // `executarTurnoDoAgente` não tem ponto de injeção barato para o canal (mesma
-  // técnica de `send-message-duplicata-proxima.test.ts`): o teste prende a ESTRUTURA
-  // que garante o comportamento.
+  // O COMPORTAMENTO (turno real, banco real, a pessoa assumindo entre a resposta
+  // do modelo e o envio) é medido em `tests/invariants/pessoa-assume-durante-o-turno.test.ts`.
+  // Aqui o teste prende a ESTRUTURA: que TODO envio ao canal passa pela guarda,
+  // inclusive os que aquele turno de teste não alcança (voz, template, roteiro).
   //
   // SABOTAGENS que cada expect acusa:
   //   - tirar a guarda de qualquer um dos envios ao canal (texto/bolha, voz,
