@@ -160,6 +160,10 @@ export const MOTIVO_LEGIVEL: Record<string, string> = {
     "A venda fechou sem valor preenchido. A Meta exige valor e moeda em uma compra — preencha o valor do negócio e use o botão de reprocessamento. No Google, você também pode escolher enviar a venda sem valor em \"Valor do negócio\".",
   sem_conexao:
     "Nenhuma conta de anúncios conectada nesta organização. Preencha o formulário acima.",
+  conta_google_do_clique_ausente:
+    "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.",
+  conta_google_do_clique_divergente:
+    "O clique pertence a outra conta do Google Ads. A conversão desta etapa não foi enviada.",
   evento_fora_do_canal: `Este evento de etapa não sai pelo canal da conversa. Para esta etapa, escolha ${EVENTOS_QUE_O_CANAL_REPASSA}, ou configure a conexão direta da Meta no formulário acima.`,
   conexao_desabilitada: "A conexão existe mas está desligada. Ligue o envio no formulário acima.",
   credencial_incompleta:

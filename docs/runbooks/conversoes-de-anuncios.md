@@ -46,15 +46,16 @@ O painel dá preferência à autorização de leitura cadastrada para cada conta
 
 Correção e evolução da integração já distribuída no núcleo. Reutiliza contatos, funil, eventos e configuração por organização. Não cria outro CRM nem transforma o envio em requisito para o atendimento.
 
-Esta entrega usa a origem capturada no contato, os eventos de venda `Purchase`, as etapas configuradas do Google (`QualifiedLead` e `Etapa:<uuid>`, 0436) e as etapas configuradas da Meta (`MetaEtapa:<uuid>`, 0524 — seção abaixo). Captura web completa para Meta, atribuição por nova jornada de cliente antigo, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
+A venda (`Purchase`) e as etapas da Meta (`MetaEtapa:<uuid>`, 0524) usam a origem capturada no contato. As etapas do Google (`QualifiedLead` e `Etapa:<uuid>`, 0436) usam o clique registrado no próprio negócio. Captura web completa para Meta, atribuição por nova jornada de cliente antigo, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
 
 ## Captura Google e qualificação por etapa
 
 CONFIRMADO no código desta entrega:
 
 - **Captura de origem do Google Ads**, na mesma tela, configura WhatsApp, mensagem com `[ref:{token}]` e ativação do endereço. Funciona antes de conectar a API de conversões.
-- O botão do site deve repassar os parâmetros reais recebidos na página: `gclid`, `gbraid` ou `wbraid`. Copiar apenas a URL fixa não preserva esses identificadores. Macros não resolvidas e identificadores inválidos não fabricam atribuição; o visitante ainda recebe o destino WhatsApp.
-- A captura persiste os tipos de identificadores e somente UTMs permitidas da query. O código curto é associado ao contato pela ingestão existente. Remover o código da mensagem impede essa associação.
+- O botão do site deve repassar os parâmetros reais recebidos na página: `gclid`, `gbraid` ou `wbraid` e, para conversões de etapa, `google_customer_id` com os dez dígitos da conta que veiculou o anúncio. Copiar apenas a URL fixa não preserva esses identificadores. Macros não resolvidas e identificadores inválidos não fabricam atribuição; o visitante ainda recebe o destino WhatsApp.
+- A captura persiste os tipos de identificadores e os parâmetros de campanha permitidos da query. O código curto é associado ao contato pela ingestão existente. Remover o código da mensagem impede essa associação.
+- Confira a origem no próprio negócio. A etapa só envia se a conta daquele clique corresponder à conta de envio em **Configurações → Conversões → Google Ads**. Uma conta ausente, inválida ou divergente no clique aparece no histórico como envio ignorado. Um cartão sem clique próprio também fica fora do envio, mesmo que o contato tenha uma origem anterior no Google Ads.
 - Em **Google Ads → Lead qualificado (opcional)**, escolha uma etapa aberta e o ID de uma ação de conversão diferente da compra. A conta e a autorização são as mesmas da conexão. Configure a categoria da ação e a participação na otimização no Google Ads; o CRM não cria nem altera essas propriedades remotamente.
 - A regra começa desligada. Salvar não percorre negócios antigos: apenas movimentos posteriores à configuração são elegíveis. Arrastar e mover em lote usam `lead.stage_changed`.
 - Qualificação envia uma vez por negócio, sem valor monetário; compra continua exigindo negócio ganho e valor positivo. Reentrada na etapa não gera uma segunda qualificação. Um novo negócio é outra conversão.

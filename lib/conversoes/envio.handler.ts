@@ -44,6 +44,7 @@ import { canalQueReportaConversao } from "@/lib/channels/conversao-pelo-canal";
 import type { ChannelConversionInput, ChannelConversionResult } from "@/lib/channels/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
+import { idDaContaGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 import { transporteDe, ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
 import type {
   ConversaoOffline,
@@ -51,7 +52,7 @@ import type {
   ResultadoDeEnvio,
 } from "@/lib/plataformas-de-anuncio/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lerAtribuicao } from "./leitura-da-atribuicao";
+import { lerAtribuicao, type LeituraDeAtribuicao } from "./leitura-da-atribuicao";
 import { lerValorDaConversa } from "./valor-da-conversa";
 import { lerVendaPeloCanal } from "./venda-pelo-canal";
 import { ehEventoDeEtapa } from "./regras-google";
@@ -101,11 +102,14 @@ export async function processarConversao(
   if (!row.entity_id) return ok("skipped", "sem_entidade");
 
   const admin = createAdminClient();
+  const etapaGoogle = qualificacao !== undefined && !qualificacao.eventoMeta;
 
   // ⚠️ Filtro de organização junto do id: o client é service-role e bypassa RLS.
-  const { data, error } = await admin
-    .from("crm_leads")
-    .select("id, status, value_cents, currency, closed_at, contact_id")
+  const negocios = admin.from("crm_leads");
+  const consulta = etapaGoogle
+    ? negocios.select("id, status, value_cents, currency, closed_at, contact_id, source_metadata")
+    : negocios.select("id, status, value_cents, currency, closed_at, contact_id");
+  const { data, error } = await consulta
     .eq("id", row.entity_id)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
@@ -123,6 +127,7 @@ export async function processarConversao(
   if (!data) return ok("skipped", "lead_inexistente");
 
   const lead = data as {
+    source_metadata: unknown;
     id: string;
     status: string;
     value_cents: number | null;
@@ -141,25 +146,28 @@ export async function processarConversao(
     return ok("skipped", "ja_enviada");
   }
 
-  const leitura =
+  const leitura: LeituraDeAtribuicao =
     registro?.remote_request_id && ehPlataformaConhecida(registro.platform)
       ? {
-          temAtribuicao: true as const,
+          temAtribuicao: true,
           atribuicao: { plataforma: registro.platform, cliqueDeOrigem: "", telefone: null },
         }
-      : await lerAtribuicao(admin, row.organization_id, lead.contact_id);
+      : await lerAtribuicao(
+          admin,
+          row.organization_id,
+          lead.contact_id,
+          etapaGoogle ? lead : undefined,
+        );
   if (!leitura.temAtribuicao) return ok("skipped", leitura.motivo);
 
-  const { plataforma, cliqueDeOrigem, telefone } = leitura.atribuicao;
-  // Presente só na captura de PÁGINA (formulário): o ramo do protocolo
-  // pendente monta a atribuição sem identidade de navegador, e o `in` cobre o
-  // tipo sem inventar campo.
-  const identidadeDoNavegador =
-    "identidadeDoNavegador" in leitura.atribuicao ? leitura.atribuicao.identidadeDoNavegador : undefined;
-  const identificadoresGoogle =
-    "identificadoresGoogle" in leitura.atribuicao
-      ? leitura.atribuicao.identificadoresGoogle
-      : undefined;
+  const {
+    plataforma,
+    cliqueDeOrigem,
+    telefone,
+    identidadeDoNavegador,
+    identificadoresGoogle,
+    contaGoogleDoClique,
+  } = leitura.atribuicao;
   // A regra de etapa é de UMA plataforma: o lead que veio da outra não é dela.
   // Sai sem linha no livro-razão — não há pendência, havia nada a reportar.
   if (qualificacao && !qualificacao.eventoMeta && plataforma !== "google_ads")
@@ -392,6 +400,22 @@ export async function processarConversao(
     return ok("skipped", "sem_valor");
   }
   if (!qualificacao && modoDeValor === "nunca") valorDaVenda = null;
+
+  if (qualificacao && plataforma === "google_ads") {
+    if (registro?.remote_request_id) {
+      // O Data Manager confere a conta e a ação do protocolo. Nunca reenviar em seu lugar.
+      if (!transporte.consultar) throw new Error("Consulta do protocolo do Google indisponível.");
+    } else {
+      const destino = idDaContaGoogle.safeParse(credencial.credencial.google?.customerId).data;
+      if (!contaGoogleDoClique || contaGoogleDoClique !== destino) {
+        const motivo = contaGoogleDoClique
+          ? "conta_google_do_clique_divergente"
+          : "conta_google_do_clique_ausente";
+        await registra("skipped", motivo);
+        return ok("skipped", motivo);
+      }
+    }
+  }
 
   const acaoDoGoogle = registro?.google_action_id ?? qualificacao?.googleActionId;
   if (qualificacao && acaoDoGoogle && credencial.credencial.google) {

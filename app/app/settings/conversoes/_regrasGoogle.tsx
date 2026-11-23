@@ -311,7 +311,7 @@ export function RegrasDeConversaoGoogle({
 
       <p className="text-xs text-muted-foreground">
         {t(
-          "As conversões só saem quando o negócio muda de etapa — pela equipe, pela IA ou por automação — e só para quem veio de anúncio do Google. Movimentos anteriores a ligar a regra não são enviados.",
+          "Mudanças de etapa feitas pela equipe, pela IA ou por automação só geram conversão se o clique registrado no negócio identificar a conta do Google Ads configurada para o envio. Movimentos anteriores à ativação da regra não são enviados.",
         )}
       </p>
       <div>

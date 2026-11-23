@@ -1093,10 +1093,17 @@ export const DICIONARIO: Traducoes = {
   'Incluir na coluna "Conversões" (os lances otimizam por ela)': {
     es: 'Incluir en la columna "Conversiones" (las pujas optimizan por ella)',
   },
-  "As conversões só saem quando o negócio muda de etapa — pela equipe, pela IA ou por automação — e só para quem veio de anúncio do Google. Movimentos anteriores a ligar a regra não são enviados.":
+  "Mudanças de etapa feitas pela equipe, pela IA ou por automação só geram conversão se o clique registrado no negócio identificar a conta do Google Ads configurada para o envio. Movimentos anteriores à ativação da regra não são enviados.":
     {
-      es: "Las conversiones solo salen cuando el negocio cambia de etapa, por el equipo, por la IA o por una automatización, y solo para quien llegó desde un anuncio de Google. Los movimientos anteriores a activar la regla no se envían.",
+      es: "Los cambios de etapa realizados por el equipo, la IA o una automatización solo generan una conversión si el clic registrado en el negocio identifica la cuenta de Google Ads configurada para recibirla. Los cambios anteriores a la activación de la regla no se envían.",
     },
+  "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.":
+    {
+      es: "El clic no tiene un ID de cliente de Google Ads válido. Revisa el parámetro google_customer_id del enlace de seguimiento.",
+    },
+  "O clique pertence a outra conta do Google Ads. A conversão desta etapa não foi enviada.": {
+    es: "El clic pertenece a otra cuenta de Google Ads. No se envió la conversión de esta etapa.",
+  },
   "Salvar regras": { es: "Guardar reglas" },
   "Toda etapa ligada precisa de um nome e do ID da ação de conversão.": {
     es: "Toda etapa activada necesita un nombre y el ID de la acción de conversión.",
