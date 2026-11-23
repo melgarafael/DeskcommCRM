@@ -47,6 +47,6 @@ export function tetoDoAnonimoDoCanal(provider: string, metadata: unknown): numbe
   const bruto = objetoJson(objetoJson(metadata)?.webchat)?.teto_anonimo;
   const n =
     typeof bruto === "number" ? bruto : typeof bruto === "string" ? Number(bruto) : NaN;
-  if (!Number.isFinite(n) || n < 1 || n > TETO_ANONIMO_MAXIMO) return TETO_ANONIMO_PADRAO;
-  return Math.floor(n);
+  if (!Number.isInteger(n) || n < 1 || n > TETO_ANONIMO_MAXIMO) return TETO_ANONIMO_PADRAO;
+  return n;
 }

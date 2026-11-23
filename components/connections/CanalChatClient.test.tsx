@@ -144,9 +144,9 @@ it("salvar teto_anonimo manda o número para o servidor; fora de 1 a 200 não en
   h.get.mockResolvedValue({ data: comConexao });
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
   mount();
-  await screen.findByLabel("Quantas respostas da IA por conversa");
+  await screen.findByLabelText("Quantas respostas da IA por conversa");
 
-  const teto = screen.getByLabel("Quantas respostas da IA por conversa") as HTMLInputElement;
+  const teto = screen.getByLabelText("Quantas respostas da IA por conversa") as HTMLInputElement;
 
   // Valor válido: digita 5 e salva.
   fireEvent.change(teto, { target: { value: "5" } });
@@ -643,7 +643,7 @@ it("teto_anonimo aceita 150 (entre 100 e 200) e em branco não envia nada", asyn
   h.get.mockResolvedValue({ data: comConexao });
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
   mount();
-  const teto = (await screen.findByLabel("Quantas respostas da IA por conversa")) as HTMLInputElement;
+  const teto = (await screen.findByLabelText("Quantas respostas da IA por conversa")) as HTMLInputElement;
 
   // Nunca salvo e em branco: o botão está desligado (vale o padrão 20, nada a enviar).
   expect(teto.value).toBe("");

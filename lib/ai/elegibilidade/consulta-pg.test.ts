@@ -65,7 +65,7 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
 
   it("anônimo no teto: veta com teto_do_visitante_anonimo", async () => {
     const { query } = poolStub([linhaConversa()], 20);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({
       permite: false,
       motivo: "teto_do_visitante_anonimo",
@@ -81,7 +81,7 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
 
   it("abaixo do teto: permite", async () => {
     const { query } = poolStub([linhaConversa()], 19);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
   });
 
@@ -89,7 +89,7 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
     const { query } = poolStub([
       linhaConversa({ email: "cliente@exemplo.com" }),
     ], 100);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
     // A contagem não é feita para não-anônimo: a query de messages não roda.
     expect(query.mock.calls.some((c) => String(c[0]).includes("from messages"))).toBe(
@@ -101,7 +101,7 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
     const { query } = poolStub([
       linhaConversa({ phone_number: "+5511999998888" }),
     ], 100);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
     expect(query.mock.calls.some((c) => String(c[0]).includes("from messages"))).toBe(
       false,
@@ -115,13 +115,13 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
         ? Promise.reject(new Error("banco fora"))
         : Promise.resolve({ rows: [linhaConversa()] }),
     );
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
   });
 
   it("outro provedor (whatsapp): não se aplica o teto do anônimo", async () => {
     const { query } = poolStub([linhaConversa({ provider: "whatsapp" })], 100);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
     expect(query.mock.calls.some((c) => String(c[0]).includes("from messages"))).toBe(
       false,
@@ -130,7 +130,7 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
 
   it("conversa não encontrada: null", async () => {
     const { query } = poolStub([], 0);
-    const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
+    const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toBeNull();
   });
 });
