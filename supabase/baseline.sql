@@ -89912,3 +89912,12 @@ do $followup_daily_cap$ begin
       check (followup_daily_cap is null or followup_daily_cap > 0);
   end if;
 end $followup_daily_cap$;
+
+-- ---- Embedded Signup do app da Meta da instalação (migration 9463, #4074) ----
+-- Espelho de supabase/migrations/20261123133915_9463_embedded_signup_do_app_da_meta.sql.
+-- App ID e Configuration ID não são segredo (vão ao navegador no FB.init/FB.login).
+-- Fica DEPOIS da VARREDURA anon porque `platform_meta_app` (0257) só é criada
+-- depois dela; não cria função, então pode.
+alter table public.platform_meta_app
+  add column if not exists app_id text,
+  add column if not exists config_id text;
