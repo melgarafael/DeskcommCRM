@@ -528,6 +528,22 @@ describe("formato e posição - montagem no DOM", () => {
     expect(bolha.style.right).toBe("");
   });
 
+  it("posicao esquerda abre o cartão do chat à esquerda, e a direita o abre à direita", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc&p=esquerda`);
+    fireEvent.click(document.querySelector("button") as HTMLButtonElement);
+    const cartao = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(cartao.style.left).toBe("20px");
+    expect(cartao.style.right).toBe("auto");
+  });
+
+  it("sem posicao o cartão do chat abre à direita", () => {
+    montarComSrc(`${SRC_CRM}?k=wck_abc`);
+    fireEvent.click(document.querySelector("button") as HTMLButtonElement);
+    const cartao = document.querySelector("iframe") as HTMLIFrameElement;
+    expect(cartao.style.right).toBe("20px");
+    expect(cartao.style.left).toBe("auto");
+  });
+
   it("valor de p fora da lista cai no padrão direita", () => {
     montarComSrc(`${SRC_CRM}?k=wck_abc&p=centro`);
     const bolha = document.querySelector("button") as HTMLButtonElement;
@@ -549,6 +565,7 @@ describe("formato e posição - montagem no DOM", () => {
     expect(iframe.style.height).toBe("100vh");
     expect(iframe.style.width).toBe("380px");
     expect(iframe.style.right).toBe("0px");
+    expect(iframe.style.left).toBe("auto");
     expect(iframe.style.top).toBe("0px");
     expect(iframe.style.bottom).toBe("0px");
   });
@@ -559,7 +576,7 @@ describe("formato e posição - montagem no DOM", () => {
     fireEvent.click(bolha);
     const iframe = document.querySelector("iframe") as HTMLIFrameElement;
     expect(iframe.style.left).toBe("0px");
-    expect(iframe.style.right).toBe("");
+    expect(iframe.style.right).toBe("auto");
     expect(iframe.style.height).toBe("100vh");
     expect(iframe.style.width).toBe("380px");
   });

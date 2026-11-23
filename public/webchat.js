@@ -265,7 +265,8 @@
             width: "380px",
             maxHeight: "none",
             borderRadius: "0",
-            [posicao === "esquerda" ? "left" : "right"]: "0",
+            left: posicao === "esquerda" ? "0" : "auto",
+            right: posicao === "esquerda" ? "auto" : "0",
           });
         }
       } else if (telaCheia) {
@@ -282,8 +283,8 @@
       } else {
         estilo(iframe, {
           top: "auto",
-          left: "auto",
-          right: "20px",
+          left: posicao === "esquerda" ? "20px" : "auto",
+          right: posicao === "esquerda" ? "auto" : "20px",
           bottom: "88px",
           width: "380px",
           height: "600px",
