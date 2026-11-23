@@ -33,11 +33,16 @@ const TELEFONE_INTERNACIONAL = /^\+[0-9]{8,15}$/;
 /**
  * O que o visitante informa no primeiro contato. A hora do aceite não vem aqui: é a do servidor.
  * Formato inválido NÃO recusa aqui: vira vazio, e a ingestão decide. Campo `obrigatorio` que
- * ficou vazio recusa; campo opcional ou oculto segue sem ele. Só o nome acima do teto dá 422.
+ * ficou vazio recusa; campo opcional ou oculto segue sem ele. Só o nome acima do teto ou com caractere de controle/bidi dá 422.
  * Único tratamento de texto: tirar espaço, parênteses, hífen e ponto do telefone. Nenhum DDI é inventado.
  */
 const contatoSchema = z.object({
-  nome: z.string().trim().max(120).optional(),
+  nome: z
+    .string()
+    .trim()
+    .max(120)
+    .refine((n) => !PROIBIDOS.test(n))
+    .optional(),
   telefone: z
     .string()
     .trim()
