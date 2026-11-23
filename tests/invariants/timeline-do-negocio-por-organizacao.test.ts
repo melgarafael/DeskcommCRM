@@ -42,9 +42,9 @@ import {
  *     exatamente isso). O `organization_id` na consulta é a única camada que
  *     confere a empresa DA LINHA — não é enfeite de índice;
  *  4. a segunda perna do eixo (`contact_id = C and lead_id is null`) casa zero
- *     linhas por construção: até a migration 9412 (#4802, item 3),
+ *     linhas por construção: até a migration 9466 (#4802, item 3),
  *     `crm_lead_activities.lead_id` era NOT NULL (`baseline.sql:1440`). Desde a
- *     9412 a coluna é anulável com FK `ON DELETE SET NULL` — a linha do
+ *     9466 a coluna é anulável com FK `ON DELETE SET NULL` — a linha do
  *     histórico sobrevive ao negócio —, então o invariante (c) MEDE as duas
  *     metades (anulável e SET NULL) em vez de supor a nulabilidade, que é o que
  *     mantinha a perna inalcançável.
@@ -374,7 +374,7 @@ describe("#4324 — a linha do tempo do negócio diz de qual empresa é", () => 
   /**
    * (c) A segunda perna do eixo (`contact_id = C and lead_id is null`) também
    * carrega a empresa. Roda sobre `values` porque o fixture não tem atividade
-   * órfã de negócio — mas desde a migration 9412 (#4802, item 3) a perna é
+   * órfã de negócio — mas desde a migration 9466 (#4802, item 3) a perna é
    * ALCANÇÁVEL no banco real: `lead_id` deixou de ser NOT NULL e a FK virou
    * `ON DELETE SET NULL`, para a linha do histórico sobreviver ao negócio.
    *
@@ -396,7 +396,7 @@ describe("#4324 — a linha do tempo do negócio diz de qual empresa é", () => 
     expect(nulavel).toBe("YES");
 
     // `confdeltype = 'n'` é ON DELETE SET NULL (pg_constraint); 'c' seria CASCADE,
-    // que é o defeito que a 9412 conserta — apagar o negócio apagava a timeline.
+    // que é o defeito que a 9466 conserta — apagar o negócio apagava a timeline.
     const aoApagar = lastLine(
       sql(`
         select confdeltype from pg_constraint

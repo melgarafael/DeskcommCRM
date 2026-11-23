@@ -101,6 +101,8 @@ export function useArquivarFunil() {
 /** O que amarra o funil ao resto do sistema, como a rota de arquivar conta. */
 export interface VinculosDoFunil {
   negocios: number;
+  /** Os em andamento — os únicos que a transferência leva (doc 400, opção B). */
+  abertos: number;
   fontes_de_webhook: number;
   automacoes: number;
 }
@@ -117,26 +119,30 @@ export interface VinculosDoFunil {
  * `useEffect` e não `useQuery`: um número por funil aberto, com `ativo` mandando
  * buscar só quando o painel abre. Sem cache para invalidar, e o painel é efêmero.
  */
-export function useNegociosDoFunil(funilId: string, ativo: boolean) {
+export function useNegociosDoFunil(funilId: string, ativo: boolean, rodada = 0) {
   const [estado, setEstado] = useState<{
     negocios: number | null;
+    abertos: number | null;
     carregando: boolean;
     erro: string | null;
-  }>({ negocios: null, carregando: ativo, erro: null });
+  }>({ negocios: null, abertos: null, carregando: ativo, erro: null });
 
   useEffect(() => {
     if (!ativo) return;
     let vivo = true;
-    setEstado({ negocios: null, carregando: true, erro: null });
+    setEstado({ negocios: null, abertos: null, carregando: true, erro: null });
     apiClient
       .get<{ data: VinculosDoFunil }>(`${doFunil(funilId)}/negocios`)
       .then((r) => {
-        if (vivo) setEstado({ negocios: r.data.negocios, carregando: false, erro: null });
+        if (vivo) {
+          setEstado({ negocios: r.data.negocios, abertos: r.data.abertos, carregando: false, erro: null });
+        }
       })
       .catch((e: unknown) => {
         if (vivo) {
           setEstado({
             negocios: null,
+            abertos: null,
             carregando: false,
             erro: e instanceof Error ? e.message : "erro",
           });
@@ -145,7 +151,7 @@ export function useNegociosDoFunil(funilId: string, ativo: boolean) {
     return () => {
       vivo = false;
     };
-  }, [funilId, ativo]);
+  }, [funilId, ativo, rodada]);
 
   return estado;
 }

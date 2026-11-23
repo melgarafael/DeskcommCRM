@@ -15,8 +15,10 @@
  *
  * ⚠️ AS TRÊS ESCOLHAS DA ISSUE, e a quarta é o "Cancelar" do painel que hospeda
  * este componente — ele não inventa um quarto caminho:
- *   (a) transferir todos para outro funil — a etapa é a primeira de ANDAMENTO do
- *       destino (escolhida pelo servidor, com a mesma régua do quadro);
+ *   (a) transferir os negócios EM ANDAMENTO para outro funil — a etapa é a
+ *       primeira de ANDAMENTO do destino (escolhida pelo servidor, com a mesma
+ *       régua do quadro). Ganhos e perdidos ficam no funil de origem, que abre em
+ *       leitura depois de arquivado (doc de decisão 400, opção B);
  *   (b) transferir para uma etapa ESPECÍFICA do destino — a escolhida aqui, sem
  *       troca silenciosa pela primeira;
  *   (c) remover os negócios da estrutura, mantendo contatos e históricos.
@@ -54,12 +56,19 @@ export function TransferirNegocios({
   funilNome: string;
   /** Os OUTROS funis vivos. O de origem fica de fora: não é transferência. */
   destinos: DestinoPossivel[];
-  /** Chamado DEPOIS da escrita bem-sucedida — é o painel que arquiva/exclui. */
-  onConcluir: (movidos: number) => void;
+  /**
+   * Chamado DEPOIS da escrita bem-sucedida — é o painel que arquiva/exclui.
+   * `restantes` são os que ficaram no funil (os encerrados, na transferência):
+   * a exclusão só segue com zero.
+   */
+  onConcluir: (resultado: { movidos: number; restantes: number }) => void;
 }) {
   const t = useT();
-  const { negocios, carregando, erro: erroDaContagem } = useNegociosDoFunil(funilId, true);
+  // `rodada` refaz a contagem depois de uma transferência que deixou encerrados.
+  const [rodada, setRodada] = useState(0);
+  const { negocios, abertos, carregando, erro: erroDaContagem } = useNegociosDoFunil(funilId, true, rodada);
   const mover = useMoverNegociosDoFunil();
+  const [aviso, setAviso] = useState<string | null>(null);
 
   const [modo, setModo] = useState<Modo>("funil");
   const [destinoId, setDestinoId] = useState<string>(destinos[0]?.id ?? "");
@@ -89,6 +98,16 @@ export function TransferirNegocios({
       ? t("«{nome}» tem 1 negócio vinculado. Escolha o que fazer com ele antes de continuar.")
       : t("«{nome}» tem {n} negócios vinculados. Escolha o que fazer com eles antes de continuar.");
   const frase = texto.replace("{nome}", funilNome).replace("{n}", String(negocios));
+  // Doc 400 (B): só os em andamento mudam de funil; ganhos e perdidos ficam.
+  const encerrados = Math.max(0, negocios - (abertos ?? 0));
+  const fraseDosEncerrados =
+    encerrados > 0
+      ? t(
+          "Transferir leva só os em andamento ({a}). Os ganhos e perdidos ({e}) ficam neste funil, que guarda o histórico em modo leitura. Para excluí-lo de vez, eles precisam ser removidos.",
+        )
+          .replace("{a}", String(abertos ?? 0))
+          .replace("{e}", String(encerrados))
+      : null;
 
   const podeAplicar =
     !mover.isPending &&
@@ -96,6 +115,7 @@ export function TransferirNegocios({
 
   function aplicar() {
     setErro(null);
+    setAviso(null);
     mover.mutate(
       {
         id: funilId,
@@ -109,7 +129,18 @@ export function TransferirNegocios({
               },
       },
       {
-        onSuccess: (r) => onConcluir(r.data.movidos),
+        onSuccess: (r) => {
+          if (r.data.restantes > 0) {
+            setAviso(
+              t("{n} negócios ganhos ou perdidos continuam neste funil.").replace(
+                "{n}",
+                String(r.data.restantes),
+              ),
+            );
+            setRodada((n) => n + 1);
+          }
+          onConcluir({ movidos: r.data.movidos, restantes: r.data.restantes });
+        },
         onError: (e) => setErro(textoDoErro(e, t)),
       },
     );
@@ -120,6 +151,11 @@ export function TransferirNegocios({
       <p className="text-sm leading-relaxed" data-testid={`contagem-de-negocios-${funilId}`}>
         {frase}
       </p>
+      {fraseDosEncerrados && (
+        <p className="text-sm leading-relaxed text-muted-foreground" data-testid={`encerrados-ficam-${funilId}`}>
+          {fraseDosEncerrados}
+        </p>
+      )}
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-xs font-medium text-muted-foreground">
@@ -134,7 +170,7 @@ export function TransferirNegocios({
             onChange={() => setModo("funil")}
             data-testid={`escolha-transferir-funil-${funilId}`}
           />
-          {t("Transferir todos para outro funil")}
+          {t("Transferir os em andamento para outro funil")}
         </label>
 
         <label className="flex items-center gap-2 text-sm">
@@ -174,7 +210,7 @@ export function TransferirNegocios({
             data-testid={`aviso-remover-${funilId}`}
           >
             {t(
-              "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico continuam.",
+              "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico do contato continuam.",
             )}
           </p>
         )}
@@ -219,6 +255,12 @@ export function TransferirNegocios({
             ))}
           </select>
         </label>
+      )}
+
+      {aviso && (
+        <p className="text-sm leading-relaxed text-muted-foreground" data-testid={`aviso-da-escolha-${funilId}`}>
+          {aviso}
+        </p>
       )}
 
       {erro && (

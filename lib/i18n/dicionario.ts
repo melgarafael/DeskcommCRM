@@ -12234,14 +12234,24 @@ export const DICIONARIO: Traducoes = {
     es: "«{nome}» tiene {n} negocios vinculados. Elige qué hacer con ellos antes de continuar.",
   },
   "O que fazer com os negócios": { es: "Qué hacer con los negocios" },
-  "Transferir todos para outro funil": { es: "Transferir todos a otro embudo" },
+  "Transferir os em andamento para outro funil": { es: "Transferir los que están en curso a otro embudo" },
+  "Transferir leva só os em andamento ({a}). Os ganhos e perdidos ({e}) ficam neste funil, que guarda o histórico em modo leitura. Para excluí-lo de vez, eles precisam ser removidos.":
+    {
+      es: "Transferir lleva solo los que están en curso ({a}). Los ganados y perdidos ({e}) se quedan en este embudo, que guarda el historial en modo lectura. Para eliminarlo definitivamente, hay que quitarlos.",
+    },
+  "{n} negócios ganhos ou perdidos continuam neste funil.": {
+    es: "{n} negocios ganados o perdidos siguen en este embudo.",
+  },
+  "Nenhum negócio em andamento para transferir. Os ganhos e perdidos ficam neste funil.": {
+    es: "Ningún negocio en curso para transferir. Los ganados y perdidos se quedan en este embudo.",
+  },
   "Transferir para uma etapa específica do funil de destino": {
     es: "Transferir a una etapa específica del embudo de destino",
   },
   "Remover os negócios da estrutura dos funis, mantendo contatos e históricos": {
     es: "Quitar los negocios de la estructura de los embudos, conservando contactos e historiales",
   },
-  "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico continuam.":
+  "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico do contato continuam.":
     {
       es: "No hay vuelta atrás: los negocios se eliminan y con ellos los adjuntos (y los archivos del almacenamiento), los vínculos, las reactivaciones, las puntuaciones de riesgo, las propuestas de campo y las conversiones de anuncios. Los contactos, las conversaciones y el historial se conservan.",
     },

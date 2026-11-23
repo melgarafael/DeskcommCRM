@@ -11,7 +11,12 @@ const { editar, arquivar, contagem } = vi.hoisted(() => ({
   arquivar: vi.fn(),
   // #4802 (item 3): o número que a confirmação mostra vem do servidor. Mutável
   // porque cada caso decide se o funil tem negócio e quantos.
-  contagem: { negocios: 0 as number | null, carregando: false, erro: null as string | null },
+  contagem: {
+    negocios: 0 as number | null,
+    abertos: 0 as number | null,
+    carregando: false,
+    erro: null as string | null,
+  },
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -197,6 +202,7 @@ describe("escolha sobre os negócios ao arquivar (#4802, item 3)", () => {
 
   beforeEach(() => {
     contagem.negocios = 2;
+    contagem.abertos = 2;
     contagem.carregando = false;
     contagem.erro = null;
     arquivar.mockReset();

@@ -17,8 +17,16 @@ import {
   etapa,
   funilRow,
   makeDb,
-  negocio,
+  negocio as negocioDoDuble,
 } from "@/tests/helpers/stages-db-double";
+
+/**
+ * O negócio do dublê nasce SEM `status`; no banco o padrão é `'open'`, e a
+ * transferência lê só `status = 'open'` (doc 400, opção B). Quem quer encerrado
+ * declara.
+ */
+const negocio: typeof negocioDoDuble = (id, stageId, over = {}) =>
+  negocioDoDuble(id, stageId, { status: "open", ...over });
 
 // Dois funis: o de origem (`PIPE`, o padrão) e o de destino.
 const DESTINO = "77777777-7777-4777-8777-777777777777";
@@ -103,8 +111,9 @@ describe("GET /api/v1/pipelines/[id]/negocios", () => {
     const { GET } = await import("./route");
     const res = await GET(reqGet(), ctx());
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { negocios: number } };
+    const body = (await res.json()) as { data: { negocios: number; abertos: number } };
     expect(body.data.negocios).toBe(3);
+    expect(body.data.abertos).toBe(3);
   });
 
   it("funil de outra organização → 404, sem contar nada", async () => {
@@ -326,18 +335,13 @@ describe("POST /api/v1/pipelines/[id]/negocios — remover da estrutura", () => 
   });
 });
 
-describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
+describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852 (doc 400, opção B)", () => {
   /**
-   * A etapa de destino sempre é de ANDAMENTO (as de fechamento são recusadas
-   * antes), então o caso "encerrado" é o que a rota tem de garantir: um ganho ou
-   * perdido que aterrissa numa etapa aberta do OUTRO funil continua encerrado.
-   *
-   * Quem escreve `status`/`closed_at` é o gatilho do banco
-   * (`fn_crm_lead_close_on_stage`, com a guarda de `pipeline_id` da migration
-   * 9412 §3) — e o dublê espelha o gatilho de propósito: sem isso este teste
-   * passaria com qualquer código de rota, medindo o dublê em vez do produto.
+   * Só o negócio EM ANDAMENTO muda de funil. Ganho e perdido ficam no funil de
+   * origem — ele abre em leitura depois de arquivado —, e o gatilho de
+   * fechamento (P-02) segue sem exceção: por isso a rota nem os põe no lote.
    */
-  it("(a) negócio GANHO continua ganho, com a data de fechamento, depois de transferido", async () => {
+  it("(a) só os EM ANDAMENTO mudam de funil — o ganho fica no funil de origem, com a data", async () => {
     authOk();
     const FECHADO_EM = "2026-11-18T10:55:11.000Z";
     const db = makeDb({
@@ -354,21 +358,26 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
     expect(res.status).toBe(200);
 
     const ganho = db.tabelas.crm_leads.find((l) => l.id === "l-won");
-    // Encerrado continua encerrado...
     expect(ganho?.status).toBe("won");
-    // ...e com a MESMA data: perder `closed_at` é perder a venda do relatório.
     expect(ganho?.closed_at).toBe(FECHADO_EM);
-    // O negócio mudou de funil de verdade.
-    expect(ganho?.pipeline_id).toBe(DESTINO);
-    expect(ganho?.stage_id).toBe(ETAPA_NOVO);
-    // O aberto continua aberto e sem data de fechamento.
-    expect(db.tabelas.crm_leads.find((l) => l.id === "l-open")?.status).toBe("open");
+    // Não saiu do lugar: nem funil, nem etapa.
+    expect(ganho?.pipeline_id).toBe(PIPE);
+    expect(ganho?.stage_id).toBe("e-origem");
+    // O aberto mudou de funil de verdade.
+    const aberto = db.tabelas.crm_leads.find((l) => l.id === "l-open");
+    expect(aberto?.pipeline_id).toBe(DESTINO);
+    expect(aberto?.stage_id).toBe(ETAPA_NOVO);
+    // O lote do banco recebeu só o aberto.
+    const lote = db.rpcs.find((r) => r.nome === "fn_mover_leads_em_lote")?.args as { p_lead_ids: string[] };
+    expect(lote.p_lead_ids).toEqual(["l-open"]);
 
-    const corpo = (await res.json()) as { data: { encerrados_preservados: number } };
-    expect(corpo.data.encerrados_preservados).toBe(1);
+    const corpo = (await res.json()) as { data: { movidos: number; restantes: number; encerrados_ficaram: number } };
+    expect(corpo.data.movidos).toBe(1);
+    expect(corpo.data.restantes).toBe(1);
+    expect(corpo.data.encerrados_ficaram).toBe(1);
   });
 
-  it("(a2) negócio PERDIDO continua perdido, com o motivo da perda intacto", async () => {
+  it("(a2) funil só com encerrados: nada se move, e a resposta diz que eles ficam", async () => {
     authOk();
     const db = makeDb({
       pipelines: doisFunis(),
@@ -383,15 +392,20 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
     });
 
     const { POST } = await import("./route");
-    expect((await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx())).status).toBe(200);
+    const res = await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
+    expect(res.status).toBe(200);
 
     const perdido = db.tabelas.crm_leads.find((l) => l.id === "l-lost");
     expect(perdido?.status).toBe("lost");
-    expect(perdido?.closed_at).toBe("2026-11-10T12:00:00.000Z");
-    expect(perdido?.custom_fields).toEqual({ motivo: "sem-verba" });
+    expect(perdido?.pipeline_id).toBe(PIPE);
+    expect(db.rpcs.filter((r) => r.nome === "fn_mover_leads_em_lote")).toHaveLength(0);
+    const corpo = (await res.json()) as { data: { movidos: number; restantes: number; mensagem: string | null } };
+    expect(corpo.data.movidos).toBe(0);
+    expect(corpo.data.restantes).toBe(1);
+    expect(corpo.data.mensagem).toContain("Os ganhos e perdidos ficam neste funil");
   });
 
-  it("(b) destino que RETOMA COMO NOVO NEGÓCIO recusa o encerrado (409, mesma porta do quadro)", async () => {
+  it("(b) destino que RETOMA COMO NOVO NEGÓCIO aceita: o encerrado nem entra no lote", async () => {
     authOk();
     const db = makeDb({
       pipelines: [
@@ -414,18 +428,9 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
     const { POST } = await import("./route");
     const res = await POST(reqPost({ escolha: "transferir", funil_id: DESTINO }), ctx());
 
-    expect(res.status).toBe(409);
-    const corpo = (await res.json()) as {
-      error: { code: string; details: { lead_ids: string[]; use: string } };
-    };
-    expect(corpo.error.code).toBe("reabertura_cria_novo");
-    // Nomeia QUEM ofende — o operador precisa saber qual card resolver.
-    expect(corpo.error.details.lead_ids).toEqual(["l-won"]);
-    expect(corpo.error.details.use).toBe("/api/v1/leads/{id}/retomar");
-    // E não escreveu NADA: nem RPC, nem escrita, nem timeline.
-    expect(db.rpcs.filter((r) => r.nome === "fn_mover_leads_em_lote")).toHaveLength(0);
-    expect(db.escritas).toHaveLength(0);
+    expect(res.status).toBe(200);
     expect(db.tabelas.crm_leads.find((l) => l.id === "l-won")?.pipeline_id).toBe(PIPE);
+    expect(db.tabelas.crm_leads.find((l) => l.id === "l-open")?.pipeline_id).toBe(DESTINO);
   });
 
   it("(b2) o MESMO destino novo_negocio aceita o lote sem encerrado", async () => {
@@ -545,6 +550,7 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
       leads: [
         negocio("l1", "e-origem", { status: "open", contact_id: CONTATO }),
         negocio("l2", "e-origem", { status: "open" }),
+        // encerrado: fica no funil de origem e não ganha linha (doc 400, B)
         negocio("l3", "e-origem", { status: "won", closed_at: "2026-11-18T10:55:11.000Z" }),
       ],
       contacts: [{ id: CONTATO, organization_id: ORG_ID, name: "Ana" }],
@@ -558,8 +564,8 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
 
     const atividades = db.tabelas.crm_lead_activities;
     // N negócios, N timelines: uma linha em CADA uma — nunca uma agregada.
-    expect(atividades).toHaveLength(3);
-    expect(new Set(atividades.map((a) => a.lead_id))).toEqual(new Set(["l1", "l2", "l3"]));
+    expect(atividades).toHaveLength(2);
+    expect(new Set(atividades.map((a) => a.lead_id))).toEqual(new Set(["l1", "l2"]));
     for (const a of atividades) {
       expect(a.type).toBe("stage_changed");
       expect(a.contact_id).toBe(
@@ -569,6 +575,8 @@ describe("POST /api/v1/pipelines/[id]/negocios — o pedido do #4852", () => {
       expect(payload.from_stage_id).toBe("e-origem");
       expect(payload.to_stage_id).toBe(ETAPA_ANDAMENTO);
       expect(payload.from_pipeline_id).toBe(PIPE);
+      // `pipeline_id` é o funil onde o negócio passou a morar.
+      expect(payload.pipeline_id).toBe(DESTINO);
       expect(payload.bulk).toBe(true);
       expect(payload.transferencia_de_funil).toBe(true);
     }

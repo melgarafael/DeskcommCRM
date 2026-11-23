@@ -742,9 +742,9 @@ export function makeDb(opts: DbOpts = {}): Registro {
   // E APLICA O GATILHO: `fn_crm_lead_close_on_stage` é quem escreve `status` e
   // `closed_at` no Postgres, e sem espelhá-lo aqui o teste do negócio encerrado
   // mediria um banco que não existe — o dublê diria "ficou encerrado" qualquer que
-  // fosse o código da rota. A regra espelhada é a da migration 9412 §3 (#4852):
-  // etapa de ganho/perda encerra; etapa aberta reabre SÓ quando o funil não muda
-  // (mudar de funil não é reabrir).
+  // fosse o código da rota. A regra espelhada é a P-02, sem exceção: etapa de
+  // ganho/perda encerra; etapa aberta reabre o encerrado (por isso a
+  // transferência só leva negócio em andamento — doc 400, opção B).
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
     const declarada = opts.rpcResult?.(nome, args);
@@ -769,18 +769,15 @@ export function makeDb(opts: DbOpts = {}): Registro {
         linha.stage_id = a.p_stage_id;
         if (etapa?.pipeline_id) linha.pipeline_id = etapa.pipeline_id;
 
-        // ── `fn_crm_lead_close_on_stage` (migration 9412 §3) ────────────────
+        // ── `fn_crm_lead_close_on_stage` (P-02) ──────────────────────────────
         if (etapa?.is_won) {
           linha.status = "won";
           linha.closed_at = linha.closed_at ?? new Date().toISOString();
         } else if (etapa?.is_lost) {
           linha.status = "lost";
           linha.closed_at = linha.closed_at ?? new Date().toISOString();
-        } else if (
-          (statusAntes === "won" || statusAntes === "lost") &&
-          (etapa?.pipeline_id ?? funilAntes) === funilAntes
-        ) {
-          // Mesmo funil, etapa aberta: é a reabertura de sempre.
+        } else if (statusAntes === "won" || statusAntes === "lost") {
+          // Etapa aberta: é a reabertura de sempre.
           linha.status = "open";
           linha.closed_at = null;
         }

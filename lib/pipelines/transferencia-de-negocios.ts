@@ -16,15 +16,18 @@
  * ⚠️ AS DUAS ESCOLHAS QUE APAGAM SÃO DIFERENTES, e a diferença é a única coisa que
  * impede a operação de virar perda de dado:
  *
- *   - `transferir` NÃO apaga nada: `crm_leads.pipeline_id`/`stage_id` mudam e o
- *     negócio continua o mesmo registro, com o mesmo id, a mesma timeline
+ *   - `transferir` NÃO apaga nada: `crm_leads.pipeline_id`/`stage_id` mudam — só
+ *     dos negócios EM ANDAMENTO (doc de decisão 400, opção B; ganhos e perdidos
+ *     ficam no funil de origem) — e o negócio continua o mesmo registro, com o mesmo id, a mesma timeline
  *     (`crm_lead_activities`) e as mesmas conversas do contato.
  *   - `remover` apaga as LINHAS de `crm_leads` — é o que tira o negócio da
  *     estrutura dos funis. Contatos, conversas e histórico continuam existindo:
  *     `crm_leads.contact_id` é `ON DELETE SET NULL` (o contato não morre com o
  *     negócio) e `crm_lead_activities.lead_id` passou a ser `ON DELETE SET NULL`
- *     na migration desta fatia — antes era `ON DELETE CASCADE`, e apagar o negócio
- *     levava a timeline comercial junto, em silêncio. Esse era o defeito.
+ *     na migration desta fatia (9466) — antes era `ON DELETE CASCADE`, e apagar o
+ *     negócio levava a timeline comercial junto, em silêncio. A linha que não tem
+ *     contato continua sendo apagada com o negócio (gatilho da 9466): sem contato
+ *     nem negócio, a anonimização da LGPD não a alcançaria.
  */
 
 /** O que o usuário escolheu na confirmação. `cancelar` nunca chega aqui: é a ausência de pedido. */

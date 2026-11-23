@@ -404,7 +404,11 @@ export function FunisClient({
                         funilId={funil.id}
                         funilNome={funil.name}
                         destinos={funis.map((f) => ({ id: f.id, name: f.name }))}
-                        onConcluir={() => excluirDoArquivo(funil.id)}
+                        onConcluir={({ restantes }) => {
+                          // Doc 400 (B): encerrado não muda de funil. Sobrou
+                          // algum, a exclusão espera o "remover".
+                          if (restantes === 0) excluirDoArquivo(funil.id);
+                        }}
                       />
 
                       {excluindoAqui?.erro && (

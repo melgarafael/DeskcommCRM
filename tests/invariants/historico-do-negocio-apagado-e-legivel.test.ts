@@ -5,7 +5,7 @@ import { countAs, lastLine, sql } from "./gov-helpers";
 /**
  * #4852 — O HISTÓRICO PRESERVADO É LEGÍVEL, MEDIDO PELA RLS.
  *
- * A migration 9412 trocou `crm_lead_activities.lead_id` de `ON DELETE CASCADE`
+ * A migration 9466 trocou `crm_lead_activities.lead_id` de `ON DELETE CASCADE`
  * para `ON DELETE SET NULL`: apagar o negócio deixa de apagar a timeline. Só que
  * "sobrevive na tabela" não é "é legível": a policy `crm_lead_activities_select`
  * exige o lead-pai (`EXISTS ... where l.id = lead_id`), e com `lead_id` anulado o
@@ -85,7 +85,7 @@ beforeAll(() => {
       on conflict (id) do nothing;
   `);
 
-  // O DELETE do negócio — é ele que dispara o `ON DELETE SET NULL` da 9412.
+  // O DELETE do negócio — é ele que dispara o `ON DELETE SET NULL` da 9466.
   sql(`delete from public.crm_leads where id = '${LEAD}';`);
 });
 

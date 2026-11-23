@@ -1,4 +1,4 @@
--- manifest: **Os negócios de um funil vão para outro funil de uma vez, e o histórico comercial sobrevive ao negócio (issue #4802, item 3).** `fn_mover_leads_em_lote` passa a gravar `pipeline_id` junto com `stage_id`, tirado da PRÓPRIA etapa de destino (nunca de um parâmetro, que poderia divergir dela) — é o que permite `POST /api/v1/pipelines/[id]/negocios` levar N negócios de um funil a outro pelo MESMO caminho do lote do quadro, numa transação só, em vez de um `update` em massa paralelo; para os chamadores de hoje (o lote do quadro) o valor gravado é o que já estava na linha. E `crm_lead_activities.lead_id` deixa de ser `NOT NULL` e a FK passa de `ON DELETE CASCADE` para `ON DELETE SET NULL`: apagar um negócio apagava, em silêncio, toda a timeline comercial dele, e a linha do histórico passa a sobreviver com o `contact_id` dela (é por onde continua legível). Ninguém escreve `lead_id` nulo — `emitLeadActivity` sempre o informa; a coluna é anulável para o DELETE do negócio poder anular a referência. Gate: `lib/pipelines/transferencia-de-negocios.test.ts`, `app/api/v1/pipelines/[id]/negocios/route.test.ts`, `app/app/kanban/_transferir-negocios.test.tsx` e os invariantes de schema.
+-- manifest: **Os negócios EM ANDAMENTO de um funil vão para outro funil de uma vez, e o histórico comercial sobrevive ao negócio (issue #4802, item 3; doc de decisão 400, opção B).** `fn_mover_leads_em_lote` passa a gravar `pipeline_id` junto com `stage_id`, tirado da PRÓPRIA etapa de destino (nunca de um parâmetro, que poderia divergir dela) — é o que permite `POST /api/v1/pipelines/[id]/negocios` levar os negócios ABERTOS de um funil a outro pelo MESMO caminho do lote do quadro, numa transação só; ganhos e perdidos ficam no funil de origem (P-01 revista só para o aberto; P-02 sem exceção, o gatilho de fechamento não muda). Para os chamadores de hoje (o lote do quadro, que recusa etapa de outro funil com `pipeline_immutable_use_clone`) o valor gravado é o que já estava na linha. `crm_lead_activities.lead_id` deixa de ser `NOT NULL` e a FK passa de `ON DELETE CASCADE` para `ON DELETE SET NULL`: a linha do histórico sobrevive ao negócio pelo `contact_id`, que é por onde a anonimização da LGPD a encontra. Por isso, ANTES da troca, o `contact_id` vazio é preenchido com o do negócio, e um gatilho `BEFORE DELETE` em `crm_leads` (`fn_crm_lead_apaga_historico_sem_contato`, sem HTTP, revogada de public/anon/authenticated) apaga junto com o negócio a linha que continua sem contato — como o CASCADE fazia —, para nenhuma linha ficar fora do alcance da anonimização. A policy de leitura ganha o braço da linha órfã (organização inteira, `org_wide_read`). Gate: `tests/invariants/historico-do-negocio-apagado-e-legivel.test.ts`, `tests/invariants/historico-do-negocio-apagado-anonimiza.test.ts`, `lib/pipelines/transferencia-de-negocios.test.ts`, `app/api/v1/pipelines/[id]/negocios/route.test.ts`.
 
 -- =====================================================================
 -- #4802 (item 3) — transferência em massa de negócios ao arquivar ou excluir
@@ -150,6 +150,45 @@ comment on function public.fn_mover_leads_em_lote(uuid, uuid[], uuid, text) is
   'Move um lote de leads para uma etapa dando a cada um posição DISTINTA no TOPO da coluna de destino (issue #3461): o lote encosta acima do primeiro card (`min - 1000` por card, na ordem em que estava no quadro). Etapa vazia continua nascendo em 1000, 2000, … Existe porque gravar a mesma position_in_stage em N linhas quebra o midpoint() do arrasto seguinte (prev === next → NaN) e deixa a ordem do quadro indefinida. `p_lost_reason` (0263, issue #917) grava o motivo da perda na MESMA escrita quando a etapa de destino é de perda. #2887: a coluna só entra na escrita de quem NÃO estava perdido. #4802 (item 3): `pipeline_id` acompanha a etapa — sai da própria etapa de destino —, e é o que permite a transferência em massa de negócios entre funis usar ESTE caminho em vez de um segundo update em massa. Devolve uma linha por card movido, com a etapa de ORIGEM, para o handler emitir a atividade de timeline de cada um.';
 
 -- ── 2. O histórico comercial sobrevive ao negócio ──────────────────────
+-- A LGPD encontra o histórico pelo CONTATO ou pelo NEGÓCIO
+-- (`fn_lgpd_cascade_redact_contact`, seção 4). Com o negócio apagado, só o
+-- contato sobra — então a troca para SET NULL vem com duas guardas, nesta ordem:
+--
+--   a) o `contact_id` vazio do histórico que JÁ existe é preenchido com o do
+--      negócio (mudança de etapa pelo quadro, anexo e pagamento gravavam sem
+--      contato até esta versão);
+--   b) a linha que mesmo assim não tem contato nenhum é apagada JUNTO com o
+--      negócio, pelo gatilho abaixo — exatamente o que o CASCADE fazia com ela.
+--      `security definer` porque `authenticated` não tem DELETE nesta tabela
+--      (timeline é só-escrita para o aplicativo), como a ação de FK do CASCADE
+--      também não pedia; sem seletor: só apaga linha do PRÓPRIO negócio que está
+--      sendo apagado, e o gatilho não é chamável pela REST. Não faz HTTP.
+create or replace function public.fn_crm_lead_apaga_historico_sem_contato()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from public.crm_lead_activities a
+   where a.lead_id = old.id
+     and a.organization_id = old.organization_id
+     and a.contact_id is null;
+  return old;
+end;
+$$;
+revoke execute on function public.fn_crm_lead_apaga_historico_sem_contato() from public, anon;
+revoke execute on function public.fn_crm_lead_apaga_historico_sem_contato() from authenticated;
+
+drop trigger if exists trg_crm_leads_apaga_historico_sem_contato on public.crm_leads;
+create trigger trg_crm_leads_apaga_historico_sem_contato
+  before delete on public.crm_leads
+  for each row execute function public.fn_crm_lead_apaga_historico_sem_contato();
+
+update public.crm_lead_activities a
+   set contact_id = l.contact_id
+  from public.crm_leads l
+ where a.lead_id = l.id
+   and a.organization_id = l.organization_id
+   and a.contact_id is null
+   and l.contact_id is not null;
+
 alter table public.crm_lead_activities
   alter column lead_id drop not null;
 
@@ -160,78 +199,7 @@ alter table public.crm_lead_activities
   add constraint crm_lead_activities_lead_id_fkey
   foreign key (lead_id) references public.crm_leads(id) on delete set null;
 
--- ── 3. Trocar de funil NÃO reabre negócio encerrado ────────────────────
--- O QUE ESTE BLOCO FECHA (#4852). A transferência em massa só aceita etapa de
--- ANDAMENTO no destino, e `fn_crm_lead_close_on_stage` reabria TODO ganho ou
--- perdido que entrava numa etapa aberta (`status='open'`, `closed_at=null`).
--- Resultado medido no funil de origem: as vendas fechadas deixavam de contar
--- como fechadas no instante em que o funil era arquivado — o oposto do que a
--- escolha "transferir todos" promete, e uma perda de dado silenciosa (a data de
--- fechamento some, e a CHECK `crm_leads_closed_at_consistency` só deixa voltar
--- atrás reabrindo o negócio de verdade).
---
--- A REGRA: reabrir é o negócio ENCERRADO que volta a andar NO MESMO funil. Um
--- negócio que MUDA DE FUNIL não voltou a andar — ele foi arquivado do lado do
--- destino, e a etapa aberta de lá é onde ele passa a morar, não a etapa em que
--- foi fechado. Então `status`, `closed_at` e `lost_from_stage_id` ficam como
--- estavam. Sem a guarda de `pipeline_id`, `tg_op='UPDATE'` e a troca de etapa
--- bastam para reabrir, que é o defeito.
---
--- ⚠️ ISTO É INERTE PARA TODO O RESTO: antes da 9412 `crm_leads.pipeline_id` era
--- imutável (P-01) e nenhum caminho de escrita mudava os dois campos na mesma
--- linha. A condição só existe para o movimento entre funis que esta migration
--- passa a permitir — arrasto, lote do quadro, encerramento e automação seguem
--- reabrindo exatamente como antes (o invariante do banco mede os dois lados).
-create or replace function public.fn_crm_lead_close_on_stage() returns trigger
-    language plpgsql
-    set search_path to 'public', 'pg_temp'
-    as $$
-declare
-  v_is_won  boolean;
-  v_is_lost boolean;
-begin
-  if tg_op = 'UPDATE'
-     and new.stage_id is not distinct from old.stage_id
-     and new.status   is not distinct from old.status then
-    return new;
-  end if;
-
-  select is_won, is_lost into v_is_won, v_is_lost
-    from public.crm_stages where id = new.stage_id;
-
-  if v_is_won then
-    new.status := 'won';
-    new.closed_at := coalesce(new.closed_at, now());
-  elsif v_is_lost then
-    new.status := 'lost';
-    new.closed_at := coalesce(new.closed_at, now());
-    -- #1537: DE QUEM ERA a etapa que este negócio deixou — a perda sem a
-    -- etapa de origem não diz em que momento o funil vazou. Só na transição:
-    -- um card já perdido arrastado entre etapas de perda mantém a origem
-    -- verdadeira (a etapa ABERTA em que morreu), e reabrir não a herda.
-    -- Todo caminho de perda MOVE a etapa (quadro, 0209 em lote, 0263 em lote,
-    -- encerramento) e este gatilho é o único escritor de `status` (P-02), então
-    -- a transição de status SEM troca de etapa não existe para escrever aqui.
-    if tg_op = 'UPDATE' and old.status is distinct from 'lost' then
-      new.lost_from_stage_id := coalesce(new.lost_from_stage_id, old.stage_id);
-    end if;
-  else
-    -- #4852: o `and new.pipeline_id is not distinct from old.pipeline_id` é a
-    -- guarda inteira. Sem ele, a transferência entre funis reabriria todo
-    -- encerrado que aterrissa numa etapa de andamento do destino.
-    if tg_op = 'UPDATE' and old.status in ('won','lost')
-       and new.pipeline_id is not distinct from old.pipeline_id then
-      new.status := 'open';
-      new.closed_at := null;
-      -- #1537: reabriu — a origem da perda passada não pertence a um negócio
-      -- que voltou a ser aberto. Se morrer de novo, nasce a nova origem.
-      new.lost_from_stage_id := null;
-    end if;
-  end if;
-  return new;
-end$$;
-
--- ── 4. O histórico que sobreviveu ao negócio continua LEGÍVEL ──────────
+-- ── 3. O histórico que sobreviveu ao negócio continua LEGÍVEL ──────────
 -- A FK da seção 2 é o que faz a linha sobreviver; sozinha, ela deixa o histórico
 -- na tabela e invisível: `crm_lead_activities_select` exige o lead-pai
 -- (`EXISTS ... where l.id = lead_id`), e com `lead_id` anulado o `EXISTS` é falso

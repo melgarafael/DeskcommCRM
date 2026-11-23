@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mover, contagem, etapas } = vi.hoisted(() => ({
   mover: vi.fn(),
-  contagem: { negocios: 3 as number | null, carregando: false, erro: null as string | null },
+  contagem: {
+    negocios: 3 as number | null,
+    abertos: 3 as number | null,
+    carregando: false,
+    erro: null as string | null,
+  },
   etapas: [
     { id: "e-novo", name: "Novo", is_won: false, is_lost: false },
     { id: "e-andamento", name: "Em andamento", is_won: false, is_lost: false },
@@ -37,6 +42,7 @@ function montar(onConcluir = vi.fn()) {
 beforeEach(() => {
   vi.clearAllMocks();
   contagem.negocios = 3;
+  contagem.abertos = 3;
   contagem.carregando = false;
   contagem.erro = null;
   mover.mockImplementation((_pedido: unknown, opts: { onSuccess?: (r: unknown) => void }) => {
@@ -52,8 +58,23 @@ describe("confirmação da transferência (#4802, item 3)", () => {
     );
   });
 
+  it("doc 400 (B): diz que só os em andamento vão e que os encerrados ficam", () => {
+    contagem.negocios = 5;
+    contagem.abertos = 3;
+    montar();
+    const texto = screen.getByTestId("encerrados-ficam-f-origem").textContent ?? "";
+    expect(texto).toContain("Transferir leva só os em andamento (3)");
+    expect(texto).toContain("Os ganhos e perdidos (2) ficam neste funil");
+  });
+
+  it("sem encerrado, a frase dos encerrados não aparece", () => {
+    montar();
+    expect(screen.queryByTestId("encerrados-ficam-f-origem")).toBeNull();
+  });
+
   it("usa o singular quando o funil tem um negócio só", () => {
     contagem.negocios = 1;
+    contagem.abertos = 1;
     montar();
     expect(screen.getByTestId("contagem-de-negocios-f-origem").textContent).toContain("1 negócio vinculado");
   });
@@ -92,7 +113,7 @@ describe("transferência em massa", () => {
       id: "f-origem",
       corpo: { escolha: "transferir", funil_id: "f-destino", etapa_id: null },
     });
-    expect(onConcluir).toHaveBeenCalledWith(3);
+    expect(onConcluir).toHaveBeenCalledWith({ movidos: 3, restantes: 0 });
   });
 
   it("transfere para a ETAPA escolhida — não para a primeira do destino", async () => {
@@ -108,7 +129,22 @@ describe("transferência em massa", () => {
       id: "f-origem",
       corpo: { escolha: "transferir", funil_id: "f-destino", etapa_id: "e-andamento" },
     });
-    expect(onConcluir).toHaveBeenCalledWith(3);
+    expect(onConcluir).toHaveBeenCalledWith({ movidos: 3, restantes: 0 });
+  });
+
+  it("doc 400 (B): os encerrados que ficaram viram aviso, e o painel recebe quantos restaram", async () => {
+    const usuario = userEvent.setup();
+    mover.mockImplementation((_pedido: unknown, opts: { onSuccess?: (r: unknown) => void }) => {
+      opts.onSuccess?.({ data: { escolha: "transferir", movidos: 3, restantes: 2, mensagem: null } });
+    });
+    const onConcluir = montar();
+
+    await usuario.click(screen.getByTestId("aplicar-escolha-f-origem"));
+
+    expect(onConcluir).toHaveBeenCalledWith({ movidos: 3, restantes: 2 });
+    expect(screen.getByTestId("aviso-da-escolha-f-origem").textContent).toBe(
+      "2 negócios ganhos ou perdidos continuam neste funil.",
+    );
   });
 
   it("não deixa transferir para etapa sem escolher a etapa", async () => {
@@ -139,7 +175,7 @@ describe("transferência em massa", () => {
       expect(texto).toContain(junto);
     }
     // E continua prometendo só o que de fato fica.
-    expect(texto).toContain("Contatos, conversas e o histórico continuam");
+    expect(texto).toContain("Contatos, conversas e o histórico do contato continuam");
   });
 
   it("remover manda só a escolha — nada de funil de destino", async () => {
@@ -153,7 +189,7 @@ describe("transferência em massa", () => {
     await usuario.click(screen.getByTestId("aplicar-escolha-f-origem"));
 
     expect(mover.mock.calls[0]?.[0]).toEqual({ id: "f-origem", corpo: { escolha: "remover" } });
-    expect(onConcluir).toHaveBeenCalledWith(3);
+    expect(onConcluir).toHaveBeenCalledWith({ movidos: 3, restantes: 0 });
   });
 
   it("a recusa do servidor aparece INTEIRA, sem 'erro ao transferir'", async () => {

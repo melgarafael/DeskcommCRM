@@ -10,8 +10,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * número que o banco não tem.
  *
  * `POST` executa a escolha:
- *   - `{ escolha: "transferir", funil_id, etapa_id? }` — leva TODOS os negócios do
- *     funil para o destino. Sem `etapa_id`, a primeira etapa de ANDAMENTO do
+ *   - `{ escolha: "transferir", funil_id, etapa_id? }` — leva os negócios EM
+ *     ANDAMENTO (`status = 'open'`) do funil para o destino; os ganhos e perdidos
+ *     ficam no funil de origem (doc de decisão 400, opção B). Sem `etapa_id`, a primeira etapa de ANDAMENTO do
  *     destino os recebe; com `etapa_id`, é ELA que recebe (item b da issue).
  *   - `{ escolha: "remover" }` — apaga as linhas de `crm_leads` do funil: os
  *     negócios saem da estrutura dos funis, e contatos, conversas e histórico
@@ -30,27 +31,17 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * linha do tempo de cada card. A transferência pulava as três, e cada ausência era
  * um defeito medido:
  *
- *   1. **NEGÓCIO ENCERRADO CONTINUA ENCERRADO.** A etapa de destino é sempre de
- *      andamento (etapa de ganho/perda é recusada), e `fn_crm_lead_close_on_stage`
- *      reabria todo ganho/perdido que entrava numa etapa aberta — as vendas
- *      fechadas do funil deixavam de contar como fechadas no instante em que ele
- *      era arquivado. A guarda mora no GATILHO (migration 9412 §3: trocar de funil
- *      não é reabrir, e `status`/`closed_at`/`lost_from_stage_id` ficam como
- *      estavam), não num segundo `update` aqui: a função do banco move o lote numa
- *      transação só, e "mover e depois consertar" deixaria uma janela em que o
- *      negócio está reaberto — e um processo que morresse no meio a deixaria
- *      aberta para sempre.
+ *   1. **SÓ O NEGÓCIO EM ANDAMENTO MUDA DE FUNIL** (doc 400, opção B). Ganho e
+ *      perdido ficam no funil de origem — arquivado, ele abre em modo leitura e
+ *      guarda o histórico. Levá-los para uma etapa de andamento do destino
+ *      poria venda fechada numa coluna aberta e contaria a venda no funil
+ *      errado, e o gatilho de fechamento (P-02, sem exceção) os reabriria. Por
+ *      isso a leitura do lote filtra `status = 'open'`, e a recusa de reabertura
+ *      do lote do quadro não tem o que recusar aqui. Para EXCLUIR de vez um funil
+ *      com encerrados, o caminho é `remover`.
  *
- *   2. **O FUNIL QUE RETOMA COMO NOVO NEGÓCIO É RESPEITADO.** Se o DESTINO declara
- *      `settings.reabertura = "novo_negocio"`, um negócio encerrado que aterrissa
- *      numa etapa aberta dele é exatamente o caso que aquele funil não quer como
- *      este registro. É a MESMA recusa do lote do quadro (`recusaReabertura`, 409
- *      `reabertura_cria_novo`, com `use: /retomar`), card a card, antes de
- *      escrever: um lote com um só card ofensor derruba a operação, porque a
- *      alternativa seria mover parte em silêncio. O `settings` que manda é o do
- *      DESTINO — é nele que o negócio passa a morar e é o gatilho de lá que decide
- *      o que acontece ao aterrissar numa etapa aberta (no lote do quadro origem e
- *      destino são o mesmo funil, e a pergunta nem se coloca).
+ *   2. (A recusa de reabertura do `novo_negocio` não se aplica: nenhum negócio
+ *      encerrado entra no lote.)
  *
  *   3. **OS CAMPOS OBRIGATÓRIOS DO DESTINO VALEM.** Mesma régua do lote do quadro,
  *      pela MESMA função (`recusaDeCamposDoLote` → `validaCamposExigidos`): 422
@@ -93,7 +84,6 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { recusaDeCamposDoLote } from "@/lib/leads/campos-obrigatorios-em-lote";
-import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -157,14 +147,18 @@ async function negociosDoFunil(
   supabase: Supabase,
   orgId: string,
   pipelineId: string,
+  somenteAbertos: boolean,
 ): Promise<NegocioDoFunil[]> {
   const negocios: NegocioDoFunil[] = [];
   for (let de = 0; ; de += PAGINA) {
-    const { data, error } = await supabase
+    let consulta = supabase
       .from("crm_leads")
       .select("id, stage_id, pipeline_id, contact_id, status, custom_fields, won_reason")
       .eq("organization_id", orgId)
-      .eq("pipeline_id", pipelineId)
+      .eq("pipeline_id", pipelineId);
+    // Doc 400 (B): a transferência leva só o negócio em andamento.
+    if (somenteAbertos) consulta = consulta.eq("status", "open");
+    const { data, error } = await consulta
       .order("id", { ascending: true })
       .range(de, de + PAGINA - 1);
     if (error) throw new Error(error.message);
@@ -212,11 +206,21 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   try {
     const deps = await lerDependencias(supabase, orgId, pipelineId);
+    // Doc 400 (B): só os em andamento são transferidos — a tela diz quantos são
+    // e quantos (ganhos e perdidos) ficam no funil.
+    const { count: abertos, error: abertosErr } = await supabase
+      .from("crm_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("pipeline_id", pipelineId)
+      .eq("status", "open");
+    if (abertosErr) throw new Error(abertosErr.message);
     // `negocios` e os dois outros vínculos vão juntos: a tela mostra a contagem e,
     // quando a rota RECUSA o arquivamento, é esta mesma leitura que explica por quê.
     return ok(
       {
         negocios: deps.negocios,
+        abertos: abertos ?? 0,
         fontes_de_webhook: deps.fontesDeWebhook.length,
         automacoes: deps.regrasAtivas.length,
       },
@@ -291,11 +295,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   let destinoPipelineId: string | null = null;
   let destinoStageId: string | null = null;
-  // A etapa de destino como o banco a declarou — a recusa de reabertura pergunta
-  // a ELA (nunca a uma suposição de "etapa aberta": quem garante isso é
-  // `validarDestinoDaTransferencia`, e repetir a suposição aqui seria uma segunda
-  // régua que envelhece sozinha).
-  let destinoEtapa: EtapaConhecida | null = null;
 
   if (pedido.escolha === "transferir") {
     let etapasDestino: EtapaConhecida[];
@@ -331,52 +330,35 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     }
     destinoPipelineId = veredito.valor.destino.id;
     destinoStageId = veredito.valor.etapa.id;
-    destinoEtapa = veredito.valor.etapa;
   }
 
   let negocios: NegocioDoFunil[];
   try {
-    negocios = await negociosDoFunil(supabase, orgId, pipelineId);
+    negocios = await negociosDoFunil(supabase, orgId, pipelineId, pedido.escolha === "transferir");
   } catch (err) {
     return fail("internal_error", (err as Error).message, 500, { requestId });
   }
 
   if (negocios.length === 0) {
+    // Só encerrados no funil: nada a transferir, e eles ficam onde estão (B).
     return ok(
-      { escolha: pedido.escolha, movidos: 0, restantes: 0, mensagem: null, destino: null },
+      {
+        escolha: pedido.escolha,
+        movidos: 0,
+        restantes: negociosAntes,
+        mensagem:
+          pedido.escolha === "transferir"
+            ? t("Nenhum negócio em andamento para transferir. Os ganhos e perdidos ficam neste funil.")
+            : null,
+        destino: null,
+        encerrados_ficaram: pedido.escolha === "transferir" ? negociosAntes : 0,
+      },
       { requestId },
     );
   }
 
   if (pedido.escolha === "transferir") {
     const settingsDoDestino = await settingsDoFunil(supabase, destinoPipelineId, orgId);
-
-    // ── O FUNIL QUE RETOMA COMO NOVO NEGÓCIO É RESPEITADO ────────────────────
-    // A MESMA função do lote do quadro, com o `settings` do DESTINO: é lá que o
-    // negócio passa a morar. Um card ofensor derruba a operação inteira (a
-    // alternativa seria mover parte do lote em silêncio), com o mesmo 409 e o
-    // mesmo ponteiro para a porta que resolve, `/retomar`.
-    const modoReabertura = modoDeReabertura(settingsDoDestino);
-    const reabertos: string[] = [];
-    let recusaDeReabertura: { codigo: string; mensagem: string } | null = null;
-    for (const negocio of negocios) {
-      const veredito = recusaReabertura({
-        modo: modoReabertura,
-        statusAtual: negocio.status,
-        etapaDestino: destinoEtapa ?? {},
-        idioma: authz.user.idioma,
-      });
-      if (veredito) {
-        recusaDeReabertura ??= veredito;
-        reabertos.push(negocio.id);
-      }
-    }
-    if (recusaDeReabertura) {
-      return fail(recusaDeReabertura.codigo, recusaDeReabertura.mensagem, 409, {
-        requestId,
-        details: { lead_ids: reabertos, use: "/api/v1/leads/{id}/retomar" },
-      });
-    }
 
     // ── OS CAMPOS OBRIGATÓRIOS DO DESTINO ───────────────────────────────────
     // A etapa de destino é sempre de ANDAMENTO (as de fechamento são recusadas
@@ -401,17 +383,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const ids = negocios.map((n) => n.id);
-  // Quantos estavam ENCERRADOS antes da escrita: é o número que a resposta usa
-  // para dizer que eles continuaram encerrados (a guarda é do gatilho, mas quem
-  // lê a tela merece o número medido, não a promessa).
-  const encerradosAntes = negocios.filter((n) => n.status === "won" || n.status === "lost").length;
 
   let movidosNoBanco: Array<{ lead_id: string; from_stage_id: string; pipeline_id: string }> = [];
 
   if (pedido.escolha === "transferir") {
     // UMA chamada, UMA transação: "transferir todos de uma vez" é a regra da
     // issue, e a função do banco move o lote inteiro ou nada. O `pipeline_id` vai
-    // junto porque a função o tira da PRÓPRIA etapa de destino (migration 9412).
+    // junto porque a função o tira da PRÓPRIA etapa de destino (migration 9466).
     const { data, error } = await supabase.rpc("fn_mover_leads_em_lote", {
       p_organization_id: orgId,
       p_lead_ids: ids,
@@ -426,6 +404,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       requestId,
       actorUserId: authz.user.id,
       destinoStageId: destinoStageId as string,
+      destinoPipelineId: destinoPipelineId as string,
       negocios,
       movidosNoBanco,
     });
@@ -469,7 +448,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     resourceType: "crm_pipeline",
     resourceId: pipelineId,
     requestId,
-    metadata: { ...resumo, nome_do_funil: origem.name, encerrados: encerradosAntes },
+    metadata: { ...resumo, nome_do_funil: origem.name },
   });
 
   return ok(
@@ -481,9 +460,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       destino: destinoStageId
         ? { funil_id: destinoPipelineId, etapa_id: destinoStageId }
         : null,
-      // Aditivo: quantos dos movidos estavam encerrados e continuam encerrados.
-      // Zero no `remover` (não há "continua": a linha não existe mais).
-      encerrados_preservados: pedido.escolha === "transferir" ? encerradosAntes : 0,
+      // Doc 400 (B): os ganhos e perdidos que ficaram no funil de origem — medido
+      // DEPOIS, no banco. Zero no `remover` (as linhas não existem mais).
+      encerrados_ficaram: pedido.escolha === "transferir" ? restantes : 0,
     },
     { requestId },
   );
@@ -506,10 +485,12 @@ async function registraEstagioNaTimeline(input: {
   requestId: string;
   actorUserId: string;
   destinoStageId: string;
+  destinoPipelineId: string;
   negocios: NegocioDoFunil[];
   movidosNoBanco: Array<{ lead_id: string; from_stage_id: string; pipeline_id: string }>;
 }): Promise<void> {
-  const { supabase, orgId, requestId, actorUserId, destinoStageId, negocios, movidosNoBanco } = input;
+  const { supabase, orgId, requestId, actorUserId, destinoStageId, destinoPipelineId, negocios, movidosNoBanco } =
+    input;
 
   // Card que já estava na etapa de destino não mudou de etapa: nada a contar.
   const movidos = movidosNoBanco.filter((r) => r.from_stage_id !== destinoStageId);
@@ -546,8 +527,10 @@ async function registraEstagioNaTimeline(input: {
         payload: {
           from_stage_id: row.from_stage_id,
           to_stage_id: destinoStageId,
+          // `row.pipeline_id` é o funil de ORIGEM (lido antes do `update`); o
+          // `pipeline_id` da linha é onde o negócio passou a morar.
           from_pipeline_id: row.pipeline_id,
-          pipeline_id: row.pipeline_id,
+          pipeline_id: destinoPipelineId,
           bulk: true,
           transferencia_de_funil: true,
         },
