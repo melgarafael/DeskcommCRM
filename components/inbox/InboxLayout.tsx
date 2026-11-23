@@ -502,14 +502,16 @@ export function InboxLayout({
    * discorda do filtro, porque os dois usam a mesma convenção.
    */
   const { data: automaticoDaOrg, isLoading: automaticoCarregando } = useAutomaticoAtivo();
-  // A ORDEM DA FILA, por aparelho. "Mais recentes" é o padrão: com esperas
-  // antigas acumuladas, a fila de banco jogava o contato novo para depois da
-  // primeira página e o atendente não o via. Lida num efeito (nunca no
-  // `useState`), para o primeiro paint do servidor e do navegador baterem.
-  const [ordemDaFila, setOrdemDaFila] = useState<"recentes" | "espera">("recentes");
+  // A ORDEM DA FILA, por aparelho. "Esperando há mais tempo" é o padrão — a
+  // ordem de sempre, com a posição de cada um. "Mais recentes" é escolha da
+  // pessoa (#5118): com esperas antigas acumuladas, a ordem por espera jogava o
+  // contato novo para depois da primeira página e o atendente não o via. Lida
+  // num efeito (nunca no `useState`), para o primeiro paint do servidor e do
+  // navegador baterem.
+  const [ordemDaFila, setOrdemDaFila] = useState<"recentes" | "espera">("espera");
   useEffect(() => {
     try {
-      if (window.localStorage.getItem(CHAVE_DA_ORDEM_DA_FILA) === "espera") setOrdemDaFila("espera");
+      if (window.localStorage.getItem(CHAVE_DA_ORDEM_DA_FILA) === "recentes") setOrdemDaFila("recentes");
     } catch {
       // armazenamento bloqueado: fica o padrão
     }
