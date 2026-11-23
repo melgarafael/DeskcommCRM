@@ -106,12 +106,12 @@ afterEach(cleanup);
 
 describe("ContatoNoCard", () => {
   it("não renderiza nada quando o negócio não tem dado de contato", () => {
-    const { container } = render(<ContatoNoCard lead={{}} />);
+    const { container } = comQuery(<ContatoNoCard lead={{}} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("⭐ mostra telefone, e-mail e um link por rede, abrindo em outra aba", () => {
-    render(
+    comQuery(
       <ContatoNoCard
         lead={{
           contact_phone: "+5511999998888",
@@ -146,7 +146,7 @@ describe("ContatoNoCard", () => {
   });
 
   it("⭐ só renderiza link http(s) — javascript: que chegue por fora não vira clicável", () => {
-    render(
+    comQuery(
       <ContatoNoCard
         lead={{
           contact_links: [
@@ -164,7 +164,7 @@ describe("ContatoNoCard", () => {
 
   it("⭐ clicar num link NÃO abre o dossiê (o card inteiro tem onClick)", () => {
     const abrirDossie = vi.fn();
-    render(
+    comQuery(
       <div onClick={abrirDossie}>
         <ContatoNoCard
           lead={{ contact_links: [{ tipo: "site", href: "https://exemplo.com.br/" }] }}

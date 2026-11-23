@@ -23224,6 +23224,9 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Ordem da fila": { es: "Orden de la cola" },
+  "Ordem:": { es: "Orden:" },
+  "Esperando há mais tempo": { es: "Esperando hace más tiempo" },
   "Anotações do cliente": { es: "Notas del cliente" },
   "Editar anotação": { es: "Editar nota" },
   "Anotação salva.": { es: "Nota guardada." },
@@ -23283,6 +23286,34 @@ export const DICIONARIO: Traducoes = {
   "Apagar esta venda? Ela sai do painel de vendas.": { es: "¿Borrar esta venta? Sale del panel de ventas." },
   "venda(s)": { es: "venta(s)" },
   "total": { es: "total" },
+  // ─── Tipos de link do contato por organização (#5128) ──────────────────────
+  // Tela `app/app/settings/links-de-contato`, rota `settings/links-de-contato` e
+  // o painel do funil. Os rótulos dos tipos (Instagram, Site…) já estão acima.
+  "Tipos de link do contato": { es: "Tipos de enlace del contacto" },
+  "Quais tipos de link a ficha do contato e o funil mostram.": {
+    es: "Qué tipos de enlace muestran la ficha del contacto y el embudo.",
+  },
+  "Escolha quais tipos aparecem na ficha do contato e no funil. Desmarcar um tipo não apaga o que já foi preenchido nele: o valor fica guardado e volta a aparecer se você marcar de novo.":
+    {
+      es: "Elige qué tipos aparecen en la ficha del contacto y en el embudo. Desmarcar un tipo no borra lo que ya se completó en él: el valor queda guardado y vuelve a aparecer si lo marcas de nuevo.",
+    },
+  "Quais tipos a ficha mostra": { es: "Qué tipos muestra la ficha" },
+  "Os tipos desmarcados somem do formulário e da exibição da ficha e do funil. Nada é apagado: o valor preenchido continua guardado e volta a aparecer se o tipo for marcado de novo.":
+    {
+      es: "Los tipos desmarcados desaparecen del formulario y de la vista de la ficha y del embudo. No se borra nada: el valor completado sigue guardado y vuelve a aparecer si el tipo se marca de nuevo.",
+    },
+  "Marque pelo menos um tipo de link.": { es: "Marca al menos un tipo de enlace." },
+  "Tipos de link salvos.": { es: "Tipos de enlace guardados." },
+  "Salvar tipos": { es: "Guardar tipos" },
+  "Não foi possível carregar os tipos de link.": {
+    es: "No se pudieron cargar los tipos de enlace.",
+  },
+  "Escolha ao menos um tipo de link válido.": {
+    es: "Elige al menos un tipo de enlace válido.",
+  },
+  "A configuração da empresa está em um formato inesperado.": {
+    es: "La configuración de la empresa está en un formato inesperado.",
+  },
 };
 
 /**
