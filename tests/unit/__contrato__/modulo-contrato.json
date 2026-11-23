@@ -1154,7 +1154,7 @@
         {
           "nome": "listConversationsQuerySchema",
           "origem": "@/lib/schemas",
-          "hash": "19cf1a29d188dca0"
+          "hash": "92d560e6e1b357dd"
         }
       ],
       "resposta": []

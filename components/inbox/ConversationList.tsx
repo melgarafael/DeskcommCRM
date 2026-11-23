@@ -326,7 +326,9 @@ export function ConversationList({
             onSelect={abrirConversa}
             mencionado={mencionadas.has(c.id)}
             termoDaBusca={filters.search ?? ""}
-            queuePosition={isQueue ? i + 1 : undefined}
+            // Na ordem "Mais recentes" o índice não é a posição na fila: o
+            // número "1º" diria que quem acabou de chegar é o próximo a ser atendido.
+            queuePosition={isQueue && filters.ordem_fila !== "recentes" ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
             mostrarAutomatico={mostrarAutomatico}
