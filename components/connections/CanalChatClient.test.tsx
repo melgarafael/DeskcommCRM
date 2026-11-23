@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiError } from "@/lib/api/types";
+import { makeQueryClient } from "@/lib/query/client";
 import { CanalChatClient } from "./CanalChatClient";
 
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
@@ -318,4 +319,24 @@ it("T6 (b): PATCH ok e refetch falha → 'Alterações salvas.' sem toast de err
   await new Promise((r) => setTimeout(r, 20));
   // O PATCH deu certo; só a releitura falhou: não é erro de salvar.
   expect(toast.error).not.toHaveBeenCalled();
+});
+
+it("com o cache do app (30 s), gerar nova chave troca o código na tela sem recarregar a página", async () => {
+  // O cliente do app considera a leitura fresca por 30 s. Com o cliente padrão do teste (0 s) o
+  // defeito não aparece: o recarregar devolvia o cache e a tela seguia com a chave ANTIGA.
+  h.get.mockResolvedValueOnce({ data: comConexao }).mockResolvedValue({ data: { ...comConexao, public_key: "wck_nova" } });
+  h.post.mockResolvedValue({ data: { id: "conexao-1", public_key: "wck_nova" } });
+  render(
+    <QueryClientProvider client={makeQueryClient()}>
+      <CanalChatClient />
+    </QueryClientProvider>,
+  );
+  const codigo = (await screen.findByLabelText("Código para colar no site")) as HTMLTextAreaElement;
+  expect(codigo.value).toContain(CHAVE);
+
+  fireEvent.click(screen.getByRole("button", { name: "Gerar nova chave" }));
+  fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Sim, gerar nova chave" }));
+
+  await waitFor(() => expect((screen.getByLabelText("Código para colar no site") as HTMLTextAreaElement).value).toContain("wck_nova"));
+  expect(h.get).toHaveBeenCalledTimes(2);
 });

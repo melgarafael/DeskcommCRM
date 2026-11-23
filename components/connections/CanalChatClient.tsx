@@ -98,7 +98,9 @@ export function CanalChatClient() {
     queryFn: buscarEstado,
   });
   // fetchQuery devolve o estado novo: quem salvou usa esse dado para ressincronizar os campos.
-  const carregar = () => qc.fetchQuery({ queryKey: ["canal-chat"], queryFn: buscarEstado });
+  // `staleTime: 0` obriga a ir ao servidor: o padrão do app (30 s, lib/query/client.ts) fazia o
+  // fetchQuery devolver o cache de antes da ação, e a tela seguia com a chave antiga depois do giro.
+  const carregar = () => qc.fetchQuery({ queryKey: ["canal-chat"], queryFn: buscarEstado, staleTime: 0 });
 
   if (isLoading) {
     return (
