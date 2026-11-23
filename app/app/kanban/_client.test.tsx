@@ -6,7 +6,18 @@ import { FunisClient, vizinhoAoMover, type FunilDaLista } from "./_client";
 
 // #979 — os mocks precisam existir ANTES do import de `_client` (o `vi.hoisted`
 // garante isso mesmo com o hoisting do vitest).
-const { editar, arquivar } = vi.hoisted(() => ({ editar: vi.fn(), arquivar: vi.fn() }));
+const { editar, arquivar, contagem } = vi.hoisted(() => ({
+  editar: vi.fn(),
+  arquivar: vi.fn(),
+  // #4802 (item 3): o número que a confirmação mostra vem do servidor. Mutável
+  // porque cada caso decide se o funil tem negócio e quantos.
+  contagem: {
+    negocios: 0 as number | null,
+    abertos: 0 as number | null,
+    carregando: false,
+    erro: null as string | null,
+  },
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
@@ -19,6 +30,10 @@ vi.mock("@/hooks/pipelines/usePipelines", () => ({
   useCriarFunil: () => ({ mutate: vi.fn(), isPending: false }),
   useEditarFunil: () => ({ mutate: editar, isPending: false }),
   useArquivarFunil: () => ({ mutate: arquivar, isPending: false }),
+  // #4802 (item 3) — a escolha sobre os negócios do funil.
+  useNegociosDoFunil: () => contagem,
+  useEtapasDoFunil: () => ({ etapas: [], carregando: false }),
+  useMoverNegociosDoFunil: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const funil = (id: string): FunilDaLista => ({
@@ -156,5 +171,87 @@ describe("gaveta do arquivo (#979)", () => {
   it("quem não gerencia não vê a gaveta — tirar do arquivo e excluir são manager+", () => {
     tela({ podeGerenciar: false });
     expect(screen.queryByTestId("arquivados")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4802 (item 3) — a escolha sobre os negócios, no painel onde arquivar acontece.
+ *
+ * O que se mede aqui é a REGRA DURA da issue: arquivar continua podendo ser feito
+ * SEM transferir. A escolha é uma opção a mais, nunca uma obrigação — quem só quer
+ * tirar o funil da lista não pode ficar preso numa tela que exige decidir o
+ * destino de cada card.
+ */
+describe("escolha sobre os negócios ao arquivar (#4802, item 3)", () => {
+  const pedidos: FunilDaLista = {
+    id: "f-pedidos",
+    name: "Pedidos",
+    slug: "pedidos",
+    description: null,
+    position: 1000,
+    is_default: false,
+  };
+  const clinica: FunilDaLista = {
+    id: "f-clinica",
+    name: "Clínica",
+    slug: "clinica",
+    description: null,
+    position: 2000,
+    is_default: true,
+  };
+
+  beforeEach(() => {
+    contagem.negocios = 2;
+    contagem.abertos = 2;
+    contagem.carregando = false;
+    contagem.erro = null;
+    arquivar.mockReset();
+    editar.mockReset();
+  });
+
+  function tela() {
+    return render(
+      <FunisClient funis={[pedidos, clinica]} arquivados={[]} podeGerenciar podeImportar={false} />,
+    );
+  }
+
+  it("mostra a contagem real e as TRÊS escolhas ao abrir o arquivamento", async () => {
+    const user = userEvent.setup();
+    tela();
+
+    await user.click(screen.getByTestId("arquivar-f-pedidos"));
+
+    expect(screen.getByTestId("contagem-de-negocios-f-pedidos").textContent).toContain(
+      "2 negócios vinculados",
+    );
+    expect(screen.getByTestId("escolha-transferir-funil-f-pedidos")).toBeInTheDocument();
+    expect(screen.getByTestId("escolha-transferir-etapa-f-pedidos")).toBeInTheDocument();
+    expect(screen.getByTestId("escolha-remover-f-pedidos")).toBeInTheDocument();
+    // O destino oferecido é o OUTRO funil — o de origem não é destino de si mesmo.
+    const opcoes = Array.from(
+      (screen.getByTestId("destino-do-funil-f-pedidos") as HTMLSelectElement).options,
+    ).map((o) => o.value);
+    expect(opcoes).toEqual(["f-clinica"]);
+  });
+
+  it("arquivar SEM transferir continua possível — e não manda escolha nenhuma", async () => {
+    const user = userEvent.setup();
+    tela();
+
+    await user.click(screen.getByTestId("arquivar-f-pedidos"));
+    await user.click(screen.getByTestId("arquivar-confirmar-f-pedidos"));
+
+    expect(arquivar).toHaveBeenCalledWith({ id: "f-pedidos", definitivo: false }, expect.anything());
+  });
+
+  it("funil sem negócio não mostra escolha — não há o que decidir", async () => {
+    contagem.negocios = 0;
+    const user = userEvent.setup();
+    tela();
+
+    await user.click(screen.getByTestId("arquivar-f-pedidos"));
+
+    expect(screen.queryByTestId("negocios-do-funil-f-pedidos")).toBeNull();
+    expect(screen.getByTestId("arquivar-confirmar-f-pedidos")).toBeInTheDocument();
   });
 });
