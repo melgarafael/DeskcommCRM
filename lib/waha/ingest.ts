@@ -1855,7 +1855,8 @@ async function handleOutboundFromUserPhone(
           actor: { type: "webhook_source", id: session.id },
           requestId,
         },
-        { conversationId },
+        // `#on` é a pessoa devolvendo pelo celular (`limparClassificacaoDaIa`).
+        { conversationId, limparClassificacaoDaIa: true },
       );
       if (!devolucao.ok) {
         // O `#on` fica VISÍVEL no chat: é o único sinal de que o atendente
