@@ -2,7 +2,7 @@
 
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { TIPOS_DE_LINK } from "@/lib/leads/links-de-contato";
+import { TIPOS_DE_LINK, type TipoDeLink } from "@/lib/leads/links-de-contato";
 
 interface Props {
   /**
@@ -10,6 +10,12 @@ interface Props {
    * do quadro já filtrada (card). Só apresenta — quem valida é a leitura.
    */
   links: ReadonlyArray<{ tipo: string; href: string }>;
+  /**
+   * Os tipos que esta organização escolheu mostrar (#5128). Ausente = catálogo
+   * inteiro: o card do funil, a ficha e o Diagnóstico (ferramenta de admin, que
+   * precisa VER o que ficou escondido) passam o que têm.
+   */
+  tiposPermitidos?: readonly TipoDeLink[];
   /**
    * Gancho opcional de clique. O card usa para `stopPropagation` (abrir o
    * Instagram de alguém não pode abrir o dossiê por cima); a ficha não passa nada.
@@ -24,9 +30,12 @@ interface Props {
  * renderiza o que começa com http(s) — defesa barata, na própria tela, para um
  * valor que chegue sem passar por `linksParaExibir`.
  */
-export function ListaDeLinks({ links, aoClicarNoLink }: Props) {
+export function ListaDeLinks({ links, tiposPermitidos, aoClicarNoLink }: Props) {
   const t = useT();
-  const seguros = links.filter(({ href }) => /^https?:\/\//i.test(href));
+  const permitidos = tiposPermitidos ? new Set<string>(tiposPermitidos) : null;
+  const seguros = links
+    .filter(({ tipo }) => (permitidos ? permitidos.has(tipo) : true))
+    .filter(({ href }) => /^https?:\/\//i.test(href));
 
   if (seguros.length === 0) return null;
 
