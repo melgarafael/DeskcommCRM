@@ -206,7 +206,7 @@ export function TransferirNegocios({
         */}
         {modo === "remover" && (
           <p
-            className="rounded-md border border-danger/40 bg-danger/5 px-2 py-1 text-xs text-danger"
+            className="rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1 text-xs text-destructive"
             data-testid={`aviso-remover-${funilId}`}
           >
             {t(
