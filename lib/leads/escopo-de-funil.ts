@@ -179,6 +179,16 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // porque ausência aqui é recusa por vacuidade (`ferramenta_nao_classificada`).
   crm_set_conversation_sector: "sem_funil",
   crm_resume_ai_attendance: "sem_funil",
+  // #4517 — pausar, retomar, encerrar e reabrir por token. Operam por
+  // `conversation_id` e não tocam `crm_leads`: o dono do NEGÓCIO é do funil e só
+  // `transfer` o muda — é justamente a separação que a issue pede.
+  crm_pause_ai: "sem_funil",
+  crm_resume_ai: "sem_funil",
+  crm_close_conversation: "sem_funil",
+  crm_reopen_conversation: "sem_funil",
+  // #4517 — a ficha editada por token. Recebe `contact_id` e grava `contacts`,
+  // nunca `crm_leads`; o funil do contato não é tocado.
+  crm_update_contact: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",
   // O diagnóstico mora na FICHA do contato (decisão D8), que vale entre funis:
