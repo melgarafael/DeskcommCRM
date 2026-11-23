@@ -113,6 +113,15 @@ describe("conexaoPelaChave e conexaoPeloId: chat pausado", () => {
     expect(await conexaoPeloId(bancoCom(pausada), CS)).toBeNull();
   });
 
+  it("chat pausado com configuração inválida (chave estranha) continua pausado: a pausa não falha aberta", async () => {
+    const pausadaComLixo = {
+      ...conexaoBase,
+      metadata: { webchat: { pausado: true, chave_estranha: 1, titulo: "x".repeat(200) } },
+    };
+    expect(await conexaoPelaChave(bancoCom(pausadaComLixo), CHAVE)).toBeNull();
+    expect(await conexaoPeloId(bancoCom(pausadaComLixo), CS)).toBeNull();
+  });
+
   it("pausado false segue entregando a conexão", async () => {
     const retomada = { ...conexaoBase, metadata: { webchat: { pausado: false } } };
     expect(await conexaoPelaChave(bancoCom(retomada), CHAVE)).toEqual({
