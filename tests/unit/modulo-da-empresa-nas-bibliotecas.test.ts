@@ -139,7 +139,10 @@ describe.each(PORTOES)("$nome — o portão recebe a empresa (#4871)", (portao) 
 
 describe("quem aplica a empresa — o único chamador com ela antes do portão", () => {
   it("o filtro por setor da lista de tarefas passa a organização que já recebeu", () => {
-    const rota = readFileSync("app/api/v1/tasks/route.ts", "utf8");
-    expect(rota).toContain("seSetoresDesligado(requestId, organizationId)");
+    // A lista de tarefas mora em `_handler.ts` desde o #4516 (a rota ficou fina
+    // e a tool MCP chama a MESMA função). O portão continua sendo o helper das
+    // rotas de setor, e a empresa continua indo junto — o que mudou é o arquivo.
+    const regra = readFileSync("app/api/v1/tasks/_handler.ts", "utf8");
+    expect(regra).toContain("seSetoresDesligado(ctx.requestId, ctx.organization_id)");
   });
 });

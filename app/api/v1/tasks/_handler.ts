@@ -27,10 +27,9 @@ import { audit } from "@/lib/audit";
 import { comIdempotencia, hashDoCorpo } from "@/lib/api/idempotency";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
+import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { portaDaAplicacao } from "@/lib/db";
-import { moduloLigado } from "@/lib/instalacao/modulos";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import {
@@ -260,11 +259,13 @@ export async function listarTarefasHandler(
   // A EMPRESA entra porque aqui ela já está na mão (`ctx.organization_id`, da
   // sessão ou do token), #3868/F2 da #4871: com o setor desligado só para ela,
   // o filtro responde o mesmo 404 das rotas de setor e o selo some da lista.
-  const desligado = !(await moduloLigado(
-    createAdminClient(),
-    "setores",
-    ctx.organization_id,
-  ));
+  //
+  // O portão é o MESMO helper das rotas de setor (`seSetoresDesligado`), e não
+  // uma segunda cópia do `moduloLigado` aqui: era exatamente a segunda cópia que
+  // a cerca de `modulo-da-empresa-nas-bibliotecas.test.ts` existia para pegar.
+  // Ele devolve a resposta 404 pronta; a rota fina e a tool MCP chamam ESTA
+  // função, então as duas ganham o portão junto.
+  const desligado = await seSetoresDesligado(ctx.requestId, ctx.organization_id);
   if (desligado) {
     if (filtros.sector_id) {
       throw new ApiError(404, "not_found", undefined, ctx.requestId, "Not found.");
