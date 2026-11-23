@@ -11,6 +11,7 @@ import {
   TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
 } from "@/lib/prospecting/rodape-de-saida";
 import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
+import { janelaDaCampanhaSchema } from "./janela-da-campanha";
 
 /**
  * Os dois números do RITMO da campanha, com os mesmos limites no início e no
@@ -160,6 +161,16 @@ export const campaignConfigSchema = z
     usar_ficha_digital: z.boolean().optional(),
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
+    /**
+     * A JANELA DA CAMPANHA (#4830, saída 1) — dias e horas em que ESTA campanha
+     * pode disparar, no fuso da organização. Opcional de propósito: ausente =
+     * o comportamento de hoje (só a janela do número decide). As duas se
+     * CRUZAM, não se substituem.
+     *
+     * Não tem `.default()`: campanha gravada antes desta chave existir
+     * continua SEM a chave, e nada muda para ela.
+     */
+    janela: janelaDaCampanhaSchema.optional(),
     legal_basis_ref: z.string().trim().min(3).max(500),
     // QUANDO a empresa entra no CRM. `on_start`: contato, negócio e conversa de TODA a fila
     // nascem ao iniciar (o comportamento de sempre). `on_send`: cada empresa nasce só na

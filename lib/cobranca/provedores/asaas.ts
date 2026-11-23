@@ -16,8 +16,10 @@
  *   idempotência do POST é a RELEITURA antes de criar: cliente pela
  *   `externalReference` (o vínculo com a organização) e, não achando, pelo
  *   `cpfCnpj` — o cliente cadastrado direto no painel do Asaas não tem vínculo,
- *   e, sem histórico na conta, é adotado em vez de duplicado (#4768); assinatura ACTIVE, webhook pela URL
- *   ou pelo nome. No máximo 3 tentativas e 5 s por espera.
+ *   e é adotado (com o vínculo gravado nele) em vez de duplicado (#4768); a
+ *   assinatura ACTIVE só é reaproveitada quando traz o NOSSO vínculo, para a
+ *   adoção não pendurar a cobrança na assinatura de outra integração; webhook
+ *   pela URL ou pelo nome. No máximo 3 tentativas e 5 s por espera.
  * - Toda resposta passa por Zod lendo só o que é usado; forma inesperada vira
  *   `ErroDoProvedor(200, "resposta_invalida")`, que `sincronizar` grava como
  *   `leitura_invalida` sem tocar o estado.
@@ -141,6 +143,12 @@ const clienteDoAsaas = comId.extend({
   dateCreated: z.string().nullish(),
 });
 type ClienteDoAsaas = z.infer<typeof clienteDoAsaas>;
+/**
+ * A assinatura como a listagem devolve: além do id, o vínculo que NÓS gravamos no
+ * POST. É ele que separa a assinatura desta organização da que o cliente adotado
+ * já tinha na conta por outra integração.
+ */
+const assinaturaDaOrg = comId.extend({ externalReference: z.string().nullish() });
 const UUID = z.string().uuid();
 const cobrancaDoAsaas = z.object({
   id: z.string().min(1),
@@ -161,6 +169,9 @@ const assinaturaDoAsaas = z.object({
   dateCreated: z.string(),
   /** Valor por ciclo, em reais — é o que `trocarPlano` grava (`precoCents / 100`). */
   value: z.number().nullish(),
+  /** Vínculo que NÓS gravamos no POST (#4862): é ele que separa a assinatura desta
+   * organização da que o cliente adotado do painel já tinha por outra integração. */
+  externalReference: z.string().nullish(),
 });
 type AssinaturaDoAsaas = z.infer<typeof assinaturaDoAsaas>;
 /** Removida (`deleted`), INACTIVE ou EXPIRED. */
@@ -537,28 +548,21 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     }
   }
 
-  /** Se o cliente já teve assinatura (inclusive removida) ou cobrança na conta. */
-  async function temHistorico(clienteId: string): Promise<boolean> {
-    const cliente = encodeURIComponent(clienteId);
-    const [assinaturas, cobrancas] = await Promise.all([
-      chamar("GET", `/subscriptions?customer=${cliente}&includeDeleted=true&limit=1`),
-      chamar("GET", `/payments?customer=${cliente}&limit=1`),
-    ]);
-    return ler(listaDoAsaas(comId), assinaturas).data.length > 0 || ler(listaDoAsaas(comId), cobrancas).data.length > 0;
-  }
-
   /**
    * Busca pelo vínculo (`externalReference` = org) e, se não achar, pelo DOCUMENTO
    * antes de criar: o POST não tem chave de idempotência, e é a busca que cura o
    * clique repetido e a resposta perdida. O documento é o segundo caminho porque
    * cliente cadastrado direto no painel do Asaas não tem `externalReference` — só
    * a releitura por vínculo não o acha, e o POST criaria um duplicado com o mesmo
-   * CPF/CNPJ (#4768). Achado pelo documento, ele é ADOTADO (com o vínculo gravado
-   * nele) em vez de duplicado — só quando não tem vínculo nem assinatura ou
-   * cobrança na conta; nos outros casos, cria um novo, como antes. `notificationDisabled` fica só na criação: quem
-   * avisa o pagador é a régua do sistema, com a marca da empresa, e os e-mails,
-   * SMS e WhatsApp do Asaas sairiam em dobro; num cliente que já existe na conta,
-   * desligar notificação mudaria o comportamento das outras integrações dele.
+   * CPF/CNPJ (#4768). Achado pelo documento e SEM vínculo, ele é ADOTADO (com o
+   * vínculo gravado nele) em vez de duplicado, tenha ou não assinatura ou cobrança
+   * na conta: o histórico dele fica onde está e não é relido — quem impede a
+   * adoção de puxar a assinatura de outra integração é a releitura de
+   * `iniciarAssinatura`, que só reaproveita assinatura ACTIVE com o NOSSO vínculo.
+   * `notificationDisabled` fica só na criação: quem avisa o pagador é a régua do
+   * sistema, com a marca da empresa, e os e-mails, SMS e WhatsApp do Asaas sairiam
+   * em dobro; num cliente que já existe na conta, desligar notificação mudaria o
+   * comportamento das outras integrações dele.
    */
   async function garantirCliente(org: Parameters<AdaptadorDeCobranca["garantirCliente"]>[0]): Promise<string> {
     const orgId = uuidDaOrg(org.id);
@@ -579,11 +583,12 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     if (livres.length > 0) {
       if (livres.length > 1) logger.warn("cobranca.asaas.cliente_duplicado", { quantidade: livres.length, por: "documento" });
       const adotado = escolherCliente(livres);
-      if (!(await temHistorico(adotado.id))) {
-        await vincularCliente(adotado, orgId);
-        return adotado.id;
-      }
-      logger.warn("cobranca.asaas.cliente_com_historico_nao_adotado", { quantidade: livres.length });
+      // Adota mesmo com assinatura ou cobrança na conta: duplicar o pagador é o
+      // defeito da #4768, e o histórico dele não é tocado nem relido. O que garante
+      // que a assinatura do painel não vire a nossa é o filtro de vínculo em
+      // `iniciarAssinatura`.
+      await vincularCliente(adotado, orgId);
+      return adotado.id;
     }
     return ler(
       comId,
@@ -617,7 +622,13 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     let callback = callbackDaVolta(p.urlDeVolta, dep.baseUrl !== undefined);
     const orgId = uuidDaOrg(p.orgId);
     const caminho = `/subscriptions?customer=${encodeURIComponent(p.clienteRef)}&status=ACTIVE&limit=10`;
-    const ativas = ler(listaDoAsaas(comId), await chamar("GET", caminho)).data.filter((s) => s.deleted !== true);
+    // Só a NOSSA assinatura ACTIVE é reaproveitada: o cliente pode ter sido ADOTADO
+    // do painel do Asaas (#4768) e já ter uma assinatura de outra integração. Sem o
+    // filtro, a cobrança se penduraria nela — valor, ciclo e cobranças de outro
+    // fluxo — e a gravaria como se fosse desta organização.
+    const ativas = ler(listaDoAsaas(assinaturaDaOrg), await chamar("GET", caminho)).data.filter(
+      (s) => s.deleted !== true && s.externalReference === orgId,
+    );
     const hoje = dataCivilEmSaoPaulo(agora());
     const fimDoTeste = p.trialAte === null ? null : dataCivilEmSaoPaulo(p.trialAte);
     const criar = async () =>
@@ -725,10 +736,20 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
    * antiga, senão da pendente, só da principal viva; (8)
    * `pagamentoSemAssinaturaViva` é sempre false no Asaas: a API não diz quando
    * a assinatura foi removida, e o DELETE leva junto as cobranças abertas.
+   *
+   * #4862 — o vínculo vale também para a LEITURA: o cliente pode ter sido
+   * ADOTADO do painel (#4768) e carregar assinatura e cobrança de OUTRA
+   * integração. Entram nesta situação só as assinaturas com
+   * `externalReference` = id da organização e só as cobranças dessas assinaturas.
+   * Sem isso, `assinaturasVivas`, `jaPagou` e `proximoVencimento` sairiam
+   * calculados com o que é de fora, e a `assinaturaRef` devolvida (gravada em
+   * `provedor_assinatura_id` por `sincronizar`) apontaria para a assinatura de
+   * outra integração — cancelar ou trocar plano agiria sobre ela.
    */
-  async function lerSituacao(p: { clienteRef: string }): Promise<Situacao> {
+  async function lerSituacao(p: { clienteRef: string; organizacao: string }): Promise<Situacao> {
+    const orgId = uuidDaOrg(p.organizacao);
     const cliente = encodeURIComponent(p.clienteRef);
-    const [assinaturas, pagas] = await Promise.all([
+    const [lidas, pagasLidas] = await Promise.all([
       // includeDeleted: sem ele a removida some, e o cancelamento viraria "teste vencido".
       chamar("GET", `/subscriptions?customer=${cliente}&includeDeleted=true&limit=100`).then(
         (d) => ler(listaDoAsaas(assinaturaDoAsaas), d).data,
@@ -739,6 +760,12 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
         ),
       ).then((listas) => listas.flat()),
     ]);
+    // O filtro é na RESPOSTA, não na consulta: a listagem de assinaturas do Asaas
+    // não aceita `externalReference` (só a de clientes), e a consulta pelo vínculo
+    // não traria as REMOVIDAS que o includeDeleted precisa ver.
+    const assinaturas = lidas.filter((s) => s.externalReference === orgId);
+    const nossas = new Set(assinaturas.map((s) => s.id));
+    const pagas = pagasLidas.filter((c) => c.subscription !== null && c.subscription !== undefined && nossas.has(c.subscription));
     const recentes = [...assinaturas].sort((a, b) => b.dateCreated.localeCompare(a.dateCreated));
     const vivas = recentes.filter((s) => !ehTerminal(s));
     const principal = vivas[0] ?? null;
@@ -818,8 +845,8 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
   }
 
   /** O Asaas não tem portal: "gerenciar" é pagar a cobrança aberta. Sem ela, `null` (a rota responde 409 `sem_portal`). */
-  async function urlDeGerenciar(p: { clienteRef: string }): Promise<string | null> {
-    return (await lerSituacao({ clienteRef: p.clienteRef })).linkDePagamento;
+  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string | null> {
+    return (await lerSituacao({ clienteRef: p.clienteRef, organizacao: p.organizacao })).linkDePagamento;
   }
 
   return {

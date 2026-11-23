@@ -218,6 +218,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
   },
+  menu_de_atendimento: {
+    nome: "Menu de atendimento sem IA",
+    oQueFaz: "A primeira mensagem recebe um menu com opções numeradas e o cliente escolhe por número — fila, pessoa ou arquivo — sem nenhuma resposta gerada por IA.",
+  },
 };
 
 /**

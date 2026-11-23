@@ -44,6 +44,8 @@ const CHAMADORES: Record<string, string> = {
   "lib/atendimento/satisfacao.ts": TRATA, // tests/unit/pesquisa-de-satisfacao-no-encerramento.test.ts (OrgNaoOperanteError => pedida:false, pedido fechado sem nota, encerramento intacto)
   "lib/inbox/encaminhar-mensagem.ts":
     "propaga o 403 org_suspended ao chamador da rota `forward`; nada é gravado — a linha do destino só nasce se o envio aceitar",
+  "lib/atendimento/menu/portas.ts":
+    "o 403 org_suspended vira false em `responder`/`enviaArquivo` (atender.ts): no envio do menu, tratado:false sem estado gravado e o despacho segue para o gate, que nega a org parada; no meio do menu, cai para a fila e grava 'concluído', que vence em 24 h — nada é retentado",
   "lib/ouvidoria/whatsapp.ts":
     "envio best-effort do fluxo: o 403 org_suspended (e qualquer falha de envio) vira log e o fluxo segue — sem fila, sem retentativa e sem desfecho gravado; a manifestação só nasce na confirmação",
 };

@@ -102,7 +102,7 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     expect(await a.garantirCliente({ id: ORG, nome: "Loja Contrato", email: "admin@contrato.test", documento: cpf })).toBe(cliente);
     expect(await a.clienteExiste(cliente)).toBe(true);
     expect(await a.clienteExiste("cus_000000000000")).toBe(false);
-    expect(await a.lerSituacao({ clienteRef: cliente })).toMatchObject({ existe: false, assinaturasVivas: 0, jaPagou: false, cancelada: false, emAtraso: false, linkDePagamento: null, emTesteNoProvedorAte: null });
+    expect(await a.lerSituacao({ clienteRef: cliente, organizacao: ORG })).toMatchObject({ existe: false, assinaturasVivas: 0, jaPagou: false, cancelada: false, emAtraso: false, linkDePagamento: null, emTesteNoProvedorAte: null });
 
     // Sem teste grátis: a 1ª cobrança vence HOJE em São Paulo, em reais.
     const inicio = await a.iniciarAssinatura({ clienteRef: cliente, orgId: ORG, plano: ESSENCIAL, trialAte: null, urlDeVolta: VOLTA, chaveIdempotencia: "contrato-1" });
@@ -127,7 +127,7 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     expect(duble.asaas.cobrancasDe(cliente).filter((c) => c.status === "PENDING")).toHaveLength(1);
 
     // A assinatura nasce ACTIVE só com PENDING: clicar em Assinar e não pagar NÃO é assinar (§6.2 passo 2).
-    const pendente = await a.lerSituacao({ clienteRef: cliente });
+    const pendente = await a.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(pendente).toMatchObject({ existe: false, assinaturasVivas: 1, jaPagou: false, linkDePagamento: inicio.url });
     // Guarda do trocarPlano: o período em uso não foi pago → recusa sem tocar no provedor.
     const putsAntes = puts().length;
@@ -139,7 +139,7 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
 
     // Cartão: CONFIRMED já conta como pago (§6.2 passo 4).
     expect((await fetch(`${inicio.url}/cartao`, { method: "POST", redirect: "manual" })).status).toBe(303);
-    const paga = await a.lerSituacao({ clienteRef: cliente });
+    const paga = await a.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     const proxima = duble.asaas.cobrancasDe(cliente).find((c) => c.status === "PENDING");
     expect(paga).toMatchObject({ existe: true, assinaturasVivas: 1, jaPagou: true, emAtraso: false, cancelada: false });
     // Fim do período pago = vencimento pago + 1 ciclo, no fim do dia em SP; NUNCA o nextDueDate (§6.2 passo 5).
@@ -150,21 +150,21 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     await a.trocarPlano({ assinaturaRef: paga.assinaturaRef ?? "", plano: PROFISSIONAL });
     expect(puts().at(-1)?.corpo).toMatchObject({ value: 99.9, updatePendingPayments: true });
     expect(duble.asaas.cobrancasDe(cliente).filter((c) => c.status === "PENDING").map((c) => c.value)).toEqual([99.9]);
-    expect(await a.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: VOLTA })).toBe(`${duble.base}/i/${proxima?.id}`);
+    expect(await a.urlDeGerenciar({ clienteRef: cliente, urlDeVolta: VOLTA, organizacao: ORG })).toBe(`${duble.base}/i/${proxima?.id}`);
 
     // Atraso: OVERDUE abre o atraso, com a data do provedor no fim do dia e o link da vencida.
     const link = await duble.asaas.vencer(cliente);
     const vencida = duble.asaas.cobrancasDe(cliente).find((c) => c.status === "OVERDUE");
-    const devendo = await a.lerSituacao({ clienteRef: cliente });
+    const devendo = await a.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(devendo).toMatchObject({ existe: true, emAtraso: true, linkDePagamento: link });
     expect(devendo.vencidaDesde?.toISOString()).toBe(fimDoDiaEmSaoPaulo(vencida?.dueDate ?? ""));
     expect((await fetch(`${link}/pix`, { method: "POST", redirect: "manual" })).status).toBe(303);
-    const quitada = await a.lerSituacao({ clienteRef: cliente });
+    const quitada = await a.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(quitada).toMatchObject({ existe: true, emAtraso: false });
 
     // Review Focus 3: cancelar = DELETE; só com includeDeleted a removida aparece, e o período pago fica.
     await a.cancelarNoFim(quitada.assinaturaRef ?? "");
-    const cancelada = await a.lerSituacao({ clienteRef: cliente });
+    const cancelada = await a.lerSituacao({ clienteRef: cliente, organizacao: ORG });
     expect(cancelada).toMatchObject({ cancelada: true, existe: false, assinaturasVivas: 0, jaPagou: true, linkDePagamento: null });
     expect(cancelada.proximoVencimento?.toISOString()).toBe(quitada.proximoVencimento?.toISOString());
     expect(duble.asaas.chamadas.some((c) => c.metodo === "GET" && c.caminho === "/v3/subscriptions" && c.query.includeDeleted === "true")).toBe(true);
