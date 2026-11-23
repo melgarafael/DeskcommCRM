@@ -9,7 +9,8 @@
  * `lib/ai/runtime/cost.ts` (`computeCostCents`, grava `ai_agent_runs.cost_cents`)
  * lia SÓ `ai_models`, cuja linha desses ids já é a tarifa POSTERIOR à promoção —
  * então o mesmo turno saía 2× na coluna de custo de IA → Agentes → Execuções e
- * na soma de `fn_gasto_de_ia_do_mes`.
+ * em `app/api/v1/ai/runs`. O teto mensal (`fn_gasto_de_ia_do_mes`) não era
+ * afetado: medido, ele soma só `llm_calls`; o dano era o valor reportado.
  *
  * A medida é feita nos MESMOS ids e nos DOIS lados do corte. Medir só o dia de
  * hoje viraria enfeite quando a promoção expirasse: o teste passaria a comparar
