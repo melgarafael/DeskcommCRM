@@ -14,6 +14,14 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+// O idioma é trocável por caso: a contagem do diálogo tem de tratar o singular
+// e o rótulo em espanhol é o canônico do produto (#5024).
+const idioma = vi.hoisted(() => ({ atual: "pt-BR" as "pt-BR" | "es" }));
+vi.mock("@/hooks/i18n/useT", async () => {
+  const { traduzir } = await import("@/lib/i18n/dicionario");
+  return { useT: () => (chave: string) => traduzir(chave, idioma.atual) };
+});
+
 vi.mock("@/hooks/kanban/useDestinosDeFunil", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   useDestinosDeFunil: vi.fn(),
@@ -32,7 +40,10 @@ function destinos(lista: Array<{ id: string; name: string }>) {
   vi.mocked(useDestinosDeFunil).mockReturnValue({ data: lista } as never);
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  idioma.atual = "pt-BR";
+});
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -71,6 +82,44 @@ describe("LevarLoteParaOutroFunilDialog", () => {
     );
 
     expect(screen.getByText(/Este é o único funil/)).toBeTruthy();
+  });
+
+  // #5024: a frase da janela dizia "1 negócios selecionados." — plural com um
+  // só. O molde é o mesmo da barra (`BulkActionBar`): o singular nomeia o
+  // negócio e usa "selecionado"; do plural em diante, a contagem basta.
+  it("1 selecionado fala no singular", () => {
+    idioma.atual = "pt-BR";
+    destinos([{ id: "p2", name: "Pós-venda" }]);
+    render(
+      comCliente(<LevarLoteParaOutroFunilDialog open onOpenChange={() => {}} pipelineId="p1" leadIds={["a"]} />),
+    );
+
+    expect(screen.getByText("1 negócio selecionado.")).toBeTruthy();
+    expect(screen.queryByText(/negócios selecionados/)).not.toBeInTheDocument();
+  });
+
+  it("2 selecionados continua no plural", () => {
+    idioma.atual = "pt-BR";
+    destinos([{ id: "p2", name: "Pós-venda" }]);
+    render(
+      comCliente(<LevarLoteParaOutroFunilDialog open onOpenChange={() => {}} pipelineId="p1" leadIds={["a", "b"]} />),
+    );
+
+    expect(screen.getByText("2 negócios selecionados.")).toBeTruthy();
+  });
+
+  it("em espanhol: singular tratado e o motivo é o rótulo canônico \"Movido a otro embudo\"", () => {
+    idioma.atual = "es";
+    destinos([{ id: "p2", name: "Pós-venda" }]);
+    render(
+      comCliente(<LevarLoteParaOutroFunilDialog open onOpenChange={() => {}} pipelineId="p1" leadIds={["a"]} />),
+    );
+
+    expect(screen.getByText("1 negocio seleccionado.")).toBeTruthy();
+    expect(screen.getByText(/Movido a otro embudo/)).toBeInTheDocument();
+    // O rótulo antigo não pode voltar — montado por partes para o próprio
+    // teste não reintroduzir a string que a issue manda sumir do repositório.
+    expect(screen.queryByText(new RegExp(["Llevado", "a", "otro", "embudo"].join(" ")))).not.toBeInTheDocument();
   });
 
   it("shows the created deal and refreshes its board after a partial failure", async () => {
