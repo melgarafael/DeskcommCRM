@@ -69,7 +69,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   try {
     const resultado = await retomarIaHandler(authz.supabase, {
       organization_id: authz.organizationId,
-      actor: authz.actor,
+      // O papel da sessão vai no ator: o handler decide por ele se um gerente
+      // devolve ao automático a conversa de um colega (#3436).
+      actor: authz.papelDaSessao && authz.actor.type === "user"
+        ? { ...authz.actor, role: authz.papelDaSessao }
+        : authz.actor,
       requestId,
       idioma: authz.idioma,
       ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
