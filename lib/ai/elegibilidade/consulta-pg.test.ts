@@ -72,10 +72,11 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
       bloqueioPorAllowlist: false,
     });
     // A contagem filtra por organização e conversa (isolamento).
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining("from messages"),
-      [ORG, CONV],
-    );
+    const chamadaDaContagem = query.mock.calls.find((c) => String(c[0]).includes("from messages"));
+    expect(chamadaDaContagem?.[1]).toEqual([ORG, CONV]);
+    const sqlDaContagem = String(chamadaDaContagem?.[0]);
+    expect(sqlDaContagem).toContain("organization_id = $1");
+    expect(sqlDaContagem).toContain("conversation_id = $2");
   });
 
   it("abaixo do teto: permite", async () => {
@@ -108,7 +109,12 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
   });
 
   it("falha na contagem: respostasDaIa = null e o gate passa", async () => {
-    const query = vi.fn().mockRejectedValue(new Error("banco fora"));
+    // Só a contagem falha: a leitura da conversa responde normalmente.
+    const query = vi.fn((sql: string) =>
+      sql.includes("from messages")
+        ? Promise.reject(new Error("banco fora"))
+        : Promise.resolve({ rows: [linhaConversa()] }),
+    );
     const d = await decidirElegibilidadeDaConversa(query as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
   });

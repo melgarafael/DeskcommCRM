@@ -99,8 +99,6 @@ function estado(extra: Partial<EstadoDeElegibilidade> = {}): EstadoDeElegibilida
     numeroDeTesteAutorizado: false,
     agora: new Date("2026-10-20T12:00:00Z"),
     ttlMs: 21 * 24 * 60 * 60 * 1000,
-    // F4, Task 1: não se aplica nos testes desta regra (a contagem é dos loaders).
-    tetoDoAnonimo: null,
     ...extra,
   };
 }

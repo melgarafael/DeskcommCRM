@@ -98,7 +98,7 @@ export async function decidirElegibilidadeDaConversa(
     if (contagem === null) {
       input.log?.warn("teto do visitante anônimo: contagem não lida — gate passa", {
         organization_id: input.organizationId,
-        conversation_id: r.id,
+        conversation_id: input.conversationId,
       });
       respostasDaIa = null;
     } else {
