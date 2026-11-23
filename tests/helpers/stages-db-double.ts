@@ -732,13 +732,59 @@ export function makeDb(opts: DbOpts = {}): Registro {
     return b;
   }
 
-  // `rpc` só existe para o aviso de atividade perdida (`emit_event`): sem ele, a
-  // rota estouraria no caminho de falha e o teste mediria um TypeError em vez do
-  // comportamento ("o arquivamento não é desfeito por causa do rastro").
+  // `rpc` cobre o aviso de atividade perdida (`emit_event`) e, desde a #4802
+  // (item 3), `fn_mover_leads_em_lote`: a transferência em massa de negócios entre
+  // funis passa por ESTA função, e um dublê que devolvesse `null` deixaria a rota
+  // responder "movi 0" justamente no caminho que se quer medir. Ele aplica a
+  // escrita como o banco aplica — `stage_id` E `pipeline_id` da etapa de destino —
+  // para a contagem de depois ser a do "banco", não a do otimismo da rota.
+  //
+  // E APLICA O GATILHO: `fn_crm_lead_close_on_stage` é quem escreve `status` e
+  // `closed_at` no Postgres, e sem espelhá-lo aqui o teste do negócio encerrado
+  // mediria um banco que não existe — o dublê diria "ficou encerrado" qualquer que
+  // fosse o código da rota. A regra espelhada é a P-02, sem exceção: etapa de
+  // ganho/perda encerra; etapa aberta reabre o encerrado (por isso a
+  // transferência só leva negócio em andamento — doc 400, opção B).
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
     const declarada = opts.rpcResult?.(nome, args);
-    return declarada ?? { data: null, error: null };
+    // Quem declara a resposta pelo dublê manda: é o gancho genérico da main.
+    if (declarada !== undefined) return declarada;
+    if (nome === "fn_mover_leads_em_lote") {
+      const a = args as { p_organization_id: string; p_lead_ids: string[]; p_stage_id: string };
+      const etapa = registro.tabelas.crm_stages.find((s) => s.id === a.p_stage_id) as
+        | { pipeline_id?: string; is_won?: boolean; is_lost?: boolean }
+        | undefined;
+      const movidos: Array<{ lead_id: string; from_stage_id: string; pipeline_id: string }> = [];
+      for (const linha of registro.tabelas.crm_leads) {
+        if (linha.organization_id !== a.p_organization_id) continue;
+        if (!a.p_lead_ids.includes(linha.id as string)) continue;
+        const funilAntes = linha.pipeline_id as string;
+        const statusAntes = linha.status as string | undefined;
+        movidos.push({
+          lead_id: linha.id as string,
+          from_stage_id: linha.stage_id as string,
+          pipeline_id: funilAntes,
+        });
+        linha.stage_id = a.p_stage_id;
+        if (etapa?.pipeline_id) linha.pipeline_id = etapa.pipeline_id;
+
+        // ── `fn_crm_lead_close_on_stage` (P-02) ──────────────────────────────
+        if (etapa?.is_won) {
+          linha.status = "won";
+          linha.closed_at = linha.closed_at ?? new Date().toISOString();
+        } else if (etapa?.is_lost) {
+          linha.status = "lost";
+          linha.closed_at = linha.closed_at ?? new Date().toISOString();
+        } else if (statusAntes === "won" || statusAntes === "lost") {
+          // Etapa aberta: é a reabertura de sempre.
+          linha.status = "open";
+          linha.closed_at = null;
+        }
+      }
+      return { data: movidos, error: null };
+    }
+    return { data: null, error: null };
   };
 
   // A sessão do cookie (#2995): `getUser()` é a primeira coisa que a rota do

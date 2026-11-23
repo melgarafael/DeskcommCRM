@@ -6965,7 +6965,7 @@ export type Database = {
           created_at: string;
           evidence: Json | null;
           id: string;
-          lead_id: string;
+          lead_id: string | null;
           metadata: NonNullable<Json>;
           organization_id: string;
           payload: NonNullable<Json>;
@@ -6984,7 +6984,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id: string;
           payload?: NonNullable<Json>;
@@ -7002,7 +7002,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id?: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id?: string;
           payload?: NonNullable<Json>;
