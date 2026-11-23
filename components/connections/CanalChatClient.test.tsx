@@ -140,6 +140,28 @@ it("salvar coleta leva a coleta inteira, porque o servidor troca o objeto de uma
   );
 });
 
+it("salvar teto_anonimo manda o número para o servidor; fora de 1 a 200 não envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabel("Quantas respostas da IA por conversa");
+
+  const teto = screen.getByLabel("Quantas respostas da IA por conversa") as HTMLInputElement;
+
+  // Valor válido: digita 5 e salva.
+  fireEvent.change(teto, { target: { value: "5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar teto" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 5 } }),
+  );
+
+  // Valor inválido: não envia e mostra erro.
+  fireEvent.change(teto, { target: { value: "201" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar teto" }));
+  expect(screen.getByText(/Use um número inteiro de 1 a 200./)).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 201 } });
+});
+
 it("salvar domínios manda só a lista; cor fora do formato #rrggbb não sai", async () => {
   h.get.mockResolvedValue({ data: comConexao });
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
