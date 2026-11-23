@@ -31,6 +31,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
+import { lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { metadataDoModulo } from "@/lib/audit/ator-modulo";
@@ -567,7 +568,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, assigned_to_user_id, assignee_kind, metadata, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -622,6 +623,10 @@ export async function sendMessageHandler(
     is_group: boolean;
     group_chat_id: string | null;
     bot_silenced_until: string | null;
+    assigned_to_user_id?: string | null;
+    assignee_kind?: string | null;
+    /** `conversations.metadata` — de onde sai o modo "IA com o dono" (#3967). */
+    metadata?: unknown;
     /** Thread do provider, quando ele endereça por thread própria (migration 0132). */
     provider_conversation_id: string | null;
     /**
@@ -1833,8 +1838,40 @@ export async function sendMessageHandler(
   // mesma janela, mesma régua de quem lê `bot_silenced_until`; quem NÃO traz
   // `onBehalfOf` (automação, integração pura, agente) continua de fora.
   if (ctx.actor.type === "user" || ctx.onBehalfOf) {
-    const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
-    if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
+    const remetenteUserId = ctx.actor.type === "user" ? ctx.actor.id : ctx.onBehalfOf?.userId;
+    const ehResponsavel = Boolean(
+      remetenteUserId &&
+      c.assigned_to_user_id &&
+      c.assigned_to_user_id === remetenteUserId
+    );
+
+    // A RESPOSTA DO DONO É ATENDIMENTO, NÃO PAUSA. Quando quem escreve é o
+    // responsável pela conversa, o silêncio vira `'infinity'` — o mesmo valor do
+    // "Assumir" (`fn_conversation_assign`, migration 0173) — e só uma ação
+    // explícita o solta ("Devolver ao automático", encerrar marcando a devolução)
+    // ou o prazo de devolução automática, se a organização o ligou.
+    // A janela de 5 min abaixo serve à resposta pontual de quem NÃO é o dono; para
+    // o dono ela era só um relógio. O veto do dono (`assignee_kind = 'user'`)
+    // segura a IA enquanto o dono existe, mas `isLeadInHandoff` — que o follow-up
+    // de texto fixo e as varreduras consultam — lê o SILÊNCIO, não o dono: sem o
+    // `'infinity'`, esses caminhos viam a conversa como livre cinco minutos
+    // depois da última fala do técnico.
+    //
+    // Exceção: o modo "IA com o dono" (#3967). Ali a pessoa LIGOU de propósito a
+    // IA para responder junto dela, e calar para sempre na primeira fala dela
+    // desligaria em silêncio o que ela acabou de pedir.
+    const ehDonoSemIaJunto = ehResponsavel && !lerModoIaComDono(c.metadata);
+    if (ehDonoSemIaJunto) {
+      if (c.bot_silenced_until !== "infinity") {
+        conversationUpdate.bot_silenced_until = "infinity";
+      }
+    } else {
+      // Quem não é o dono (colega comentando, conversa sem responsável): a janela
+      // deslizante de 5 minutos de sempre. Não assume a conversa por ninguém nem
+      // cala a IA para sempre por uma resposta pontual.
+      const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
+      if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
+    }
   }
 
   await supabase.from("conversations").update(conversationUpdate).eq("id", c.id);

@@ -306,3 +306,40 @@ export async function rotacionarVerifyTokenDaMeta(): Promise<UpdateMetaAppResult
 
   return { ok: true, verifyToken };
 }
+
+/**
+ * App ID e Configuration ID do Embedded Signup (#4074).
+ *
+ * Separado de `updateMetaApp` de propósito: os dois IDs não são segredo e não
+ * mexem no verify token — juntá-los ao save da chave arriscaria o ramo que gera
+ * token novo. Vazio apaga (desliga o botão em Conexões), porque aqui apagar não
+ * derruba entrega nenhuma: o webhook continua conferido pela chave secreta.
+ */
+const embeddedSchema = z.object({
+  app_id: z.string().trim().regex(/^\d{5,30}$/).or(z.literal("")),
+  config_id: z.string().trim().regex(/^\d{5,30}$/).or(z.literal("")),
+});
+
+export type EmbeddedSignupInput = z.infer<typeof embeddedSchema>;
+
+export async function updateEmbeddedSignupDaMeta(input: EmbeddedSignupInput): Promise<UpdateMetaAppResult> {
+  const escrita = await escritaDeAdminOuRecusa();
+  if (!escrita.ok) return escrita;
+  const { user: authUser } = escrita.ctx;
+
+  const parsed = embeddedSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "embedded_invalido", details: parsed.error.flatten() };
+  }
+
+  return gravar(
+    authUser,
+    {
+      app_id: parsed.data.app_id || null,
+      config_id: parsed.data.config_id || null,
+      updated_by: authUser.id,
+    },
+    "platform_meta_app.updated",
+    { campos: ["app_id", "config_id"], embedded_signup: Boolean(parsed.data.app_id && parsed.data.config_id) },
+  );
+}

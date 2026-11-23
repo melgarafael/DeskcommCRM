@@ -37,6 +37,9 @@ const fake = vi.hoisted(() => ({
 
 vi.mock("@/lib/env", () => ({ env: fake.env }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
+vi.mock("@/lib/branding/saida", () => ({
+  marcaDaSaida: async () => ({ nome: "Central de Teste" }),
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { error: (msg: string) => fake.erros.push(msg), warn: vi.fn(), info: vi.fn() },
 }));
@@ -103,6 +106,16 @@ async function comecar(query = "") {
   return { state, cookie: `crm_oauth_bind=${gravado!.value}`, consentimento };
 }
 
+/**
+ * A volta — cujo destino vem do `Location` OU do CORPO da ponte (issue #4335).
+ *
+ * Este é um retorno de NAVEGADOR vindo de `accounts.google.com`: a cadeia
+ * começou em outro site e o cookie de sessão é `sameSite: "strict"`. Um 302
+ * daqui para `/app/settings/conversoes` continua a cadeia, o `proxy.ts` não
+ * enxerga usuário e a pessoa cai em `/login` com a conexão já gravada — nunca
+ * vê a tela de conversões. Por isso a entrega é a ponte: documento same-origin
+ * com 200, `location.replace` disparado por nós.
+ */
 async function voltar(state: string, cookie?: string, parametros = "code=c") {
   const { GET } = await import("@/app/api/v1/plataformas-de-anuncio/google/callback/route");
   const resposta = await GET(
@@ -110,14 +123,35 @@ async function voltar(state: string, cookie?: string, parametros = "code=c") {
       headers: cookie ? { cookie } : {},
     }),
   );
-  const destino = new URL(resposta.headers.get("location")!);
-  return { ok: destino.searchParams.get("ok"), erro: destino.searchParams.get("erro"), destino };
+  let destino: URL;
+  const location = resposta.headers.get("location");
+  if (location) {
+    destino = new URL(location);
+  } else {
+    const corpo = await resposta.clone().text();
+    const m = /window\.location\.replace\((".*?")\);/.exec(corpo);
+    expect(m, "a volta não trouxe nem `Location` nem a ponte").not.toBeNull();
+    destino = new URL(JSON.parse(m![1]!) as string, "http://localhost:3000");
+  }
+  return {
+    ok: destino.searchParams.get("ok"),
+    erro: destino.searchParams.get("erro"),
+    status: resposta.status,
+    location: resposta.headers.get("location"),
+    destino,
+  };
 }
 
 describe("a volta da conexão de anúncios confere quem começou", () => {
   it("controle: o mesmo navegador volta e a conexão é gravada", async () => {
     const { state, cookie } = await comecar();
-    expect(await voltar(state, cookie)).toMatchObject({ ok: "1", erro: null });
+    const volta = await voltar(state, cookie);
+    expect(volta.ok).toBe("1");
+    expect(volta.erro).toBeNull();
+    // Sucesso sai pela PONTE, não por 302: é tela do `/app`, e o 302 continuaria
+    // a cadeia cross-site do Google (cookie Strict não viaja) — issue #4335.
+    expect(volta.status).toBe(200);
+    expect(volta.location).toBeNull();
     expect(fake.trocas).toBe(1);
     expect(fake.gravar.mock.calls[0]?.[0]).toBe("ad_platform_connections");
     expect(fake.papel).toHaveBeenCalledWith("admin", expect.objectContaining({ allowPlatformAdmin: false }));

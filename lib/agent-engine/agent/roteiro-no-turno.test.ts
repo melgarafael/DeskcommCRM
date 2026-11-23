@@ -689,11 +689,29 @@ describe('#1943 — turno descartado como resposta obsoleta não emite a pergunt
     // Uso no `enviar` do roteiro — o import (com `} perguntaDoRoteiroPodeSair,`)
     // vem antes da guarda e enganaria um `indexOf` simples no nome.
     const enviaRoteiro = src.indexOf('!perguntaDoRoteiroPodeSair(');
-    const marcaDescarte = src.indexOf('turnoDescartado = true');
+    // Exatamente DUAS atribuições, cada uma num dono nomeado — nenhuma solta:
+    //  1. a guarda da resposta obsoleta (#1943), depois da chamada da régua;
+    //  2. `pessoaAssumiuDuranteOTurno` (uma pessoa assumiu no meio do turno), que
+    //     descarta pelo MESMO mecanismo, e só depois de `iaVetadaNoEnvio` confirmar.
+    // Uma terceira, em qualquer lugar, reprova.
+    const atribuicoes: number[] = [];
+    for (let p = src.indexOf('turnoDescartado = true'); p !== -1; p = src.indexOf('turnoDescartado = true', p + 1)) {
+      atribuicoes.push(p);
+    }
+    expect(atribuicoes.length).toBe(2);
+    const regua = src.indexOf('await respostaFicouObsoleta(');
+    const marcaDescarte = atribuicoes.find((p) => p > regua && p < guarda) ?? -1;
     expect(marcaDescarte).toBeGreaterThan(0);
-    // Uma só atribuição, e DENTRO da guarda: depois da chamada da régua.
-    expect(src.split('turnoDescartado = true').length - 1).toBe(1);
-    expect(marcaDescarte).toBeGreaterThan(src.indexOf('await respostaFicouObsoleta('));
+    const corpoDaPessoa = src.indexOf('const pessoaAssumiuDuranteOTurno = async');
+    expect(corpoDaPessoa).toBeGreaterThan(0);
+    const fimDaPessoa = src.indexOf('\n  };', corpoDaPessoa);
+    const vetoDaPessoa = src.indexOf('await iaVetadaNoEnvio(', corpoDaPessoa);
+    const outra = atribuicoes.find((p) => p !== marcaDescarte) ?? -1;
+    expect(vetoDaPessoa).toBeGreaterThan(corpoDaPessoa);
+    expect(vetoDaPessoa).toBeLessThan(fimDaPessoa);
+    expect(outra).toBeGreaterThan(vetoDaPessoa); // só depois do veto confirmado
+    expect(outra).toBeLessThan(fimDaPessoa); // e dentro do corpo da guarda
+    expect(marcaDescarte).toBeGreaterThan(regua);
     expect(marcaDescarte).toBeLessThan(guarda); // liga ANTES de devolver resposta_obsoleta
     expect(enviaRoteiro).toBeGreaterThan(guarda); // o enviar do roteiro lê o descarte
     const tornoDoEnviar = src.slice(enviaRoteiro, enviaRoteiro + 200);

@@ -104,6 +104,8 @@ export interface ConversationsFilters {
    * vida, este é quem responde a próxima mensagem do cliente.
    */
   comando?: readonly ComandoDoBanco[];
+  /** A ordem da Fila — `recentes` põe o contato que acabou de chegar em cima. */
+  ordem_fila?: "espera" | "recentes";
   search?: string;
   /**
    * Só as que têm mensagem não lida para o dono. Vai ao BANCO — migration nenhuma,
@@ -198,6 +200,7 @@ export function useConversationsRealtime(
       if (filters.comando && filters.comando.length > 0) {
         qs.set("comando", filters.comando.join(","));
       }
+      if (filters.ordem_fila) qs.set("ordem_fila", filters.ordem_fila);
       if (filters.exclude_finished) qs.set("exclude_finished", "true");
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);

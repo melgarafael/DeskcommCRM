@@ -5523,6 +5523,7 @@ export type Database = {
         Row: {
           archived_at: string | null;
           consecutive_health_fails: number;
+          conversa_nova_cria_negocio: boolean;
           created_at: string;
           created_by: string | null;
           daily_message_limit: number;
@@ -5568,6 +5569,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null;
           consecutive_health_fails?: number;
+          conversa_nova_cria_negocio?: boolean;
           created_at?: string;
           created_by?: string | null;
           daily_message_limit?: number;
@@ -5612,6 +5614,7 @@ export type Database = {
         Update: {
           archived_at?: string | null;
           consecutive_health_fails?: number;
+          conversa_nova_cria_negocio?: boolean;
           created_at?: string;
           created_by?: string | null;
           daily_message_limit?: number;
@@ -12847,7 +12850,9 @@ export type Database = {
       };
       platform_meta_app: {
         Row: {
+          app_id: string | null;
           app_secret_encrypted: string | null;
+          config_id: string | null;
           id: number;
           updated_at: string;
           updated_by: string | null;
@@ -12856,7 +12861,9 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;
@@ -12864,7 +12871,9 @@ export type Database = {
           verify_token_encrypted?: string | null;
         };
         Update: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;
@@ -14011,6 +14020,7 @@ export type Database = {
           passada_do_banco: number | null;
           requested_by: string | null;
           retentativas_do_banco: number | null;
+          scheduled_for: string | null;
           status: string;
           to_version: string;
         };
@@ -14027,6 +14037,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14042,6 +14053,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };

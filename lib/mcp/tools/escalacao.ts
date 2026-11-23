@@ -383,7 +383,8 @@ export const crmResumeAiAttendance: McpToolDefinition<typeof retomarInputShape> 
         requestId: ctx.requestId,
         apiTokenId: ctx.apiTokenId,
       },
-      { conversationId: input.conversation_id },
+      // Só chega aqui uma PESSOA (o agente foi recusado acima).
+      { conversationId: input.conversation_id, limparClassificacaoDaIa: true },
     );
     if (!resultado.ok) throw new Error(resultado.erro);
 

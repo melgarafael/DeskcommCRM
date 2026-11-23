@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import {
   rotacionarVerifyTokenDaMeta,
+  updateEmbeddedSignupDaMeta,
   updateMetaApp,
   type UpdateMetaAppResult,
 } from "@/app/actions/settings/updateMetaApp";
@@ -41,6 +42,10 @@ interface Props {
   /** O par está no `.env` desta instalação (o piso de rollback). */
   readonly temNoAmbiente: boolean;
   readonly leituraFalhou: boolean;
+  /** App ID do Embedded Signup (#4074). Não é segredo — volta preenchido. */
+  readonly appId?: string;
+  /** Configuration ID do Embedded Signup. Não é segredo. */
+  readonly configId?: string;
 }
 
 /** O piso do schema da action. Abaixo disso o Zod recusa e a tela culparia o dono. */
@@ -53,6 +58,8 @@ export function FormularioDaMeta({
   atualizadoEm,
   temNoAmbiente,
   leituraFalhou,
+  appId = "",
+  configId = "",
 }: Props) {
   const t = useT();
   const router = useRouter();
@@ -65,6 +72,12 @@ export function FormularioDaMeta({
   const [tokenNovo, setTokenNovo] = useState<string | null>(null);
   const [confirmandoTroca, setConfirmandoTroca] = useState(false);
   const [ocupado, iniciar] = useTransition();
+  const [embedded, setEmbedded] = useState({ app_id: appId, config_id: configId });
+  const idValido = (v: string) => v.trim() === "" || /^\d{5,30}$/.test(v.trim());
+  const podeSalvarEmbedded =
+    idValido(embedded.app_id) &&
+    idValido(embedded.config_id) &&
+    (embedded.app_id.trim() !== appId || embedded.config_id.trim() !== configId);
 
   const podeSalvar = chave.trim().length >= TAMANHO_MINIMO_DA_CHAVE;
 
@@ -101,6 +114,20 @@ export function FormularioDaMeta({
       const r = await updateMetaApp({ app_secret: chave.trim() });
       if (r.ok) setChave("");
       aoGravar(r, t("Chave secreta salva."));
+    });
+  }
+
+  function salvarEmbedded() {
+    iniciar(async () => {
+      const r = await updateEmbeddedSignupDaMeta({
+        app_id: embedded.app_id.trim(),
+        config_id: embedded.config_id.trim(),
+      });
+      if (!r.ok && r.error === "embedded_invalido") {
+        toast.error(t("O App ID e o Configuration ID são só números. Copie de novo do painel da Meta."));
+        return;
+      }
+      aoGravar(r, t("Conexão pelo Facebook salva."));
     });
   }
 
@@ -245,6 +272,59 @@ export function FormularioDaMeta({
             </Button>
           </div>
         ) : null}
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-4" data-testid="meta-embedded-signup">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-medium">{t("Conexão pelo Facebook (Embedded Signup)")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t("Para quem tem o app aprovado como Tech Provider. Com estes dois campos e a chave secreta acima, aparece em Conexões › API Oficial o botão “Conectar com o Facebook”: a empresa escolhe o número numa janela da Meta, sem copiar token nenhum.")}
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="meta-app-id">{t("App ID (ID do aplicativo)")}</Label>
+          <Input
+            id="meta-app-id"
+            data-testid="meta-app-id"
+            inputMode="numeric"
+            autoComplete="off"
+            value={embedded.app_id}
+            onChange={(e) => setEmbedded((v) => ({ ...v, app_id: e.target.value }))}
+            placeholder="1899991748030546"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("No painel da Meta, em Configurações do app › Básico, no topo da página.")}
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="meta-config-id">{t("Configuration ID (ID da configuração)")}</Label>
+          <Input
+            id="meta-config-id"
+            data-testid="meta-config-id"
+            inputMode="numeric"
+            autoComplete="off"
+            value={embedded.config_id}
+            onChange={(e) => setEmbedded((v) => ({ ...v, config_id: e.target.value }))}
+            placeholder="123456789012345"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("No painel da Meta, em Login do Facebook para Empresas › Configurações, a configuração do WhatsApp Embedded Signup.")}
+          </p>
+        </div>
+        {!temSegredoSalvo ? (
+          <p className="text-xs text-destructive">
+            {t("Cadastre também a chave secreta do aplicativo acima — sem ela o botão não aparece.")}
+          </p>
+        ) : null}
+        <div className="flex justify-end">
+          <Button
+            data-testid="meta-salvar-embedded"
+            disabled={!podeSalvarEmbedded || ocupado}
+            onClick={salvarEmbedded}
+          >
+            {ocupado ? t("Salvando…") : t("Salvar")}
+          </Button>
+        </div>
       </Card>
 
       <AlertDialog open={confirmandoTroca} onOpenChange={setConfirmandoTroca}>

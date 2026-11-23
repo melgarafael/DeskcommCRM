@@ -12,6 +12,10 @@ source "$(dirname "$0")/_common.sh"
 enter_project
 
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
+# Retenção por QUANTIDADE, por tipo (#4837). Vem do .env — `load_env` já rodou
+# dentro do `enter_project` — e 14 é o padrão histórico: quem já instalou e não
+# escrever nada continua com o mesmo comportamento de antes.
+BACKUP_KEEP="${BACKUP_KEEP:-14}"
 # Backup é o banco inteiro, a sessão do WhatsApp (quem a lê fala pelo número da
 # empresa) e os anexos dos clientes: só o dono lê. Todo arquivo de backup nasce
 # no HOST, deste umask e com dono = quem chamou: os `tar` dos contêineres mandam
@@ -63,6 +67,16 @@ if command -v flock >/dev/null 2>&1; then
   fi
 else
   c_ylw "⚠ flock não existe neste sistema: sigo sem exclusão mútua — não rode dois backups ao mesmo tempo nesta pasta."
+fi
+
+# `--podar` aplica SÓ a retenção e sai: é o comando que a recusa por falta de
+# espaço do update.sh ensina (`backup.sh --podar`), porque o caminho normal de
+# quem está com o disco cheio passaria primeiro por um backup novo — ocupando
+# mais espaço antes de liberar qualquer coisa.
+if [ "${1:-}" = "--podar" ]; then
+  step "Aplicando a retenção dos backups (mantém $BACKUP_KEEP por tipo)"
+  podar_backups "$BACKUP_DIR" "$BACKUP_KEEP"
+  exit 0
 fi
 
 # Timestamp vem do host (não do script) pra manter determinismo do kit.
@@ -134,9 +148,10 @@ if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   c_grn "✓ anexos: $(du -h "$BACKUP_DIR/storage-$ts.tgz" | awk '{print $1}')"
 fi
 
-# Retenção: mantém os 14 mais recentes de cada tipo.
-step "Limpando backups antigos (mantém 14)"
-(ls -1t "$BACKUP_DIR"/db-*.sql.gz 2>/dev/null || true) | tail -n +15 | xargs -r rm -f 2>/dev/null || true
-(ls -1t "$BACKUP_DIR"/waha-*.tgz 2>/dev/null || true) | tail -n +15 | xargs -r rm -f 2>/dev/null || true
-(ls -1t "$BACKUP_DIR"/storage-*.tgz 2>/dev/null || true) | tail -n +15 | xargs -r rm -f 2>/dev/null || true
+# Retenção: os N mais recentes de cada tipo (#4837). A quantidade vem do .env
+# (BACKUP_KEEP, padrão 14) porque 14 cópias de 1,6 GB são 22 GB num disco de
+# 96 GB. A poda mora no `_common.sh`: apaga do mais antigo para o mais
+# novo e NUNCA o mais recente — nem quando a instalação tem um arquivo só.
+step "Limpando backups antigos (mantém $BACKUP_KEEP por tipo)"
+podar_backups "$BACKUP_DIR" "$BACKUP_KEEP"
 c_grn "✓ backup concluído em $BACKUP_DIR"
