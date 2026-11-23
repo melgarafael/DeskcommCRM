@@ -14,6 +14,13 @@
  * mas quem reporta vê null e não um "de graça" inventado. Falha de preço
  * desconhecido avisa no log uma vez por modelo (não é silenciosa).
  *
+ * Os ids com PROMOÇÃO DATADA (Gemini 3.5/3.6/3.7/3.8 Flash, 4 Argon) desviam
+ * para `costCentsComVirada` antes de ler o catálogo: a linha de `ai_models`
+ * desses ids guarda a tarifa POSTERIOR à promoção (catalogos 0649/0703), então
+ * ler direto dela cobrava 2× até o corte — o defeito do #5171. O corte por data
+ * mora num lugar só, `precoDoModelo` (`lib/agent-engine/edge/llm/pricing.ts`), o
+ * MESMO que `computeCost` (`lib/ai/cost.ts`) usa: as duas rotas não divergem.
+ *
  * IMPORTANT: distinct from `lib/ai/cost.ts` which still serves the legacy
  * `ai_pricing` table used by the EPIC-06 RAG worker.
  */
@@ -21,6 +28,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { multiplicadorDoDegrau } from "@/lib/ai/custo-escalonado";
 import { normalizarModeloId } from "@/lib/ai/modelo-id";
+import { costCentsComVirada } from "@/lib/agent-engine/edge/llm/pricing";
 
 // A normalização do id mudou de arquivo (o degrau do Haiku 5.5 a usa e não pode
 // importar de quem o importa — #4123), mas continua saindo daqui: é deste
@@ -66,6 +74,12 @@ export interface ComputeCostInput {
   model: string;
   inputTokens?: number;
   outputTokens?: number;
+  /**
+   * Instante da chamada no relógio do turno. Decide a tarifa dos ids com
+   * promoção datada — o MESMO `em` de `computeCost` (`lib/ai/cost.ts`). Sem ele,
+   * vale agora.
+   */
+  em?: Date;
 }
 
 function acharLinha(
@@ -119,6 +133,26 @@ function avisarSemPreco(provider: string, modelo: string): void {
  * caro entrar no teto como gratuito (defeito do #1880, agora calado em null).
  */
 export async function computeCostCents(input: ComputeCostInput): Promise<number | null> {
+  // ═══ #5171 — A PROMOÇÃO DATADA É JULGADA ANTES DO CATÁLOGO ═══
+  //
+  // Para os ids de `PROMOCOES` (Gemini 3.5/3.6/3.7/3.8 Flash, 4 Argon) a linha
+  // de `ai_models` guarda a tarifa POSTERIOR ao corte (0649/0703) — ler direto
+  // dela cobrava o DOBRO de `ai_agent_runs.cost_cents` até o corte. Este é o
+  // MESMO desvio que `computeCost` (`lib/ai/cost.ts`) faz: `costCentsComVirada`
+  // devolve `null` quando o id não tem promoção, e aí o catálogo decide como
+  // sempre. O degrau do Haiku 5.5 continua valendo aqui — é outro eixo.
+  const pelaVirada = costCentsComVirada(
+    input.model,
+    {
+      inputTokens: input.inputTokens ?? 0,
+      outputTokens: input.outputTokens ?? 0,
+    },
+    input.em ?? new Date(),
+  );
+  if (pelaVirada !== null) {
+    return pelaVirada * multiplicadorDoDegrau(input.model, input.inputTokens);
+  }
+
   const pricing = await loadPricing();
   const row = acharLinha(pricing, input);
   if (!row) {
