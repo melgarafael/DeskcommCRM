@@ -23237,6 +23237,7 @@ export const DICIONARIO: Traducoes = {
   "Adicionar anotação": { es: "Agregar nota" },
   "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
   "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
+  "Dias na etapa atual": { es: "Días en la etapa actual" },
   // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },
