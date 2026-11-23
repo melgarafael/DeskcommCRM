@@ -5,9 +5,13 @@
  *   1. CLAIM: marca `claimed_until` com UPDATE condicional. Só quem marcar a linha
  *      processa; duas rodadas simultâneas não encaminham o mesmo envio.
  *   2. quem agendou perdeu o acesso → `cancelada` (`sem_acesso`).
- *   3. número fora do ar + `esperar` → solta a trava e tenta no próximo minuto.
- *   4. número fora do ar + `cancelar` → `cancelada` (`numero_desconectado`).
- *   5. número no ar → encaminha; `encaminhada` com o `message_id`, ou `falhou`.
+ *   3. escolhe a conversa CONECTADA mais recente do contato (sessao-do-contato.ts).
+ *      Se a conexão da conversa caiu e o número foi lido de novo, o envio sai pela
+ *      nova, e o agendamento passa a apontar para ela.
+ *   4. sem conversa conectada: série e envio com `esperar` → solta a trava e tenta no
+ *      próximo minuto; envio único com `cancelar` → `cancelada` (`numero_desconectado`).
+ *      Série nunca cancela por desconexão.
+ *   5. encaminha; `encaminhada` com o `message_id`, ou `falhou`.
  *
  * Segunda parte da #3118 (repetição): a linha é a SÉRIE. Ao fim de cada ocorrência,
  * a regra de `lib/agendamento-mensagem/serie.ts` decide se a série segue para a
@@ -27,9 +31,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   autorAindaTemAcesso,
   encaminharAgendamento,
-  sessaoEstaConectada,
   type AgendamentoParaEnvio,
 } from "@/lib/agendamento-mensagem/envio";
+import { resolverConversaConectada } from "@/lib/agendamento-mensagem/sessao-do-contato";
 import { proximoDaSerie } from "@/lib/agendamento-mensagem/serie";
 import type { RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
 
@@ -99,37 +103,59 @@ async function handle(req: NextRequest): Promise<Response> {
       .select(COLUNAS);
     // As colunas vêm do CLAIM, não da leitura da fila: uma edição feita entre as
     // duas não pode sair com o texto antigo.
-    const ag = (reservada?.[0] ?? null) as LinhaDevida | null;
+    let ag = (reservada?.[0] ?? null) as LinhaDevida | null;
     if (!ag) continue;
     resumo.processadas++;
-
-    let final: Final;
-    if (!(await autorAindaTemAcesso(admin, ag))) {
-      final = { status: "cancelada", motivo: "sem_acesso" };
-    } else if (!(await sessaoEstaConectada(admin, ag.organization_id, ag.channel_session_id))) {
-      if (ag.se_desconectado === "esperar") {
-        await soltar(ag.id);
-        resumo.esperando++;
-        continue;
-      }
-      final = { status: "cancelada", motivo: "numero_desconectado" };
-    } else {
-      const desfecho = await encaminharAgendamento(admin, ag);
-      // Org parada no meio do envio: não grava desfecho. O agendamento fica como
-      // estava e a rota volta a ele quando a org for operante de novo.
-      if (desfecho.desfecho === "org_parada") {
-        await soltar(ag.id);
-        continue;
-      }
-      final =
-        desfecho.desfecho === "encaminhada"
-          ? { status: "encaminhada", message_id: desfecho.message_id }
-          : { status: "falhou", motivo: desfecho.motivo };
-    }
 
     // Série: a régua decide se segue para a próxima ocorrência. Envio único: não há próxima.
     // Sem recorrência gravada (ou "nenhuma") é envio único: nunca série por engano.
     const serie = Boolean(ag.recorrencia) && ag.recorrencia !== "nenhuma";
+
+    let final: Final;
+    if (!(await autorAindaTemAcesso(admin, ag))) {
+      final = { status: "cancelada", motivo: "sem_acesso" };
+    } else {
+      // A conversa de envio é a MAIS RECENTE do contato cuja sessão está conectada.
+      // Se a conexão caiu e o número foi lido de novo por QR, a conversa antiga fica
+      // numa sessão parada, e o envio sai pela nova sem apagar nada.
+      const escolha = await resolverConversaConectada(admin, ag.organization_id, ag.contact_id);
+      if (!escolha) {
+        // Série nunca cancela por desconexão: espera a reconexão. Envio único segue a
+        // escolha de quem agendou ("esperar" ou "cancelar").
+        if (serie || ag.se_desconectado === "esperar") {
+          await soltar(ag.id);
+          resumo.esperando++;
+          continue;
+        }
+        final = { status: "cancelada", motivo: "numero_desconectado" };
+      } else {
+        if (escolha.conversation_id !== ag.conversation_id || escolha.channel_session_id !== ag.channel_session_id) {
+          const { error: troca } = await admin
+            .from("mensagens_agendadas")
+            .update({ conversation_id: escolha.conversation_id, channel_session_id: escolha.channel_session_id })
+            .eq("id", ag.id)
+            .eq("organization_id", ag.organization_id)
+            .eq("status", "agendada");
+          if (troca) {
+            await soltar(ag.id);
+            continue;
+          }
+          ag = { ...ag, conversation_id: escolha.conversation_id, channel_session_id: escolha.channel_session_id };
+        }
+        const desfecho = await encaminharAgendamento(admin, ag);
+        // Org parada no meio do envio: não grava desfecho. O agendamento fica como
+        // estava e a rota volta a ele quando a org for operante de novo.
+        if (desfecho.desfecho === "org_parada") {
+          await soltar(ag.id);
+          continue;
+        }
+        final =
+          desfecho.desfecho === "encaminhada"
+            ? { status: "encaminhada", message_id: desfecho.message_id }
+            : { status: "falhou", motivo: desfecho.motivo };
+      }
+    }
+
     const motivoDaOcorrencia = final.status === "encaminhada" ? null : final.motivo;
     const proximo = serie
       ? proximoDaSerie(regraDaLinha(ag), agora, { status: final.status, motivo: motivoDaOcorrencia })
