@@ -37,7 +37,7 @@ const SEM_PRECO_NO_MOTOR_CONHECIDOS = new Set(["gpt-5", "gpt-5-mini"]);
  *
  * Esta lista está vazia: todo modelo Gemini em ai_pricing concorda com o motor.
  * A divergência do `gemini-3.5-flash` (150/900 no banco, 150/750 no motor) foi
- * alinhada pela migration 9447 (#5090).
+ * alinhada pela migration 9462 (#5090).
  */
 const DIVERGENCIA_DE_BANCO: Record<
   string,
