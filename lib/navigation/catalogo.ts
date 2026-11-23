@@ -1213,6 +1213,23 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    // #5128 — quais TIPOS de link a ficha e o funil mostram. O catálogo vivia
+    // fixo no código (`lib/leads/links-de-contato.ts`) e toda operação carregava
+    // campo que não usa: clínica não preenche TikTok, escritório não preenche
+    // Google Meu Negócio. Desmarcar não apaga valor nenhum — o ajuste é de TELA.
+    //
+    // `admin` e não `manager`: a escolha vale para a empresa inteira e esconde
+    // campo de todo mundo, o mesmo alcance da chave que a tela vizinha
+    // (`settings/catalogo`) grava. A rota de escrita cobra o mesmo papel.
+    href: "/app/settings/links-de-contato",
+    label: "Tipos de link do contato",
+    description: "Quais tipos de link a ficha do contato e o funil mostram.",
+    icon: "LinkIcon",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+  },
+  {
     // A área única dos recursos opcionais (pedido do mantenedor, doc 73/80):
     // tudo o que a empresa pode ligar, com o estado e o caminho até a tela onde
     // se liga. Só leitura — quem liga continua sendo a tela do assunto.

@@ -67,6 +67,7 @@ import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { EmpresaDaProspeccao } from "@/components/crm-b2b/EmpresaDaProspeccao";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { useTiposDeLink } from "@/hooks/leads/useTiposDeLink";
 import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
 import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
@@ -140,6 +141,9 @@ export function ContactDetailClient({
   const jaTemNome = typeof metadataDoContato.campaign_name === "string";
   const origemGoogle = (metadataDoContato.ad_platform ?? q.data?.data.source) === "google_ads";
   const hierarquia = useHierarquiaDoAnuncio(contactId, !origemGoogle && temAnuncio && !jaTemNome);
+  // #5128: os tipos que a organização escolheu mostrar. Hook antes dos `return`
+  // condicionais (regra dos hooks) e com o catálogo inteiro como fallback.
+  const tiposDeLink = useTiposDeLink();
 
   if (q.isLoading) {
     return (
@@ -162,7 +166,9 @@ export function ContactDetailClient({
   // O documento do titular é o do PAÍS da organização (CPF, NIF): o rótulo da
   // linha e a máscara saem do perfil, a mesma régua do cadastro.
   const perfilDoPaisDaOrg = perfilDoPais(activeOrg?.country);
-  const linksDoContato = linksParaExibir(contact.custom_fields);
+  const linksDoContato = linksParaExibir(contact.custom_fields).filter(({ tipo }) =>
+    tiposDeLink.includes(tipo),
+  );
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este

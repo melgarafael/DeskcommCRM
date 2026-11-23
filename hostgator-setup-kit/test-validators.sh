@@ -815,6 +815,27 @@ saude_ok "unhealthy AINDA QUE o redis esteja ok" nao      unhealthy "$UNHEALTHY"
 saude_ok "porta aberta, app mudo"                nao      ''        ''
 saude_ok "proxy devolveu HTML de erro"           nao      ''        '<html>502 Bad Gateway</html>'
 
+echo "prazo dos comandos com o docker (#5055)"
+# `com_prazo` é o que impede o healthcheck de parar num `docker compose exec`
+# que herda o terminal: o filho, em grupo de processos fora do primeiro plano,
+# PARA ao ler o stdin (SIGTTIN), e o TERM do prazo fica pendente num processo
+# parado — o `timeout` espera por ele para sempre. Fechar o stdin tira a leitura
+# do terminal; o `-k` garante que quem ignora o TERM também não prenda o passo.
+# A prova de TEMPO (o healthcheck terminando com o app mudo) fica em
+# tests/shell/healthcheck-com-prazo-nao-trava.test.sh; aqui a leitura é do
+# contrato, que é o que qualquer refatoração futura de `com_prazo` pode quebrar.
+corpo_do_prazo="$(awk '/^com_prazo\(\)/{dentro=1} dentro{print} dentro && /^}/{exit}' ./_common.sh)"
+if printf '%s' "$corpo_do_prazo" | grep -q '</dev/null'; then
+  printf '  ✓ com_prazo fecha o stdin de quem roda sob prazo\n'
+else
+  printf '  ✗ com_prazo não fecha o stdin: um `docker compose exec` sob prazo para no terminal (SIGTTIN) e o passo não termina\n'; fail=1
+fi
+if printf '%s' "$corpo_do_prazo" | grep -q -- '-k 5'; then
+  printf '  ✓ com_prazo mata à força 5s depois do prazo (-k)\n'
+else
+  printf '  ✗ com_prazo não usa -k: um comando que ignora o TERM prende o passo para sempre\n'; fail=1
+fi
+
 wait_recovers_after_probe_timeout() (
   local dir deadline body rc=0
   deadline="$(command -v timeout)"

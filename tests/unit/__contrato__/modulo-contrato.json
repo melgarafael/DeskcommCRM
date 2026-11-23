@@ -219,6 +219,7 @@
       "GET /api/v1/attendants/sectors",
       "GET /api/v1/settings/atendimento",
       "GET /api/v1/settings/campanhas",
+      "GET /api/v1/settings/links-de-contato",
       "GET /api/v1/settings/proposal-templates",
       "GET /api/v1/settings/proposal-templates/[id]",
       "GET /api/v1/settings/proposals",
@@ -233,6 +234,7 @@
       "PATCH /api/v1/settings/atendimento",
       "PATCH /api/v1/settings/campanhas",
       "PATCH /api/v1/settings/catalogo",
+      "PATCH /api/v1/settings/links-de-contato",
       "PATCH /api/v1/settings/proposal-templates/[id]",
       "PATCH /api/v1/settings/proposals",
       "PATCH /api/v1/settings/prospeccao",
@@ -1740,6 +1742,16 @@
           "nome": "patchSchema",
           "origem": "local",
           "hash": "74c95be5b1a8424d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/links-de-contato": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "0a53a4ee909f3cec"
         }
       ],
       "resposta": []
