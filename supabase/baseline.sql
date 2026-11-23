@@ -83466,7 +83466,9 @@ notify pgrst, 'reload schema';
 -- `update.sh` reaplica sem ON_ERROR_STOP e em autocommit, e uma falha entre o
 -- `drop constraint` e o `add constraint` deixaria a tabela sem a FK (lição do
 -- #2670). O gatilho que apaga o histórico sem contato nasce antes da troca: com
--- o CASCADE ainda de pé ele é inofensivo (apaga o que a cascata apagaria).
+-- o CASCADE ainda de pé ele é inofensivo (apaga o que a cascata apagaria). O
+-- gatilho em `contacts` (o negócio saiu antes, o contato sai depois) também:
+-- com o CASCADE de pé, `lead_id` nulo não existe e ele não apaga nada.
 create or replace function public.fn_mover_leads_em_lote(
   p_organization_id uuid,
   p_lead_ids uuid[],
@@ -83604,6 +83606,33 @@ drop trigger if exists trg_crm_leads_apaga_historico_sem_contato on public.crm_l
 create trigger trg_crm_leads_apaga_historico_sem_contato
   before delete on public.crm_leads
   for each row execute function public.fn_crm_lead_apaga_historico_sem_contato();
+
+-- O outro lado do mesmo buraco: o negócio sai primeiro, a linha fica só com o
+-- `contact_id`, e DEPOIS o contato é apagado. `crm_lead_activities_contact_id_fkey`
+-- é ON DELETE SET NULL, então a linha ficaria sem negócio e sem contato — fora do
+-- alcance da anonimização para sempre. O gatilho apaga, junto com o contato, a
+-- linha que só ele segurava; vale para todo caminho que apaga contato, não só
+-- para `fn_apagar_contato_com_historico`. Linha que ainda tem negócio fica (o
+-- SET NULL a deixa com o negócio, e o gatilho de `crm_leads` acima a alcança se o
+-- negócio sair depois). Mesmo molde do de cima: definer porque `authenticated`
+-- não tem DELETE na timeline, sem seletor, não é chamável pela REST, sem HTTP.
+create or replace function public.fn_contato_apaga_historico_sem_negocio()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.crm_lead_activities a
+   where a.lead_id is null
+     and a.contact_id = old.id
+     and a.organization_id = old.organization_id;
+  return old;
+end;
+$$;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from public, anon;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from authenticated;
+
+drop trigger if exists trg_contacts_apaga_historico_sem_negocio on public.contacts;
+create trigger trg_contacts_apaga_historico_sem_negocio
+  before delete on public.contacts
+  for each row execute function public.fn_contato_apaga_historico_sem_negocio();
 
 do $historico9466$ begin
   update public.crm_lead_activities a

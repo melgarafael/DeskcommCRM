@@ -17,10 +17,14 @@ import { lastLine, sql } from "./gov-helpers";
  *      anonimizado (é o "histórico preservado" que a B promete);
  *   2. a linha SEM contato é apagada junto com o negócio
  *      (`trg_crm_leads_apaga_historico_sem_contato`), como o CASCADE fazia —
- *      vale também para o negócio que nunca teve contato.
+ *      vale também para o negócio que nunca teve contato;
+ *   3. o negócio sai primeiro e o CONTATO é apagado depois: a FK do contato é
+ *      `ON DELETE SET NULL`, e a linha ficaria sem negócio e sem contato. Ela sai
+ *      junto com o contato (`trg_contacts_apaga_historico_sem_negocio`).
  *
- * Sabotagem (medida no PR): sem o gatilho, (2) fica vermelho com a linha órfã
- * legível depois da anonimização.
+ * Sabotagem (medida no PR): sem o gatilho de `crm_leads`, (2) fica vermelho com a
+ * linha órfã legível depois da anonimização; sem o de `contacts`, (3) fica
+ * vermelho com a linha sem negócio e sem contato ainda na tabela.
  *
  * Namespace 9f43.
  */
@@ -34,6 +38,10 @@ const LEAD_SEM_CONTATO = "9f430005-0000-4000-8000-000000000002";
 const COM_CONTATO = "9f430006-0000-4000-8000-000000000001";
 const SEM_CONTATO_DO_NEGOCIO_COM_CONTATO = "9f430006-0000-4000-8000-000000000002";
 const DO_NEGOCIO_SEM_CONTATO = "9f430006-0000-4000-8000-000000000003";
+// Caso 3: o negócio sai antes, o contato sai depois.
+const CONTATO_APAGADO = "9f430004-0000-4000-8000-000000000002";
+const LEAD_DO_CONTATO_APAGADO = "9f430005-0000-4000-8000-000000000003";
+const DO_CONTATO_APAGADO = "9f430006-0000-4000-8000-000000000004";
 
 const TODAS = [COM_CONTATO, SEM_CONTATO_DO_NEGOCIO_COM_CONTATO, DO_NEGOCIO_SEM_CONTATO]
   .map((id) => `'${id}'`)
@@ -53,13 +61,15 @@ beforeAll(() => {
       values ('${ETAPA}', '${ORG}', '${PIPE}', 'Novo', 'novo-9f43', 1000)
       on conflict (id) do nothing;
 
-    insert into public.contacts (id, organization_id, name)
-      values ('${CONTATO}', '${ORG}', 'Maria Silva')
+    insert into public.contacts (id, organization_id, name) values
+      ('${CONTATO}', '${ORG}', 'Maria Silva'),
+      ('${CONTATO_APAGADO}', '${ORG}', 'João Souza')
       on conflict (id) do nothing;
 
     insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title, contact_id) values
       ('${LEAD_COM_CONTATO}', '${ORG}', '${PIPE}', '${ETAPA}', 'Negócio da Maria', '${CONTATO}'),
-      ('${LEAD_SEM_CONTATO}', '${ORG}', '${PIPE}', '${ETAPA}', 'Negócio sem ficha', null)
+      ('${LEAD_SEM_CONTATO}', '${ORG}', '${PIPE}', '${ETAPA}', 'Negócio sem ficha', null),
+      ('${LEAD_DO_CONTATO_APAGADO}', '${ORG}', '${PIPE}', '${ETAPA}', 'Negócio do João', '${CONTATO_APAGADO}')
       on conflict (id) do nothing;
 
     -- Três linhas legíveis: a que leva o contato, a de um emissor que gravou sem
@@ -71,7 +81,9 @@ beforeAll(() => {
       ('${SEM_CONTATO_DO_NEGOCIO_COM_CONTATO}', '${ORG}', '${LEAD_COM_CONTATO}', null, 'document_attached',
        'leads/attachments', 'Documento anexado: RG da Maria', '{"file_name":"rg-maria.pdf"}'::jsonb),
       ('${DO_NEGOCIO_SEM_CONTATO}', '${ORG}', '${LEAD_SEM_CONTATO}', null, 'stage_changed', 'crm',
-       'Movido de Novo para Ganho', '{"nota":"cliente sem ficha"}'::jsonb)
+       'Movido de Novo para Ganho', '{"nota":"cliente sem ficha"}'::jsonb),
+      ('${DO_CONTATO_APAGADO}', '${ORG}', '${LEAD_DO_CONTATO_APAGADO}', '${CONTATO_APAGADO}', 'stage_changed', 'crm',
+       'João pediu desconto', '{"nota":"João Souza"}'::jsonb)
       on conflict (id) do nothing;
   `);
 });
@@ -110,5 +122,26 @@ describe("histórico do negócio apagado e a anonimização (#4852, doc 400)", (
     expect(
       lastLine(sql(`select count(*) from public.crm_lead_activities where id = '${COM_CONTATO}';`)),
     ).toBe("1");
+  });
+
+  it("apaga o negócio, depois apaga o contato → 0 linhas dele em crm_lead_activities", () => {
+    sql(`delete from public.crm_leads where id = '${LEAD_DO_CONTATO_APAGADO}';`);
+
+    // Controle: depois do negócio, a linha segue lá, só com o contato.
+    expect(
+      sql(`
+        select (lead_id is null)::text || '|' || contact_id::text
+          from public.crm_lead_activities where id = '${DO_CONTATO_APAGADO}';
+      `),
+    ).toBe(`true|${CONTATO_APAGADO}`);
+
+    // O caminho da tela (DELETE /api/v1/contacts/[id]).
+    expect(
+      lastLine(sql(`select public.fn_apagar_contato_com_historico('${CONTATO_APAGADO}', '${ORG}');`)),
+    ).toBe("t");
+
+    expect(
+      lastLine(sql(`select count(*) from public.crm_lead_activities where id = '${DO_CONTATO_APAGADO}';`)),
+    ).toBe("0");
   });
 });

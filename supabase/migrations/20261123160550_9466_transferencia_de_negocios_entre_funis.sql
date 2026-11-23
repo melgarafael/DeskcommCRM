@@ -1,4 +1,4 @@
--- manifest: **Os negócios EM ANDAMENTO de um funil vão para outro funil de uma vez, e o histórico comercial sobrevive ao negócio (issue #4802, item 3; doc de decisão 400, opção B).** `fn_mover_leads_em_lote` passa a gravar `pipeline_id` junto com `stage_id`, tirado da PRÓPRIA etapa de destino (nunca de um parâmetro, que poderia divergir dela) — é o que permite `POST /api/v1/pipelines/[id]/negocios` levar os negócios ABERTOS de um funil a outro pelo MESMO caminho do lote do quadro, numa transação só; ganhos e perdidos ficam no funil de origem (P-01 revista só para o aberto; P-02 sem exceção, o gatilho de fechamento não muda). Para os chamadores de hoje (o lote do quadro, que recusa etapa de outro funil com `pipeline_immutable_use_clone`) o valor gravado é o que já estava na linha. `crm_lead_activities.lead_id` deixa de ser `NOT NULL` e a FK passa de `ON DELETE CASCADE` para `ON DELETE SET NULL`: a linha do histórico sobrevive ao negócio pelo `contact_id`, que é por onde a anonimização da LGPD a encontra. Por isso, ANTES da troca, o `contact_id` vazio é preenchido com o do negócio, e um gatilho `BEFORE DELETE` em `crm_leads` (`fn_crm_lead_apaga_historico_sem_contato`, sem HTTP, revogada de public/anon/authenticated) apaga junto com o negócio a linha que continua sem contato — como o CASCADE fazia —, para nenhuma linha ficar fora do alcance da anonimização. A policy de leitura ganha o braço da linha órfã (organização inteira, `org_wide_read`). Gate: `tests/invariants/historico-do-negocio-apagado-e-legivel.test.ts`, `tests/invariants/historico-do-negocio-apagado-anonimiza.test.ts`, `lib/pipelines/transferencia-de-negocios.test.ts`, `app/api/v1/pipelines/[id]/negocios/route.test.ts`.
+-- manifest: **Os negócios EM ANDAMENTO de um funil vão para outro funil de uma vez, e o histórico comercial sobrevive ao negócio (issue #4802, item 3; doc de decisão 400, opção B).** `fn_mover_leads_em_lote` passa a gravar `pipeline_id` junto com `stage_id`, tirado da PRÓPRIA etapa de destino (nunca de um parâmetro, que poderia divergir dela) — é o que permite `POST /api/v1/pipelines/[id]/negocios` levar os negócios ABERTOS de um funil a outro pelo MESMO caminho do lote do quadro, numa transação só; ganhos e perdidos ficam no funil de origem (P-01 revista só para o aberto; P-02 sem exceção, o gatilho de fechamento não muda). Para os chamadores de hoje (o lote do quadro, que recusa etapa de outro funil com `pipeline_immutable_use_clone`) o valor gravado é o que já estava na linha. `crm_lead_activities.lead_id` deixa de ser `NOT NULL` e a FK passa de `ON DELETE CASCADE` para `ON DELETE SET NULL`: a linha do histórico sobrevive ao negócio pelo `contact_id`, que é por onde a anonimização da LGPD a encontra. Por isso, ANTES da troca, o `contact_id` vazio é preenchido com o do negócio, e um gatilho `BEFORE DELETE` em `crm_leads` (`fn_crm_lead_apaga_historico_sem_contato`, sem HTTP, revogada de public/anon/authenticated) apaga junto com o negócio a linha que continua sem contato — como o CASCADE fazia —; e um segundo gatilho `BEFORE DELETE` em `contacts` (`fn_contato_apaga_historico_sem_negocio`, mesmo molde, `search_path` vazio) apaga junto com o contato a linha que já tinha perdido o negócio, porque `crm_lead_activities_contact_id_fkey` é `ON DELETE SET NULL` e ela ficaria sem negócio e sem contato. São os dois casos medidos no invariante da anonimização: o negócio apagado com o contato anonimizado depois, e o negócio apagado com o contato apagado depois. A policy de leitura ganha o braço da linha órfã (organização inteira, `org_wide_read`). Gate: `tests/invariants/historico-do-negocio-apagado-e-legivel.test.ts`, `tests/invariants/historico-do-negocio-apagado-anonimiza.test.ts`, `lib/pipelines/transferencia-de-negocios.test.ts`, `app/api/v1/pipelines/[id]/negocios/route.test.ts`.
 
 -- =====================================================================
 -- #4802 (item 3) — transferência em massa de negócios ao arquivar ou excluir
@@ -180,6 +180,33 @@ drop trigger if exists trg_crm_leads_apaga_historico_sem_contato on public.crm_l
 create trigger trg_crm_leads_apaga_historico_sem_contato
   before delete on public.crm_leads
   for each row execute function public.fn_crm_lead_apaga_historico_sem_contato();
+
+-- O outro lado do mesmo buraco: o negócio sai primeiro, a linha fica só com o
+-- `contact_id`, e DEPOIS o contato é apagado. `crm_lead_activities_contact_id_fkey`
+-- é ON DELETE SET NULL, então a linha ficaria sem negócio e sem contato — fora do
+-- alcance da anonimização para sempre. O gatilho apaga, junto com o contato, a
+-- linha que só ele segurava; vale para todo caminho que apaga contato, não só
+-- para `fn_apagar_contato_com_historico`. Linha que ainda tem negócio fica (o
+-- SET NULL a deixa com o negócio, e o gatilho de `crm_leads` acima a alcança se o
+-- negócio sair depois). Mesmo molde do de cima: definer porque `authenticated`
+-- não tem DELETE na timeline, sem seletor, não é chamável pela REST, sem HTTP.
+create or replace function public.fn_contato_apaga_historico_sem_negocio()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.crm_lead_activities a
+   where a.lead_id is null
+     and a.contact_id = old.id
+     and a.organization_id = old.organization_id;
+  return old;
+end;
+$$;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from public, anon;
+revoke execute on function public.fn_contato_apaga_historico_sem_negocio() from authenticated;
+
+drop trigger if exists trg_contacts_apaga_historico_sem_negocio on public.contacts;
+create trigger trg_contacts_apaga_historico_sem_negocio
+  before delete on public.contacts
+  for each row execute function public.fn_contato_apaga_historico_sem_negocio();
 
 update public.crm_lead_activities a
    set contact_id = l.contact_id
