@@ -51,6 +51,17 @@ import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Repetição das mensagens agendadas (segunda parte da #3118).
+  "repetição": { es: "repetición" },
+  "Recorrência": { es: "Repetición" },
+  "Nenhuma (envio único)": { es: "Ninguna (envío único)" },
+  "Quinzenal": { es: "Quincenal" },
+  "Trimestral": { es: "Trimestral" },
+  "Semestral": { es: "Semestral" },
+  "A cada N dias": { es: "Cada N días" },
+  "Definir data de término": { es: "Definir fecha de término" },
+  "Informe de quantos em quantos dias.": { es: "Indique cada cuántos días." },
+  "Insira de quantos em quantos dias": { es: "Indique cada cuántos días" },
   ...TEXTOS_PAINEL_GOOGLE_ADS,
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_MCP_AGENTES,

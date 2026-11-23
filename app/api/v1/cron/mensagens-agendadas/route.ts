@@ -9,7 +9,11 @@
  *   4. número fora do ar + `cancelar` → `cancelada` (`numero_desconectado`).
  *   5. número no ar → encaminha; `encaminhada` com o `message_id`, ou `falhou`.
  *
- * Primeira parte da #3118: envio único. Não há próxima ocorrência.
+ * Segunda parte da #3118 (repetição): a linha é a SÉRIE. Ao fim de cada ocorrência,
+ * a regra de `lib/agendamento-mensagem/serie.ts` decide se a série segue para a
+ * próxima (`scheduled_at` avança e o status volta a `agendada`) ou termina. Cada
+ * ocorrência de série grava uma linha em `mensagens_agendadas_envios`. Envio único
+ * (`recorrencia = 'nenhuma'`) segue como antes: uma linha, um desfecho.
  * Auditoria só quando o agendamento teve desfecho gravado (regra do cron).
  */
 import { randomUUID } from "node:crypto";
@@ -17,6 +21,7 @@ import type { NextRequest } from "next/server";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { ehOperante, STATUS_OPERANTE, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -25,16 +30,36 @@ import {
   sessaoEstaConectada,
   type AgendamentoParaEnvio,
 } from "@/lib/agendamento-mensagem/envio";
+import { proximoDaSerie } from "@/lib/agendamento-mensagem/serie";
+import type { RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
 
 export const dynamic = "force-dynamic";
 
 const LOTE = 50;
-const COLUNAS = "id, organization_id, contact_id, channel_session_id, created_by_user_id, body, scheduled_at, se_desconectado";
+const COLUNAS =
+  "id, organization_id, conversation_id, contact_id, channel_session_id, created_by_user_id, body, scheduled_at, se_desconectado, recorrencia, intervalo_dias, inicio_local, termino_local, tz";
 const TRAVA_S = 300;
 
 interface LinhaDevida extends AgendamentoParaEnvio {
+  conversation_id: string;
   scheduled_at: string;
   se_desconectado: "esperar" | "cancelar";
+  recorrencia: RegraDeRecorrencia["recorrencia"];
+  intervalo_dias: number | null;
+  inicio_local: string | null;
+  termino_local: string | null;
+  tz: string;
+}
+
+/** A regra da linha, para a régua de `serie.ts`. Só faz sentido com série (recorrência ≠ nenhuma). */
+function regraDaLinha(ag: LinhaDevida): RegraDeRecorrencia {
+  return {
+    recorrencia: ag.recorrencia,
+    intervalo_dias: ag.intervalo_dias,
+    inicio: ag.inicio_local ?? "",
+    termino: ag.termino_local,
+    tz: ag.tz,
+  };
 }
 
 type Final =
@@ -102,18 +127,54 @@ async function handle(req: NextRequest): Promise<Response> {
           : { status: "falhou", motivo: desfecho.motivo };
     }
 
+    // Série: a régua decide se segue para a próxima ocorrência. Envio único: não há próxima.
+    // Sem recorrência gravada (ou "nenhuma") é envio único: nunca série por engano.
+    const serie = Boolean(ag.recorrencia) && ag.recorrencia !== "nenhuma";
+    const motivoDaOcorrencia = final.status === "encaminhada" ? null : final.motivo;
+    const proximo = serie
+      ? proximoDaSerie(regraDaLinha(ag), agora, { status: final.status, motivo: motivoDaOcorrencia })
+      : null;
+    const agoraIso = new Date().toISOString();
+
     const { error: upErr } = await admin
       .from("mensagens_agendadas")
-      .update({
-        status: final.status,
-        message_id: final.status === "encaminhada" ? final.message_id : null,
-        motivo: final.status === "encaminhada" ? null : final.motivo,
-        claimed_until: null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(
+        proximo !== null
+          ? {
+              scheduled_at: proximo,
+              status: "agendada",
+              message_id: null,
+              motivo: null,
+              claimed_until: null,
+              updated_at: agoraIso,
+            }
+          : {
+              status: final.status,
+              message_id: final.status === "encaminhada" ? final.message_id : null,
+              motivo: motivoDaOcorrencia,
+              claimed_until: null,
+              updated_at: agoraIso,
+            },
+      )
       .eq("id", ag.id)
       .eq("organization_id", ag.organization_id)
       .eq("status", "agendada");
+
+    // Cada ocorrência de série fica no histórico, com o desfecho dela. Só depois de a
+    // linha ter avançado: sem avanço, não há ocorrência a registrar.
+    if (!upErr && serie) {
+      const { error: histErr } = await admin.from("mensagens_agendadas_envios").insert({
+        organization_id: ag.organization_id,
+        agendamento_id: ag.id,
+        conversation_id: ag.conversation_id,
+        prevista_para: ag.scheduled_at,
+        status: final.status,
+        motivo: motivoDaOcorrencia,
+        message_id: final.status === "encaminhada" ? final.message_id : null,
+      });
+      if (histErr) logger.error("[mensagens-agendadas] ocorrência não gravada no histórico", { agendamento: ag.id, erro: histErr.message });
+    }
+
     // Auditoria só quando o desfecho foi gravado (regra do cron: sem efeito, sem linha).
     if (!upErr) {
       if (final.status === "encaminhada") resumo.encaminhadas++;

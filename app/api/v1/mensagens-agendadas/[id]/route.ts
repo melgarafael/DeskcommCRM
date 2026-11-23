@@ -15,7 +15,13 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { editarAgendamentoSchema, horarioNoFuturo } from "@/lib/agendamento-mensagem/schema";
+import {
+  editarAgendamentoSchema,
+  horarioNoFuturo,
+  motivoRegraInvalida,
+  primeiraOcorrenciaIso,
+  regraDoCorpo,
+} from "@/lib/agendamento-mensagem/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +63,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
   }
   const v = parsed.data;
-  if (!horarioNoFuturo(v.scheduled_at)) {
+  const regra = regraDoCorpo(v);
+  const motivo = motivoRegraInvalida(regra);
+  if (motivo) return fail("validation_failed", "Confira a recorrência e as datas.", 422, { requestId, details: { motivo } });
+  const scheduledAt = primeiraOcorrenciaIso(regra);
+  if (!horarioNoFuturo(scheduledAt)) {
     return fail("validation_failed", "Escolha um horário no futuro.", 422, { requestId, details: { motivo: "horario_no_passado" } });
   }
 
@@ -71,7 +81,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     .update({
       title: v.title ?? null,
       body: v.body,
-      scheduled_at: v.scheduled_at,
+      scheduled_at: scheduledAt,
+      recorrencia: v.recorrencia,
+      intervalo_dias: v.recorrencia === "a_cada_n_dias" ? (v.intervalo_dias ?? null) : null,
+      inicio_local: v.inicio_local,
+      termino_local: v.termino_local ?? null,
+      tz: v.tz,
       se_desconectado: v.se_desconectado,
       updated_at: new Date().toISOString(),
     })
@@ -91,7 +106,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     resourceType: "mensagens_agendadas",
     resourceId: id,
     requestId,
-    metadata: { scheduled_at: v.scheduled_at },
+    metadata: { scheduled_at: scheduledAt, recorrencia: v.recorrencia },
   });
   return ok(data, { requestId });
 }
