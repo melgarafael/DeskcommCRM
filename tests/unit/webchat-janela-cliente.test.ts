@@ -79,9 +79,9 @@ describe("montarMensagem", () => {
 
   it("reaproveita o mensagem_id no reenvio da mesma mensagem, e não em outra", () => {
     const primeira = modulo.montarMensagem("oi");
-    const reenvio = modulo.montarMensagem(" oi ", { id: primeira.id, texto: "oi" });
+    const reenvio = modulo.montarMensagem(" oi ", { id: primeira.id!, texto: "oi" });
     expect(reenvio.id).toBe(primeira.id);
-    const outra = modulo.montarMensagem("outra", { id: primeira.id, texto: "oi" });
+    const outra = modulo.montarMensagem("outra", { id: primeira.id!, texto: "oi" });
     expect(outra.id).not.toBe(primeira.id);
   });
 });
