@@ -38,6 +38,8 @@ import {
  */
 const LATERAL_DE_HOJE = [
   "contato",
+  // O bloco de notas da equipe: logo abaixo do contato, à mão.
+  "anotacoes",
   "tags-do-contato",
   "carteira",
   "anuncio",
@@ -192,7 +194,7 @@ describe("#3008 — mover módulo é conta de índice, e ela não pode errar", (
     const desceu = moverModulo(base, 0, 3);
     const subiu = moverModulo(desceu, 3, 0);
 
-    expect(ids(desceu).slice(0, 4)).toEqual(["tags-do-contato", "carteira", "anuncio", "contato"]);
+    expect(ids(desceu).slice(0, 4)).toEqual(["anotacoes", "tags-do-contato", "carteira", "contato"]);
     expect(new Set(ids(desceu)).size).toBe(base.length);
     expect(ids(subiu)).toEqual(ids(base));
   });
