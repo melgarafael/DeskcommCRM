@@ -295,6 +295,7 @@
       "POST /api/v1/tags/vocabulario"
     ],
     "conversas": [
+      "DELETE /api/v1/conversations/[id]/messages/[id]/quarentena",
       "DELETE /api/v1/conversations/[id]/notes/[id]",
       "DELETE /api/v1/conversations/[id]/participants",
       "DELETE /api/v1/conversations/[id]/snooze",
@@ -317,6 +318,7 @@
       "POST /api/v1/conversations/[id]/drafts/consume",
       "POST /api/v1/conversations/[id]/ia-com-dono",
       "POST /api/v1/conversations/[id]/media",
+      "POST /api/v1/conversations/[id]/messages/[id]/quarentena",
       "POST /api/v1/conversations/[id]/notes",
       "POST /api/v1/conversations/[id]/notes/media",
       "POST /api/v1/conversations/[id]/pagamentos",
