@@ -269,3 +269,42 @@ it("com o chat pausado, mostra o Badge Pausado e retomar não pede confirmação
   expect(screen.queryByRole("alertdialog")).toBeNull();
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Chat retomado. A janela volta a abrir no seu site."));
 });
+
+it("T6 (a): digitar domínios enquanto o PATCH está pendente mantém o que foi digitado", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  // PATCH fica pendente até resolvermos à mão.
+  let resolverPatch!: (valor: unknown) => void;
+  h.patch.mockImplementation(() => new Promise((resolve) => { resolverPatch = resolve; }));
+  mount();
+  await screen.findByLabelText("Domínios, um por linha");
+
+  const dominios = screen.getByLabelText("Domínios, um por linha") as HTMLTextAreaElement;
+  fireEvent.change(dominios, { target: { value: "https://nova.exemplo.com.br" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar domínios" }));
+
+  // Enquanto o PATCH está pendente, o usuário altera de novo.
+  fireEvent.change(dominios, { target: { value: "https://outra.exemplo.com.br" } });
+
+  // Resolve o PATCH com o valor do servidor (diferente do que o usuário digitou).
+  await resolverPatch!({ data: { id: "conexao-1", allowed_origins: ["https://servidor.exemplo.com.br"] } });
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { allowed_origins: ["https://nova.exemplo.com.br"] }));
+
+  // O campo mantém o que o usuário digitou por último, não volta ao valor do servidor.
+  expect(dominios.value).toBe("https://outra.exemplo.com.br");
+});
+
+it("T6 (b): PATCH ok e refetch falha → 'Alterações salvas.' sem toast de erro", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  // O refetch (GET) falha.
+  h.get.mockRejectedValueOnce(new Error("rede caiu"));
+  mount();
+  await screen.findByLabelText("Título");
+
+  fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Novo título" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar aparência" }));
+
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Alterações salvas."));
+  // O toast de erro NÃO deve aparecer (o PATCH deu certo; só o refetch falhou).
+  expect(toast.error).not.toHaveBeenCalled();
+});
