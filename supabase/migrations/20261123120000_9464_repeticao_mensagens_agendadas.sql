@@ -1,6 +1,6 @@
 -- manifest: **Repetição das mensagens agendadas (segunda parte da #3118).** A linha de `mensagens_agendadas` passa a guardar a série (recorrência, intervalo, início, término e fuso); a tabela `mensagens_agendadas_envios` guarda o desfecho de cada ocorrência. O cron avança a série para a próxima ocorrência, e a leitura do histórico segue a mesma régua da conversa.
 --
--- 9461 — REPETIÇÃO (segunda parte da #3118, issue #4431).
+-- 9464 — REPETIÇÃO (segunda parte da #3118, issue #4431).
 --
 -- Uma linha de `mensagens_agendadas` continua sendo a SÉRIE: `scheduled_at` é a
 -- próxima ocorrência. Quando o cron encaminha, falha ou cancela uma ocorrência,

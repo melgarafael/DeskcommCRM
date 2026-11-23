@@ -77571,9 +77571,9 @@ create trigger trg_contacts_anonimizado_mensagens_agendadas
   when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
   execute function public.fn_mensagens_agendadas_contato_anonimizado();
 
--- ---- mensagens agendadas, repetição (migration 9461) ----
+-- ---- mensagens agendadas, repetição (migration 9464) ----
 -- Série na própria linha (recorrência, intervalo, início, término, fuso) e a tabela
--- de ocorrências. Idêntico ao corpo da migration 9461 (apêndice).
+-- de ocorrências. Idêntico ao corpo da migration 9464 (apêndice).
 alter table public.mensagens_agendadas
   add column if not exists recorrencia text not null default 'nenhuma',
   add column if not exists intervalo_dias integer,
