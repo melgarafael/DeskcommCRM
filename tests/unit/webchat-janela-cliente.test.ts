@@ -609,15 +609,15 @@ describe("janela no DOM", () => {
     expect(r.chamadas.filter((c) => c.url.endsWith("/eventos"))).toHaveLength(2);
   });
 
-  it("Reconectando aparece na tela enquanto o aviso está visível (fora do rodapé escondido)", async () => {
+  it("Reconectando aparece na tela enquanto a sessão ainda não abriu (fora do rodapé escondido)", async () => {
     await abrirJanela(roteador({ sessao: () => Promise.reject(new Error("rede")) }).fn);
     const status = Array.from(document.querySelectorAll('[role="status"]')).find(
       (p) => p.textContent === "Reconectando…",
     ) as HTMLElement | undefined;
     expect(status).toBeDefined();
-    // O status não mora no rodapé (que fica oculto no aviso) e o aviso está no passo, visível.
+    // O status não mora no rodapé (oculto até a sessão abrir): fica ao lado do "Conectando…" do passo, visível.
     expect(status!.closest(".rodape")).toBeNull();
-    expect(document.querySelector(".passo .aviso")).not.toBeNull();
+    expect(temTexto("Conectando…")).toBe(true);
     expect((document.querySelector(".rodape") as HTMLElement).style.display).toBe("none");
   });
 
