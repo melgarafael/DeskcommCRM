@@ -21992,7 +21992,7 @@ export const DICIONARIO: Traducoes = {
   "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
   // O módulo opcional das reservas de lugar (#4029, doc 283) em /admin/sistema e em Recursos opcionais.
   "Reservas de lugar": { es: "Reserva de lugares" },
-  "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
+  "A agenda reserva um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva escolhe qual lugar.": { es: "La agenda reserva un lugar, como sala, mesa, palco o cancha, con capacidad en personas, y la reserva elige cuál lugar." },
   "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
   // O módulo opcional da campanha por e-mail (#4289, doc 305) em /admin/sistema, em Recursos opcionais e na recusa da API.
   "Campanha por e-mail (em construção)": { es: "Campaña por correo electrónico (en construcción)" },

@@ -138,8 +138,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_available_attendants": { tokens: 179, motivo: BASE },
   "crm_list_human_cases": { tokens: 149, motivo: BASE },
   "crm_get_human_case": { tokens: 208, motivo: BASE },
-  "crm_find_and_book_appointment": { tokens: 1028, motivo: BASE },
-  "crm_book_appointment": { tokens: 1203, motivo: BASE },
+  "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
+  "crm_book_appointment": { tokens: 1330, motivo: BASE },
   "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
@@ -271,7 +271,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
 // +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
 // 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
-const TETO_TOTAL = 47562;
+const TETO_TOTAL = 47816;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

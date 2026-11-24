@@ -784,7 +784,7 @@ const marcarShape = {
     .uuid()
     .optional()
     .describe(
-      "o lugar (sala, mesa) escolhido entre os lugares_livres de crm_find_free_slots. Omita para o sistema escolher um lugar livre.",
+      "sala/mesa de lugares_livres; omita para escolher uma livre",
     ),
 };
 
@@ -1020,7 +1020,7 @@ const consultarEMarcarShape = {
     .uuid()
     .optional()
     .describe(
-      "o lugar (sala, mesa) escolhido entre os lugares_livres de crm_find_free_slots. Omita para o sistema escolher um lugar livre.",
+      "sala/mesa de lugares_livres; omita para escolher uma livre",
     ),
 };
 
