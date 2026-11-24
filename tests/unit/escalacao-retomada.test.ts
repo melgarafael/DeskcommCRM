@@ -501,7 +501,7 @@ describe("devolver o atendimento ao agente", () => {
    *
    * Entre a varredura e a escrita o atendente pode responder sem trocar de dono
    * — só `last_outbound_at` anda. O corte vai para DENTRO da escrita: com dono,
-   * no release sob o lock (`fn_conversation_release_if_idle`, migration 9467);
+   * no release sob o lock (`fn_conversation_release_if_idle`, migration 9472);
    * sem dono, no próprio UPDATE da devolução, que é a única escrita.
    */
   const CORTE = "2026-08-04T12:00:00.000Z";

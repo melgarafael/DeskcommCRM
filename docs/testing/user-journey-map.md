@@ -267,6 +267,27 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 | J4.41 | **Arrastar o mesmo card duas vezes seguidas** (#916, PR #919) | o segundo arrasto, feito logo depois do primeiro e com o refetch do quadro segurado (a rede lenta de uma VPS distante), responde `200` e o card chega à terceira etapa, sem o aviso "modificado por outro usuário" e sem recarregar a página; o banco guarda a etapa final. `tests/e2e/kanban-owner-filter.spec.ts`, funil próprio, arrasto pelo teclado do `@hello-pangea/dnd` (executado 2026-09-16, ambiente fresco do `baseline.sql`). Evidência: `evidence/arrastar-duas-vezes/01-depois-do-primeiro.png` (o card na segunda etapa, depois do primeiro arrasto) e `evidence/arrastar-duas-vezes/02-depois-do-segundo.png` (na terceira, depois do segundo) |
 | J4.43 | **Mover de etapa pelo menu do card, no celular** ("Mover para…") | a spec cobra, a 390px: o botão "⋯" acerta a 21px do centro (44px de área, por `elementFromPoint`), cada etapa do menu tem ≥44px, o card entra no FIM da etapa inteira e a etapa de perda abre a janela do motivo antes de qualquer `POST /move`; arrastar para a perda também abre a janela, e o negócio reaberto não reaproveita o motivo da perda anterior. Spec: `tests/e2e/qa-l12-funil.spec.ts` (bloco do toque e #935 caminho 2), unit `tests/unit/mover-etapa-pelo-menu.test.tsx` |
 
+## J74 — Chat no site: o visitante conversa pela página `[P1]`
+
+Contexto do código: Spec 36, F2-A; módulo `canal_webchat` desligado de fábrica; prova exige um
+administrador que ligue o módulo e crie a conexão em Conexões. Roteiro detalhado:
+`docs/testing/chat-no-site.md` (roteiro de prova pela tela, ainda sem spec automatizada e sem execução; a prova fica para o PR ao mantenedor).
+
+A spec está **escrita e NÃO executada ainda**: o e2e só roda em PR para a main; a prova
+pela tela fica para o CI do PR ao mantenedor.
+
+| # | Caso | Expectativa |
+|---|------|-------------|
+| J74.1 | Módulo desligado | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404; nenhuma organização que não ligue o módulo vê diferença |
+| J74.2 | Dono liga o módulo; admin da empresa cria a conexão | A aba aparece em Conexões; cadastrar o domínio de um servidor de teste gera a chave `wck_...` e o código para colar |
+| J74.3 | Visitante abre a janela | Colar o script numa página local exibe a bolha; abrir carrega `/chat/<chave>` com o CSP `frame-ancestors` da lista de domínios |
+| J74.4 | Conversar como visitante | Aceitar o aviso de LGPD (controlador + link de política), preencher coleta se obrigatória, enviar mensagem; a conversa aparece no Inbox com o selo "Chat no site" |
+| J74.5 | Responder pela Inbox | A resposta do atendente chega à janela do visitante pelo stream de eventos (`text/event-stream`) |
+| J74.6 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela |
+| J74.7 | Girar a chave | Páginas com o código antigo recebem "chat indisponível" ao abrir conversa nova; quem já está conversando segue até a sessão expirar |
+| J74.8 | Pausar o chat | PATCH `config.pausado: true` pela rota de administração; as três rotas públicas (`/sessao`, `/mensagens`, `/eventos`) dão o mesmo 404; a janela mostra "chat indisponível" |
+| J74.9 | Retomar o chat | PATCH `config.pausado: false` volta a funcionar: sessão, mensagens e eventos respondem normalmente |
+
 ## J5 — Time: convites e atuação de atendentes `[P0]` (convite) / `[P1]` (rotina)
 
 | # | Caso | Expectativa |
@@ -4784,3 +4805,13 @@ O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
 impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
 Capacidades e a configuração do servidor externo. A próxima execução relê essa
 configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## Casca — barra lateral durante scroll lock `[P1]`
+
+Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 8 do CI.
+
+- Desktop 1280 × 720: rolar Configurações e abrir perfil, seletor de organização e busca; a coordenada vertical da barra lateral deve permanecer igual (tolerância inferior a 1 px).
+- Celular 390 × 844: abrir e fechar a gaveta de navegação, sem rolagem horizontal da página.
+- Conferir também a largura da página no Inbox e na lista de funis.
+- Evidências a partir da raiz do repositório: `evidence/sidebar-scroll-lock/desktop-perfil.png`, `evidence/sidebar-scroll-lock/celular-navegacao.png` e `evidence/sidebar-scroll-lock/medidas-desktop.json`.
+- Resultado: PASS (2 testes, Chromium; 17,6 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.

@@ -4,7 +4,7 @@ import { GOV_AGENT_A, GOV_AGENT_B, GOV_ORG, GOV_SESSION, lastLine, seedGov, sql 
 
 /**
  * A DEVOLUÇÃO AUTOMÁTICA SOLTA O DONO SÓ SE A CONVERSA AINDA ESTIVER PARADA
- * (migration 9467, `fn_conversation_release_if_idle`).
+ * (migration 9472, `fn_conversation_release_if_idle`).
  *
  * O cron `handoff-devolucao` decide sobre a leitura da varredura e escreve
  * depois. A função confere, sob o lock da linha e na mesma transação do
@@ -18,8 +18,8 @@ import { GOV_AGENT_A, GOV_AGENT_B, GOV_ORG, GOV_SESSION, lastLine, seedGov, sql 
  *   - tirar a de `last_handoff_at`: fica vermelho "nova passagem depois do corte".
  */
 
-const CONTATO = "cccccccc-3333-4000-8000-000000009467";
-const CONVERSA = "cccccccc-4444-4000-8000-000000009467";
+const CONTATO = "cccccccc-3333-4000-8000-000000009472";
+const CONVERSA = "cccccccc-4444-4000-8000-000000009472";
 const CORTE = "now() - interval '1 hour'";
 
 const HA_3_HORAS = "now() - interval '3 hours'";
@@ -34,7 +34,7 @@ function conversaComDono(
 ): void {
   sql(`
     insert into public.contacts (id, organization_id, display_name)
-      values ('${CONTATO}', '${GOV_ORG}', 'Invariante 9467')
+      values ('${CONTATO}', '${GOV_ORG}', 'Invariante 9472')
       on conflict do nothing;
     insert into public.conversations
       (id, organization_id, contact_id, channel_session_id, status,

@@ -264,7 +264,7 @@ owner: Rafael Melgaço
 
 ## 4. Pipeline & Lead (P)
 
-### P-01 — Lead vive em UM pipeline; mover entre pipelines não é suportado
+### P-01 — Lead vive em UM pipeline; mover entre pipelines é cópia, salvo ao esvaziar um funil
 - **Origem**: Sub-PRD 02 §3.2
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN lead criado; WHEN qualquer endpoint tenta mudar `pipeline_id` da linha; THEN retorna 422 `pipeline_immutable_use_clone`. Pra "mover" entre funis, o caminho é `POST /api/v1/leads/[id]/clone`: cria o negócio no funil destino (etapa aberta informada, ou a primeira) com os dados da origem e encerra a origem como `lost`.
@@ -272,14 +272,14 @@ owner: Rafael Melgaço
 - **Automação (issue #992)**: a ação `create_or_move_lead` de uma regra com gatilho de CONTATO, ao encontrar negócio ABERTO do contato em OUTRO funil, TRANSFERE pelo mesmo caminho — clona para o funil da regra e encerra a origem como `lost` com `moved_to_another_pipeline` — em vez de criar um segundo negócio. Negócio aberto no MESMO funil segue sendo movido de etapa (nada é encerrado, nada é criado) e, sem negócio aberto, a ação cria, como antes. Guardado por `tests/unit/automacao-troca-de-funil-transfere-o-negocio.test.ts`.
 - **Estado de origem exigido**: só `status = 'open'` é clonado (422 `lead_not_open`); clonar um negócio `won` reescreveria a origem como `lost`, apagando o desfecho.
 - **Enforcement**: API (interceptor) + DB check constraint.
-- **Exceção**: Nenhuma. Decisão deliberada (mover entre pipelines é semanticamente diferente — clonar deixa explícito).
+- **Exceção (doc de decisão 400, opção B; #4802 item 3, PR #4852)**: ao ARQUIVAR ou EXCLUIR um funil, `POST /api/v1/pipelines/[id]/negocios` com `escolha: "transferir"` muda de funil os negócios **em andamento** (`status = 'open'`) sem cópia — o mesmo registro, com conversas, tarefas, propostas, anexos e linha do tempo. Vai por `fn_mover_leads_em_lote`, que grava o `pipeline_id` da própria etapa de destino (migration 9466). Ganhos e perdidos **não** mudam de funil: ficam no funil arquivado, em modo leitura; para excluí-lo de vez, a escolha é `remover`. É a ÚNICA porta: o lote do quadro (`POST /api/v1/leads/bulk`), o arrasto (`/move`) e o `moveLeadHandler` seguem recusando etapa de outro funil com 422 `pipeline_immutable_use_clone`. Fora desse caso, a decisão original vale (mover entre pipelines é semanticamente diferente — clonar deixa explícito).
 
 ### P-02 — Status `won/lost` derivado de stage com flag
 - **Origem**: Sub-PRD 02 §3.8
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN lead movido pra stage com `is_won=true`; WHEN o move commita; THEN trigger `fn_crm_lead_close_on_stage` muda `lead.status='won'` + `closed_at=now()`. Idem pra `is_lost=true → status='lost'`.
 - **Enforcement**: DB trigger.
-- **Exceção**: Reabertura (mudar pra stage sem flag) volta `status='open'` + `closed_at=null`.
+- **Exceção**: Reabertura (mudar pra stage sem flag) volta `status='open'` + `closed_at=null`. Sem exceção para troca de funil (doc de decisão 400, opção B): a transferência do arquivar/excluir só leva negócio em andamento, então o gatilho não precisa distinguir o caso.
 
 ### P-03 — `lost_reason` obrigatório em transição pra `lost`
 - **Origem**: Sub-PRD 02 §3.8

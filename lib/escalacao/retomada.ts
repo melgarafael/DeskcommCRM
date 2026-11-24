@@ -234,7 +234,7 @@ export async function devolverAtendimentoAoAgente(
   const corte = input.semSinalHumanoDesde;
   if (conv.assigned_to_user_id !== null && corte !== undefined) {
     // Dono E relógio conferidos sob o lock da linha, e o release na mesma
-    // transação (migration 9467). `false` = a conversa mudou depois da varredura.
+    // transação (migration 9472). `false` = a conversa mudou depois da varredura.
     const { data: soltou, error: releaseErr } = await supabase.rpc("fn_conversation_release_if_idle", {
       p_organization_id: organizationId,
       p_conversation_id: input.conversationId,
