@@ -1,11 +1,11 @@
 ---
 impacto: exige_acao
 secao: corrigido
-titulo: Conversões de etapa só seguem para a conta do Google Ads que originou o clique
+titulo: Conversões de etapa do Google Ads usam o clique do próprio negócio
 ---
 
-Quando um negócio muda de etapa, o CRM compara a conta do clique registrado naquele negócio com a conta de anúncios configurada para receber a conversão. Se o clique não informar um ID válido ou pertencer a outra conta, o motivo do envio ignorado aparece no histórico de conversões. Contribuição de @SerusoNakamoto.
+Quando um contato volta por outro anúncio, cada negócio usa seu próprio clique para enviar conversões de etapa ao Google Ads. Com uma única conta cadastrada, o CRM mantém o envio para ela mesmo que o clique não informe a conta ou identifique outra. Com várias contas, o clique precisa identificar a conta de envio. Se faltar a correspondência, o motivo aparece no histórico. Contribuição de @SerusoNakamoto.
 
 ## Requer atenção
 
-Se você envia conversões de etapa, inclua nos links dos anúncios o parâmetro `google_customer_id` com os dez dígitos da conta que veicula cada anúncio. Se o anúncio leva ao seu site, o botão deve repassar esse parâmetro ao link de rastreamento do CRM junto com o identificador do clique. Confira se a conta corresponde à cadastrada em **Configurações → Conversões → Google Ads**. Isso também vale para quem usa uma única conta. O ajuste identifica os cliques futuros. Negócios antigos sem clique e conta registrados no próprio cartão ficam fora do envio, mesmo que a ficha do contato tenha um anúncio de origem.
+Se a sua organização envia conversões de etapa e tem **mais de uma conta do Google Ads cadastrada**, inclua `google_customer_id` no modelo de rastreamento ou no sufixo de URL de cada conta. Use os dez dígitos da conta que veicula o anúncio. Se o anúncio leva ao seu site, o botão deve repassar esse parâmetro junto com o identificador do clique ao link de rastreamento do CRM. O ajuste vale para cliques futuros. Com várias contas, negócios já abertos cujo clique não traz o ID da conta continuam sem enviar a conversão de etapa.

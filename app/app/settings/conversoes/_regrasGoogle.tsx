@@ -311,7 +311,7 @@ export function RegrasDeConversaoGoogle({
 
       <p className="text-xs text-muted-foreground">
         {t(
-          "Mudanças de etapa feitas pela equipe, pela IA ou por automação só geram conversão se o clique registrado no negócio identificar a conta do Google Ads configurada para o envio. Movimentos anteriores à ativação da regra não são enviados.",
+          "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.",
         )}
       </p>
       <div>

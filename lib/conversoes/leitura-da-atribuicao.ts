@@ -148,6 +148,31 @@ export async function lerAtribuicao(
   };
 }
 
+/** Com uma única conta, o destino pode ser a gerente e o clique vir da conta filha. */
+export async function motivoDeContaDaEtapaGoogle(
+  admin: SupabaseClient,
+  organizationId: string,
+  contaDoClique: string | undefined,
+  contaDeDestino: string | undefined,
+) {
+  const destino = idDaContaGoogle.safeParse(contaDeDestino).data;
+  if (!destino) return "credencial_incompleta";
+  if (contaDoClique === destino) return null;
+
+  // A credencial de conversões já conta como uma conta. Basta uma conta de
+  // relatório diferente dela; a PK da tabela é (organization_id, customer_id).
+  const { data: outraConta, error } = await admin
+    .from("google_ads_reporting_accounts")
+    .select("customer_id")
+    .eq("organization_id", organizationId)
+    .neq("customer_id", destino)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error("Não foi possível verificar as contas de relatório do Google Ads.");
+  if (!outraConta) return null;
+  return contaDoClique ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente";
+}
+
 /**
  * Os `utm_source` que significam "anúncio da Meta". Lista fechada e explícita:
  * quem monta o link escolhe o texto, e casar por "contém face" pegaria

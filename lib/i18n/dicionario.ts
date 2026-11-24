@@ -1093,9 +1093,9 @@ export const DICIONARIO: Traducoes = {
   'Incluir na coluna "Conversões" (os lances otimizam por ela)': {
     es: 'Incluir en la columna "Conversiones" (las pujas optimizan por ella)',
   },
-  "Mudanças de etapa feitas pela equipe, pela IA ou por automação só geram conversão se o clique registrado no negócio identificar a conta do Google Ads configurada para o envio. Movimentos anteriores à ativação da regra não são enviados.":
+  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.":
     {
-      es: "Los cambios de etapa realizados por el equipo, la IA o una automatización solo generan una conversión si el clic registrado en el negocio identifica la cuenta de Google Ads configurada para recibirla. Los cambios anteriores a la activación de la regla no se envían.",
+      es: "La regla usa el clic del propio negocio y se aplica a los cambios de etapa que haga el equipo, la IA o una automatización después de activarla. Si hay una sola cuenta de Google Ads registrada, el CRM le envía la conversión incluso si el clic no identifica la cuenta o indica otra. Si hay varias cuentas, solo la envía si el clic identifica la cuenta de destino.",
     },
   "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.":
     {

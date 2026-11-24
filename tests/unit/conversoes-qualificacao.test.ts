@@ -50,6 +50,8 @@ let registros: Record<string, Record<string, unknown>>;
 let consultas: Array<{ tabela: string; filtros: Record<string, unknown> }>;
 let config: Record<string, unknown> | null;
 let erroLeitura: boolean;
+let erroLeituraContas: boolean;
+let contasDeRelatorio: Array<{ organization_id: string; customer_id: string }>;
 let etapaExiste: boolean;
 let links: Array<{ id: string }>;
 let origemDoNegocio: Record<string, unknown>;
@@ -65,6 +67,8 @@ beforeEach(() => {
   registros = {};
   consultas = [];
   erroLeitura = false;
+  erroLeituraContas = false;
+  contasDeRelatorio = [];
   etapaExiste = true;
   links = [];
   permiteConsultar = true;
@@ -104,9 +108,25 @@ beforeEach(() => {
           filtros[k] = v;
           return q;
         },
-        limit: async () => ({ data: tabela === "crm_lead_links" ? links : [], error: null }),
+        neq: (k: string, v: unknown) => {
+          filtros[`neq.${k}`] = v;
+          return q;
+        },
+        limit: () =>
+          tabela === "google_ads_reporting_accounts"
+            ? q
+            : { data: tabela === "crm_lead_links" ? links : [], error: null },
         maybeSingle: async () => {
           if (erroLeitura) return { data: null, error: { message: "offline" } };
+          if (tabela === "google_ads_reporting_accounts") {
+            if (erroLeituraContas) return { data: null, error: { message: "offline" } };
+            const data = contasDeRelatorio.find(
+              (conta) =>
+                (!filtros.organization_id || conta.organization_id === filtros.organization_id) &&
+                conta.customer_id !== filtros["neq.customer_id"],
+            );
+            return { data: data ?? null, error: null };
+          }
           if (tabela === "contacts")
             return { data: { phone_number: null, source_metadata: origemDoContato }, error: null };
           const data =
@@ -180,6 +200,41 @@ describe("qualificação por etapa", () => {
     expect(mocks.enviar).toHaveBeenCalledOnce();
   });
   it.each([
+    { caso: "ausente", id: undefined },
+    { caso: "inválido", id: "conta-1234567890" },
+    { caso: "de uma conta filha diferente da conta de destino", id: "1112223333" },
+  ])(
+    "com uma conta cadastrada, envia ao destino configurado mesmo com o ID do clique $caso",
+    async ({ id }) => {
+      if (id === undefined) delete origemDoNegocio.google_customer_id;
+      else origemDoNegocio.google_customer_id = id;
+      contasDeRelatorio = [
+        { organization_id: "org", customer_id: "1234567890" },
+        { organization_id: "outra-org", customer_id: "1112223333" },
+      ];
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+      expect(mocks.enviar).toHaveBeenCalledOnce();
+      expect(mocks.enviar).toHaveBeenCalledWith(
+        expect.objectContaining({ google: expect.objectContaining({ customerId: "1234567890" }) }),
+        expect.objectContaining({ identificadoresGoogle: { wbraid: "braid" } }),
+      );
+      expect(registros["lead:QualifiedLead"]).toMatchObject({ status: "sent" });
+    },
+  );
+  it.each([undefined, "1112223333"])(
+    "repete a leitura das contas antes de enviar se o banco estava indisponível (ID %s)",
+    async (id) => {
+      if (id === undefined) delete origemDoNegocio.google_customer_id;
+      else origemDoNegocio.google_customer_id = id;
+      erroLeituraContas = true;
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      erroLeituraContas = false;
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+      expect(mocks.enviar).toHaveBeenCalledOnce();
+    },
+  );
+  it.each([
     { caso: "ausente", conta: undefined, motivo: "conta_google_do_clique_ausente" },
     { caso: "inválida", conta: "conta-1234567890", motivo: "conta_google_do_clique_ausente" },
     {
@@ -192,18 +247,23 @@ describe("qualificação por etapa", () => {
       conta: "9876543210",
       motivo: "conta_google_do_clique_divergente",
     },
-  ])("não envia quando a conta do clique é $caso", async ({ conta, motivo }) => {
-    if (conta === undefined) delete origemDoNegocio.google_customer_id;
-    else origemDoNegocio.google_customer_id = conta;
-    origemDoNegocio.utm_campaign = "1234567890";
-    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
-      status: "skipped",
-      detail: motivo,
-    });
-    expect(mocks.enviar).not.toHaveBeenCalled();
-    expect(registros["lead:QualifiedLead"]).toMatchObject({ status: "skipped", reason: motivo });
-  });
+  ])(
+    "com duas contas cadastradas, registra o motivo e não envia quando a do clique é $caso",
+    async ({ conta, motivo }) => {
+      contasDeRelatorio = [{ organization_id: "org", customer_id: "1112223333" }];
+      if (conta === undefined) delete origemDoNegocio.google_customer_id;
+      else origemDoNegocio.google_customer_id = conta;
+      origemDoNegocio.utm_campaign = "1234567890";
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+        status: "skipped",
+        detail: motivo,
+      });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      expect(registros["lead:QualifiedLead"]).toMatchObject({ status: "skipped", reason: motivo });
+    },
+  );
   it("dois negócios do mesmo contato enviam apenas o clique do negócio da conta de destino", async () => {
+    contasDeRelatorio = [{ organization_id: "org", customer_id: "1112223333" }];
     origemDoContato.google_customer_id = "1112223333";
     origensDosNegocios = {
       externo: {
@@ -242,23 +302,14 @@ describe("qualificação por etapa", () => {
       }),
     );
   });
-  it.each([
-    {
-      caso: "sem conta",
-      metadata: { ad_platform: "google_ads", ad_source_id: "clique-do-negocio" },
-    },
-    {
-      caso: "sem clique",
-      metadata: { ad_platform: "google_ads", google_customer_id: "1234567890" },
-    },
-  ])(
-    "o primeiro clique do contato não completa a origem do negócio $caso",
-    async ({ metadata }) => {
-      origensDosNegocios.lead = { source: "google_ads", source_metadata: metadata };
-      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "skipped" });
-      expect(mocks.enviar).not.toHaveBeenCalled();
-    },
-  );
+  it("o primeiro clique do contato não completa a origem do negócio com conta, mas sem clique", async () => {
+    origensDosNegocios.lead = {
+      source: "google_ads",
+      source_metadata: { ad_platform: "google_ads", google_customer_id: "1234567890" },
+    };
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "skipped" });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+  });
   it("um negócio sem clique próprio não herda o clique compatível do contato", async () => {
     origensDosNegocios.lead = { source: "whatsapp", source_metadata: {} };
     expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "skipped" });
@@ -273,6 +324,7 @@ describe("qualificação por etapa", () => {
     expect(mocks.enviar).not.toHaveBeenCalled();
   });
   it("reconfere a conta no reenvio de uma etapa com ação registrada e sem protocolo", async () => {
+    contasDeRelatorio = [{ organization_id: "org", customer_id: "1112223333" }];
     const evento = `Etapa:${ETAPA}`;
     registros[`lead:${evento}`] = {
       platform: "google_ads",
@@ -329,6 +381,9 @@ describe("qualificação por etapa", () => {
     mocks.enviar.mockResolvedValue({ tipo: "processando", protocolo: "p", detalhe: "aguardando" });
     expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
     config = null;
+    delete origemDoNegocio.google_customer_id;
+    erroLeituraContas = true;
+    consultas = [];
     expect(
       await conversaoDeQualificacaoHandler.handle({
         ...row,
@@ -337,6 +392,7 @@ describe("qualificação por etapa", () => {
       }),
     ).toMatchObject({ status: "ok" });
     expect(mocks.enviar).toHaveBeenCalledOnce();
+    expect(consultas.some((q) => q.tabela === "google_ads_reporting_accounts")).toBe(false);
     expect(mocks.consultar).toHaveBeenCalledWith(
       expect.objectContaining({ google: expect.objectContaining({ conversionActionId: "42" }) }),
       "p",
@@ -380,6 +436,7 @@ describe("qualificação por etapa", () => {
     };
     await conversaoDeQualificacaoHandler.handle(row);
     expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(consultas.some((q) => q.tabela === "google_ads_reporting_accounts")).toBe(false);
   });
   it("erro de leitura agenda nova tentativa em vez de autorizar envio", async () => {
     erroLeitura = true;

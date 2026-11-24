@@ -44,7 +44,6 @@ import { canalQueReportaConversao } from "@/lib/channels/conversao-pelo-canal";
 import type { ChannelConversionInput, ChannelConversionResult } from "@/lib/channels/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
-import { idDaContaGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 import { transporteDe, ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
 import type {
   ConversaoOffline,
@@ -52,7 +51,11 @@ import type {
   ResultadoDeEnvio,
 } from "@/lib/plataformas-de-anuncio/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lerAtribuicao, type LeituraDeAtribuicao } from "./leitura-da-atribuicao";
+import {
+  lerAtribuicao,
+  motivoDeContaDaEtapaGoogle,
+  type LeituraDeAtribuicao,
+} from "./leitura-da-atribuicao";
 import { lerValorDaConversa } from "./valor-da-conversa";
 import { lerVendaPeloCanal } from "./venda-pelo-canal";
 import { ehEventoDeEtapa } from "./regras-google";
@@ -405,11 +408,13 @@ export async function processarConversao(
       // O Data Manager confere a conta e a ação do protocolo. Nunca reenviar em seu lugar.
       if (!transporte.consultar) throw new Error("Consulta do protocolo do Google indisponível.");
     } else {
-      const destino = idDaContaGoogle.safeParse(credencial.credencial.google?.customerId).data;
-      if (!contaGoogleDoClique || contaGoogleDoClique !== destino) {
-        const motivo = contaGoogleDoClique
-          ? "conta_google_do_clique_divergente"
-          : "conta_google_do_clique_ausente";
+      const motivo = await motivoDeContaDaEtapaGoogle(
+        admin,
+        row.organization_id,
+        contaGoogleDoClique,
+        credencial.credencial.google?.customerId,
+      );
+      if (motivo) {
         await registra("skipped", motivo);
         return ok("skipped", motivo);
       }
