@@ -6,7 +6,13 @@
  * montar um código quebrado ou com marcação injetada.
  */
 
-import { FORMATO_PADRAO, POSICAO_PADRAO, type FormatoDoChat, type PosicaoDoChat } from "./config";
+// Só TIPOS vêm do `config.ts` (somem na compilação). Este arquivo roda no navegador, dentro da aba
+// de Conexões, e o `config.ts` puxa `@/lib/env` (variáveis do servidor): um import de VALOR dali
+// derruba a tela inteira com "Algo deu errado". O teste do arquivo vigia isso.
+import type { FormatoDoChat, PosicaoDoChat } from "./config";
+
+const FORMATO_PADRAO = "bolha";
+const POSICAO_PADRAO = "direita";
 
 const CHAVE_DO_CHAT = /^wck_[A-Za-z0-9_-]{1,64}$/;
 

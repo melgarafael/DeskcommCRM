@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { codigoParaColar, linkDireto } from "./codigo-para-colar";
@@ -120,5 +121,16 @@ describe("codigoParaColar: formato e posicao", () => {
       formato: "embutido",
     });
     expect(resultado).not.toContain("&p=");
+  });
+});
+
+describe("codigo-para-colar roda no navegador", () => {
+  it("não importa VALOR do config.ts (puxaria o ambiente do servidor para o cliente)", () => {
+    const fonte = readFileSync(new URL("./codigo-para-colar.ts", import.meta.url), "utf8");
+    const importsDoConfig = fonte
+      .split(/\r?\n/)
+      .filter((l) => /^import\b.*from\s+"\.\/config"/.test(l));
+    expect(importsDoConfig.length).toBeGreaterThan(0);
+    for (const linha of importsDoConfig) expect(linha).toMatch(/^import type\b/);
   });
 });
