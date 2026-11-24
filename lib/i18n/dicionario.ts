@@ -9021,6 +9021,13 @@ export const DICIONARIO: Traducoes = {
   },
   "Ler contatos": { es: "Leer contactos" },
   "Criar e editar contatos": { es: "Crear y editar contactos" },
+  // #5160 — escopo `conversations:write` da tela de Tokens de API: existia na
+  // lista `SCOPES` (ApiTokensClient.tsx) sem esta linha, e em espanhol o rótulo
+  // caía no português. A cerca só passou a cobrá-lo quando a varredura aprendeu
+  // a abrir o array iterado por `.map` (tests/unit/helpers/chave-dinamica.ts).
+  "Pausar e retomar a IA, encerrar e reabrir conversas": {
+    es: "Pausar y reanudar la IA, cerrar y reabrir conversaciones",
+  },
   "Ler leads": { es: "Leer leads" },
   "Criar e editar leads": { es: "Crear y editar leads" },
   "Ler mensagens": { es: "Leer mensajes" },
@@ -11388,6 +11395,9 @@ export const DICIONARIO: Traducoes = {
   "Atividade registrada": { es: "Actividad registrada" },
   "Você/time": { es: "Tú/equipo" },
   "Sistema": { es: "Sistema" },
+  // #5160 — rótulo do balão para `sent_via='system'` (envio por token de API ou
+  // por módulo). O NOME do token entra depois, como dado do operador.
+  "Integração": { es: "Integración" },
   // #1613 — autoria "em nome de" no balão e os recusos da rota.
   "via": { es: "vía" },
   "Envio em nome de outro usuário exige o escopo messages:on_behalf.": {
@@ -17953,11 +17963,17 @@ export const DICIONARIO: Traducoes = {
   "Endereço inválido.": { es: "Dirección inválida." },
   "Salvar links": { es: "Guardar enlaces" },
   // Rótulos dos tipos de link (`lib/leads/links-de-contato.ts`) — lidos por
-  // lookup dinâmico, que o teste de cobertura não enxerga. As marcas
-  // (Instagram, Facebook…) não mudam de idioma e ficam de fora.
+  // lookup dinâmico. Até o #5160 a varredura não abria o array iterado por
+  // `.map` e estas marcas ficavam fora por isso; agora ela cobra cada
+  // `rotulo`, e as que não mudam de idioma entram com o espanhol igual ao
+  // português (mesma decisão de `Sistema`/`Telegram`).
   Site: { es: "Sitio web" },
   "Google Meu Negócio": { es: "Google Mi Negocio" },
   "Link na bio": { es: "Enlace en la bio" },
+  Facebook: { es: "Facebook" },
+  LinkedIn: { es: "LinkedIn" },
+  TikTok: { es: "TikTok" },
+  YouTube: { es: "YouTube" },
   // ─── Aba Diagnóstico da ficha (components/contacts/DiagnosticoDoContato.tsx) ───
   "Diagnóstico da empresa": { es: "Diagnóstico de la empresa" },
   "Escrito pela IA": { es: "Escrito por la IA" },
