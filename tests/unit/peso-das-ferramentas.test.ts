@@ -82,7 +82,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_count_leads": { tokens: 348, motivo: "#4996: ganhou por_etapa (+31 tokens): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -269,7 +269,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242), MEDIDO
 // neste head em 2026-11-18 contra a main de então. MEDIDO de novo no merge com a
 // main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
-const TETO_TOTAL = 47531;
+// +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
+// 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
+const TETO_TOTAL = 47562;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
