@@ -354,7 +354,7 @@ describe("janela no DOM", () => {
     );
     expect(texto).toBeDefined();
     expect(texto!.children.length).toBe(0);
-    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector(".msg-texto img")).toBeNull();
   });
 
   it("sem localStorage (lança) a janela continua funcionando", async () => {
@@ -791,10 +791,10 @@ describe("janela no DOM", () => {
   // ---------- Tarefa 10b: ajustes, avatar e respostas rápidas ----------
 
   it("mostrarResposta manda { tipo: resposta } ao pai", async () => {
-    const { pai } = await abrirJanela(roteador({}, [`event: mensagem\ndata: {"id":"r1","texto":"Oi","em":"2026-11-21T10:00:00Z"}\n\n`]));
+    const evento = `event: mensagem\ndata: {"id":"r1","texto":"Oi","em":"2026-11-21T10:00:00Z"}\n\n`;
+    const r = roteador({}, [evento]);
+    const { pai } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
     botao("Aceitar e continuar").click();
-    await esperarTudo();
-    digitarEEnviar("Oi");
     await esperarTudo();
     await esperarTudo();
     // a resposta do atendente chega pelo fluxo de eventos
@@ -862,73 +862,51 @@ describe("janela no DOM", () => {
     expect(document.querySelector(".cabecalho img")).toBeNull();
   });
 
-  it("respostas rápidas aparecem como botões antes da primeira mensagem, com textContent, e somem depois do primeiro envio", async () => {
-    const r = roteador();
-    await abrirJanela(r.fn, SOMENTE_CONVERSA);
-    // sem coleta, vai direto à conversa; as respostas rápidas aparecem
-    await esperarTudo();
-    const botoes = Array.from(document.querySelectorAll("button")).filter((b) =>
-      b.textContent === "Sim" || b.textContent === "Não",
-    );
-    expect(botoes).toHaveLength(2);
-    expect(botoes[0]!.textContent).toBe("Sim");
-    expect(botoes[1]!.textContent).toBe("Não");
-    // texto com <b> aparece literal, sem criar elemento b
-    document.body.textContent = "";
-    await abrirJanela(
-      r.fn,
-      { ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>" ] },
-      {},
-      JSON.stringify({ ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] }),
-      { ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] },
-    );
-    await esperarTudo();
-    const btnX = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "<b>x</b>");
-    expect(btnX).toBeDefined();
-    expect(document.querySelector("b")).toBeNull();
-
-    // clicar envia o texto como mensagem normal
-    await abrirJanela(r.fn, SOMENTE_CONVERSA);
-    await esperarTudo();
-    const btnSim = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Sim")!;
-    btnSim.click();
-    await esperarTudo();
-    const corpos = corposDeMensagens(r.chamadas);
-    expect(corpos).toHaveLength(1);
-    expect(corpos[0]!.texto).toBe("Sim");
-    // depois do primeiro envio a fileira some
-    const botoesDepois = Array.from(document.querySelectorAll("button")).filter((b) =>
-      b.textContent === "Sim" || b.textContent === "Não",
-    );
-    expect(botoesDepois).toHaveLength(0);
-  });
-
-  // ---------- Correção 1: respostas rápidas visíveis ----------
-
   /** O elemento está visível se ele e nenhum ancestral (até o body) têm display none. */
   function estaVisivel(el: Element): boolean {
     let node: Element | null = el;
     while (node && node !== document.body) {
-      const style = window.getComputedStyle(node);
-      if (style.display === "none") return false;
+      if (window.getComputedStyle(node).display === "none") return false;
       node = node.parentElement;
     }
     return true;
   }
 
-  it("respostas rápidas aparecem visíveis no rodapé depois de telaConversa", async () => {
+  /** Abre a janela sem coleta e passa pela tela do aceite, até a conversa. */
+  async function irParaAConversa(config: typeof SOMENTE_CONVERSA) {
     const r = roteador();
-    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    const aberta = await abrirJanela(r.fn, config, {}, JSON.stringify(config), config);
+    botao("Aceitar e continuar").click();
     await esperarTudo();
+    return { r, ...aberta };
+  }
 
+  function botoesDeResposta(): HTMLButtonElement[] {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>(".rodape > div button"));
+  }
+
+  it("respostas rápidas aparecem como botões visíveis no rodapé, depois do aceite", async () => {
+    await irParaAConversa(SOMENTE_CONVERSA);
     const container = document.querySelector(".rodape > div");
     expect(container).not.toBeNull();
     expect(estaVisivel(container!)).toBe(true);
+    expect(botoesDeResposta().map((b) => b.textContent)).toEqual(["Sim", "Não"]);
+  });
 
-    const botoes = Array.from(document.querySelectorAll("button")).filter((b) =>
-      b.textContent === "Sim" || b.textContent === "Não",
-    );
-    expect(botoes).toHaveLength(2);
+  it("resposta rápida com <b> aparece como texto literal, sem criar elemento", async () => {
+    await irParaAConversa({ ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] });
+    expect(botoesDeResposta().map((b) => b.textContent)).toEqual(["<b>x</b>"]);
+    expect(document.querySelector(".rodape b")).toBeNull();
+  });
+
+  it("clicar numa resposta rápida envia o texto como mensagem normal e a fileira some", async () => {
+    const { r } = await irParaAConversa(SOMENTE_CONVERSA);
+    botoesDeResposta()[0]!.click();
+    await esperarTudo();
+    const corpos = corposDeMensagens(r.chamadas);
+    expect(corpos).toHaveLength(1);
+    expect(corpos[0]!.texto).toBe("Sim");
+    expect(document.querySelector(".rodape > div")).toBeNull();
   });
 
   it("visitante que volta (flag + token) não vê a fileira de respostas rápidas", async () => {

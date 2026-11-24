@@ -684,6 +684,7 @@ describe("ajustesDaMensagem (Tarefa 10b)", () => {
 describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   const SRC_CRM = "https://crm.exemplo.com.br/webchat.js";
   const ORIGEM_CRM = "https://crm.exemplo.com.br";
+  let janelaAtual: { postMessage: ReturnType<typeof vi.fn> } | null = null;
 
   afterEach(() => {
     document.querySelectorAll("script[src], iframe, button").forEach((el) => el.remove());
@@ -696,6 +697,14 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       // ignorar
     }
   });
+
+  function montarComSrc(src: string): void {
+    const script = document.createElement("script");
+    script.src = src;
+    document.head.appendChild(script);
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    requerer(CAMINHO);
+  }
 
   function montarComSrcEAttr(src: string, attrNome: string, attrValor: string): void {
     const script = document.createElement("script");
@@ -724,14 +733,15 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     const bolha = document.querySelector("button") as HTMLButtonElement;
     const janela = { postMessage: vi.fn() };
     Object.defineProperty(iframe, "contentWindow", { value: janela, configurable: true });
+    janelaAtual = janela;
     return { bolha, iframe, janela };
   }
 
-  function dispararMensagem(data: unknown, origin: string, source: unknown): void {
+  function dispararMensagem(data: unknown, origin: string, source?: unknown): void {
     const evento = new Event("message");
     Object.defineProperty(evento, "data", { value: data });
     Object.defineProperty(evento, "origin", { value: origin });
-    Object.defineProperty(evento, "source", { value: source });
+    Object.defineProperty(evento, "source", { value: source === undefined ? janelaAtual : source });
     window.dispatchEvent(evento);
   }
 
@@ -740,9 +750,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("auto-abrir abre após N segundos no formato bolha", () => {
     vi.useFakeTimers();
     const { bolha, iframe } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
     expect(iframe.style.display).toBe("none");
     vi.advanceTimersByTime(5000);
     expect(iframe.style.display).toBe("block");
@@ -752,9 +760,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("auto-abrir com 0 nunca abre sozinho", () => {
     vi.useFakeTimers();
     const { iframe } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM);
     vi.advanceTimersByTime(60000);
     expect(iframe.style.display).toBe("none");
   });
@@ -762,9 +768,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("auto-abrir não abre se o visitante já clicou na bolha", () => {
     vi.useFakeTimers();
     const { bolha, iframe } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
     fireEvent.click(bolha);
     expect(iframe.style.display).toBe("block");
     vi.advanceTimersByTime(5000);
@@ -772,22 +776,20 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     expect(iframe.style.display).toBe("block");
   });
 
-  it("auto-abrir não abre em formato embutido", () => {
+  it("auto-abrir em formato embutido não mexe no iframe: fica no alvo e sempre visível", () => {
     vi.useFakeTimers();
     const { iframe } = montarNoDom("embutido");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
     vi.advanceTimersByTime(5000);
-    expect(iframe.style.display).toBe("none");
+    expect(iframe.style.display).toBe("block");
+    expect(iframe.style.position).toBe("static");
+    expect(iframe.parentElement?.id).toBe("webchat-aqui");
   });
 
   it("auto-abrir não abre em formato pagina", () => {
     vi.useFakeTimers();
     const { iframe } = montarNoDom("pagina");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
     vi.advanceTimersByTime(5000);
     expect(iframe.style.display).toBe("none");
   });
@@ -795,12 +797,8 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("segundo ajustes não reagenda o auto-abrir", () => {
     vi.useFakeTimers();
     const { iframe } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM);
     vi.advanceTimersByTime(5000);
     // abriu uma vez só (continua aberto; não fecha e reabre)
     expect(iframe.style.display).toBe("block");
@@ -811,7 +809,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("resposta com bolha fechada sobe o badge", () => {
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(badge.textContent).toBe("1");
     expect(badge.style.display).toBe("block");
   });
@@ -820,7 +818,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
     for (let i = 0; i < 120; i++) {
-      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     }
     expect(badge.textContent).toBe("99");
   });
@@ -828,7 +826,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("abrir a bolha zera o badge", () => {
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(badge.textContent).toBe("1");
     fireEvent.click(bolha);
     expect(badge.textContent).toBe("0");
@@ -839,7 +837,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
     fireEvent.click(bolha);
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(badge.textContent).toBe("0");
     expect(badge.style.display).toBe("none");
   });
@@ -848,9 +846,9 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     const { bolha, iframe } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
     // 3 respostas com a bolha fechada
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(badge.textContent).toBe("3");
 
     // abrir zera o contador
@@ -888,12 +886,10 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     });
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
     document.dispatchEvent(new Event("pointerdown"));
     fireEvent.click(bolha); // abre a bolha
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(instanciados).toHaveLength(1);
     // com a bolha aberta o badge não sobe
     expect(badge.textContent).toBe("0");
@@ -924,11 +920,9 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       writable: true,
     });
     const { bolha } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
     document.dispatchEvent(new Event("pointerdown"));
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(instanciados).toHaveLength(1);
   });
 
@@ -962,13 +956,13 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       configurable: true,
       writable: true,
     });
-    const { bolha, iframe } = montarNoDom("embutido");
-    const badge = bolha.querySelector("span") as HTMLSpanElement;
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
-    // o iframe continua visível e o contador não sobe
+    const { iframe } = montarNoDom("embutido");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
+    document.dispatchEvent(new Event("pointerdown"));
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
+    // no embutido não há bolha nem contador (a janela está sempre à vista) e não há bip
+    expect(document.querySelector("button")).toBeNull();
     expect(iframe.style.display).toBe("block");
-    expect(badge.textContent).toBe("0");
-    expect(badge.style.display).toBe("none");
     expect(instanciados).toHaveLength(0);
   });
 
@@ -991,10 +985,8 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       writable: true,
     });
     const { bolha } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(instanciados).toHaveLength(0);
   });
 
@@ -1011,11 +1003,9 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       writable: true,
     });
     const { bolha } = montarNoDom("bolha");
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM, {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM);
     document.dispatchEvent(new Event("pointerdown"));
-    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     expect(instanciados).toHaveLength(0);
   });
 
@@ -1024,11 +1014,9 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     const original = (window as unknown as Record<string, unknown>).AudioContext;
     try {
       delete (window as unknown as Record<string, unknown>).AudioContext;
-      dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
-        postMessage: vi.fn(),
-      });
+      dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
       document.dispatchEvent(new Event("pointerdown"));
-      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
     } finally {
       if (original) {
         Object.defineProperty(window, "AudioContext", { value: original, configurable: true });
@@ -1041,9 +1029,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
   it("ajustes de origem forjada é ignorado", () => {
     const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
-    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, "https://atacante.exemplo.com", {
-      postMessage: vi.fn(),
-    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, "https://atacante.exemplo.com");
     vi.useFakeTimers();
     vi.advanceTimersByTime(60000);
     expect(badge.style.display).toBe("none");
