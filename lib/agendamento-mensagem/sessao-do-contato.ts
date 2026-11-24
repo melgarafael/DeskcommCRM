@@ -31,17 +31,21 @@ export interface ConversaEscolhida {
 
 /**
  * Função pura: a conversa de envio entre as do contato. `null` = nenhuma conectada
- * com o mesmo número da conexão original (`telefoneDaConexao`).
+ * na conexão original (`sessaoOriginalId`) nem em outra com o mesmo número
+ * (`telefoneDaConexao`).
  */
 export function escolherConversaConectada(
   conversas: readonly ConversaDoContato[],
   telefoneDaConexao: string | null,
+  sessaoOriginalId?: string,
 ): ConversaEscolhida | null {
-  // Sem número de referência não há como provar que é o mesmo número: não escolhe nada.
-  if (!telefoneDaConexao) return null;
-  const conectadas = conversas.filter(
-    (c) => c.status_da_sessao === "WORKING" && c.telefone_da_sessao === telefoneDaConexao,
-  );
+  // A própria conexão original é o mesmo número por definição, mesmo sem o número
+  // gravado (a coluna só é preenchida quando alguém abre Conexões). Outra conexão
+  // só vale com o número provado igual: sem número de referência, nenhuma outra.
+  const mesmoNumero = (c: ConversaDoContato) =>
+    c.channel_session_id === sessaoOriginalId ||
+    (Boolean(telefoneDaConexao) && c.telefone_da_sessao === telefoneDaConexao);
+  const conectadas = conversas.filter((c) => c.status_da_sessao === "WORKING" && mesmoNumero(c));
   if (conectadas.length === 0) return null;
   // Mais recente primeiro. Empate (ou sem data) mantém a ordem recebida: determinístico.
   const ordenadas = [...conectadas].sort((a, b) => {
@@ -100,5 +104,6 @@ export async function resolverConversaConectada(
       };
     }),
     original?.phone_number ?? null,
+    sessaoOriginalId,
   );
 }
