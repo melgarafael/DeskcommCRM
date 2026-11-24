@@ -5872,6 +5872,7 @@
   "Oi {{nome}}! Passando pra lembrar: {{titulo}}, {{dia}} às {{hora}}.": "Hi {{nome}}! Just a reminder: {{titulo}}, {{dia}} at {{hora}}.",
   "Deixe em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": "Leave blank for the default text. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   "Quanto antes": "How far in advance",
+  "Lugar reservado": "Reserved place",
   "Unidade": "Unit",
   "minutos": "minutes",
   "Mensagem deste lembrete": "This reminder's message",

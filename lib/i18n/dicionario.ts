@@ -12975,6 +12975,7 @@ export const DICIONARIO: Traducoes = {
     es: "Déjalo en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   },
   "Quanto antes": { es: "Cuánto antes" },
+  "Lugar reservado": { es: "Lugar reservado" },
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },

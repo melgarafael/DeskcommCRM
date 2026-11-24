@@ -15,7 +15,7 @@ const servicoComSalas: DadosDoServico = {
   booking_mode: "individual", service_capacity: null, service_timezone: "America/Sao_Paulo",
   duration_minutes: 60, slot_interval_minutes: 60, service_revision: 1, requires_confirmation: false,
   destination_calendar_id: null, service_publication_mode: "none",
-  schedule: [{ weekday: 3, timing_kind: "fixed", start_minute: 540 }],
+  schedule: [{ weekday: 3, timing_kind: "fixed", start_minute: 540, capacity_rule: "inherit" }],
   professionals: [],
   resources: [
     { resource_id: SALA_A, units: 1, kind: "space", name: "Sala B", sector: null },
@@ -48,8 +48,8 @@ describe("consulta por lugar", () => {
     await consultarServico({} as SupabaseClient, ORG, servicoSemSalas, { de, ate, agora });
 
     expect(googleRpc).toHaveBeenCalledTimes(1);
-    const params = vi.mocked(googleRpc).mock.calls[0][2];
-    expect(params.p_space).toBeUndefined();
+    const params = vi.mocked(googleRpc).mock.calls[0]?.[2] as { p_space?: unknown } | undefined;
+    expect(params?.p_space).toBeUndefined();
   });
 
   it("spaceId explícito faz uma chamada só com p_space", async () => {
@@ -58,8 +58,8 @@ describe("consulta por lugar", () => {
     await consultarServico({} as SupabaseClient, ORG, servicoComSalas, { de, ate, agora, spaceId: SALA_A });
 
     expect(googleRpc).toHaveBeenCalledTimes(1);
-    const params = vi.mocked(googleRpc).mock.calls[0][2];
-    expect(params.p_space).toBe(SALA_A);
+    const params = vi.mocked(googleRpc).mock.calls[0]?.[2] as { p_space?: unknown } | undefined;
+    expect(params?.p_space).toBe(SALA_A);
   });
 
   it("com três salas, uma chamada por sala com o mesmo p_owner", async () => {

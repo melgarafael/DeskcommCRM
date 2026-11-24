@@ -2,7 +2,9 @@
  * A sala escolhida em cada consulta: o agente acha horário com sala e marca
  * numa sala livre, sem gravar quando todas estão ocupadas.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+
+import type * as ConsultaModule from "@/lib/agenda/consulta";
 
 const deps = vi.hoisted(() => ({
   marcar: vi.fn(),
@@ -23,7 +25,7 @@ vi.mock("@/lib/agenda/servicos/consulta", () => ({
   lugaresDoServico: deps.lugaresDoServico,
 }));
 vi.mock("@/lib/agenda/consulta", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<ConsultaModule>();
   return {
     ...actual,
     idDoTipoPorSlug: deps.tipoPorSlug,
@@ -53,11 +55,17 @@ const CTX = {
   requestId: "r",
 } as never;
 
-const ENTRADA_BASE = {
+type EntradaBase = {
+  event_type_slug: string;
+  starts_at: string;
+  contact_id: string;
+};
+
+const ENTRADA_BASE: EntradaBase = {
   event_type_slug: "consulta",
   starts_at: "2026-12-01T12:00:00.000Z",
   contact_id: "22222222-2222-4222-8222-222222222222",
-} as never;
+};
 
 function compromisso(over: Record<string, unknown>) {
   return {
@@ -104,8 +112,8 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
     expect(deps.primeiroLugarLivre).toHaveBeenCalledTimes(1);
     // O handler recebeu space_id da Sala B (A vem primeiro por nome, mas está ocupada).
     expect(deps.marcar).toHaveBeenCalledTimes(1);
-    const args = deps.marcar.mock.calls[0][2];
-    expect(args.space_id).toBe(SALA_B);
+    const args = deps.marcar.mock.calls[0]?.[2];
+    expect(args?.space_id).toBe(SALA_B);
   });
 
   it("todas as salas ocupadas: não grava e devolve space_capacity_reached", async () => {
@@ -126,8 +134,8 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
 
     expect(r.marcado).toBe(true);
     expect(deps.primeiroLugarLivre).not.toHaveBeenCalled();
-    const args = deps.marcar.mock.calls[0][2];
-    expect(args.space_id).toBe(SALA_A);
+    const args = deps.marcar.mock.calls[0]?.[2];
+    expect(args?.space_id).toBe(SALA_A);
   });
 
   it("tipo sem lugar marca como hoje, sem space_id", async () => {
@@ -140,8 +148,8 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
 
     expect(r.marcado).toBe(true);
     expect(r.lugar).toBeUndefined();
-    const args = deps.marcar.mock.calls[0][2];
-    expect(args.space_id).toBeUndefined();
+    const args = deps.marcar.mock.calls[0]?.[2];
+    expect(args?.space_id).toBeUndefined();
   });
 
   it("tipo comum (sem service_enabled) marca sem chamar lerServico", async () => {

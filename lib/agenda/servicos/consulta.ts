@@ -89,13 +89,13 @@ export async function consultarServico(
   // Sem lugar pedido e o serviço tem lugar: uma chamada por lugar, em paralelo.
   // As prévias voltam na mesma ordem de `p_starts` (isto é, a ordem de candidates).
   if (lugares.length > 0) {
-    const porLugar = await Promise.all(lugares.map((lugar) =>
-      googleRpc(db, "fn_calendar_service_preview", {
+    const porLugar: unknown[][] = await Promise.all(lugares.map(async (lugar) =>
+      z.array(z.unknown()).parse(await googleRpc(db, "fn_calendar_service_preview", {
         p_org: organizationId, p_type: service.event_type_id, p_starts: candidates.map((c) => c.starts_at),
         p_owner: params.ownerUserId ?? null, p_now: params.agora.toISOString(),
         p_space: lugar.id,
         ...(params.partySize ? { p_party: params.partySize } : {}),
-      }),
+      })),
     ));
     const availability = juncaoPreviasPorLugar(candidates, porLugar, lugares);
     return { candidates, availability: z.array(disponibilidadeDoServicoSchema).parse(availability) };
@@ -125,7 +125,8 @@ function juncaoPreviasPorLugar(
     const livres = lugares.filter((_lugar, idx) => linhas[idx]?.available === true);
     if (livres.length > 0) {
       const primeiroLivre = livres[0];
-      const linhaLivre = linhas[lugares.indexOf(primeiroLivre)] ?? linhaPrimeiro;
+      const idx = lugares.indexOf(primeiroLivre);
+      const linhaLivre = linhas[idx] ?? linhaPrimeiro;
       return {
         ...linhaLivre,
         free_spaces: livres.map((l) => ({ id: l.id, name: l.name, sector: l.sector })),
@@ -160,7 +161,9 @@ export async function primeiroLugarLivre(
   for (let i = 0; i < lugares.length; i += 1) {
     const linha = (porLugar[i] ?? [])[0] as DisponibilidadeDoServico | undefined;
     if (linha?.available === true) {
-      return { id: lugares[i].id, name: lugares[i].name };
+      const lugar = lugares[i];
+      if (!lugar) continue;
+      return { id: lugar.id, name: lugar.name };
     }
   }
   return null;
