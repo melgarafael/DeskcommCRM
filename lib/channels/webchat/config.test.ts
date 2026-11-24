@@ -93,8 +93,9 @@ describe("configuracaoDoChatSchema: ajustes da janela (Tarefa 10a)", () => {
     expect(configuracaoDoChatSchema.safeParse({ avatar_url: "nao e uma url" }).success).toBe(false);
   });
 
-  it("recusa avatar_url vazio", () => {
-    expect(configuracaoDoChatSchema.safeParse({ avatar_url: "" }).success).toBe(false);
+  it("aceita avatar_url vazio: é o pedido de tirar o avatar", () => {
+    expect(configuracaoDoChatSchema.safeParse({ avatar_url: "" }).success).toBe(true);
+    expect(configuracaoDoChatSchema.safeParse({ avatar_url: "http://x.com/a.png" }).success).toBe(false);
   });
 
   it("avatar_url ausente e valido", () => {

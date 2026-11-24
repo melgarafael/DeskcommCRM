@@ -184,6 +184,7 @@
     var ajustesAgendado = false; // auto-abrir agendado no máximo uma vez
     var visitanteMexeu = false; // o visitante abriu ou fechou a bolha manualmente
     var visitanteInteragiu = false; // o visitante interagiu com a página (pointerdown/keydown)
+    var contextoDoBip = null; // um AudioContext só por janela: o navegador limita quantos podem existir
     var somAtual = false; // valor de `som` do último `ajustes` válido
 
     // Iframe: a janela do chat. Começa escondido e só ganha tamanho ao abrir.
@@ -420,7 +421,7 @@
           atualizar();
         }
         if (formato !== "embutido" && somAtual && visitanteInteragiu) {
-          tocarBip();
+          contextoDoBip = tocarBip(contextoDoBip);
         }
       }
     });
@@ -450,11 +451,14 @@
   }
 
   // Toca um bip curto (~0,15 s, 880 Hz) com Web Audio, sem arquivo de áudio nem rede.
-  function tocarBip() {
+  // Reaproveita o contexto recebido e devolve o que usou: criar um por resposta esgota o limite do navegador.
+  function tocarBip(existente) {
+    var contexto = existente || null;
     try {
       var AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      var contexto = new AudioContext();
+      if (!AudioContext) return contexto;
+      if (!contexto) contexto = new AudioContext();
+      if (contexto.state === "suspended" && typeof contexto.resume === "function") contexto.resume();
       var oscilador = contexto.createOscillator();
       var ganho = contexto.createGain();
       oscilador.type = "sine";
@@ -467,6 +471,7 @@
     } catch (erro) {
       // sem áudio: não faz nada e não lança
     }
+    return contexto;
   }
 
   // Exposição para o teste (Node/Vitest). Num navegador, `module` não existe e nada muda.

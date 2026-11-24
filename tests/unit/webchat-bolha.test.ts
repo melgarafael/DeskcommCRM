@@ -926,6 +926,32 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     expect(instanciados).toHaveLength(1);
   });
 
+  it("duas respostas tocam dois bips com um AudioContext só", () => {
+    const instanciados: unknown[] = [];
+    const bips: unknown[] = [];
+    class AudioContextDuble {
+      currentTime = 0;
+      destination = {};
+      constructor() {
+        instanciados.push("constructor");
+      }
+      createOscillator() {
+        return { start: () => bips.push("start"), stop: () => {}, connect: () => {}, type: "", frequency: { setValueAtTime: () => {} } };
+      }
+      createGain() {
+        return { gain: { setValueAtTime: () => {} }, connect: () => {} };
+      }
+    }
+    Object.defineProperty(window, "AudioContext", { value: AudioContextDuble, configurable: true, writable: true });
+    montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM);
+    document.dispatchEvent(new Event("pointerdown"));
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM);
+    expect(bips).toHaveLength(2);
+    expect(instanciados).toHaveLength(1);
+  });
+
   // ---------- embutido ----------
 
   it("embutido: iframe visível, position static e width 100% depois de montar", () => {

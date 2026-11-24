@@ -267,7 +267,8 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
     respostasLinhas.length <= 5 && respostasLinhas.every((linha) => linha.length >= 1 && linha.length <= 80);
 
   const ajustes: Record<string, unknown> = {};
-  if (avatarPreenchido && avatarUrl.trim() !== avatarInicial) ajustes.avatar_url = avatarUrl.trim();
+  // Em branco com avatar salvo = tirar o avatar: vai "" (o schema aceita e a janela trata como sem avatar).
+  if (avatarUrl.trim() !== avatarInicial) ajustes.avatar_url = avatarUrl.trim();
   if (autoAbrirAtual !== String(autoAbrirInicial)) {
     ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
   }
@@ -615,11 +616,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         <div>
           <Button
             onClick={() =>
-              salvar({ config: ajustes }, () => {
-                setAvatarUrl(avatarInicial);
-                setAutoAbrirSegundos(String(autoAbrirInicial));
-                setSom(somInicial);
-                setRespostasRapidas(respostasInicial);
+              // Volta com o que o servidor guardou (como "Salvar domínios"): os *Inicial deste render são os de antes.
+              salvar({ config: ajustes }, (atualizado) => {
+                setAvatarUrl(atualizado.config.avatar_url ?? "");
+                setAutoAbrirSegundos(String(atualizado.config.auto_abrir_segundos ?? 0));
+                setSom(atualizado.config.som ?? false);
+                setRespostasRapidas((atualizado.config.respostas_rapidas ?? []).join("\n"));
               })
             }
             disabled={

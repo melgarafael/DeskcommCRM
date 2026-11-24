@@ -584,3 +584,35 @@ it("som desmarcado e marcado volta ao estado inicial desliga o botao", async () 
   fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
   expect(salvar.disabled).toBe(true);
 });
+
+it("depois de salvar o som, a caixinha mostra o que o servidor guardou e o botão desliga", async () => {
+  h.get
+    .mockResolvedValueOnce({ data: comConexao })
+    .mockResolvedValue({ data: { ...comConexao, config: { ...comConexao.config, som: true } } });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Tocar som ao chegar resposta");
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { som: true } }));
+  await waitFor(() => expect(h.get).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+  const som = screen.getByLabelText("Tocar som ao chegar resposta") as HTMLInputElement;
+  await waitFor(() => expect(som.checked).toBe(true));
+  expect((screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("apagar o avatar manda avatar_url vazio, e não um PATCH vazio que diz 'salvo'", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, avatar_url: "https://example.com/a.png" } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { avatar_url: "" } }));
+});

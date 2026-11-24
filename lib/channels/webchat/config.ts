@@ -74,13 +74,14 @@ export const configuracaoDoChatSchema = z
     posicao: z.enum(["direita", "esquerda"]).optional(),
     /**
      * URL da imagem do avatar da janela (F2-B, Tarefa 10a). Somente https, no
-     * máximo 300 caracteres. Ausente = sem avatar.
+     * máximo 300 caracteres. Ausente ou "" = sem avatar.
      */
     avatar_url: z
       .string()
       .trim()
       .max(300)
       .refine((v) => {
+        if (v === "") return true; // "" = tirar o avatar (a aba manda em branco)
         try {
           return new URL(v).protocol === "https:";
         } catch {
