@@ -599,6 +599,13 @@ export const AUDIT_ACTIONS = [
   // Só existe para o funil que nunca recebeu negócio: com histórico, a operação
   // vira `pipeline.archived` e a linha continua no banco.
   "pipeline.deleted",
+  // #4802 (item 3) — a escolha sobre os negócios de um funil que vai sair da
+  // lista. São ações próprias, e não um detalhe de `pipeline.archived`: o que se
+  // audita aqui é o destino de N negócios (quantos saíram, para qual funil, para
+  // qual etapa), e isso precisa ser encontrável sem abrir o metadata de um
+  // arquivamento.
+  "pipeline.negocios_transferidos",
+  "pipeline.negocios_removidos",
   "system.update_requested",
   "system.update_finished",
   // IA 360 · wave 2 — o retorno agendado deixou de ser exclusividade do motor e
@@ -1756,6 +1763,8 @@ export const AUDIT_ACTIONS = [
   // nunca a observação, que é texto livre.
   "venda.registrada",
   "venda.apagada",
+  // #5128 — a escolha de tipos de link do contato por organização.
+  "settings.links_de_contato_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

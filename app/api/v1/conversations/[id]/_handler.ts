@@ -288,7 +288,8 @@ export async function retomarIaHandler(
         actor: ctx.actor,
         requestId: ctx.requestId,
       },
-      { conversationId, expectedAssignee: dono },
+      // "Devolver ao automático" é decisão de uma pessoa (`limparClassificacaoDaIa`).
+      { conversationId, expectedAssignee: dono, limparClassificacaoDaIa: true },
     );
 
     if (!resultado.ok) {
@@ -457,7 +458,9 @@ export async function fecharConversaHandler(
           actor: ctx.actor,
           requestId: ctx.requestId,
         },
-        { conversationId, expectedAssignee: dono },
+        // Encerrar marcando a devolução é decisão explícita: o atendimento acabou,
+        // e o setor que a IA escolheu para ele deixa de valer (`limparClassificacaoDaIa`).
+        { conversationId, expectedAssignee: dono, limparClassificacaoDaIa: true },
       );
       if (!resultado.ok && resultado.erro !== "contato_sempre_humano") {
         // A recusa esperada (`contato_sempre_humano`) não é notícia; o resto é

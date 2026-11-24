@@ -49,7 +49,6 @@ import {
 } from "@/lib/inbox/modulos-da-lateral";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
-import { BarraDeEtapas } from "@/components/kanban/BarraDeEtapas";
 import { diasNaEtapa } from "@/lib/kanban/barra-de-etapas";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
@@ -63,6 +62,7 @@ import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { AtalhosDoNegocio } from "@/components/kanban/AtalhosDoCard";
 import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import { AnotacoesDoCliente } from "@/components/inbox/AnotacoesDoCliente";
 import { VendasDoNegocio } from "@/components/vendas/VendasDoNegocio";
 import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
 import { useVendasDoNegocio } from "@/hooks/vendas/useVendasRegistradas";
@@ -537,14 +537,6 @@ function InboxLeadEditor({
         key={`etapa-${ativo.id}`}
         lead={ativo}
         onMovido={onSalvo}
-        podeMover={podeLevarParaOutroFunil}
-      />
-      <ValorDoNegocio
-        key={`valor-${ativo.id}`}
-        lead={ativo}
-        moeda={ativo.currency ?? moedaDaOrg}
-        podeEditar={podeEditarValor}
-        onSalvo={onSalvo}
       />
       {/*
         ABRIR O NEGÓCIO NO QUADRO DO FUNIL (issue #3004).
@@ -580,6 +572,18 @@ function InboxLeadEditor({
         valores={ativo.custom_fields ?? {}}
         onSalvo={onSalvo}
       />
+      {/* Tudo que é FUNIL fica acima (etapa, abrir, levar, campos); o VALOR do
+          negócio fica aqui embaixo, separado por uma linha. Antes ele ficava
+          no meio dos botões do funil. */}
+      <div className="border-t border-border pt-3">
+        <ValorDoNegocio
+          key={`valor-${ativo.id}`}
+          lead={ativo}
+          moeda={ativo.currency ?? moedaDaOrg}
+          podeEditar={podeEditarValor}
+          onSalvo={onSalvo}
+        />
+      </div>
     </div>
   );
 }
@@ -772,22 +776,15 @@ function ValorDoNegocio({
 function EtapaDoNegocio({
   lead,
   onMovido,
-  podeMover,
 }: {
   lead: LeadRow;
   onMovido: () => void;
-  /**
-   * Quem clica na BARRA DE ETAPAS move o negócio: `pipeline.move_card` (`agent`+),
-   * a mesma régua do quadro e do "Levar para outro funil" deste painel. Abaixo
-   * disso a barra só mostra. O seletor segue como sempre — a rota de mover cobra
-   * o piso no servidor.
-   */
-  podeMover: boolean;
 }) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
   const [perdendo, setPerdendo] = useState(false);
   const etapas = lead.etapas_do_funil ?? [];
+  const dias = diasNaEtapa(lead);
   if (!lead.stage_id || etapas.length === 0) return null;
 
   async function escolher(stageId: string) {
@@ -807,20 +804,21 @@ function EtapaDoNegocio({
 
   return (
     <div className="space-y-1" data-testid="inbox-etapa-do-negocio">
-      {/* A BARRA DE ETAPAS, a mesma do dossiê do quadro: o caminho do negócio
-          no funil, a atual com os dias nela. O clique usa o MESMO `escolher`
-          do seletor abaixo (`/api/v1/leads/bulk`); ganho e perda ficam fora da
-          barra e continuam no seletor, onde a perda pede o motivo. */}
-      <BarraDeEtapas
-        etapaAtual={lead.stage_id}
-        etapas={etapas}
-        podeMover={podeMover && !mover.isPending}
-        onMudar={(stageId) => void escolher(stageId)}
-        dias={diasNaEtapa(lead)}
-      />
-      <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
-        {t("Etapa do funil")}
-      </label>
+      {/* Só o seletor de etapa: a barra rolável de etapas que
+          ficava aqui em cima repetia a mesma escolha e poluía a coluna estreita
+          do Inbox. No dossiê do quadro a barra continua. O que só a barra
+          mostrava — os dias na etapa atual — fica aqui, ao lado do rótulo (é
+          para isso que a rota `crm-summary` manda `stage_changed_at`). */}
+      <div className="flex items-baseline justify-between gap-2">
+        <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
+          {t("Etapa do funil")}
+        </label>
+        {dias !== null && (
+          <span className="text-[11px] text-text-muted" title={t("Dias na etapa atual")} data-testid="inbox-dias-na-etapa">
+            {dias === 1 ? t("1 dia") : t("{n} dias").replace("{n}", String(dias))}
+          </span>
+        )}
+      </div>
       <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending}>
         <SelectTrigger id={`etapa-${lead.id}`} className="h-8 w-full text-xs" data-testid="inbox-etapa-select">
           <SelectValue />
@@ -1405,6 +1403,20 @@ export function CRMSidePanel({
       editor continuam os mesmos (`ChipDeEtiqueta`, `ContactTagsEditor`), na
       mesma posição do fluxo: logo abaixo do contato.
     */
+    /* O bloco de notas da equipe sobre o cliente — o mesmo campo
+       "Observações da equipe" da aba Diagnóstico da ficha. */
+    anotacoes: contactId && !contact?.is_anonymized ? (
+      <>
+        <AnotacoesDoCliente
+          key={contactId}
+          contactId={contactId}
+          usuarioId={user.id}
+          podeEditar={podeEditarValor && !readonly}
+        />
+        <Separator />
+      </>
+    ) : null,
+
     "tags-do-contato": (
       <section data-testid="inbox-tags-do-contato" className="space-y-2">
         {tags.length > 0 && (
@@ -1612,9 +1624,9 @@ export function CRMSidePanel({
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
           /* `min-w-0`: o `fieldset` nasce com `min-width: min-content` (padrão
-             do navegador) e repassaria a largura da faixa em nowrap da barra de
-             etapas para a `aside`, que rolaria de lado inteira. Com ele, quem
-             rola é só a faixa (`BarraDeEtapas`). */
+             do navegador) e repassaria para a `aside` a largura de qualquer
+             conteúdo que não quebra linha (um título longo, um valor), e a
+             coluna inteira rolaria de lado. */
           <>
           <fieldset disabled={readonly} className="min-w-0"><InboxLeadEditor
             leads={leads}

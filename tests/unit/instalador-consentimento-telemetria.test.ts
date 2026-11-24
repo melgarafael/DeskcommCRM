@@ -94,12 +94,23 @@ describe("a atualização preserva o consentimento de quem já havia aceitado", 
     const chamada = linhas.findIndex(
       (linha) => linha.trim() === "migrar_consentimento_de_telemetria .env",
     );
-    // As saídas de "já está na versão mais recente" morrem num `exit 0` sem
-    // passar pelo `up -d`: se a chamada ficar depois delas, quem está em dia —
-    // o caso mais comum de quem atualiza — nunca é convertido.
-    const primeiroExit = linhas.findIndex((linha) => linha.trim() === "exit 0");
+    // As saídas de "já está na versão mais recente" morrem sem passar pelo
+    // `up -d`: se a chamada ficar depois delas, quem está em dia — o caso mais
+    // comum de quem atualiza — nunca é convertido.
+    //
+    // A régua é a SAÍDA (a mensagem + o `exit 0` que vem com ela), e não o
+    // primeiro `exit 0` do arquivo: há funções no topo que saem com 0 de
+    // propósito (recusa pelo cadeado, por exemplo) e elas não têm nada a ver
+    // com "não há o que atualizar". Medir por `exit 0` reprovava só por causa
+    // de uma delas definida acima.
+    const saidaNadaAAtualizar = linhas.findIndex((linha) => linha.includes("Nada a atualizar."));
     expect(chamada).toBeGreaterThan(0);
-    expect(primeiroExit).toBeGreaterThan(chamada);
+    // No TOPO do script (sem indentação): dentro de função, a conversão só
+    // rodaria para quem chamasse aquela função.
+    expect(linhas[chamada], "a conversão ficou dentro de uma função").toBe(
+      "migrar_consentimento_de_telemetria .env",
+    );
+    expect(saidaNadaAAtualizar).toBeGreaterThan(chamada);
   });
 
   it("gravar_imagens converte, porque é ela que o update.sh ANTIGO chama", () => {

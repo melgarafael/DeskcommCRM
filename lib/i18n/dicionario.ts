@@ -52,6 +52,29 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_PAINEL_GOOGLE_ADS,
+  "O App ID e o Configuration ID são só números. Copie de novo do painel da Meta.": { es: "El App ID y el Configuration ID son solo números. Cópielos de nuevo del panel de Meta." },
+  "Conexão pelo Facebook salva.": { es: "Conexión por Facebook guardada." },
+  "Conexão pelo Facebook (Embedded Signup)": { es: "Conexión por Facebook (Embedded Signup)" },
+  "Para quem tem o app aprovado como Tech Provider. Com estes dois campos e a chave secreta acima, aparece em Conexões › API Oficial o botão “Conectar com o Facebook”: a empresa escolhe o número numa janela da Meta, sem copiar token nenhum.": { es: "Para quien tiene la app aprobada como Tech Provider. Con estos dos campos y la clave secreta de arriba, aparece en Conexiones › API Oficial el botón “Conectar con Facebook”: la empresa elige el número en una ventana de Meta, sin copiar ningún token." },
+  "App ID (ID do aplicativo)": { es: "App ID (ID de la aplicación)" },
+  "No painel da Meta, em Configurações do app › Básico, no topo da página.": { es: "En el panel de Meta, en Configuración de la app › Básica, en la parte superior de la página." },
+  "Configuration ID (ID da configuração)": { es: "Configuration ID (ID de la configuración)" },
+  "No painel da Meta, em Login do Facebook para Empresas › Configurações, a configuração do WhatsApp Embedded Signup.": { es: "En el panel de Meta, en Inicio de sesión con Facebook para empresas › Configuraciones, la configuración de WhatsApp Embedded Signup." },
+  "Cadastre também a chave secreta do aplicativo acima — sem ela o botão não aparece.": { es: "Registre también la clave secreta de la aplicación de arriba: sin ella el botón no aparece." },
+  "A conexão pelo Facebook foi cancelada antes do fim.": { es: "La conexión por Facebook se canceló antes de terminar." },
+  "A Meta recusou a conexão:": { es: "Meta rechazó la conexión:" },
+  "Não deu para abrir a janela do Facebook. Libere pop-ups e bloqueadores para este site e tente de novo.": { es: "No se pudo abrir la ventana de Facebook. Permita las ventanas emergentes y desactive los bloqueadores para este sitio e inténtelo de nuevo." },
+  "Trocar o número pelo Facebook": { es: "Cambiar el número por Facebook" },
+  "Conectar com o Facebook": { es: "Conectar con Facebook" },
+  "Abre a janela oficial da Meta: entre com o Facebook da empresa, escolha (ou cadastre) o número e confirme. O CRM recebe a conexão sozinho — sem copiar token nem IDs.": { es: "Abre la ventana oficial de Meta: entre con el Facebook de la empresa, elija (o registre) el número y confirme. El CRM recibe la conexión solo, sin copiar token ni IDs." },
+  "Já usa o número no app WhatsApp Business? Escolha esse número na janela: o app continua funcionando e as conversas passam a chegar também aqui.": { es: "¿Ya usa el número en la app WhatsApp Business? Elija ese número en la ventana: la app sigue funcionando y las conversaciones también llegarán aquí." },
+  "A conta da Meta tem mais de um número. Conecte um número por vez, escolhendo só um na janela da Meta.": { es: "La cuenta de Meta tiene más de un número. Conecte un número a la vez, eligiendo solo uno en la ventana de Meta." },
+  "A Meta não devolveu nenhum número para essa conta. Tente de novo.": { es: "Meta no devolvió ningún número para esa cuenta. Inténtelo de nuevo." },
+  "Conectando com a Meta…": { es: "Conectando con Meta…" },
+  "Aguardando a janela do Facebook…": { es: "Esperando la ventana de Facebook…" },
+  "A janela da Meta não devolveu o número e a conta. Tente de novo.": { es: "La ventana de Meta no devolvió el número ni la cuenta. Inténtelo de nuevo." },
+  "A conexão pelo Facebook não está configurada nesta instalação. Quem administra cadastra o App ID, o Configuration ID e a chave secreta em Admin › API Oficial (Meta).": { es: "La conexión por Facebook no está configurada en esta instalación. Quien administra registra el App ID, el Configuration ID y la clave secreta en Admin › API Oficial (Meta)." },
+  "A Meta não aceitou a conexão:": { es: "Meta no aceptó la conexión:" },
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_MCP_AGENTES,
   ...TEXTOS_MCP_OAUTH,
@@ -3501,6 +3524,10 @@ export const DICIONARIO: Traducoes = {
   "Um de cada vez por conversa": { es: "Una a la vez por conversación" },
   "Um de cada vez por cliente": { es: "Una a la vez por cliente" },
   "Só atender em horário de funcionamento": { es: "Atender solo en horario de funcionamiento" },
+  "Continuar a conversa assim que a equipe devolver ao automático": { es: "Continuar la conversación en cuanto el equipo la devuelva al automático" },
+  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": {
+    es: "Cuando alguien del equipo atiende, envía el último mensaje (un presupuesto, por ejemplo) y hace clic en Devolver al automático, el agente continúa desde ahí al instante, sin esperar a que el cliente escriba. No habla si el cliente ya respondió, si la conversación tiene un seguimiento en curso o si el contacto está marcado para atención humana.",
+  },
   "Só enviar follow-up nestes horários": { es: "Enviar seguimientos solo en estos horarios" },
   "Mensagem fora do horário (opcional)": { es: "Mensaje fuera del horario (opcional)" },
   "Ex.: Nosso atendimento funciona de segunda a sexta, das 8h às 18h. Recebemos sua mensagem e respondemos no próximo horário de atendimento.": {
@@ -12190,8 +12217,76 @@ export const DICIONARIO: Traducoes = {
   "Este funil está arquivado: o quadro abre em leitura, e nada aqui grava até você tirá-lo do arquivo em Funis.": {
     es: "Este embudo está archivado: el tablero se abre en modo lectura y nada aquí se guarda hasta que lo desarchives en Embudos.",
   },
-  "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.": {
-    es: "Esta acción no se puede deshacer: el embudo y sus etapas desaparecen. Si ya recibió negocios, no se puede eliminar y sigue archivado.",
+  "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, escolha abaixo o que fazer com os negócios — ou tire o funil do arquivo e resolva antes.": {
+    es: "Esto no tiene vuelta: el embudo y sus etapas desaparecen. Si ya recibió negocios, elige abajo qué hacer con ellos — o desarchiva el embudo y resuélvelo antes.",
+  },
+  // #4802 (item 3) — a escolha sobre os negócios ao arquivar ou excluir um funil.
+  "Conferindo quantos negócios estão vinculados…": {
+    es: "Comprobando cuántos negocios están vinculados…",
+  },
+  "Não consegui contar os negócios deste funil agora. Tente de novo em instantes.": {
+    es: "No pude contar los negocios de este embudo ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "«{nome}» tem 1 negócio vinculado. Escolha o que fazer com ele antes de continuar.": {
+    es: "«{nome}» tiene 1 negocio vinculado. Elige qué hacer con él antes de continuar.",
+  },
+  "«{nome}» tem {n} negócios vinculados. Escolha o que fazer com eles antes de continuar.": {
+    es: "«{nome}» tiene {n} negocios vinculados. Elige qué hacer con ellos antes de continuar.",
+  },
+  "O que fazer com os negócios": { es: "Qué hacer con los negocios" },
+  "Transferir os em andamento para outro funil": { es: "Transferir los que están en curso a otro embudo" },
+  "Transferir leva só os em andamento ({a}). Os ganhos e perdidos ({e}) ficam neste funil, que guarda o histórico em modo leitura. Para excluí-lo de vez, eles precisam ser removidos.":
+    {
+      es: "Transferir lleva solo los que están en curso ({a}). Los ganados y perdidos ({e}) se quedan en este embudo, que guarda el historial en modo lectura. Para eliminarlo definitivamente, hay que quitarlos.",
+    },
+  "{n} negócios ganhos ou perdidos continuam neste funil.": {
+    es: "{n} negocios ganados o perdidos siguen en este embudo.",
+  },
+  "Nenhum negócio em andamento para transferir. Os ganhos e perdidos ficam neste funil.": {
+    es: "Ningún negocio en curso para transferir. Los ganados y perdidos se quedan en este embudo.",
+  },
+  "Transferir para uma etapa específica do funil de destino": {
+    es: "Transferir a una etapa específica del embudo de destino",
+  },
+  "Remover os negócios da estrutura dos funis, mantendo contatos e históricos": {
+    es: "Quitar los negocios de la estructura de los embudos, conservando contactos e historiales",
+  },
+  "Não tem volta: os negócios são apagados, e com eles os anexos (e os arquivos no armazenamento), os vínculos, as reativações, os escores de risco, as propostas de campo e as conversões de anúncio. Contatos, conversas e o histórico do contato continuam.":
+    {
+      es: "No hay vuelta atrás: los negocios se eliminan y con ellos los adjuntos (y los archivos del almacenamiento), los vínculos, las reactivaciones, las puntuaciones de riesgo, las propuestas de campo y las conversiones de anuncios. Los contactos, las conversaciones y el historial se conservan.",
+    },
+  "Nenhum outro funil disponível": { es: "Ningún otro embudo disponible" },
+  "Remover os negócios e continuar": { es: "Quitar los negocios y continuar" },
+  "Transferir e continuar": { es: "Transferir y continuar" },
+  "Não consegui mover os negócios. Tente de novo.": {
+    es: "No pude mover los negocios. Inténtalo de nuevo.",
+  },
+  "O negócio já está neste funil — escolha OUTRO para receber os negócios.": {
+    es: "El negocio ya está en este embudo — elige OTRO para recibir los negocios.",
+  },
+  "O funil de destino não está mais na sua lista. Recarregue a página e escolha outro.": {
+    es: "El embudo de destino ya no está en tu lista. Recarga la página y elige otro.",
+  },
+  "«{nome}» está arquivado e não recebe negócio. Tire-o do arquivo ou escolha outro funil.": {
+    es: "«{nome}» está archivado y no recibe negocios. Desarchívalo o elige otro embudo.",
+  },
+  "A etapa escolhida não é de «{nome}» ou não existe mais. Recarregue a página e escolha de novo.": {
+    es: "La etapa elegida no es de «{nome}» o ya no existe. Recarga la página y elige de nuevo.",
+  },
+  "A etapa «{etapa}» está arquivada e não recebe negócio. Escolha outra.": {
+    es: "La etapa «{etapa}» está archivada y no recibe negocios. Elige otra.",
+  },
+  "«{etapa}» é etapa de fechamento: transferir para lá encerraria TODOS os negócios de uma vez. Escolha uma etapa de andamento.": {
+    es: "«{etapa}» es una etapa de cierre: transferir allí cerraría TODOS los negocios de una vez. Elige una etapa de avance.",
+  },
+  "«{nome}» não tem etapa de andamento para receber os negócios. Crie uma etapa nele primeiro.": {
+    es: "«{nome}» no tiene etapa de avance para recibir los negocios. Crea una etapa en él primero.",
+  },
+  "Não entendi o que fazer com os negócios deste funil.": {
+    es: "No entendí qué hacer con los negocios de este embudo.",
+  },
+  "Este funil não tem mais negócios vinculados.": {
+    es: "Este embudo ya no tiene negocios vinculados.",
   },
   // #2559 — as duas recusas novas, ambas com `{nome}` por preencher: a rota
   // traduz primeiro e só então cola o nome do funil (`t(x).replace("{nome}", …)`).
@@ -23224,6 +23319,16 @@ export const DICIONARIO: Traducoes = {
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
   },
+  "Ordem da fila": { es: "Orden de la cola" },
+  "Ordem:": { es: "Orden:" },
+  "Esperando há mais tempo": { es: "Esperando hace más tiempo" },
+  "Anotações do cliente": { es: "Notas del cliente" },
+  "Editar anotação": { es: "Editar nota" },
+  "Anotação salva.": { es: "Nota guardada." },
+  "Adicionar anotação": { es: "Agregar nota" },
+  "Nenhuma anotação sobre este cliente.": { es: "Ninguna nota sobre este cliente." },
+  "Ex.: empresa de enxoval em Recife, compra no atacado todo mês, entregar à tarde.": { es: "Ej.: empresa de ajuares en Recife, compra al por mayor cada mes, entregar por la tarde." },
+  "Dias na etapa atual": { es: "Días en la etapa actual" },
   // O painel de vendas (Análise › Vendas).
   "Este mês": { es: "Este mes" },
   "Mês passado": { es: "Mes pasado" },
@@ -23277,6 +23382,34 @@ export const DICIONARIO: Traducoes = {
   "Apagar esta venda? Ela sai do painel de vendas.": { es: "¿Borrar esta venta? Sale del panel de ventas." },
   "venda(s)": { es: "venta(s)" },
   "total": { es: "total" },
+  // ─── Tipos de link do contato por organização (#5128) ──────────────────────
+  // Tela `app/app/settings/links-de-contato`, rota `settings/links-de-contato` e
+  // o painel do funil. Os rótulos dos tipos (Instagram, Site…) já estão acima.
+  "Tipos de link do contato": { es: "Tipos de enlace del contacto" },
+  "Quais tipos de link a ficha do contato e o funil mostram.": {
+    es: "Qué tipos de enlace muestran la ficha del contacto y el embudo.",
+  },
+  "Escolha quais tipos aparecem na ficha do contato e no funil. Desmarcar um tipo não apaga o que já foi preenchido nele: o valor fica guardado e volta a aparecer se você marcar de novo.":
+    {
+      es: "Elige qué tipos aparecen en la ficha del contacto y en el embudo. Desmarcar un tipo no borra lo que ya se completó en él: el valor queda guardado y vuelve a aparecer si lo marcas de nuevo.",
+    },
+  "Quais tipos a ficha mostra": { es: "Qué tipos muestra la ficha" },
+  "Os tipos desmarcados somem do formulário e da exibição da ficha e do funil. Nada é apagado: o valor preenchido continua guardado e volta a aparecer se o tipo for marcado de novo.":
+    {
+      es: "Los tipos desmarcados desaparecen del formulario y de la vista de la ficha y del embudo. No se borra nada: el valor completado sigue guardado y vuelve a aparecer si el tipo se marca de nuevo.",
+    },
+  "Marque pelo menos um tipo de link.": { es: "Marca al menos un tipo de enlace." },
+  "Tipos de link salvos.": { es: "Tipos de enlace guardados." },
+  "Salvar tipos": { es: "Guardar tipos" },
+  "Não foi possível carregar os tipos de link.": {
+    es: "No se pudieron cargar los tipos de enlace.",
+  },
+  "Escolha ao menos um tipo de link válido.": {
+    es: "Elige al menos un tipo de enlace válido.",
+  },
+  "A configuração da empresa está em um formato inesperado.": {
+    es: "La configuración de la empresa está en un formato inesperado.",
+  },
 };
 
 /**

@@ -227,6 +227,15 @@ BYO (invariante 6): tela de conexão que valida a credencial na hora (`GET /{pho
 mostra a URL de webhook e o verify token prontos, e guarda a credencial **por sessão de
 canal, cifrada** — em vez de env global, que hoje limita a instalação a uma WABA só.
 
+**Exceção opt-in, para quem JÁ é Tech Provider (#4074, PR #5113).** Uma instalação que
+já passou pelo App Review e pela verificação pode cadastrar o App ID e o Configuration ID
+do app dela em `/admin/meta`. Com os dois e o App Secret, Conexões › API Oficial mostra
+«Conectar com o Facebook»: a janela da Meta devolve o código, o servidor o troca pelo
+token e grava o canal pelo MESMO caminho do token colado (`lib/channels/meta/gravar-canal-oficial.ts`),
+inclusive em coexistência com o app WhatsApp Business. Sem os três campos nada muda e o
+botão não aparece. Isto não reabre a tabela acima: ninguém vira Tech Provider por causa
+do botão, e **BYO continua sendo o padrão** — o formulário manual segue na mesma tela.
+
 **Lição de método:** eu escrevi "Fase 5 = Embedded Signup" em três planos sem perguntar se
 ela cabia no modelo do produto. Vinha do TomikCRM, que é SaaS — lá faz sentido. Premissa
 copiada de outro contexto não vira verdade por estar escrita em três lugares.

@@ -1139,11 +1139,6 @@ const DADO_DO_OPERADOR_CONGELADO: { arquivo: string; expressao: string; motivo: 
       "prop kind: identificador técnico de mídia exibido no sr-only (linha 18) — valor de wire, não frase",
   },
   {
-    arquivo: "components/kanban/ContatoDoNegocio.tsx",
-    expressao: "rotulo",
-    motivo: "par de TIPOS_DE_LINK, tabela fechada do módulo, iterada na linha 181",
-  },
-  {
     arquivo: "components/shell/NavHub.tsx",
     expressao: "title",
     motivo: "prop title do hub (linha 27), vinda do registro de portais do produto",

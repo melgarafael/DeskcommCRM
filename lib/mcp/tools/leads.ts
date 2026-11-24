@@ -122,16 +122,13 @@ const VALOR_RECORRENTE =
 
 /** Os três campos que o agente pode escrever — e que a leitura devolve. */
 const RECORRENCIA = {
-  recurring_value_cents: z
-    .number()
-    .int()
-    .nonnegative()
-    .optional()
-    .describe(VALOR_RECORRENTE),
+  recurring_value_cents: z.number().int().nonnegative().optional().describe(VALOR_RECORRENTE),
   recurring_period: z
     .literal("monthly")
     .optional()
-    .describe("Periodicidade da recorrência: hoje só 'monthly'. Omitida com mensalidade presente, nasce mensal."),
+    .describe(
+      "Periodicidade da recorrência: hoje só 'monthly'. Omitida com mensalidade presente, nasce mensal.",
+    ),
   recurring_months: z
     .number()
     .int()
@@ -177,9 +174,7 @@ async function enrichLeads(
 
   return leads.map((l) => ({
     ...l,
-    owner_user_name: l.owner_user_id
-      ? (names.get(l.owner_user_id as string) ?? null)
-      : null,
+    owner_user_name: l.owner_user_id ? (names.get(l.owner_user_id as string) ?? null) : null,
     stage: l.stage_id ? (stageById.get(l.stage_id as string) ?? null) : null,
   }));
 }
@@ -200,7 +195,9 @@ async function recortarParaOTurno(
   const funis = [...new Set(leads.map((l) => l.pipeline_id as string | null | undefined))];
   const settingsPorFunil = new Map(
     await Promise.all(
-      funis.map(async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const),
+      funis.map(
+        async (id) => [id, await settingsDoFunil(ctx.supabase, id, ctx.organizationId)] as const,
+      ),
     ),
   );
   return leads.map((l) =>
@@ -208,9 +205,10 @@ async function recortarParaOTurno(
       ? {
           ...l,
           custom_fields: filtrarCamposLegiveisPelaIa(
-            settingsPorFunil.get(l.pipeline_id as string | null | undefined) as
-              | Record<string, unknown>
-              | null,
+            settingsPorFunil.get(l.pipeline_id as string | null | undefined) as Record<
+              string,
+              unknown
+            > | null,
             l.custom_fields,
           ),
         }
@@ -295,13 +293,14 @@ const countInputShape = {
   pipeline_id: z.string().uuid().optional(),
   stage_id: z.string().uuid().optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
+  por_etapa: z.boolean().optional(),
 };
 
 export const crmCountLeads: McpToolDefinition<typeof countInputShape> = {
   name: "crm_count_leads",
   description:
     "Conta leads por pipeline, stage e status e devolve só números (total e, sem filtro de status, o total por status), nunca nomes nem ids. " +
-    "Para 'quantos leads?', use esta em vez de paginar crm_list_leads. Em atendimento, conta só os negócios do contato da conversa.",
+    "Para 'quantos leads?', use esta em vez de paginar crm_list_leads. Com por_etapa=true (exige pipeline_id) devolve também o total de cada etapa do funil. Em atendimento, conta só os negócios do contato da conversa.",
   inputSchema: countInputShape,
   category: "read",
   requiresRole: "agent",
@@ -318,6 +317,7 @@ export const crmCountLeads: McpToolDefinition<typeof countInputShape> = {
         pipeline_id: input.pipeline_id,
         stage_id: input.stage_id,
         status: input.status,
+        por_etapa: input.por_etapa,
         // Mesmo escopo do turno da listagem, no WHERE.
         contact_id: ctx.contatoDoTurno,
       },
@@ -422,7 +422,9 @@ const createInputShape = {
     // em toda instalação, e este campo só serve a quem usa o banco externo.
     .refine(ehReferenciaExterna, "use o formato <receita>:<id>")
     .optional()
-    .describe("O item que o cliente escolheu num resultado de receita: <receita>:<id>, com o id da linha. Nunca invente."),
+    .describe(
+      "O item que o cliente escolheu num resultado de receita: <receita>:<id>, com o id da linha. Nunca invente.",
+    ),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
    *
@@ -462,9 +464,14 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       stage_id: input.stage_id,
       referencia_externa: input.referencia_externa,
     };
-    const completo = await completarDestinoDoNegocio(ctx.supabase, ctx.organizationId, destinoArgs, {
-      turnoComContato: !!ctx.contatoDoTurno,
-    });
+    const completo = await completarDestinoDoNegocio(
+      ctx.supabase,
+      ctx.organizationId,
+      destinoArgs,
+      {
+        turnoComContato: !!ctx.contatoDoTurno,
+      },
+    );
     if (!completo.ok) return completo.resposta;
     const pipelineId = destinoArgs.pipeline_id as string;
     const stageId = destinoArgs.stage_id as string;
@@ -665,7 +672,11 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
     // dinheiro em código, o degrau 2 pergunta ao Jev o que sobrou, e o que o
     // cliente não disse volta como ERRO DE ENSINO para o modelo, com os outros
     // campos da mesma chamada seguindo gravando (`lib/mcp/conferencia-de-campos`).
-    const conferencia = await conferirCamposPersonalizados(ctx, { leadId: lead_id }, parsed.custom_fields);
+    const conferencia = await conferirCamposPersonalizados(
+      ctx,
+      { leadId: lead_id },
+      parsed.custom_fields,
+    );
     const lead = await updateLeadHandler(
       ctx.supabase,
       {
@@ -755,7 +766,6 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   },
 };
 
-
 // ---------------------------------------------------------------------------
 // retomar como novo negócio (issue #1538)
 // ---------------------------------------------------------------------------
@@ -822,7 +832,9 @@ const camposDoDocumentoShape = {
           .string()
           .max(500)
           .optional()
-          .describe("O trecho do documento de onde o valor veio. SEM trecho a proposta é recusada."),
+          .describe(
+            "O trecho do documento de onde o valor veio. SEM trecho a proposta é recusada.",
+          ),
       }),
     )
     .min(1)
@@ -866,7 +878,11 @@ export const crmProposeLeadFieldsFromDocument: McpToolDefinition<typeof camposDo
     const r = await proporCamposDoNegocio(ctx.supabase, {
       organizationId: ctx.organizationId,
       leadId: input.lead_id,
-      campos: input.campos.map((c) => ({ campo: c.campo, valor: c.valor, trecho: c.trecho ?? null })),
+      campos: input.campos.map((c) => ({
+        campo: c.campo,
+        valor: c.valor,
+        trecho: c.trecho ?? null,
+      })),
       attachmentId: input.attachment_id ?? null,
       // ⚠️ `agent_id`, NUNCA `actor.id` — a coluna tem FK para `ai_agents`, e o
       // id do run/token quebraria o INSERT (a mesma decisão da proposta de
