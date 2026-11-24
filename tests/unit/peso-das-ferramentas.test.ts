@@ -269,7 +269,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242), MEDIDO
 // neste head em 2026-11-18 contra a main de então. MEDIDO de novo no merge com a
 // main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
-const TETO_TOTAL = 47531;
+// +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
+// 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
+const TETO_TOTAL = 47562;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
