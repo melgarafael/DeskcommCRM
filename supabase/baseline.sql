@@ -77571,9 +77571,9 @@ create trigger trg_contacts_anonimizado_mensagens_agendadas
   when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
   execute function public.fn_mensagens_agendadas_contato_anonimizado();
 
--- ---- mensagens agendadas, repetição (migration 9464) ----
+-- ---- mensagens agendadas, repetição (migration 9471) ----
 -- Série na própria linha (recorrência, intervalo, início, término, fuso) e a tabela
--- de ocorrências. Idêntico ao corpo da migration 9464 (apêndice).
+-- de ocorrências. Idêntico ao corpo da migration 9471 (apêndice).
 alter table public.mensagens_agendadas
   add column if not exists recorrencia text not null default 'nenhuma',
   add column if not exists intervalo_dias integer,
@@ -77581,20 +77581,26 @@ alter table public.mensagens_agendadas
   add column if not exists termino_local text,
   add column if not exists tz text not null default 'UTC';
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_recorrencia_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_recorrencia_check
-  check (recorrencia in ('nenhuma', 'diaria', 'semanal', 'quinzenal', 'mensal', 'trimestral', 'semestral', 'anual', 'a_cada_n_dias'));
+-- As três trocas de restrição vão num único bloco DO: ou todas entram, ou nenhuma
+-- (o bloco é uma transação própria; se uma checagem falhar, o rollback volta tudo).
+do $$
+begin
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_recorrencia_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_recorrencia_check
+    check (recorrencia in ('nenhuma', 'diaria', 'semanal', 'quinzenal', 'mensal', 'trimestral', 'semestral', 'anual', 'a_cada_n_dias'));
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_intervalo_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_intervalo_check
-  check (
-    (recorrencia = 'a_cada_n_dias' and intervalo_dias between 1 and 365)
-    or (recorrencia <> 'a_cada_n_dias' and intervalo_dias is null)
-  );
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_intervalo_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_intervalo_check
+    check (
+      (recorrencia = 'a_cada_n_dias' and intervalo_dias between 1 and 365)
+      or (recorrencia <> 'a_cada_n_dias' and intervalo_dias is null)
+    );
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_serie_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_serie_check
-  check (recorrencia = 'nenhuma' or (inicio_local is not null and length(btrim(tz)) > 0));
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_serie_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_serie_check
+    check (recorrencia = 'nenhuma' or (inicio_local is not null and length(btrim(tz)) > 0));
+end
+$$;
 
 create table if not exists public.mensagens_agendadas_envios (
   id uuid primary key default gen_random_uuid(),
