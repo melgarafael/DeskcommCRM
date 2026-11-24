@@ -4784,3 +4784,13 @@ O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
 impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
 Capacidades e a configuração do servidor externo. A próxima execução relê essa
 configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## Casca — barra lateral durante scroll lock `[P1]`
+
+Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 7 do CI.
+
+- Desktop 1280 × 720: rolar Configurações e abrir perfil, seletor de organização e busca; a coordenada vertical da barra lateral deve permanecer igual (tolerância inferior a 1 px).
+- Celular 390 × 844: abrir e fechar a gaveta de navegação, sem rolagem horizontal da página.
+- Conferir também a largura da página no Inbox e na lista de funis.
+- Evidência: `evidence/sidebar-scroll-lock/` (capturas e medidas geométricas).
+- Resultado: PASS (2 testes, Chromium; 52,2 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.

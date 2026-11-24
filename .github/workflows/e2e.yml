@@ -1533,6 +1533,7 @@ jobs:
       # apaga tudo no fim. Não fala com WAHA nem com o Graph. PREVISÃO, não
       # medida no CI: ~60 s de caso (quatro logins).
       SPECS_PARTE_7: >-
+        sidebar-scroll-lock.spec.ts
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
         fotos-skills-e-peso-da-memoria-pela-tela.spec.ts
