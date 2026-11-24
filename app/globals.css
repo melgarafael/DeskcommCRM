@@ -773,7 +773,7 @@
        do `<body>` deixa de passar para a janela e o `<body>` vira contêiner
        próprio: quando o Radix trava a rolagem (menu do perfil, seletor de
        organização, busca), a página salta e a barra lateral sticky some para
-       cima. A rede contra rolagem lateral mora no `<body>`, logo abaixo. */
+       cima. A rede contra rolagem lateral mora num `div` do app/layout.tsx. */
   }
   [data-theme="dark"] {
     color-scheme: dark;
@@ -787,13 +787,11 @@
   }
 
   body {
-    /* Rede contra rolagem lateral da PÁGINA inteira, inclusive nas telas fora
-       das cascas do CRM e do painel (login, cadastro, configuração inicial,
-       duas etapas, convite). Com o `<html>` sem overflow, este valor passa
-       para a janela, e o `<body>` não vira contêiner de rolagem: o sticky da
-       barra lateral continua valendo, e a trava do Radix não faz a página
-       saltar. `clip` depois de `hidden`: `hidden` é a reserva para motor que
-       não conhece `clip` (Safari < 16). */
+    /* Reserva da rede contra rolagem lateral. A rede de verdade é o `div`
+       `overflow-x-clip` em volta das páginas (app/layout.tsx): este valor, com
+       o `<html>` sem overflow, passa para a janela como `hidden` — segura a
+       roda, mas não o foco num campo fora da tela. Fica para motor que não
+       conhece `clip` (Safari < 16), onde o `div` não corta nada. */
     overflow-x: hidden;
     overflow-x: clip;
     background-color: var(--color-bg);

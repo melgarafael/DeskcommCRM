@@ -28,6 +28,12 @@ describe("a rede contra scroll horizontal não pode matar o sticky", () => {
     });
   }
 
+  it("o layout raiz corta a rolagem lateral num div em volta das páginas", () => {
+    expect(ler("app/layout.tsx")).toMatch(
+      /<div className="overflow-x-clip">\s*<MarcaDosClientComponents>\s*<ThemeProvider>\{children\}<\/ThemeProvider>\s*<\/MarcaDosClientComponents>\s*<\/div>/,
+    );
+  });
+
   it("o layout raiz não recoloca o recorte em html ou body", () => {
     expect(ler("app/layout.tsx")).not.toMatch(/<(?:html|body)\b[^>]*overflow-x-(?:clip|hidden)/);
   });
