@@ -23370,8 +23370,11 @@ export const DICIONARIO: Traducoes = {
   "Outro funil…": { es: "Otro embudo…" },
   "Levar selecionados para outro funil": { es: "Llevar seleccionados a otro embudo" },
   'Cada negócio é recriado no funil escolhido e encerra aqui como perdido, com o motivo "Levado para outro funil" — o mesmo que acontece ao levar um card só.': {
-    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Llevado a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
+    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Movido a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
   },
+  // #5024: o singular do diálogo em lote reaproveita o molde da barra
+  // ("1 negócio selecionado"): a chave `negócio` já existe no dicionário
+  // (linha ~9745); o plural continua na chave abaixo.
   "negócios selecionados.": { es: "negocios seleccionados." },
   "Só os 50 primeiros serão levados nesta vez.": { es: "Solo los 50 primeros se llevarán esta vez." },
   "Levar": { es: "Llevar" },

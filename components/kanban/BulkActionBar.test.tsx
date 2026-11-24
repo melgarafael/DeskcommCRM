@@ -30,9 +30,12 @@ vi.mock("@/hooks/i18n/useT", async () => {
   return { useT: () => (chave: string) => traduzir(chave, idioma.atual) };
 });
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, warning: vi.fn(), error: vi.fn() } }));
+// #5024: o papel da organização ativa é trocável por caso — a opção "Outro
+// funil…" depende dele, e o padrão continua sendo o mesmo de antes.
+const papelDaOrg = vi.hoisted(() => ({ atual: "manager" as "manager" | "agent" | "viewer" }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useUser: () => ({ id: "u1", is_platform_admin: false }),
-  useActiveOrg: () => ({ role: "manager" }),
+  useActiveOrg: () => ({ role: papelDaOrg.atual }),
 }));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({ useAssignableMembers: () => ({ data: [] }) }));
 vi.mock("@/hooks/kanban/useBulkAction", () => ({
@@ -224,6 +227,48 @@ describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
 
     await user.click(screen.getByRole("button", { name: "Excluir" }));
     expect(await screen.findByText("Excluir 1 Pedido?")).toBeInTheDocument();
+  });
+});
+
+describe("BulkActionBar — \"Outro funil…\" só para quem a rota aceita (#5024)", () => {
+  // A rota em lote exige `agent` para tudo que não é `assign`
+  // (`app/api/v1/leads/bulk/route.ts`). Oferecer a opção ao `viewer` é
+  // controle decorativo: o clique morre em 403. A opção some, como em funil
+  // arquivado — não fica desabilitada.
+  beforeEach(() => {
+    get.mockReset();
+    get.mockResolvedValue({ data: [] });
+  });
+
+  async function abrirMenuDoMover() {
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1", "lead-2"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Mover para…" }));
+    return user;
+  }
+
+  it("viewer: a opção não aparece no menu", async () => {
+    papelDaOrg.atual = "viewer";
+    await abrirMenuDoMover();
+
+    expect(screen.queryByTestId("lote-outro-funil")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Outro funil…" })).not.toBeInTheDocument();
+  });
+
+  it("agent: a opção aparece no menu", async () => {
+    papelDaOrg.atual = "agent";
+    await abrirMenuDoMover();
+
+    expect(await screen.findByTestId("lote-outro-funil")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Outro funil…" })).toBeInTheDocument();
   });
 });
 
