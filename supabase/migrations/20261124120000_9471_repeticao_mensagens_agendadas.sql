@@ -1,6 +1,6 @@
 -- manifest: **Repetição das mensagens agendadas (segunda parte da #3118).** A linha de `mensagens_agendadas` passa a guardar a série (recorrência, intervalo, início, término e fuso); a tabela `mensagens_agendadas_envios` guarda o desfecho de cada ocorrência. O cron avança a série para a próxima ocorrência, e a leitura do histórico segue a mesma régua da conversa.
 --
--- 9464 — REPETIÇÃO (segunda parte da #3118, issue #4431).
+-- 9471 — REPETIÇÃO (segunda parte da #3118, issue #4431).
 --
 -- Uma linha de `mensagens_agendadas` continua sendo a SÉRIE: `scheduled_at` é a
 -- próxima ocorrência. Quando o cron encaminha, falha ou cancela uma ocorrência,
@@ -21,20 +21,26 @@ alter table public.mensagens_agendadas
   add column if not exists termino_local text,
   add column if not exists tz text not null default 'UTC';
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_recorrencia_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_recorrencia_check
-  check (recorrencia in ('nenhuma', 'diaria', 'semanal', 'quinzenal', 'mensal', 'trimestral', 'semestral', 'anual', 'a_cada_n_dias'));
+-- As três trocas de restrição vão num único bloco DO: ou todas entram, ou nenhuma
+-- (o bloco é uma transação própria; se uma checagem falhar, o rollback volta tudo).
+do $$
+begin
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_recorrencia_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_recorrencia_check
+    check (recorrencia in ('nenhuma', 'diaria', 'semanal', 'quinzenal', 'mensal', 'trimestral', 'semestral', 'anual', 'a_cada_n_dias'));
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_intervalo_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_intervalo_check
-  check (
-    (recorrencia = 'a_cada_n_dias' and intervalo_dias between 1 and 365)
-    or (recorrencia <> 'a_cada_n_dias' and intervalo_dias is null)
-  );
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_intervalo_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_intervalo_check
+    check (
+      (recorrencia = 'a_cada_n_dias' and intervalo_dias between 1 and 365)
+      or (recorrencia <> 'a_cada_n_dias' and intervalo_dias is null)
+    );
 
-alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_serie_check;
-alter table public.mensagens_agendadas add constraint mensagens_agendadas_serie_check
-  check (recorrencia = 'nenhuma' or (inicio_local is not null and length(btrim(tz)) > 0));
+  alter table public.mensagens_agendadas drop constraint if exists mensagens_agendadas_serie_check;
+  alter table public.mensagens_agendadas add constraint mensagens_agendadas_serie_check
+    check (recorrencia = 'nenhuma' or (inicio_local is not null and length(btrim(tz)) > 0));
+end
+$$;
 
 create table if not exists public.mensagens_agendadas_envios (
   id uuid primary key default gen_random_uuid(),
