@@ -52,7 +52,7 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  *
  * O chat no site (Spec 36) não é rede social: não há catálogo de onde derivá-lo.
  * O valor é o do provider `webchat`, e a coluna `conversations.channel` o aceita
- * pelo mesmo CHECK que o Telegram ganhou (migração 9342, a do Telegram; o chat no site soma o valor na 9468).
+ * pelo mesmo CHECK que o Telegram ganhou (migração 9342, a do Telegram; o chat no site soma o valor na 9471).
  */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
