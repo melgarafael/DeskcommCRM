@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   processar: vi.fn(),
   carteira: vi.fn(),
   papel: "manager" as string,
+  ator: { type: "user", id: "11111111-1111-4111-8111-111111111111" } as { type: string; id: string },
 }));
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
@@ -32,8 +33,8 @@ vi.mock("@/lib/api/auth-dual", () => ({
     ok: true,
     supabase: { from: h.from },
     organizationId: "22222222-2222-4222-8222-222222222222",
-    actor: { type: "user", id: "11111111-1111-4111-8111-111111111111" },
-    apiTokenId: null,
+    actor: h.ator,
+    apiTokenId: h.ator.type === "user" ? null : "tok-1",
     idioma: "pt-BR",
   })),
   tetoDeEscritaDoToken: vi.fn(async () => null),
@@ -69,6 +70,7 @@ beforeEach(() => {
   h.carteira.mockReset();
   h.carteira.mockResolvedValue({ definidos: 1, falhas: 0 });
   h.papel = "manager";
+  h.ator = { type: "user", id: "11111111-1111-4111-8111-111111111111" };
   h.processar.mockReset();
   h.processar.mockResolvedValue({ successful_rows: 1, failed_rows: 1, conflict_rows: 1, processed_rows: 3 });
   h.classificadas = [
@@ -206,3 +208,30 @@ describe("POST /api/v1/imports sem previa", () => {
     expect(h.carteira).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ donoId: ATOR }));
   });
 });
+
+describe("POST /api/v1/imports: dono_user_id e token", () => {
+  it("dono_user_id que não é UUID recebe 422 e nenhum lote é criado", async () => {
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: "nao-e-uuid" }) as never);
+    expect(res.status).toBe(422);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.processar).not.toHaveBeenCalled();
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("por token (sem pessoa) o lote grava, mas a carteira NÃO é definida, nem com dono_user_id no corpo", async () => {
+    h.ator = { type: "token", id: "tok-1" };
+    bancoDoLote();
+
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    const corpo = (await res.json()) as { data: { batch_id: string; carteira?: unknown } };
+
+    expect(res.status).toBe(201);
+    expect(corpo.data.batch_id).toBe("lote-1");
+    expect(corpo.data.carteira).toBeUndefined();
+    expect(h.carteira).not.toHaveBeenCalled();
+    // o ator da gravação segue nulo: o id do token não existe em auth.users
+    expect(h.processar.mock.calls[0]?.[1]).toMatchObject({ userId: null });
+  });
+});
+

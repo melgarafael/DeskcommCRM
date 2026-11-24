@@ -8,7 +8,7 @@ import { previaDaImportacao, totaisDaPrevia, type LinhaClassificada } from "@/li
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { definirCarteiraDoLote } from "@/lib/crm-b2b/import-carteira";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
+import { donoDaImportacaoSchema, importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
 import {
   IMPORT_MAX_BYTES,
   isCsvFilename,
@@ -46,9 +46,10 @@ export const dynamic = "force-dynamic";
  * DONO DA CARTEIRA (A23 parte 2): `dono_user_id` escolhe quem recebe os contatos
  * criados pelo lote (origem `importacao`); sem ele, quem importa. O Atendente só é
  * dono dele mesmo (403 `fora_da_posse` antes de gravar qualquer coisa); gerente e
- * admin escolhem qualquer membro ativo. Por token não há pessoa, e nenhum dono é
- * definido a menos que `dono_user_id` venha (e então o ator é o próprio dono pedido
- * pelo token, que só gerente+ pode — o banco confere).
+ * admin escolhem qualquer membro ativo. `dono_user_id` passa pelo Zod (UUID; 422 se
+ * não for). Por token não há pessoa: o ator da checagem NUNCA vem do `dono_user_id`
+ * do corpo, e sem pessoa por trás a carteira não é definida (o lote grava, os contatos
+ * ficam sem dono).
  *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */
@@ -148,7 +149,15 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     // A23 parte 2: o dono da carteira. Decidido ANTES de gravar qualquer coisa — o
     // Atendente que pede outro dono recebe a recusa sem lote criado.
-    const donoPedido = (form.get("dono_user_id") as string | null)?.trim() || null;
+    const donoBruto = form.get("dono_user_id");
+    let donoPedido: string | null = null;
+    if (typeof donoBruto === "string" && donoBruto.trim()) {
+      const dono = donoDaImportacaoSchema.safeParse(donoBruto);
+      if (!dono.success) {
+        return fail("validation_failed", "dono_user_id precisa ser um UUID.", 422, { requestId });
+      }
+      donoPedido = dono.data;
+    }
     const donoId = donoPedido ?? autorId;
     if (autorId && donoPedido && donoPedido !== autorId && form.get("previa") !== "true") {
       const { data: vinculo } = await supabase
@@ -219,13 +228,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       classificacao: new Map(classificadas.map((l) => [l.rowNumber, l])),
     });
 
-    // A23 parte 2: os contatos que o lote criou entram na carteira do dono.
+    // A23 parte 2: os contatos que o lote criou entram na carteira do dono. Só com
+    // PESSOA por trás (`autorId`): o ator é quem importa, nunca o dono pedido no corpo.
+    // Por token (sem pessoa) o lote grava e a carteira não é definida.
     const carteira =
-      donoId && summary.successful_rows > 0
+      autorId && donoId && summary.successful_rows > 0
         ? await definirCarteiraDoLote(createAdminClient(), {
             organizationId: authz.organizationId,
             batchId: batch.id,
-            atorId: autorId ?? donoId,
+            atorId: autorId,
             donoId,
           })
         : null;

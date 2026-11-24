@@ -67,3 +67,6 @@ export const importColumnMappingSchema = z.object({
 export type CompanyCreate = z.infer<typeof companyCreateSchema>;
 export type PersonCreate = z.infer<typeof personCreateSchema>;
 export type ImportColumnMapping = z.infer<typeof importColumnMappingSchema>;
+
+/** `dono_user_id` da importação (A23 parte 2): o id do membro que recebe os contatos criados pelo lote. */
+export const donoDaImportacaoSchema = z.string().trim().uuid();
