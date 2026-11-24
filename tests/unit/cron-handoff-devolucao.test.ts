@@ -230,7 +230,12 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     const [deps, input] = devolver.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
     expect(deps.organizationId).toBe(ORG);
     expect(deps.actor).toEqual({ type: "webhook_source", id: "cron:handoff-devolucao" });
-    expect(input).toEqual({ conversationId: VENCIDA, origem: { automatica: { minutos: 60 } } });
+    expect(input).toEqual({
+      conversationId: VENCIDA,
+      origem: { automatica: { minutos: 60 } },
+      expectedAssignee: null,
+      semSinalHumanoDesde: expect.any(String),
+    });
 
     expect(auditar).toHaveBeenCalledTimes(1);
     expect(auditar.mock.calls[0]?.[0]).toMatchObject({
@@ -286,6 +291,8 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
     expect(devolver.mock.calls[0]?.[1]).toEqual({
       conversationId: VENCIDA,
       origem: { automatica: { minutos: 5000 } },
+      expectedAssignee: null,
+      semSinalHumanoDesde: expect.any(String),
     });
     expect(auditar).toHaveBeenCalledTimes(1);
   });
@@ -346,6 +353,45 @@ describe("GET /api/v1/cron/handoff-devolucao", () => {
       erro: "assignment_conflict",
       detalhe: "deadlock detected",
     });
+  });
+
+  /**
+   * A CONVERSA MUDA DE DONO ENTRE A VARREDURA E A ESCRITA.
+   *
+   * O cron decide sobre a leitura da varredura; um atendente que assume a
+   * conversa segundos depois tem de ganhar. Quem confere é
+   * `devolverAtendimentoAoAgente`, sob o lock da linha, e só confere o que o
+   * cron mandar: o dublê abaixo cumpre o contrato da função (precondição de
+   * dono → `assignment_conflict` sem detalhe), e o que se prova aqui é que o
+   * cron a manda, com o dono que leu, e o corte do prazo.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - tirar `expectedAssignee` da chamada: o dublê devolve, `devolvidas` vira 1
+   *     e a rodada audita.
+   */
+  it("atendente assumiu depois da varredura: a conversa NÃO volta à IA, e a rodada não é falha", async () => {
+    const LIDO = "77777777-7777-4777-8777-777777777777";
+    const QUEM_ASSUMIU = "88888888-8888-4888-8888-888888888888";
+    banco.conversations = [{ ...conversa(VENCIDA, 61), assigned_to_user_id: LIDO }];
+    const donoAgora = QUEM_ASSUMIU;
+    devolver.mockImplementation(async (_deps: unknown, input: { expectedAssignee?: string | null }) =>
+      input.expectedAssignee !== undefined && input.expectedAssignee !== donoAgora
+        ? { ok: false, erro: "assignment_conflict" }
+        : { ok: true, conversationId: VENCIDA, jaEstavaComOAgente: false },
+    );
+
+    const antes = Date.now();
+    const corpo = (await (await chamar()).json()) as { data: Record<string, number> };
+
+    expect(devolver).toHaveBeenCalledTimes(1);
+    const input = devolver.mock.calls[0]?.[1] as { expectedAssignee?: unknown; semSinalHumanoDesde?: string };
+    expect(input.expectedAssignee).toBe(LIDO);
+    // O corte é "agora − prazo": sinal humano depois dele desfaz a devolução.
+    const corte = new Date(input.semSinalHumanoDesde ?? "").getTime();
+    expect(Math.abs(corte - (antes - 60 * 60_000))).toBeLessThan(5_000);
+    expect(corpo.data).toMatchObject({ devolvidas: 0, falhas: 0 });
+    expect(auditar).not.toHaveBeenCalled();
+    expect(erroDeLog).not.toHaveBeenCalled();
   });
 
   // #2379: o contato "sempre atendimento humano" recusa a devolução a cada tick,

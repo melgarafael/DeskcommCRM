@@ -7168,6 +7168,11 @@ export const DICIONARIO: Traducoes = {
   "Crítico (<24h)": { es: "Crítico (<24h)" },
   "Alerta (>50%)": { es: "Alerta (>50%)" },
   "Limpar filtros": { es: "Limpiar filtros" },
+  "Restaurar filtros": { es: "Restablecer filtros" },
+  "Sem vendedor": { es: "Sin vendedor" },
+  "Escolher o período": { es: "Elegir el período" },
+  "Clique no dia inicial e depois no final.": { es: "Haga clic en el día inicial y luego en el final." },
+  "Agora clique no dia final.": { es: "Ahora haga clic en el día final." },
   "solicitação vencendo em menos de 24h ou já vencida": {
     es: "solicitud que vence en menos de 24h o ya venció",
   },
