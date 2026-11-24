@@ -79,13 +79,23 @@ async function handle(req: NextRequest): Promise<Response> {
     // Exclude paused organizations before applying the batch limit.
     .eq("organizations.status", STATUS_OPERANTE)
     .lte("scheduled_at", agora.toISOString())
+    // Menos recentemente tentada primeiro: a linha que acabou de ser solta
+    // (updated_at = agora) vai para o fim e cede a vaga a quem ainda não foi
+    // encostado. `scheduled_at` desempata as nunca tentadas na ordem devida.
+    .order("updated_at", { ascending: true })
     .order("scheduled_at", { ascending: true })
     .limit(LOTE);
   if (error) return fail("internal_error", "Erro ao ler as mensagens devidas.", 500, { requestId });
 
   const resumo = { processadas: 0, encaminhadas: 0, falhas: 0, canceladas: 0, esperando: 0 };
 
-  const soltar = (id: string) => admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", id);
+  // Soltar = devolver ao lote E registrar a tentativa: sem o carimbo, a linha
+  // reordenada continuaria sendo a mais antiga e voltaria a travar as 50 vagas.
+  const soltar = (id: string) =>
+    admin
+      .from("mensagens_agendadas")
+      .update({ claimed_until: null, updated_at: new Date().toISOString() })
+      .eq("id", id);
 
   for (const candidata of candidatas ?? []) {
     if (!ehOperante(statusDaOrgEmbutida(candidata.organizations))) continue;
