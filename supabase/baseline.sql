@@ -9590,6 +9590,36 @@ alter table public.channel_sessions
   add column if not exists telegram_bot_id text,
   add column if not exists telegram_token_encrypted bytea;
 
+-- webchat (migration 9471, chat no site — Spec 36 F1): a chave pública e as origens
+-- nascem ANTES das constraints abaixo. A função das origens também, porque o CHECK
+-- de `webchat_allowed_origins` a referencia.
+alter table public.channel_sessions
+  add column if not exists webchat_public_key text,
+  add column if not exists webchat_allowed_origins text[] not null default '{}';
+
+create or replace function public.fn_webchat_origens_validas(origens text[])
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(cardinality(origens), 0) <= 20
+     and not exists (
+       select 1 from unnest(origens) as o
+        where o is null
+           or (o !~* '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$'
+               and o !~* '^http://localhost(:[0-9]{1,5})?$')
+     );
+$$;
+
+revoke execute on function public.fn_webchat_origens_validas(text[]) from public, anon;
+grant  execute on function public.fn_webchat_origens_validas(text[]) to authenticated, service_role;
+
+-- Cada troca de restrição vai num bloco `do` só: o update.sh reaplica sem
+-- ON_ERROR_STOP e em autocommit, e um drop solto seguido de um add que falha
+-- deixaria a tabela sem a regra.
+do $x$
+begin
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
@@ -9598,8 +9628,13 @@ alter table public.channel_sessions
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
   -- (9342) somados AQUI — UM bloco só por constraint (não duplicar drop+add
   -- por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text]));
+  -- 'webchat' (9471, chat no site) somado aqui também.
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text, 'webchat'::text]));
+end
+$x$;
 
+do $x$
+begin
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
 
@@ -9613,8 +9648,23 @@ alter table public.channel_sessions
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
     (provider = 'datafy'     and datafy_phone_number_id is not null) or
     -- Bot do Telegram (migration 9342): endereça pelo id do robô.
-    (provider = 'telegram'   and telegram_bot_id      is not null)
+    (provider = 'telegram'   and telegram_bot_id      is not null) or
+    -- Chat no site (9471): endereça pela chave pública do widget.
+    (provider = 'webchat'    and webchat_public_key   is not null)
   );
+end
+$x$;
+
+do $x$
+begin
+alter table public.channel_sessions
+  drop constraint if exists channel_sessions_webchat_allowed_origins_check;
+
+alter table public.channel_sessions
+  add constraint channel_sessions_webchat_allowed_origins_check
+  check (public.fn_webchat_origens_validas(webchat_allowed_origins));
+end
+$x$;
 
 comment on column public.channel_sessions.zernio_account_id is
   'Identificador da conta conectada NO INTERMEDIÁRIO (accountId), não o phone_number_id da Meta. É o que endereça envio e webhook. Espelhado em lib/channels/session-ref.ts.';
@@ -35710,9 +35760,13 @@ comment on column public.contacts.social_identity is
 -- afirmava o contrário ("incluídas no bloco único acima") e era falsa: o
 -- apêndice não tocava constraint nenhuma, e toda VPS de cliente batia 23514 na
 -- primeira conexão de rede social.
+do $x$
+begin
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'webchat'));
+end
+$x$;
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
@@ -60059,10 +60113,18 @@ notify pgrst, 'reload schema';
 -- pendente; nenhum par existente é afrouxado. Cabeçalho da 9206 para o racional inteiro.
 -- A função parte da ÚLTIMA definição dela (0743), que mantém `contact.phone_added` e
 -- `lead.date_field_due`.
+-- A 9470 (#5077) acrescenta `lead.won` e `lead.lost` no ramo de negócio: são os tipos que o
+-- gatilho de `crm_leads` emite no ganho/perda e que faltavam aqui — a ação `start_message_flow`
+-- de uma regra com gatilho `lead.won` terminava `partial` no `PT409` de
+-- `fn_service_event_origin`. Aceita `crm_lead` e `lead`, porque o `fn_log_event` deriva a
+-- entidade do prefixo do tipo (`lead.won` → `lead`) e é esse o valor gravado em `event_log`.
+-- `lead.reopened` fica fora de propósito. Racional completo no cabeçalho da 9470.
 create or replace function public.fn_service_event_contact(p_org uuid,p_event_type text,p_entity_kind text,p_entity_id uuid)
 returns table(contact_id uuid,suportado boolean) language plpgsql stable security definer set search_path=public as $$
 begin
  if p_event_type in ('lead.created','lead.stage_changed','lead.tag_added','lead.date_field_due','lead.stage_stale') and p_entity_kind='crm_lead' then
+   return query select (select l.contact_id from public.crm_leads l where l.organization_id=p_org and l.id=p_entity_id),true;
+ elsif p_event_type in ('lead.won','lead.lost') and p_entity_kind in ('crm_lead','lead') then
    return query select (select l.contact_id from public.crm_leads l where l.organization_id=p_org and l.id=p_entity_id),true;
  elsif p_event_type in ('contact.tag_added','contact.birthday','contact.phone_added') and p_entity_kind='contact' then
    return query select (select c.id from public.contacts c where c.organization_id=p_org and c.id=p_entity_id),true;
@@ -83042,6 +83104,154 @@ create trigger trg_lgpd_redigir_classificacao_comercial
 
 notify pgrst, 'reload schema';
 
+-- ---- canal de chat no site (migration 9471, Spec 36 F1) ----
+-- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
+-- `channel_sessions_webchat_allowed_origins_check` e `conversations_channel_check`)
+-- e as colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
+-- bloco acrescenta o índice, os comentários e a nova versão da trava do plano (que
+-- passa a ignorar 'webchat' como ignora 'wacalls'). A função das origens já está
+-- definida lá em cima, antes do CHECK que a usa.
+create unique index if not exists channel_sessions_webchat_public_key_ativa_unique
+  on public.channel_sessions (webchat_public_key)
+  where archived_at is null;
+
+-- Uma conexão de chat ATIVA por organização. Sem isto, dois POST simultâneos passam pela
+-- checagem da rota e criam duas caixas de entrada para a mesma empresa.
+create unique index if not exists channel_sessions_webchat_org_ativa_unique
+  on public.channel_sessions (organization_id)
+  where provider = 'webchat' and archived_at is null;
+
+do $canal_do_chat$
+begin
+  if to_regclass('public.channel_sessions') is not null then
+    comment on column public.channel_sessions.webchat_public_key is
+      'Chave pública do widget do chat no site (wck_...). Identifica a conexão para o navegador do visitante; NÃO é segredo e não dá acesso ao CRM. Única entre conexões não arquivadas.';
+    comment on column public.channel_sessions.webchat_allowed_origins is
+      'Origens (https://host[:porta]) que podem abrir o widget desta conexão. Máximo 20, sem caminho. O localhost (loopback) passa no banco; a rota decide se vale.';
+  end if;
+end
+$canal_do_chat$;
+
+-- A trava do plano ignora o chat como ignora a voz (wacalls): o chat não é número
+-- de WhatsApp e não ocupa vaga. Mesmo corpo da definição anterior, com 'webchat'
+-- ao lado de 'wacalls' nos três pontos. É a ÚLTIMA definição do arquivo (rfind).
+create or replace function public.fn_trava_canais_do_plano()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_limite integer;
+  v_em_uso integer;
+begin
+  if new.archived_at is not null or new.provider in ('wacalls', 'webchat') then
+    return new;
+  end if;
+  -- Só no WAHA: nos outros provedores o número não identifica a conexão, e a
+  -- linha sem número segue sendo uma conexão da empresa.
+  if new.provider = 'waha' and new.phone_number is null and new.status in ('FAILED', 'STOPPED') then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    if old.archived_at is null
+       and old.provider not in ('wacalls', 'webchat')
+       and new.organization_id is not distinct from old.organization_id then
+      return new;
+    end if;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(new.organization_id, 'canais');
+  if v_limite is null then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text, 2281));
+
+  select count(*) into v_em_uso
+    from public.channel_sessions cs
+   where cs.organization_id = new.organization_id
+     and cs.archived_at is null
+     and cs.provider not in ('wacalls', 'webchat')
+     and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+     and cs.id <> new.id;
+
+  if v_em_uso >= v_limite then
+    raise exception 'limite_do_plano:canais:%', v_limite
+      using errcode = 'PT402',
+            detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_trava_canais_do_plano() from public, anon, authenticated;
+
+notify pgrst, 'reload schema';
+
+-- O reviver (9036) conta a vaga com a MESMA régua do gatilho: voz e chat no site
+-- (webchat) não são número de WhatsApp. Última definição do arquivo (rfind).
+create or replace function public.fn_vaga_ao_reviver_canal(p_org uuid, p_canal uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_canal public.channel_sessions;
+  v_limite integer;
+  v_em_uso integer;
+begin
+  -- A MESMA trava de `fn_trava_canais_do_plano` e da reserva: contagem e
+  -- tomada da vaga nunca correm em paralelo com outra conexão da empresa.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 2281));
+
+  select * into v_canal
+    from public.channel_sessions
+   where organization_id = p_org and id = p_canal
+   for update;
+
+  -- Só interessa a linha que hoje NÃO ocupa vaga (WAHA morta e sem número, 0809) e
+  -- vai voltar a ocupar. Número pareado, conexão em curso, arquivada e voz
+  -- seguem como antes: reconectar um número que já é da empresa nunca é recusado.
+  if not found
+     or v_canal.archived_at is not null
+     or v_canal.provider <> 'waha'
+     or v_canal.phone_number is not null
+     or v_canal.status not in ('FAILED', 'STOPPED') then
+    return;
+  end if;
+
+  v_limite := public.fn_limite_do_plano(p_org, 'canais');
+  if v_limite is not null then
+    select count(*) into v_em_uso
+      from public.channel_sessions cs
+     where cs.organization_id = p_org
+       and cs.archived_at is null
+       and cs.provider not in ('wacalls', 'webchat')
+       and (cs.provider <> 'waha' or cs.phone_number is not null or cs.status not in ('FAILED', 'STOPPED'))
+       and cs.id <> p_canal;
+
+    if v_em_uso >= v_limite then
+      raise exception 'limite_do_plano:canais:%', v_limite
+        using errcode = 'PT402',
+              detail = jsonb_build_object('recurso', 'canais', 'limite', v_limite, 'em_uso', v_em_uso)::text;
+    end if;
+  end if;
+
+  -- A vaga é TOMADA aqui, ainda dentro da trava: a linha passa a ser conexão
+  -- em curso, que ocupa. Conferir e tomar são um passo só.
+  update public.channel_sessions
+     set status = 'STARTING',
+         status_reason = 'connection_pending',
+         last_status_change_at = now()
+   where organization_id = p_org and id = p_canal;
+end;
+$$;
+
+revoke execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_vaga_ao_reviver_canal(uuid, uuid) to service_role;
+
 -- ---- resumo das 7h só quando houver agendamento (migration 9434, #4988) ----
 -- Espelho idempotente da 9434 (ver o cabeçalho dela).
 -- 1. A ESCOLHA DO DONO. Nasce desligada: quem já recebe o resumo todo dia não
@@ -83651,6 +83861,47 @@ do $historico9466$ begin
     add constraint crm_lead_activities_lead_id_fkey
     foreign key (lead_id) references public.crm_leads(id) on delete set null;
 end $historico9466$;
+
+-- ---- devolução automática confere o último sinal humano sob o lock (migration 9472) ----
+-- Espelho de supabase/migrations/20261124202758_9472_devolucao_automatica_confere_o_sinal_humano.sql.
+
+create or replace function public.fn_conversation_release_if_idle(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_expected_assignee uuid,
+  p_sem_sinal_humano_desde timestamptz
+) returns boolean
+language plpgsql
+set search_path = public
+as $$
+begin
+  perform 1
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and assigned_to_user_id is not distinct from p_expected_assignee
+     and coalesce(last_handoff_at, '-infinity') <= p_sem_sinal_humano_desde
+     and coalesce(assigned_at, '-infinity') <= p_sem_sinal_humano_desde
+     and coalesce(last_outbound_at, '-infinity') <= p_sem_sinal_humano_desde
+   for no key update;
+  if not found then
+    return false;
+  end if;
+
+  return exists (
+    select 1
+      from public.fn_conversation_assign(
+        p_organization_id, p_conversation_id, null, 'release', p_expected_assignee, true)
+  );
+end;
+$$;
+
+revoke execute on function public.fn_conversation_release_if_idle(uuid, uuid, uuid, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.fn_conversation_release_if_idle(uuid, uuid, uuid, timestamptz)
+  to service_role;
+
+notify pgrst, 'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

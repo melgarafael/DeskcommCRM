@@ -1,4 +1,7 @@
 {
+  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.": "规则使用商机自身记录的点击，适用于规则启用后由团队、AI 或自动化流程执行的阶段变更。如果只配置了一个 Google Ads 帐号，即使点击不含帐号 ID 或指向其他帐号，CRM 也会向已配置的帐号发送转化。如果配置了多个帐号，则仅当点击中的帐号 ID 与目标帐号一致时才发送转化。",
+  "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.": "点击中没有有效的 Google Ads 客户 ID。请检查跟踪链接中的 google_customer_id 参数。",
+  "O clique pertence a outra conta do Google Ads. A conversão desta etapa não foi enviada.": "此次点击来自其他 Google Ads 帐号。系统未发送此阶段的转化。",
   "Já cadastrado como": "已登记为",
   "De quem é": "归属于",
   "Conferindo…": "检查中…",
@@ -424,6 +427,8 @@
   "Nome completo": "全名",
   "Trocar email — em breve.": "更换邮箱 — 即将推出。",
   "Fuso horário": "时区",
+  "Padrão (regex)": "模式 (regex)",
+  "Opções da regex": "正则表达式选项",
   "Avatar URL": "头像 URL",
   "Upload de arquivo — em breve. Cole uma URL pública.": "文件上传 — 即将推出。请粘贴公开 URL。",
   "Nome de exibição": "显示名称",

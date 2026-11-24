@@ -80,9 +80,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
       "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
   },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
+  "crm_count_conversations": { tokens: 117, motivo: "#4996 (item 2): ferramenta nova, só leitura, 1 filtro (status). Conta conversas por status sem paginar crm_list_conversations (que traz prévia de mensagem). Medido, não somado à mão" },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 348, motivo: "#4996: ganhou por_etapa (+31 tokens): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
+  "crm_count_leads": { tokens: 356, motivo: "#4996: ganhou por_etapa (+31 tokens) e a descrição passou a dizer que por_etapa traz só o stage_id, em vez de 'nunca ids' (+8, pedido do mantenedor no #5192): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -93,11 +94,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo:
       "#4544: precisa dizer que imagem/binário NÃO é transcrito (senão o agente trata resposta vazia como documento sem dados) e que o teto é por chamada",
   },
-  "crm_list_pipelines": {
-    tokens: 118,
-    motivo:
-      "#4667: a descrição passou a dizer que a lista traz os CAMPOS de cada funil; mede 118 (63 → 118, +55) na main pós-#4886, remedido no merge do #4523 (2026-11-19)",
-  },
+  "crm_list_pipelines": { tokens: 118, motivo: "#4667: a descrição passou a dizer que a lista traz os CAMPOS do funil (key/label/type/escopo/options[].value) e que em `custom_fields` se usa a key daí; sem isso o agente inventava a chave" },
   "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
@@ -266,6 +263,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +672 com os documentos do negócio (#4544): 259 de `crm_list_lead_attachments`
 // e 413 de `crm_get_lead_attachment`. MEDIDO no merge com a main: 40209 = 39537 + 672
 // (2026-11-17, main de `0652fa6866`).
+// +55 na descrição de `crm_list_pipelines`, que passou a dizer que a lista traz
+// os CAMPOS do funil (#4667) — é o delta medido naquela entrada (63 → 118).
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
@@ -283,15 +282,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
 // +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
 // 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
-// +431 com as DUAS ferramentas de tarefa que a main não tem (#4516): 245 de
+// +117 de `crm_count_conversations` (#4996, item 2). MEDIDO neste head sobre a main de
+// 2026-11-24 (`ceaa51d67`, que tinha 47562): 47679 = 47562 + 117, não somado à mão.
+// +8 da descrição de `crm_count_leads` corrigida (por_etapa traz stage_id). MEDIDO: 47687 = 47679 + 8.
+// +431 com as DUAS ferramentas de tarefa que a main ainda não tem (#4516): 245 de
 // `crm_complete_task` e 186 de `crm_delete_task`. As outras três da família
-// (`list/create/update`) são as da main (#4838) e já estão contadas nos 45919
-// acima — o `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main.
-// MEDIDO na árvore mesclada com a main de 2026-11-24 (`9d00681611`, que já tinha
-// 47562 = 47531 + 31 do `por_etapa` em `crm_count_leads`, #4996), não somado à
-// mão: 47993 no catálogo completo = 47562 + 431 (o teste imprime a tabela com a
-// soma medida).
-const TETO_TOTAL = 47993;
+// (`list/create/update`) são as da main (#4838) e já estão contadas acima — o
+// `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main. MEDIDO na árvore
+// mesclada com a main de 2026-11-24 (`4375600d37`, que já tinha 47687), não somado
+// à mão: 48118 = 47687 + 431 (o teste imprime a tabela com a soma medida).
+const TETO_TOTAL = 48118;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

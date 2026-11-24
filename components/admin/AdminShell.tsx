@@ -85,7 +85,7 @@ export function AdminShell({
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen w-full flex-col bg-background">
+      <div className="flex min-h-screen w-full flex-col overflow-x-clip bg-background">
         <PlatformModeBanner />
         {/* Logo abaixo da tarja do modo plataforma: as duas são o topo
             persistente deste painel — ver a medição de largura em

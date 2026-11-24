@@ -53,7 +53,9 @@ export async function lerUsoDaOrganizacao(db: SupabaseClient, orgId: string): Pr
       .select("id", { count: "exact", head: true })
       .eq("organization_id", orgId)
       .is("archived_at", null)
-      .neq("provider", "wacalls")
+      // Voz (wacalls) e chat no site (webchat) não são número de WhatsApp: a régua
+      // é a mesma de fn_trava_canais_do_plano e de fn_vaga_ao_reviver_canal.
+      .not("provider", "in", "(wacalls,webchat)")
       // #3416: a linha morta SEM número não é número nenhum. `.or` e não dois
       // filtros em sequência: o PostgREST encadeia com AND, e "tem número E não
       // está morta" zeraria a contagem de TODO canal pareado.
