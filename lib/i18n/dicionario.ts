@@ -186,6 +186,8 @@ export const DICIONARIO: Traducoes = {
   "Se o WhatsApp estiver desconectado na hora": { es: "Si WhatsApp está desconectado a esa hora" },
   "Esperar reconectar e enviar": { es: "Esperar la reconexión y enviar" },
   "Cancelar este envio": { es: "Cancelar este envío" },
+  "Pular este envio": { es: "Omitir este envío" },
+  "pula esta vez se o número estiver desconectado": { es: "omite esta vez si el número está desconectado" },
   "Agendamento atualizado.": { es: "Programación actualizada." },
   // Chaves próprias: "Agendamento criado."/"Cancelar agendamento" são da Agenda
   // e em espanhol viram "Cita…" — uma mensagem programada não é uma cita.

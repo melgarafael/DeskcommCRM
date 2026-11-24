@@ -115,14 +115,16 @@ async function handle(req: NextRequest): Promise<Response> {
     if (!(await autorAindaTemAcesso(admin, ag))) {
       final = { status: "cancelada", motivo: "sem_acesso" };
     } else {
-      // A conversa de envio é a MAIS RECENTE do contato cuja sessão está conectada.
-      // Se a conexão caiu e o número foi lido de novo por QR, a conversa antiga fica
-      // numa sessão parada, e o envio sai pela nova sem apagar nada.
-      const escolha = await resolverConversaConectada(admin, ag.organization_id, ag.contact_id);
+      // A conversa de envio é a MAIS RECENTE do contato cuja sessão está conectada e
+      // tem o MESMO número da conexão original. Se a conexão caiu e o número foi lido
+      // de novo por QR, a conversa antiga fica numa sessão parada, e o envio sai pela
+      // nova sem apagar nada. Outro número da empresa não serve.
+      const escolha = await resolverConversaConectada(admin, ag.organization_id, ag.contact_id, ag.channel_session_id);
       if (!escolha) {
-        // Série nunca cancela por desconexão: espera a reconexão. Envio único segue a
-        // escolha de quem agendou ("esperar" ou "cancelar").
-        if (serie || ag.se_desconectado === "esperar") {
+        // Sem conexão com o mesmo número: a escolha de quem agendou decide. "Esperar"
+        // espera a reconexão, em série e em envio único. "Cancelar" pula esta ocorrência;
+        // na série, a próxima data segue agendada.
+        if (ag.se_desconectado === "esperar") {
           await soltar(ag.id);
           resumo.esperando++;
           continue;

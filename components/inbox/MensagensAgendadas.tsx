@@ -424,7 +424,13 @@ function MensagensAgendadasDialog({
                       <p className="truncate font-medium">{a.title || a.body}</p>
                       <p className="text-xs text-muted-foreground">
                         {quando(a.scheduled_at)}
-                        {a.se_desconectado === "cancelar" ? ` · ${t("cancela se o número estiver desconectado")}` : ""}
+                        {a.se_desconectado === "cancelar"
+                          ? ` · ${
+                              a.recorrencia !== "nenhuma"
+                                ? t("pula esta vez se o número estiver desconectado")
+                                : t("cancela se o número estiver desconectado")
+                            }`
+                          : ""}
                       </p>
                     </div>
                     <Button
@@ -608,7 +614,9 @@ function FormularioDeAgendamento({
           onChange={(e) => setSeDesconectado(e.target.value === "cancelar" ? "cancelar" : "esperar")}
         >
           <option value="esperar">{t("Esperar reconectar e enviar")}</option>
-          <option value="cancelar">{t("Cancelar este envio")}</option>
+          <option value="cancelar">
+            {recorrencia !== "nenhuma" ? t("Pular este envio") : t("Cancelar este envio")}
+          </option>
         </select>
       </div>
       <div className="flex justify-end gap-2">

@@ -47,18 +47,6 @@ export type DesfechoDoEnvio =
   /** Org suspensa, redigida ou arquivada no meio do envio: nada é gravado; o envio espera. */
   | { desfecho: "org_parada" };
 
-export async function sessaoEstaConectada(admin: SupabaseClient, organizationId: string, sessionId: string): Promise<boolean> {
-  const { data, error } = await admin
-    .from("channel_sessions")
-    .select("status")
-    .eq("id", sessionId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  // Leitura que falhou não pode cancelar o envio como se a desconexão estivesse confirmada.
-  if (error) throw new Error(`session_lookup_failed: ${error.message}`);
-  return data?.status === "WORKING";
-}
-
 /**
  * Quem agendou ainda é da equipe, com papel de atendente ou acima? Conferido na
  * HORA do envio: quem saiu da empresa não continua mandando mensagem por ela.
