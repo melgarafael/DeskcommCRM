@@ -52,6 +52,8 @@ function admin() {
         const query = {
           select: () => query,
           eq: (column: string, value: unknown) => {
+            // A sessão original é lida antes das conversas: os filtros dela também contam.
+            if (table === "channel_sessions") sessionFilters.push([column, value]);
             return query;
           },
           is: () => query,
@@ -150,9 +152,10 @@ describe("scheduled messages and connection lookup failures", () => {
       expect(updates.some((u) => "status" in u)).toBe(false);
       expect(sendMessageHandler).not.toHaveBeenCalled();
       expect(audit).not.toHaveBeenCalled();
+      // A leitura que falha é a da sessão original, filtrada pela organização.
       expect(sessionFilters).toEqual([
+        ["id", "session-1"],
         ["organization_id", "org-1"],
-        ["contact_id", "contact-1"],
       ]);
 
       sessionError = null;

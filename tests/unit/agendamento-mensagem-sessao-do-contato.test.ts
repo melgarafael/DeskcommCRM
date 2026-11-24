@@ -48,6 +48,18 @@ describe("escolha da conversa de envio (#4431)", () => {
     expect(escolherConversaConectada([conversa({ id: "a" })], null)).toBeNull();
   });
 
+  it("sem número gravado na conexão original, ainda envia pela própria conexão original no ar", () => {
+    const escolhida = escolherConversaConectada(
+      [
+        conversa({ id: "outra-sem-numero", channel_session_id: "s-outra", telefone_da_sessao: null, ultimo_contato_em: "2026-11-23T10:00:00.000Z" }),
+        conversa({ id: "original", channel_session_id: "s-original", telefone_da_sessao: null, ultimo_contato_em: "2026-11-01T10:00:00.000Z" }),
+      ],
+      null,
+      "s-original",
+    );
+    expect(escolhida).toEqual({ conversation_id: "original", channel_session_id: "s-original" });
+  });
+
   it("sem nenhuma sessão conectada, não escolhe nada (a série espera)", () => {
     expect(
       escolherConversaConectada([conversa({ id: "a", status_da_sessao: "STOPPED" }), conversa({ id: "b", status_da_sessao: null })], NUMERO),
