@@ -4,8 +4,6 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-import type * as ConsultaModule from "@/lib/agenda/consulta";
-
 const deps = vi.hoisted(() => ({
   marcar: vi.fn(),
   tipoPorSlug: vi.fn(),
@@ -25,7 +23,8 @@ vi.mock("@/lib/agenda/servicos/consulta", () => ({
   lugaresDoServico: deps.lugaresDoServico,
 }));
 vi.mock("@/lib/agenda/consulta", async (importOriginal) => {
-  const actual = await importOriginal<ConsultaModule>();
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("@/lib/agenda/consulta")>();
   return {
     ...actual,
     idDoTipoPorSlug: deps.tipoPorSlug,
@@ -33,6 +32,7 @@ vi.mock("@/lib/agenda/consulta", async (importOriginal) => {
 });
 
 import { crmBookAppointment } from "./agendamento";
+import type { DadosDoServico } from "@/lib/agenda/servicos/consulta";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const SALA_A = "20000000-0000-4000-8000-000000000001";
@@ -81,18 +81,18 @@ function compromisso(over: Record<string, unknown>) {
   };
 }
 
-const servicoComLugar = {
+const servicoComLugar: DadosDoServico = {
   event_type_id: "tipo-1", name: "Consulta", slug: "consulta", is_active: true, service_enabled: true,
   booking_mode: "individual", service_capacity: null, service_timezone: "America/Sao_Paulo",
   duration_minutes: 60, slot_interval_minutes: 60, service_revision: 1, requires_confirmation: false,
   destination_calendar_id: null, service_publication_mode: "none",
   schedule: [], professionals: [], resources: [], calendar_sources: [],
-} as never;
+};
 
 describe("crm_book_appointment — sala escolhida em cada consulta", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    deps.tipoPorSlug.mockResolvedValue({ id: "tipo-1", nome: "Consulta" });
+    deps.tipoPorSlug.mockResolvedValue({ id: "tipo-1", nome: "Consulta", servicoLigado: true });
     deps.lerServico.mockResolvedValue(servicoComLugar);
     deps.primeiroLugarLivre.mockResolvedValue({ id: SALA_B, name: "Sala B" });
     deps.lugaresDoServico.mockReturnValue([
@@ -152,18 +152,25 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
     expect(args?.space_id).toBeUndefined();
   });
 
-  it("tipo comum (sem service_enabled) marca sem chamar lerServico", async () => {
-    deps.tipoPorSlug.mockResolvedValue({ id: "tipo-2", nome: "Consulta comum" });
-    // O dublê de supabase acima já retorna service_enabled: true; para simular
-    // tipo comum, forçamos lerServico a não ser chamado verificando que ele não é.
+  it("tipo comum (servicoLigado falso) marca sem chamar lerServico", async () => {
+    deps.tipoPorSlug.mockResolvedValue({ id: "tipo-2", nome: "Consulta comum", servicoLigado: false });
     deps.marcar.mockResolvedValue(compromisso({ service_space_id: null }));
 
     const r = (await crmBookAppointment.handler({ ...ENTRADA_BASE, event_type_slug: "consulta-comum" }, CTX)) as Record<string, unknown>;
 
     expect(r.marcado).toBe(true);
-    // lerServico só é chamado quando service_enabled é true; este teste apenas
-    // garante que a marcação segue sem espaço. O controle de service_enabled
-    // é exercido pelo dublê de supabase que devolve service_enabled: true.
+    expect(deps.lerServico).not.toHaveBeenCalled();
+    expect(deps.marcar).toHaveBeenCalledTimes(1);
+  });
+
+  it("tipo sem servicoLigado não chama lerServico", async () => {
+    deps.tipoPorSlug.mockResolvedValue({ id: "tipo-3", nome: "Sem flag" });
+    deps.marcar.mockResolvedValue(compromisso({ service_space_id: null }));
+
+    const r = (await crmBookAppointment.handler(ENTRADA_BASE, CTX)) as Record<string, unknown>;
+
+    expect(r.marcado).toBe(true);
+    expect(deps.lerServico).not.toHaveBeenCalled();
     expect(deps.marcar).toHaveBeenCalledTimes(1);
   });
 });

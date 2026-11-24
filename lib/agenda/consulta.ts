@@ -1168,14 +1168,14 @@ export async function idDoTipoPorSlug(
   supabase: SupabaseClient,
   organizationId: string,
   slug: string,
-): Promise<{ id: string; nome: string } | null> {
+): Promise<{ id: string; nome: string; servicoLigado?: boolean } | null> {
   const { data } = await supabase
     .from("calendar_event_types")
-    .select("id, name")
+    .select("id, name, service_enabled")
     .eq("organization_id", organizationId)
     .eq("slug", slug)
     .maybeSingle();
-  return data ? { id: String(data.id), nome: String(data.name) } : null;
+  return data ? { id: String(data.id), nome: String(data.name), servicoLigado: data.service_enabled === true } : null;
 }
 
 

@@ -836,28 +836,20 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       // `lerServico` e não deve derrubar a marcação de consultas sem sala.
       let spaceId = input.space_id;
       let serviceComLugar: DadosDoServico | null = null;
-      if (!spaceId) {
-        const { data: tipoRow } = await ctx.supabase
-          .from("calendar_event_types")
-          .select("service_enabled")
-          .eq("organization_id", ctx.organizationId)
-          .eq("id", tipo.id)
-          .maybeSingle();
-        if (tipoRow?.service_enabled) {
-          serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
-          if (serviceComLugar && lugaresDoServico(serviceComLugar).length > 0) {
-            const livre = await primeiroLugarLivre(
-              ctx.supabase, ctx.organizationId, serviceComLugar, input.starts_at, input.owner_user_id ?? null,
-            );
-            if (!livre) {
-              return {
-                marcado: false,
-                motivo: "space_capacity_reached",
-                mensagem: `${MOTIVOS_DO_SERVICO.space_capacity_reached} Consulte os horários de novo.`,
-              };
-            }
-            spaceId = livre.id;
+      if (tipo.servicoLigado && !spaceId) {
+        serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
+        if (serviceComLugar && lugaresDoServico(serviceComLugar).length > 0) {
+          const livre = await primeiroLugarLivre(
+            ctx.supabase, ctx.organizationId, serviceComLugar, input.starts_at, input.owner_user_id ?? null,
+          );
+          if (!livre) {
+            return {
+              marcado: false,
+              motivo: "space_capacity_reached",
+              mensagem: `${MOTIVOS_DO_SERVICO.space_capacity_reached} Consulte os horários de novo.`,
+            };
           }
+          spaceId = livre.id;
         }
       }
       const r = await marcarAgendamentoHandler(
@@ -930,16 +922,8 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       // lugaresDoServico(service). O recibo não tem space_name.
       let lugarNome: string | null = null;
       if (r.service_space_id) {
-        if (!serviceComLugar) {
-          const { data: tipoRow } = await ctx.supabase
-            .from("calendar_event_types")
-            .select("service_enabled")
-            .eq("organization_id", ctx.organizationId)
-            .eq("id", tipo.id)
-            .maybeSingle();
-          if (tipoRow?.service_enabled) {
-            serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
-          }
+        if (!serviceComLugar && tipo.servicoLigado) {
+          serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
         }
         lugarNome =
           serviceComLugar && lugaresDoServico(serviceComLugar).some((l) => l.id === r.service_space_id)

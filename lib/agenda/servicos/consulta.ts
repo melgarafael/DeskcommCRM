@@ -122,14 +122,14 @@ function juncaoPreviasPorLugar(
     const linhas = lugares.map((_lugar, idx) => porLugar[idx]?.[i] as DisponibilidadeDoServico | undefined);
     const linhaPrimeiro = linhas[0] ?? { available: false, reason: null, starts_at: c.starts_at, ends_at: c.ends_at };
 
-    const livres = lugares.filter((_lugar, idx) => linhas[idx]?.available === true);
-    if (livres.length > 0) {
-      const primeiroLivre = livres[0];
-      const idx = lugares.indexOf(primeiroLivre);
-      const linhaLivre = linhas[idx] ?? linhaPrimeiro;
+    const livros = lugares.filter((_lugar, idx) => linhas[idx]?.available === true);
+    if (livros.length > 0) {
+      const iLivre = linhas.findIndex((l) => l?.available === true);
+      const linhaLivre = linhas[iLivre] ?? linhaPrimeiro;
+      const livre = lugares[iLivre];
       return {
         ...linhaLivre,
-        free_spaces: livres.map((l) => ({ id: l.id, name: l.name, sector: l.sector })),
+        free_spaces: livros.map((l) => ({ id: l.id, name: l.name, sector: l.sector })),
       };
     }
     const todosCapacidade = linhas.every((l) => l?.reason === "space_capacity_reached");
@@ -151,12 +151,12 @@ export async function primeiroLugarLivre(
   const lugares = lugaresDoServico(service);
   if (lugares.length === 0) return null;
   const agora = new Date();
-  const porLugar = await Promise.all(lugares.map((lugar) =>
-    googleRpc(db, "fn_calendar_service_preview", {
+  const porLugar: unknown[][] = await Promise.all(lugares.map(async (lugar) =>
+    z.array(z.unknown()).parse(await googleRpc(db, "fn_calendar_service_preview", {
       p_org: organizationId, p_type: service.event_type_id, p_starts: [startsAt],
       p_owner: ownerUserId ?? null, p_now: agora.toISOString(),
       p_space: lugar.id,
-    }),
+    })),
   ));
   for (let i = 0; i < lugares.length; i += 1) {
     const linha = (porLugar[i] ?? [])[0] as DisponibilidadeDoServico | undefined;
