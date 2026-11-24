@@ -86,7 +86,7 @@ function clienteStub(estado: Estado) {
             data:
               tabela === "crm_pipelines"
                 ? { settings: CAMPOS_DO_FUNIL }
-                : { id: PROPOSTA_ID, name: "Proposta enviada", is_lost: false, is_won: false },
+                : { id: PROPOSTA_ID, name: "Proposta enviada", pipeline_id: PIPELINE_ID, is_lost: false, is_won: false },
             error: null,
           }),
         then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => {

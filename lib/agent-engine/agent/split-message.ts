@@ -69,6 +69,12 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
  * primeira lia "R$ 10" como preço fechado de um produto de R$ 10.990.
  * Medido em produção (2026-09-04): a moto DT3 (R$ 10.990) anunciada
  * como "R$ 10" reais.
+ *
+ * Nem quando fecha uma ABREVIAÇÃO de tratamento ("Dr.", "Sra.", "Prof.") nem
+ * quando a palavra seguinte começa com minúscula ("etc. e o kit"): frase não
+ * começa com minúscula. Sem estas guardas, o parágrafo que estoura o teto era
+ * partido no meio do nome ou da frase. Medido em produção (2026-11-23, clínica):
+ * duas mensagens do WhatsApp, "Antes, o Dr." e "avalia seu sorriso…".
  */
 function splitSentences(text: string): string[] {
   const out: string[] = [];
@@ -86,12 +92,60 @@ function splitSentences(text: string): string[] {
       /\d/.test(prevChar) &&
       /\d/.test(nextChar);
     if (isNumeroPartido) continue;
+    if (m[0] === "." && pontoNaoFechaFrase(text, m.index, end)) continue;
     out.push(text.slice(start, end).trim());
     start = end;
   }
   const resto = text.slice(start).trim();
   if (resto !== "") out.push(resto);
   return out.length > 0 ? out.filter((s) => s !== "") : [text];
+}
+
+/**
+ * Tratamentos e títulos que se escrevem com ponto antes do nome, em português e
+ * espanhol, comparados sem acento e sem caixa. A lista é curta de propósito: cada
+ * entrada é um ponto que deixa de partir frase, e uma palavra comum aqui ("ex",
+ * "obs") juntaria frases de verdade.
+ */
+const ABREVIACOES_DE_TRATAMENTO: ReadonlySet<string> = new Set([
+  "dr",
+  "dra",
+  "drs",
+  "dras",
+  "sr",
+  "sra",
+  "srs",
+  "sras",
+  "srta",
+  "srtas",
+  "prof",
+  "profa",
+  "profs",
+  "eng",
+  "enga",
+  "arq",
+  "adv",
+  "lic",
+  "ing",
+  "ud",
+  "uds",
+]);
+
+/**
+ * O "." que vai de `inicio` a `fim` não fecha a frase quando fecha uma abreviação
+ * de tratamento, ou quando o próximo caractere visível é uma letra minúscula.
+ */
+function pontoNaoFechaFrase(text: string, inicio: number, fim: number): boolean {
+  let i = inicio;
+  while (i > 0 && /\p{L}/u.test(text.charAt(i - 1))) i--;
+  const palavra = text
+    .slice(i, inicio)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (ABREVIACOES_DE_TRATAMENTO.has(palavra)) return true;
+  const seguinte = /^\s*(\S)/u.exec(text.slice(fim))?.[1];
+  return seguinte !== undefined && /\p{Ll}/u.test(seguinte);
 }
 
 /** Última linha de defesa: agrupa palavras até maxChars; palavra atômica > max vai sozinha. */

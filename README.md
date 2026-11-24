@@ -126,10 +126,16 @@ usuário, retoma de onde parou.
 ### Outra hospedagem? (Hostinger, Coolify, Dokploy, CapRover…)
 
 Funciona. Se a sua VPS já vem com um **proxy reverso próprio** ocupando as portas 80/443, o
-instalador **detecta isso sozinho** e publica o CRM através dele, em vez de tentar subir um
-Caddy que não caberia. Num caso específico — proxy em `--network host`, como faz a Hostinger —
-ele **pergunta em vez de adivinhar**, porque publicar atrás do proxy errado instala "com
-sucesso" um site mudo. Detalhes em [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy).
+`install.sh` (o instalador com o banco no Supabase Cloud, este aqui de cima) **detecta isso
+sozinho** e publica o CRM através dele, em vez de tentar subir um Caddy que não caberia. Num
+caso específico — proxy em `--network host`, como faz a Hostinger — ele **pergunta em vez de
+adivinhar**, porque publicar atrás do proxy errado instala "com sucesso" um site mudo.
+
+**Com o banco na mesma VPS (`install-single-server.sh`) a detecção não roda:** sem aviso, ele
+sobe o Caddy do kit, que briga pelas portas com o proxy da hospedagem. Se a sua VPS tem um
+Traefik, declare `REVERSE_PROXY=traefik` e `TRAEFIK_NETWORK` **no próprio comando**, antes de
+rodar — o exemplo pronto está em [`docs/saas/coolify.md`](docs/saas/coolify.md#passo-5--instalar-o-crm-e-o-banco).
+Detalhes em [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy).
 
 ### Primeiro acesso
 

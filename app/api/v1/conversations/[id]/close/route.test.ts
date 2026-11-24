@@ -146,7 +146,8 @@ describe("close — 'Devolver ao automático ao fechar' (o padrão marcado)", ()
     const [deps, input] = vi.mocked(devolverAtendimentoAoAgente).mock.calls[0]!;
     expect(deps.organizationId).toBe(ORG);
     expect(deps.actor).toEqual({ type: "user", id: ATENDENTE, role: "agent" });
-    expect(input).toEqual({ conversationId: CONVERSA, expectedAssignee: null });
+    // Encerrar com devolução é gesto de PESSOA: a classificação da IA é encerrada junto.
+    expect(input).toEqual({ conversationId: CONVERSA, expectedAssignee: null, limparClassificacaoDaIa: true });
     // Nenhuma origem automática: quem devolveu foi a pessoa, no gesto de fechar.
     expect(input.origem).toBeUndefined();
   });
@@ -251,6 +252,6 @@ describe("close — devolver ao fechar segue a regra de dono do botão", () => {
     expect(res.status).toBe(200);
     expect(corpo.data.devolucao).toEqual({ ok: true });
     const [, input] = vi.mocked(devolverAtendimentoAoAgente).mock.calls[0]!;
-    expect(input).toEqual({ conversationId: CONVERSA, expectedAssignee: COLEGA });
+    expect(input).toEqual({ conversationId: CONVERSA, expectedAssignee: COLEGA, limparClassificacaoDaIa: true });
   });
 });

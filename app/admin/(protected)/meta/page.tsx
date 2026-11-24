@@ -49,7 +49,7 @@ export default async function Page() {
   // anon/authenticated): o admin client é o único caminho.
   const { data, error } = await createAdminClient()
     .from("platform_meta_app")
-    .select("app_secret_encrypted, verify_token_encrypted, verify_token_created_at, updated_at")
+    .select("app_secret_encrypted, verify_token_encrypted, verify_token_created_at, updated_at, app_id, config_id")
     .eq("id", 1)
     .maybeSingle();
 
@@ -59,6 +59,8 @@ export default async function Page() {
         verify_token_encrypted: string | null;
         verify_token_created_at: string | null;
         updated_at: string | null;
+        app_id?: string | null;
+        config_id?: string | null;
       }
     | null;
 
@@ -77,6 +79,10 @@ export default async function Page() {
       // Leitura que falhou não pode virar "nunca configurado": essa frase
       // levaria o dono a gerar um token por cima do que já está colado na Meta.
       leituraFalhou={Boolean(error)}
+      // App ID e Configuration ID do Embedded Signup (#4074) não são segredo: a
+      // tela os mostra preenchidos, ao contrário da chave.
+      appId={linha?.app_id ?? ""}
+      configId={linha?.config_id ?? ""}
     />
   );
 }

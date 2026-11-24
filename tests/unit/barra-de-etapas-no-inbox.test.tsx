@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextRequest } from "next/server";
 
@@ -172,10 +171,6 @@ function renderPainel() {
   );
 }
 
-function barra(): Promise<HTMLElement> {
-  return screen.findByRole("navigation", { name: "Etapas do funil" });
-}
-
 beforeEach(() => {
   papel = "agent";
   get.mockReset();
@@ -183,70 +178,44 @@ beforeEach(() => {
   post.mockResolvedValue({ data: { updated_count: 1 } });
 });
 
-describe("painel da conversa — barra de etapas", () => {
-  it("mostra as etapas abertas, a atual com os dias desde a entrada nela, sem ganho nem perda", async () => {
+/*
+ * No painel da conversa a barra rolável de etapas SAIU — ela repetia
+ * a escolha do seletor "Etapa do funil" e poluía a coluna estreita do Inbox. O
+ * seletor basta (ganho e perda continuam nele, com o motivo da perda). No
+ * dossiê do quadro a barra segue: `barra-de-etapas.test.tsx`.
+ */
+describe("painel da conversa — só o seletor de etapa", () => {
+  it("sem barra de etapas; o seletor 'Etapa do funil' está no lugar", async () => {
     servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
     renderPainel();
 
-    const itens = within(await barra()).getAllByRole("listitem");
-    expect(itens.map((i) => i.textContent)).toEqual(["concluída: Etapa A", "Etapa B (3 dias)", "Etapa C"]);
-    expect(itens[1]!.getAttribute("aria-current")).toBe("step");
-    // O seletor segue no lugar: é por ele que se chega a ganho e perda.
+    expect(await screen.findByRole("combobox", { name: "Etapa do funil" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Etapas do funil" })).not.toBeInTheDocument();
+  });
+
+  it("os dias na etapa atual, que só a barra mostrava, ficam ao lado do rótulo", async () => {
+    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
+    renderPainel();
+
+    expect((await screen.findByTestId("inbox-dias-na-etapa")).textContent).toBe("3 dias");
+    // O rótulo do seletor continua sendo só "Etapa do funil" (o nome acessível não muda).
     expect(screen.getByRole("combobox", { name: "Etapa do funil" })).toBeInTheDocument();
   });
 
-  it("clicar numa etapa move pelo mesmo caminho do seletor e relê o resumo", async () => {
-    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
+  it("resposta antiga, sem a data de entrada na etapa, não inventa dias", async () => {
+    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: null, created_at: null });
     renderPainel();
-    const user = userEvent.setup();
 
-    const alvo = within(await barra()).getByRole("button", { name: "Etapa C" });
-    const leiturasAntes = get.mock.calls.length;
-    await user.click(alvo);
-
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith("/api/v1/leads/bulk", {
-        action: "move",
-        lead_ids: ["l-1"],
-        params: { stage_id: "s-c" },
-      }),
-    );
-    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(leiturasAntes));
+    await screen.findByRole("combobox", { name: "Etapa do funil" });
+    expect(screen.queryByTestId("inbox-dias-na-etapa")).not.toBeInTheDocument();
   });
 
-  it("abaixo de agent, a barra só mostra: nenhum botão", async () => {
-    papel = "viewer";
+  it("o valor do negócio vem DEPOIS de tudo que é do funil", async () => {
     servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
     renderPainel();
 
-    const nav = await barra();
-    expect(within(nav).getByText("Etapa B (3 dias)")).toBeInTheDocument();
-    expect(within(nav).queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("a faixa não alarga o painel: todo fieldset acima da barra tem min-w-0", async () => {
-    servir({ stage_id: "s-b", etapas_do_funil: ETAPAS, stage_changed_at: TRES_DIAS_E_POUCO });
-    renderPainel();
-
-    const nav = await barra();
-    const aside = nav.closest("aside");
-    expect(aside).not.toBeNull();
-    const fieldsets: HTMLElement[] = [];
-    for (let el = nav.parentElement; el && el !== aside; el = el.parentElement) {
-      if (el.tagName === "FIELDSET") fieldsets.push(el);
-    }
-    // Hoje é o `fieldset disabled={readonly}` do módulo Negócios; se sumir, o
-    // teste segue valendo para o próximo que aparecer.
-    expect(fieldsets.length).toBeGreaterThan(0);
-    for (const f of fieldsets) expect(f.classList.contains("min-w-0")).toBe(true);
-    expect(nav.classList.contains("min-w-0")).toBe(true);
-  });
-
-  it("resposta antiga, sem as etapas do funil, não desenha barra", async () => {
-    servir({ stage_id: "s-b" });
-    renderPainel();
-
-    await screen.findByTestId("inbox-abrir-no-funil");
-    expect(screen.queryByRole("navigation", { name: "Etapas do funil" })).not.toBeInTheDocument();
+    const abrir = await screen.findByTestId("inbox-abrir-no-funil");
+    const valor = await screen.findByTestId("inbox-valor-do-negocio");
+    expect(abrir.compareDocumentPosition(valor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

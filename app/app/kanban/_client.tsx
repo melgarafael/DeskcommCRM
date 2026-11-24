@@ -6,6 +6,7 @@ import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 
 import { ImportarLeads } from "./_components/ImportarLeads";
+import { TransferirNegocios } from "./_transferir-negocios";
 import { EmptyPipeline } from "@/components/empty";
 import {
   AlertDialog,
@@ -390,10 +391,25 @@ export function FunisClient({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           {t(
-                            "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, a exclusão é recusada e ele continua arquivado.",
+                            "Isso não tem volta: o funil e as etapas dele somem. Se ele já recebeu negócio, escolha abaixo o que fazer com os negócios — ou tire o funil do arquivo e resolva antes.",
                           )}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
+
+                      {/* #4802 (item 3): a escolha sobre os negócios aparece AQUI,
+                          onde a exclusão acontece — e não numa tela à parte. Sem
+                          ela, a resposta era sempre "recusado", e o caminho era
+                          desarquivar, esvaziar card a card e arquivar de novo. */}
+                      <TransferirNegocios
+                        funilId={funil.id}
+                        funilNome={funil.name}
+                        destinos={funis.map((f) => ({ id: f.id, name: f.name }))}
+                        onConcluir={({ restantes }) => {
+                          // Doc 400 (B): encerrado não muda de funil. Sobrou
+                          // algum, a exclusão espera o "remover".
+                          if (restantes === 0) excluirDoArquivo(funil.id);
+                        }}
+                      />
 
                       {excluindoAqui?.erro && (
                         // A recusa da rota, INTEIRA: é ela que diz quantos
@@ -697,6 +713,15 @@ export function FunisClient({
                       )}
                     </p>
                   )}
+                  {/* #4802 (item 3): a contagem real e as escolhas. Só aparece com
+                      negócio vinculado; o botão "Arquivar" abaixo continua sendo
+                      arquivar SEM transferir, que a issue manda manter. */}
+                  <TransferirNegocios
+                    funilId={funil.id}
+                    funilNome={funil.name}
+                    destinos={funis.filter((f) => f.id !== funil.id).map((f) => ({ id: f.id, name: f.name }))}
+                    onConcluir={() => pedirArquivamento(funil.id, false)}
+                  />
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"

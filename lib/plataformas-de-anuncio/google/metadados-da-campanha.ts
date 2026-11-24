@@ -38,7 +38,7 @@ const id = z
   .string()
   .trim()
   .regex(/^[0-9]{1,30}$/);
-const conta = z
+export const idDaContaGoogle = z
   .string()
   .trim()
   .regex(/^(?:[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4})$/)
@@ -66,7 +66,9 @@ export function normalizarMetadadosGoogle(carga: unknown): MetadadosDaCampanhaGo
     // ressuscitar um alias antigo que o merge do cadastro preservou.
     const candidatos = Object.hasOwn(entrada, chave) ? [chave] : aliases;
     for (const alias of candidatos) {
-      const lido = (chave === "google_customer_id" ? conta : id).safeParse(entrada[alias]);
+      const lido = (chave === "google_customer_id" ? idDaContaGoogle : id).safeParse(
+        entrada[alias],
+      );
       if (!lido.success) continue;
       resultado[chave as keyof typeof ALIASES_DE_ID] = lido.data;
       break;

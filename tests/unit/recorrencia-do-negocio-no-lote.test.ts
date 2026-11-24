@@ -111,7 +111,7 @@ function clienteStub(estado: Estado) {
           is: () => b,
           order: () => b,
           limit: () => b,
-          maybeSingle: () => Promise.resolve({ data: estado.destino, error: null }),
+          maybeSingle: () => Promise.resolve({ data: { ...estado.destino, pipeline_id: PIPELINE_ID }, error: null }),
           then: (onF: (v: unknown) => unknown) =>
             Promise.resolve({
               data: [

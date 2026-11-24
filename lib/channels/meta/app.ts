@@ -221,3 +221,42 @@ export async function fontesDoAppDaMeta(): Promise<Record<string, string | undef
     META_WEBHOOK_VERIFY_TOKEN: verifyToken ?? undefined,
   };
 }
+
+/**
+ * O que o navegador precisa para abrir a janela do Embedded Signup (#4074).
+ *
+ * App ID e Configuration ID NÃO são segredo — vão ao `FB.init` e ao `FB.login`
+ * no navegador. Mas a janela só serve se o App Secret também existir: é ele que
+ * troca o código devolvido pela Meta pelo token da empresa. Sem o trio, `null`, e
+ * a tela de Conexões simplesmente não mostra o botão.
+ *
+ * Sem memo: é lido ao abrir Conexões, não a cada entrega do webhook. Nunca lança.
+ */
+export interface EmbeddedSignupDaInstalacao {
+  readonly appId: string;
+  readonly configId: string;
+}
+
+export async function embeddedSignupDaInstalacao(): Promise<EmbeddedSignupDaInstalacao | null> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("platform_meta_app")
+      .select("app_id, config_id")
+      .eq("id", 1)
+      .abortSignal(new AbortController().signal)
+      .maybeSingle();
+    if (error || !data) return null;
+    const linha = data as { app_id?: string | null; config_id?: string | null };
+    const appId = texto(linha.app_id);
+    const configId = texto(linha.config_id);
+    if (!appId || !configId) return null;
+    const { appSecret } = await appDaMeta();
+    if (!appSecret) return null;
+    return { appId, configId };
+  } catch (err) {
+    logger.warn("[meta.app] leitura do Embedded Signup falhou", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}

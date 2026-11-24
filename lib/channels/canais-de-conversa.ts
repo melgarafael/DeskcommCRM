@@ -47,10 +47,17 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  * adapter. Derivar do catálogo daria o valor certo pelo motivo errado, e no dia
  * em que o parceiro ligasse `inbox` ali o nosso valor viraria refém da decisão
  * dele.
+ *
+ * ## `webchat` é o terceiro, e também fica escrito à mão
+ *
+ * O chat no site (Spec 36) não é rede social: não há catálogo de onde derivá-lo.
+ * O valor é o do provider `webchat`, e a coluna `conversations.channel` o aceita
+ * pelo mesmo CHECK que o Telegram ganhou (migração 9342, a do Telegram; o chat no site soma o valor na 9471).
  */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
   "telegram",
+  "webchat",
   ...SOCIAL_NETWORKS.filter((rede) => rede.inbox).map((rede) => rede.id),
 ] as const satisfies readonly string[];
 
