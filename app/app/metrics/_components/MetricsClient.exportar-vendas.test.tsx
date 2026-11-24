@@ -98,3 +98,10 @@ describe("o botão de exportar vendas", () => {
     expect(screen.queryByRole("button", { name: /Exportar vendas/ })).toBeNull();
   });
 });
+
+it("deixa escolher o intervalo de datas do Desempenho", () => {
+  render(<MetricsClient canCompare currentUserId={ANA} funis={[]} />);
+
+  expect(screen.queryByLabelText("Data inicial"), "o filtro deve expor o início da janela").not.toBeNull();
+  expect(screen.queryByLabelText("Data final"), "o filtro deve expor o fim da janela").not.toBeNull();
+});
