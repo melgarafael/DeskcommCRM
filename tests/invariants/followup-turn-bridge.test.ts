@@ -2,6 +2,7 @@ import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 import { descreveEvento } from "@/lib/followup/eventos-legiveis";
+import { pgSendLedger, sendWithLedger } from "@/lib/agent-engine/edge/crm/send-ledger";
 
 import { runFollowupTick, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
@@ -445,7 +446,8 @@ describe("plano de tempo — acionamento decide, espera obedece", () => {
   });
 });
 
-it("o dossiê identifica o marco da fila antes de qualquer envio", async () => {
+
+it("o dossiê distingue uma mensagem aguardando o canal de um pedido para o agente escrever", async () => {
   const org = "bbbbbbba-0000-4000-8000-000000000001";
   await seedOrg(org);
   const contactId = await seedContact(org);
@@ -456,12 +458,27 @@ it("o dossiê identifica o marco da fila antes de qualquer envio", async () => {
   const jobs: FollowupJobRequest[] = [];
   await runFollowupTick(makeTickDeps(jobs), { limit: 5 });
   expect(jobs).toHaveLength(1);
+  const { rows: [job] } = await pool.query(
+    "insert into job_queue(organization_id, contact_id, kind, payload) values ($1, $2, 'followup_turn', $3) returning id",
+    [org, contactId, JSON.stringify(jobs[0]!.payload)],
+  );
+  const outcome = await sendWithLedger(
+    pgSendLedger(pool),
+    { tenantId: org, leadId: contactId, jobId: job.id, seq: 1, body: "Lembrete de teste" },
+    async (_key, messageId) => ({ id: messageId, status: "queued" }),
+  );
+  expect(outcome.kind).toBe("queued");
+  const { rows: ledger } = await pool.query(
+    "select status from send_ledger where organization_id=$1 and job_id=$2",
+    [org, job.id],
+  );
+  expect(ledger).toEqual([{ status: "queued" }]);
 
   const { rows } = await pool.query(
     "select * from followup_enrollment_events where organization_id=$1 and enrollment_id=$2 order by created_at",
     [org, enrollmentId],
   );
-  expect(rows.map((row) => row.event_type)).toEqual(["turn_enqueued"]);
-  const texto = descreveEvento(rows[0], {}, "pt-BR");
-  expect(texto.titulo).toMatch(/fila|enfileirad/i);
+  const titulos = rows.map((row) => descreveEvento(row, {}, "pt-BR").titulo);
+  expect(titulos).not.toContain("Mensagem enviada");
+  expect(titulos).toContain("Mensagem aguardando o canal");
 });

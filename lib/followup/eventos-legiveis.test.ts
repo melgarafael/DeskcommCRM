@@ -490,3 +490,12 @@ describe("os eventos que o plano de tempo trouxe", () => {
     expect(r.autor).toBe("motor");
   });
 });
+
+it("descreve o marco de geração sem confundi-lo com envio", () => {
+  const resultado = descreveEvento(
+    evento({ node_id: "action-1", event_type: "followup_message_generated" }),
+    nos,
+    "pt-BR",
+  );
+  expect(resultado.titulo).toBe("Mensagem gerada");
+});
