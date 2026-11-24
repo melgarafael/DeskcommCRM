@@ -446,6 +446,41 @@
     var config = configLida || {};
     var chave = chaveDoCaminho(caminho);
     var recebidos = {};
+    var respostasRapidasMostradas = false;
+    var containerRespostasRapidas = null;
+
+    /** Mostra os botões de respostas rápidas antes da primeira mensagem. */
+    function mostrarRespostasRapidas() {
+      if (respostasRapidasMostradas) return;
+      var lista = config.respostasRapidas;
+      if (!Array.isArray(lista) || lista.length === 0) return;
+      respostasRapidasMostradas = true;
+      var container = criar(doc, "div", null, null);
+      estilo(container, { display: "flex", flexDirection: "column", gap: ".4rem", margin: ".8rem 0" });
+      lista.forEach(function (texto) {
+        var btn = criar(doc, "button", null, texto);
+        btn.type = "button";
+        estilo(btn, ESTILO_BOTAO);
+        btn.addEventListener("click", function () {
+          ui.texto.value = texto;
+          enviarDoCampo();
+          container.remove();
+          respostasRapidasMostradas = false;
+          containerRespostasRapidas = null;
+        });
+        container.appendChild(btn);
+      });
+      containerRespostasRapidas = container;
+      ui.passo.appendChild(container);
+    }
+
+    /** Remove a fileira de respostas rápidas após o primeiro envio. */
+    function removerRespostasRapidas() {
+      if (!containerRespostasRapidas) return;
+      containerRespostasRapidas.remove();
+      containerRespostasRapidas = null;
+      respostasRapidasMostradas = false;
+    }
 
     function agendar(funcao, ms) {
       if (!estado.encerrado) agendarDepois(funcao, ms);
@@ -663,6 +698,8 @@
       estilo(ui.form, { display: "flex" });
       mostrarStatus("");
       ui.texto.focus();
+      // Respostas rápidas antes da primeira mensagem (somem após o primeiro envio).
+      mostrarRespostasRapidas();
       // Voltar à coleta (422 na primeira mensagem) passa de novo por aqui: o fluxo abre uma vez só.
       if (!estado.fluxoIniciado) {
         estado.fluxoIniciado = true;
@@ -805,11 +842,13 @@
         adicionarLinha(m.linha);
       }
       ui.texto.value = "";
+      removerRespostasRapidas();
       enviarMensagem(m);
     }
 
     function mostrarResposta(dados) {
       adicionarLinha(criarLinha(doc, "atendente", dados.texto, horaLocal(dados.em)));
+      if (pai && typeof pai.postMessage === "function") pai.postMessage({ tipo: "resposta" }, "*");
     }
 
     function tratarEvento(ev) {
@@ -894,6 +933,16 @@
     /* ----- montagem ----- */
 
     montarAviso();
+
+    // Avatar: se config.avatar é uma URL https, mostra um círculo no início do cabeçalho.
+    if (typeof config.avatar === "string" && config.avatar.startsWith("https://")) {
+      var imgAvatar = criar(doc, "img", null, null);
+      imgAvatar.setAttribute("src", config.avatar);
+      imgAvatar.setAttribute("alt", "");
+      estilo(imgAvatar, { width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover" });
+      ui.cabecalho.insertBefore(imgAvatar, ui.cabecalho.firstChild);
+    }
+
     ui.main.setAttribute("role", "log");
     estilo(ui.form, { display: "none" });
     estilo(ui.rodape, { display: "none" });
@@ -953,6 +1002,11 @@
     // Pula aviso e coleta só com a flag E com token: sem um dos dois, o aceite é pedido de novo.
     estado.primeiraEnviada = lerFlagIniciada(armazenamento, chave) && estado.token !== null;
     if (pai && typeof pai.postMessage === "function") pai.postMessage({ tipo: "pronto" }, "*");
+    // Ajustes: autoAbrirSegundos e som (padrões 0 e false quando ausentes ou de tipo errado).
+    var autoAbrir = config.autoAbrirSegundos;
+    if (typeof autoAbrir !== "number" || autoAbrir % 1 !== 0 || autoAbrir < 0 || autoAbrir > 120) autoAbrir = 0;
+    var som = typeof config.som === "boolean" ? config.som : false;
+    if (pai && typeof pai.postMessage === "function") pai.postMessage({ tipo: "ajustes", autoAbrirSegundos: autoAbrir, som: som }, "*");
     abrirSessao();
 
     return { contexto: function () { return estado.contexto; } };

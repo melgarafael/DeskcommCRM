@@ -27,6 +27,8 @@ interface ModuloDaBolha {
   formatoDoScript: (src: string) => string | null;
   posicaoDoScript: (src: string) => string | null;
   alvoDoScript: (src: string) => string | null;
+  /** Fazenda pura: devolve { autoAbrirSegundos, som } quando o dado é um `ajustes` válido. */
+  ajustesDaMensagem: (dado: unknown) => { autoAbrirSegundos: number; som: boolean } | null;
 }
 
 // import.meta.url não é um file: dentro do jsdom; a raiz do repositório é o cwd do vitest.
@@ -644,5 +646,328 @@ describe("formato e posição - montagem no DOM", () => {
     } finally {
       openSpy.mockRestore();
     }
+  });
+});
+
+/** --- Tarefa 10b: ajustes, auto-abrir, badge e som --- */
+
+describe("ajustesDaMensagem (Tarefa 10b)", () => {
+  it("devolve { autoAbrirSegundos, som } quando o dado é um ajustes válido", () => {
+    expect(modulo.ajustesDaMensagem({ tipo: "ajustes", autoAbrirSegundos: 30, som: true })).toEqual(
+      { autoAbrirSegundos: 30, som: true },
+    );
+  });
+
+  it("aceita autoAbrirSegundos 0 e 120", () => {
+    expect(modulo.ajustesDaMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false })).toEqual(
+      { autoAbrirSegundos: 0, som: false },
+    );
+    expect(modulo.ajustesDaMensagem({ tipo: "ajustes", autoAbrirSegundos: 120, som: true })).toEqual(
+      { autoAbrirSegundos: 120, som: true },
+    );
+  });
+
+  it.each([
+    ["autoAbrir 121", { tipo: "ajustes", autoAbrirSegundos: 121, som: false }],
+    ["autoAbrir -1", { tipo: "ajustes", autoAbrirSegundos: -1, som: false }],
+    ["autoAbrir 1.5", { tipo: "ajustes", autoAbrirSegundos: 1.5, som: false }],
+    ["autoAbrir texto", { tipo: "ajustes", autoAbrirSegundos: "30", som: false }],
+    ["som não booleano", { tipo: "ajustes", autoAbrirSegundos: 0, som: "sim" }],
+    ["som número", { tipo: "ajustes", autoAbrirSegundos: 0, som: 1 }],
+    ["tipo errado", { tipo: "nao-lidas", n: 1 }],
+    ["sem tipo", { autoAbrirSegundos: 0, som: false }],
+  ])("recusa dado inválido (%s)", (_nome, dado) => {
+    expect(modulo.ajustesDaMensagem(dado)).toBeNull();
+  });
+});
+
+describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
+  const SRC_CRM = "https://crm.exemplo.com.br/webchat.js";
+  const ORIGEM_CRM = "https://crm.exemplo.com.br";
+
+  afterEach(() => {
+    document.querySelectorAll("script[src], iframe, button").forEach((el) => el.remove());
+    delete (window as unknown as Record<string, unknown>).__webchatMontado;
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    vi.useRealTimers();
+    try {
+      delete (window as unknown as Record<string, unknown>).AudioContext;
+    } catch {
+      // ignorar
+    }
+  });
+
+  function montarComSrcEAttr(src: string, attrNome: string, attrValor: string): void {
+    const script = document.createElement("script");
+    script.src = src;
+    script.setAttribute(attrNome, attrValor);
+    document.head.appendChild(script);
+    delete requerer.cache[requerer.resolve(CAMINHO)];
+    requerer(CAMINHO);
+  }
+
+  function montarNoDom(formatoparam: string): {
+    bolha: HTMLButtonElement;
+    iframe: HTMLIFrameElement;
+    janela: { postMessage: ReturnType<typeof vi.fn> };
+  } {
+    const f = formatoparam === "embutido" ? `${SRC_CRM}?k=wck_abc&f=embutido` : `${SRC_CRM}?k=wck_abc&f=${formatoparam}`;
+    if (formatoparam === "embutido") {
+      const alvo = document.createElement("div");
+      alvo.id = "webchat-aqui";
+      document.body.appendChild(alvo);
+      montarComSrcEAttr(f, "data-webchat-alvo", "#webchat-aqui");
+    } else {
+      montarComSrc(f);
+    }
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const bolha = document.querySelector("button") as HTMLButtonElement;
+    const janela = { postMessage: vi.fn() };
+    Object.defineProperty(iframe, "contentWindow", { value: janela, configurable: true });
+    return { bolha, iframe, janela };
+  }
+
+  function dispararMensagem(data: unknown, origin: string, source: unknown): void {
+    const evento = new Event("message");
+    Object.defineProperty(evento, "data", { value: data });
+    Object.defineProperty(evento, "origin", { value: origin });
+    Object.defineProperty(evento, "source", { value: source });
+    window.dispatchEvent(evento);
+  }
+
+  // ---------- auto-abrir ----------
+
+  it("auto-abrir abre após N segundos no formato bolha", () => {
+    vi.useFakeTimers();
+    const { bolha, iframe } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    expect(iframe.style.display).toBe("none");
+    vi.advanceTimersByTime(5000);
+    expect(iframe.style.display).toBe("block");
+    expect(bolha.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("auto-abrir com 0 nunca abre sozinho", () => {
+    vi.useFakeTimers();
+    const { iframe } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    vi.advanceTimersByTime(60000);
+    expect(iframe.style.display).toBe("none");
+  });
+
+  it("auto-abrir não abre se o visitante já clicou na bolha", () => {
+    vi.useFakeTimers();
+    const { bolha, iframe } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    fireEvent.click(bolha);
+    expect(iframe.style.display).toBe("block");
+    vi.advanceTimersByTime(5000);
+    // já está aberto; não deve fechar nem reabrir
+    expect(iframe.style.display).toBe("block");
+  });
+
+  it("auto-abrir não abre em formato embutido", () => {
+    vi.useFakeTimers();
+    const { iframe } = montarNoDom("embutido");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    vi.advanceTimersByTime(5000);
+    expect(iframe.style.display).toBe("none");
+  });
+
+  it("auto-abrir não abre em formato pagina", () => {
+    vi.useFakeTimers();
+    const { iframe } = montarNoDom("pagina");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    vi.advanceTimersByTime(5000);
+    expect(iframe.style.display).toBe("none");
+  });
+
+  it("segundo ajustes não reagenda o auto-abrir", () => {
+    vi.useFakeTimers();
+    const { iframe } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    vi.advanceTimersByTime(5000);
+    // abriu uma vez só (continua aberto; não fecha e reabre)
+    expect(iframe.style.display).toBe("block");
+  });
+
+  // ---------- badge ----------
+
+  it("resposta com bolha fechada sobe o badge", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(badge.textContent).toBe("1");
+    expect(badge.style.display).toBe("block");
+  });
+
+  it("badge para no teto 99", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    for (let i = 0; i < 120; i++) {
+      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    }
+    expect(badge.textContent).toBe("99");
+  });
+
+  it("abrir a bolha zera o badge", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(badge.textContent).toBe("1");
+    fireEvent.click(bolha);
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+  });
+
+  it("resposta com bolha aberta não conta", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    fireEvent.click(bolha);
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+  });
+
+  // ---------- som ----------
+
+  it("som toca bip com interação prévia (AudioContext instanciado)", () => {
+    const instanciados: unknown[] = [];
+    class AudioContextDuble {
+      constructor() {
+        instanciados.push("constructor");
+      }
+      createOscillator() {
+        return { start: () => {}, stop: () => {}, disconnect: () => {}, type: "", frequency: { setValueAtTime: () => {} } };
+      }
+      createGain() {
+        return { gain: { setValueAtTime: () => {} }, connect: () => {} };
+      }
+      close() {
+        return Promise.resolve();
+      }
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: AudioContextDuble,
+      configurable: true,
+      writable: true,
+    });
+    let interagiu = false;
+    document.addEventListener("pointerdown", () => {
+      interagiu = true;
+    });
+    const { bolha } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    document.dispatchEvent(new Event("pointerdown"));
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(instanciados).toHaveLength(1);
+  });
+
+  it("sem interação prévia, som não toca mesmo com som true", () => {
+    const instanciados: unknown[] = [];
+    class AudioContextDuble {
+      constructor() {
+        instanciados.push("constructor");
+      }
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: AudioContextDuble,
+      configurable: true,
+      writable: true,
+    });
+    const { bolha } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(instanciados).toHaveLength(0);
+  });
+
+  it("som false não toca mesmo com interação", () => {
+    const instanciados: unknown[] = [];
+    class AudioContextDuble {
+      constructor() {
+        instanciados.push("constructor");
+      }
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: AudioContextDuble,
+      configurable: true,
+      writable: true,
+    });
+    let interagiu = false;
+    document.addEventListener("pointerdown", () => {
+      interagiu = true;
+    });
+    const { bolha } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    document.dispatchEvent(new Event("pointerdown"));
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(instanciados).toHaveLength(0);
+  });
+
+  it("sem AudioContext não lança", () => {
+    const { bolha } = montarNoDom("bolha");
+    const original = (window as unknown as Record<string, unknown>).AudioContext;
+    try {
+      delete (window as unknown as Record<string, unknown>).AudioContext;
+      dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
+        postMessage: vi.fn(),
+      });
+      document.dispatchEvent(new Event("pointerdown"));
+      dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    } finally {
+      if (original) {
+        Object.defineProperty(window, "AudioContext", { value: original, configurable: true });
+      }
+    }
+  });
+
+  // ---------- cercas para ajustes e resposta ----------
+
+  it("ajustes de origem forjada é ignorado", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, "https://atacante.exemplo.com", {
+      postMessage: vi.fn(),
+    });
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(60000);
+    expect(badge.style.display).toBe("none");
+  });
+
+  it("resposta de outra janela é ignorada", () => {
+    const { bolha } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, {});
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+  });
+
+  it("ajustes de source forjada não abre nem muda nada", () => {
+    const { iframe } = montarNoDom("bolha");
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 5, som: false }, ORIGEM_CRM, {});
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(60000);
+    expect(iframe.style.display).toBe("none");
   });
 });

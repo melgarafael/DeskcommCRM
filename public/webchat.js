@@ -53,6 +53,17 @@
     }
   }
 
+  /** Fazenda pura: devolve { autoAbrirSegundos, som } quando o dado é um `ajustes` válido. */
+  function ajustesDaMensagem(dado) {
+    if (!dado || typeof dado !== "object") return null;
+    if (dado.tipo !== "ajustes") return null;
+    var segundos = dado.autoAbrirSegundos;
+    var som = dado.som;
+    if (typeof segundos !== "number" || segundos % 1 !== 0 || segundos < 0 || segundos > 120) return null;
+    if (typeof som !== "boolean") return null;
+    return { autoAbrirSegundos: segundos, som: som };
+  }
+
   /** Posição do `?p=`, se bater na lista fixa. Senão, null. */
   function posicaoDoScript(src) {
     try {
@@ -170,6 +181,10 @@
 
     var aberto = false;
     var naoLidas = 0;
+    var ajustesAgendado = false; // auto-abrir agendado no máximo uma vez
+    var visitanteMexeu = false; // o visitante abriu ou fechou a bolha manualmente
+    var visitanteInteragiu = false; // o visitante interagiu com a página (pointerdown/keydown)
+    var somAtual = false; // valor de `som` do último `ajustes` válido
 
     // Iframe: a janela do chat. Começa escondido e só ganha tamanho ao abrir.
     var iframe = document.createElement("iframe");
@@ -317,6 +332,7 @@
     // Abrir leva o foco ao iframe; fechar devolve o foco à bolha.
     function abrirOuFechar(abrir) {
       aberto = abrir;
+      visitanteMexeu = true;
       atualizar();
       if (aberto) iframe.focus();
       else bolha.focus();
@@ -333,6 +349,14 @@
     // Esc no documento do site fecha o painel quando ele está aberto.
     document.addEventListener("keydown", function (evento) {
       if (evento.key === "Escape" && aberto) abrirOuFechar(false);
+    });
+
+    // O visitante interagiu com a página: necessário para o som tocar.
+    document.addEventListener("pointerdown", function () {
+      visitanteInteragiu = true;
+    });
+    document.addEventListener("keydown", function () {
+      visitanteInteragiu = true;
     });
 
     iframe.addEventListener("load", enviarContexto);
@@ -357,6 +381,27 @@
       ) {
         naoLidas = dado.n;
         atualizar();
+      } else if (dado.tipo === "ajustes") {
+        var a = ajustesDaMensagem(dado);
+        if (!a || ajustesAgendado) return;
+        somAtual = a.som;
+        ajustesAgendado = true;
+        if (a.autoAbrirSegundos > 0 && (formato === "bolha" || formato === "painel")) {
+          setTimeout(function () {
+            if (!aberto && !visitanteMexeu) {
+              aberto = true;
+              atualizar();
+            }
+          }, a.autoAbrirSegundos * 1000);
+        }
+      } else if (dado.tipo === "resposta") {
+        if (!aberto) {
+          naoLidas = Math.min(naoLidas + 1, LIMITE_DO_BADGE);
+          atualizar();
+          if (somAtual && visitanteInteragiu) {
+            tocarBip();
+          }
+        }
       }
     });
 
@@ -384,6 +429,26 @@
     atualizar();
   }
 
+  // Toca um bip curto (~0,15 s, 880 Hz) com Web Audio, sem arquivo de áudio nem rede.
+  function tocarBip() {
+    try {
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      var contexto = new AudioContext();
+      var oscilador = contexto.createOscillator();
+      var ganho = contexto.createGain();
+      oscilador.type = "sine";
+      oscilador.frequency.setValueAtTime(880, contexto.currentTime);
+      oscilador.connect(ganho);
+      ganho.connect(contexto.destination);
+      ganho.gain.setValueAtTime(0.1, contexto.currentTime);
+      oscilador.start(contexto.currentTime);
+      oscilador.stop(contexto.currentTime + 0.15);
+    } catch (erro) {
+      // sem áudio: não faz nada e não lança
+    }
+  }
+
   // Exposição para o teste (Node/Vitest). Num navegador, `module` não existe e nada muda.
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -394,6 +459,7 @@
       alvoDoScript: alvoDoScript,
       montarContexto: montarContexto,
       aceitarMensagem: aceitarMensagem,
+      ajustesDaMensagem: ajustesDaMensagem,
     };
   }
 

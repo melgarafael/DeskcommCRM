@@ -149,6 +149,10 @@ const CONFIG_PADRAO = {
   coleta: { nome: "obrigatorio", telefone: "opcional", email: "oculto" },
   versaoDoAviso: "v1",
   controlador: { razaoSocial: "Loja Exemplo Ltda", politicaUrl: "https://loja.exemplo.com.br/privacidade" },
+  avatar: "https://exemplo.com.br/avatar.png",
+  autoAbrirSegundos: 30,
+  som: true,
+  respostasRapidas: ["Sim", "Não"],
 };
 
 const SOMENTE_CONVERSA = {
@@ -782,5 +786,120 @@ describe("janela no DOM", () => {
     await esperarTudo();
     expect(temTexto("não enviada — tentar de novo")).toBe(true);
     expect(temTexto("Chat indisponível")).toBe(true);
+  });
+
+  // ---------- Tarefa 10b: ajustes, avatar e respostas rápidas ----------
+
+  it("mostrarResposta manda { tipo: resposta } ao pai", async () => {
+    const { pai } = await abrirJanela(roteador({}, [`event: mensagem\ndata: {"id":"r1","texto":"Oi","em":"2026-11-21T10:00:00Z"}\n\n`]));
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    // a resposta do atendente chega pelo fluxo de eventos
+    const chamadasResposta = pai.postMessage.mock.calls.filter((c) => c[0]?.tipo === "resposta");
+    expect(chamadasResposta).toHaveLength(1);
+    expect(chamadasResposta[0]![0]).toEqual({ tipo: "resposta" });
+    expect(chamadasResposta[0]![1]).toBe("*");
+  });
+
+  it("ajustes sai depois de pronto com os valores da configuração", async () => {
+    const { pai } = await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    const pronto = chamadas.find((c) => c.tipo === "pronto");
+    const ajustes = chamadas.find((c) => c.tipo === "ajustes");
+    expect(pronto).toEqual({ tipo: "pronto" });
+    expect(ajustes).toEqual({ tipo: "ajustes", autoAbrirSegundos: 30, som: true });
+    // ajustes vem depois de pronto
+    expect(chamadas.indexOf(ajustes)).toBeGreaterThan(chamadas.indexOf(pronto));
+  });
+
+  it("ajustes usa padrões 0 e false quando ausentes ou de tipo errado", async () => {
+    const { pai } = await abrirJanela(
+      roteador().fn,
+      CONFIG_PADRAO,
+      {},
+      JSON.stringify({ ...CONFIG_PADRAO, autoAbrirSegundos: "trinta", som: "sim", avatar: null, respostasRapidas: null }),
+      { ...CONFIG_PADRAO, autoAbrirSegundos: "trinta", som: "sim", avatar: null, respostasRapidas: null },
+    );
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    const ajustes = chamadas.find((c) => c.tipo === "ajustes");
+    expect(ajustes).toEqual({ tipo: "ajustes", autoAbrirSegundos: 0, som: false });
+  });
+
+  it("avatar https cria um img 28x28 no cabeçalho; avatar http e javascript não criam", async () => {
+    const { pai } = await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
+    const img = document.querySelector(".cabecalho img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("https://exemplo.com.br/avatar.png");
+    expect(img!.getAttribute("alt")).toBe("");
+    expect(img!.style.width).toBe("28px");
+    expect(img!.style.height).toBe("28px");
+    expect(img!.style.borderRadius).toBe("50%");
+    expect(img!.style.objectFit).toBe("cover");
+
+    // avatar http não cria (reabre com config diferente)
+    document.body.textContent = "";
+    const { pai: pai2 } = await abrirJanela(
+      roteador().fn,
+      SOMENTE_CONVERSA,
+      {},
+      JSON.stringify({ ...SOMENTE_CONVERSA, avatar: "http://exemplo.com.br/a.png" }),
+      { ...SOMENTE_CONVERSA, avatar: "http://exemplo.com.br/a.png" },
+    );
+    expect(document.querySelector(".cabecalho img")).toBeNull();
+
+    // avatar javascript não cria
+    document.body.textContent = "";
+    await abrirJanela(
+      roteador().fn,
+      SOMENTE_CONVERSA,
+      {},
+      JSON.stringify({ ...SOMENTE_CONVERSA, avatar: "javascript:alert(1)" }),
+      { ...SOMENTE_CONVERSA, avatar: "javascript:alert(1)" },
+    );
+    expect(document.querySelector(".cabecalho img")).toBeNull();
+  });
+
+  it("respostas rápidas aparecem como botões antes da primeira mensagem, com textContent, e somem depois do primeiro envio", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    // sem coleta, vai direto à conversa; as respostas rápidas aparecem
+    await esperarTudo();
+    const botoes = Array.from(document.querySelectorAll("button")).filter((b) =>
+      b.textContent === "Sim" || b.textContent === "Não",
+    );
+    expect(botoes).toHaveLength(2);
+    expect(botoes[0]!.textContent).toBe("Sim");
+    expect(botoes[1]!.textContent).toBe("Não");
+    // texto com <b> aparece literal, sem criar elemento b
+    document.body.textContent = "";
+    await abrirJanela(
+      r.fn,
+      { ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>" ] },
+      {},
+      JSON.stringify({ ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] }),
+      { ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] },
+    );
+    await esperarTudo();
+    const btnX = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "<b>x</b>");
+    expect(btnX).toBeDefined();
+    expect(document.querySelector("b")).toBeNull();
+
+    // clicar envia o texto como mensagem normal
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    await esperarTudo();
+    const btnSim = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Sim")!;
+    btnSim.click();
+    await esperarTudo();
+    const corpos = corposDeMensagens(r.chamadas);
+    expect(corpos).toHaveLength(1);
+    expect(corpos[0]!.texto).toBe("Sim");
+    // depois do primeiro envio a fileira some
+    const botoesDepois = Array.from(document.querySelectorAll("button")).filter((b) =>
+      b.textContent === "Sim" || b.textContent === "Não",
+    );
+    expect(botoesDepois).toHaveLength(0);
   });
 });
