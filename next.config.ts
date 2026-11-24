@@ -113,7 +113,9 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: "/(.*)",
+        // Tudo menos `/chat/`: a janela do chat é embutida em site de cliente (iframe), então
+        // não pode levar `X-Frame-Options: DENY` nem `frame-ancestors 'none'`. Ver o bloco abaixo.
+        source: "/((?!chat/).*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
@@ -140,6 +142,21 @@ const nextConfig: NextConfig = {
           // inclusive a própria — daria "microphone is not allowed in this document".
           // Câmera e geolocalização seguem bloqueadas (não usadas).
           // notifications=(self): bandeja do SO quando a janela está minimizada.
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(self), geolocation=(), notifications=(self)",
+          },
+        ],
+      },
+      {
+        // A janela do chat (`/chat/<chave>`): só o que vale para qualquer resposta. Sem
+        // `X-Frame-Options` e sem CSP de enquadramento: quem decide quem embute é a própria
+        // rota, por conexão (`frame-ancestors` com as origens permitidas).
+        source: "/chat/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(self), geolocation=(), notifications=(self)",
