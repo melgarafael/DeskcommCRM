@@ -886,11 +886,7 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       configurable: true,
       writable: true,
     });
-    let interagiu = false;
-    document.addEventListener("pointerdown", () => {
-      interagiu = true;
-    });
-    const { bolha, badge: _ } = montarNoDom("bolha");
+    const { bolha } = montarNoDom("bolha");
     const badge = bolha.querySelector("span") as HTMLSpanElement;
     dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
       postMessage: vi.fn(),
@@ -926,10 +922,6 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       value: AudioContextDuble,
       configurable: true,
       writable: true,
-    });
-    let interagiu = false;
-    document.addEventListener("pointerdown", () => {
-      interagiu = true;
     });
     const { bolha } = montarNoDom("bolha");
     dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
@@ -1015,10 +1007,6 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
       value: AudioContextDuble,
       configurable: true,
       writable: true,
-    });
-    let interagiu = false;
-    document.addEventListener("pointerdown", () => {
-      interagiu = true;
     });
     const { bolha } = montarNoDom("bolha");
     dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: false }, ORIGEM_CRM, {

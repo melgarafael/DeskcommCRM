@@ -419,7 +419,7 @@
           naoLidas = Math.min(naoLidas + 1, LIMITE_DO_BADGE);
           atualizar();
         }
-        if (!visivel && somAtual && visitanteInteragiu) {
+        if (formato !== "embutido" && somAtual && visitanteInteragiu) {
           tocarBip();
         }
       }
