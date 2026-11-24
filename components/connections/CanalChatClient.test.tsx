@@ -462,6 +462,40 @@ it("mudar so o som manda apenas som", async () => {
   await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { som: true } }));
 });
 
+it("auto-abrir em branco desliga e envia 0", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, auto_abrir_segundos: 30 } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Abrir sozinho após (segundos)");
+
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { auto_abrir_segundos: 0 } }),
+  );
+});
+
+it("auto-abrir ausente e campo em branco nao liga o botao salvar ajustes", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Abrir sozinho após (segundos)");
+
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), {
+    target: { value: "" },
+  });
+
+  expect(
+    (screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(h.patch).not.toHaveBeenCalled();
+});
+
 it("avatar invalido mostra erro em portugues e nao envia", async () => {
   h.get.mockResolvedValue({ data: comConexao });
   h.patch.mockResolvedValue({ data: { id: "conexao-1" } });

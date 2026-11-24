@@ -250,7 +250,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const autoAbrirPreenchido = autoAbrirSegundos.trim() !== "";
   const autoAbrirAtual = autoAbrirPreenchido ? autoAbrirSegundos.trim() : "0";
   let autoAbrirValido = true;
-  let autoAbrirParaEnviar: number | undefined;
+  let autoAbrirParaEnviar: number = 0;
   if (autoAbrirPreenchido) {
     const n = Number(autoAbrirSegundos);
     autoAbrirValido = Number.isInteger(n) && n >= 0 && n <= 120;
@@ -263,7 +263,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
 
   const ajustes: Record<string, unknown> = {};
   if (avatarPreenchido && avatarUrl.trim() !== avatarInicial) ajustes.avatar_url = avatarUrl.trim();
-  if (autoAbrirParaEnviar !== undefined && autoAbrirAtual !== String(autoAbrirInicial)) {
+  if (autoAbrirAtual !== String(autoAbrirInicial)) {
     ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
   }
   if (som !== somInicial) ajustes.som = som;
