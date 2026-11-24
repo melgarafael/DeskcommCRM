@@ -20920,6 +20920,21 @@ export const DICIONARIO: Traducoes = {
   "Um por linha — termo: valor": { es: "Uno por línea — término: valor" },
   "Salvar personalização": { es: "Guardar personalización" },
   "Personalização salva.": { es: "Personalización guardada." },
+  // #5179 — a fala do vendedor pelo celular não pausa a IA antes da resposta do lead.
+  "Pausa da IA na prospecção": { es: "Pausa de la IA en la prospección" },
+  "Vale só na conversa que nasceu de uma campanha e só até o lead responder pela primeira vez. Depois da primeira resposta, cada mensagem que você mandar pelo celular pausa a IA como sempre.":
+    {
+      es: "Vale solo en la conversación que nació de una campaña y solo hasta que el lead responda por primera vez. Después de la primera respuesta, cada mensaje que envíes desde el celular pausa la IA como siempre.",
+    },
+  "Não pausar a IA antes da primeira resposta do lead": {
+    es: "No pausar la IA antes de la primera respuesta del lead",
+  },
+  "Ligada, a mensagem que você manda do celular numa conversa de campanha não desliga a IA enquanto o lead não respondeu — a abordagem não fica sem resposta automática. Desligada (padrão), a IA pausa por 60 minutos a cada mensagem sua, como sempre.":
+    {
+      es: "Activada, el mensaje que envías desde el celular en una conversación de campaña no desactiva la IA mientras el lead no haya respondido: el enfoque no se queda sin respuesta automática. Desactivada (predeterminado), la IA se pausa 60 minutos con cada mensaje tuyo, como siempre.",
+    },
+  "Salvar pausa da IA": { es: "Guardar pausa de la IA" },
+  "Pausa da IA atualizada.": { es: "Pausa de la IA actualizada." },
   "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.": {
     es: "La auditoría del sitio elige el mejor argumento por empresa, en este orden.",
   },

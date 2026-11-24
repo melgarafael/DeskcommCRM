@@ -59,6 +59,7 @@ import {
   type ChatIdentidade,
 } from "@/lib/escalacao/numero-interno-de-aviso";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
+import { pularPausaDaProspeccaoSemResposta } from "@/lib/prospecting/pausa-antes-da-resposta";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -1832,6 +1833,9 @@ async function handleOutboundFromUserPhone(
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
   const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
   let comandoAplicado: typeof comando = null;
+  // #5179: motivo pelo qual a pausa foi DISPENSADA nesta fala (só a prospecção sem
+  // resposta do lead). Vai no `audit` no fim — a trilha diz por que a IA seguiu ligada.
+  let pausaPulada: string | null = null;
   if (!ehEco) {
     let revogar = true;
     // C-076: o interruptor é do agente que atende ESTA conversa
@@ -1870,14 +1874,26 @@ async function handleOutboundFromUserPhone(
         });
       }
     } else {
-      // #534: o aviso é o que impede a falha da pausa de virar um `false` mudo.
-      await pausarIaPorAtendimentoManual(admin, {
-        organizationId: session.organization_id,
+      // #5179: na PROSPECÇÃO, a fala do vendedor pelo celular antes da primeira
+      // resposta do lead não cala a IA — a campanha acabou de disparar e é o
+      // próprio vendedor quem está complementando a abordagem. A opção é por
+      // organização e vem DESLIGADA; fora dessa janela (conversa que não é de
+      // campanha, ou lead que já respondeu) a pausa é a de sempre.
+      pausaPulada = await pularPausaDaProspeccaoSemResposta(
+        admin,
+        session.organization_id,
         conversationId,
-        canal: "waha",
-        duravel: aceita,
-        avisar: avisarPausaNaoGravada,
-      });
+      );
+      if (!pausaPulada) {
+        // #534: o aviso é o que impede a falha da pausa de virar um `false` mudo.
+        await pausarIaPorAtendimentoManual(admin, {
+          organizationId: session.organization_id,
+          conversationId,
+          canal: "waha",
+          duravel: aceita,
+          avisar: avisarPausaNaoGravada,
+        });
+      }
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
     if (comandoAplicado && revogar) await revogarComando(session, chatId, p.id);
@@ -1904,6 +1920,7 @@ async function handleOutboundFromUserPhone(
       external_id: p.id,
       from_user_phone: true,
       ...(comandoAplicado ? { control_command: comandoAplicado } : {}),
+      ...(pausaPulada ? { pausa_pulada: pausaPulada } : {}),
     },
   });
 

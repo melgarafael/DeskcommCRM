@@ -800,6 +800,51 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
 });
 
 /**
+ * #5179 — O INTERRUPTOR DA PAUSA DA IA.
+ *
+ * O card vive na configuração da prospecção (a mesma tela da voz e das
+ * campanhas), e o save usa o MESMO PATCH por organização: um endpoint novo faria
+ * a opção divergir da que a ingestão lê. O que este teste trava é o que a tela
+ * pode quebrar sozinha:
+ *
+ *   - o interruptor chega DESLIGADO quando ninguém optou (padrão);
+ *   - salvar manda `nao_pausar_antes_da_primeira_resposta: true`, explícito; e
+ *   - a voz que já estava gravada vai junto, porque a rota grava a fatia
+ *     `prospeccao` inteira — um save daqui não pode apagar a personalização.
+ */
+describe("#5179 — interruptor da pausa da IA antes da primeira resposta", () => {
+  function comPersonalizacao(extra: Record<string, unknown>) {
+    const base = fixture();
+    api.get.mockImplementation(async () => ({
+      data: { ...base, personalizacao: { ...base.personalizacao, ...extra } },
+    }));
+  }
+
+  it("chega desligado por padrão e sobe ligado para o PATCH da organização", async () => {
+    comPersonalizacao({ vendedor_nome: "Marcos" });
+    openPage();
+
+    const interruptor = await screen.findByLabelText("Não pausar a IA antes da primeira resposta do lead");
+    expect(interruptor).not.toBeChecked();
+
+    fireEvent.click(interruptor);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar pausa da IA" }));
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(
+        "/api/v1/settings/prospeccao",
+        expect.objectContaining({
+          nao_pausar_antes_da_primeira_resposta: true,
+          // A voz gravada vai no mesmo corpo: a fatia é substituída por inteiro.
+          vendedor_nome: "Marcos",
+        }),
+      ),
+    );
+    expect(await screen.findByText("Pausa da IA atualizada.")).toBeVisible();
+  });
+});
+
+/**
  * A LISTA DE VOLTA (issue #4360), agora com as duas listas.
  *
  * REVISTO DE PROPÓSITO. A versão anterior deste bloco travava "só empresa
