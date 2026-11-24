@@ -1,5 +1,5 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -39,4 +39,22 @@ describe("o snapshot não sobrevive à revogação do convite", () => {
     expect(qc.getQueryData(["conversation", "c1"])).toBeUndefined();
     expect(qc.getQueryData(["messages", "c1"])).toBeUndefined();
   });
+});
+
+it("reconexao mantem o snapshot da conversa ativa disponivel para recuperar a leitura", async () => {
+  const qc = montar();
+  const chave = ["conversation", "c1"];
+  const observer = new QueryObserver(qc, {
+    queryKey: chave,
+    queryFn: async () => { throw Object.assign(new Error("REST temporariamente fora"), { status: 503 }); },
+    staleTime: Infinity,
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    await act(async () => canal.onChange({ tipo: "reassinado" }));
+    expect(qc.getQueryData(chave), "o reset descartou o snapshot durante a indisponibilidade").toMatchObject({ id: "c1" });
+  } finally {
+    unsubscribe();
+    qc.clear();
+  }
 });
