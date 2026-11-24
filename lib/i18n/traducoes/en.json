@@ -7702,6 +7702,8 @@
   "Precisa achar no RAG": "RAG must hit",
   "Bloqueio de entrada por regex": "Regex input block",
   "Marca do contato": "Contact flag",
+  "Padrão (regex)": "Pattern (regex)",
+  "Opções da regex": "Regex flags",
   "Falha ao avançar:": "Failed to advance:",
   "Nuvemshop": "Nuvemshop",
   "Billing": "Billing",
