@@ -165,20 +165,27 @@ export async function devolverHandoffsVencidos(
   for (const { conversa, minutos } of vencidas) {
     const r = await devolverAtendimentoAoAgente(
       { supabase: admin, organizationId: conversa.organization_id, actor: ATOR_DO_CRON, requestId },
-      { conversationId: conversa.id, origem: { automatica: { minutos } } },
+      {
+        conversationId: conversa.id,
+        origem: { automatica: { minutos } },
+        // A decisão foi tomada sobre a leitura da varredura. Quem assumiu ou
+        // respondeu desde então ganha: a função recusa sob o lock da linha.
+        expectedAssignee: conversa.assigned_to_user_id,
+        semSinalHumanoDesde: new Date(agora.getTime() - minutos * 60_000).toISOString(),
+      },
     );
     if (r.ok) {
       devolvidas++;
       continue;
     }
-    // `assignment_conflict` sai de QUATRO pontos de `devolverAtendimentoAoAgente`
-    // e só UM deles é corrida: o UPDATE que casou 0 linhas porque alguém assumiu
-    // entre a leitura e a escrita — a pessoa ganhou, e é o desfecho certo. Os
-    // outros três (release que falhou, erro no UPDATE, erro ao limpar
-    // `force_human`) carregam a mensagem do banco em `detalhe`; a corrida volta
-    // SEM ela. O discriminador é esse, e é o próprio `retomada.ts` que o produz.
+    // `assignment_conflict` SEM `detalhe` é corrida: a conversa mudou de dono ou
+    // recebeu sinal humano depois da varredura (a precondição recusou, ou o
+    // UPDATE casou 0 linhas) — a pessoa ganhou, e é o desfecho certo. Erro de
+    // banco (release que falhou, erro no UPDATE, erro ao limpar `force_human`)
+    // carrega a mensagem em `detalhe`. O discriminador é esse, e é o próprio
+    // `retomada.ts` que o produz.
     //
-    // Engolir os quatro escondia defeito real com cara de disputa benigna: a
+    // Engolir todos escondia defeito real com cara de disputa benigna: a
     // rodada reportava `falhas: 0` sem auditar nada enquanto o banco recusava
     // a devolução.
     if (r.erro === "assignment_conflict" && r.detalhe === undefined) continue;
