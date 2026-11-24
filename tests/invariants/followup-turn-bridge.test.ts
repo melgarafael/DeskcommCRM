@@ -1,6 +1,7 @@
 import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
+import { descreveEvento } from "@/lib/followup/eventos-legiveis";
 
 import { runFollowupTick, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
@@ -442,4 +443,25 @@ describe("plano de tempo — acionamento decide, espera obedece", () => {
     const nextEvalAt = new Date(after.next_eval_at as string).getTime();
     expect(nextEvalAt).toBeGreaterThanOrEqual(antes + 1_800_000 - 2_000);
   });
+});
+
+it("o dossiê identifica o marco da fila antes de qualquer envio", async () => {
+  const org = "bbbbbbba-0000-4000-8000-000000000001";
+  await seedOrg(org);
+  const contactId = await seedContact(org);
+  const { pointerId, versionId } = await seedFlow(org, ACTION_GRAPH);
+  const enrollmentId = await seedEnrollment({
+    org, pointerId, versionId, contactId, currentNodeId: "a1",
+  });
+  const jobs: FollowupJobRequest[] = [];
+  await runFollowupTick(makeTickDeps(jobs), { limit: 5 });
+  expect(jobs).toHaveLength(1);
+
+  const { rows } = await pool.query(
+    "select * from followup_enrollment_events where organization_id=$1 and enrollment_id=$2 order by created_at",
+    [org, enrollmentId],
+  );
+  expect(rows.map((row) => row.event_type)).toEqual(["turn_enqueued"]);
+  const texto = descreveEvento(rows[0], {}, "pt-BR");
+  expect(texto.titulo).toMatch(/fila|enfileirad/i);
 });
