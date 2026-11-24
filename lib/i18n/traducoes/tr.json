@@ -8356,6 +8356,8 @@
   "Regenerar códigos de recuperação": "Kurtarma kodlarını yeniden oluştur",
   "Bloqueio de entrada por regex": "Regex giriş engeli",
   "Bloqueio de saída por regex": "Regex çıkış engeli",
+  "Padrão (regex)": "Desen (regex)",
+  "Opções da regex": "Regex bayrakları",
   "Registra o resultado desta demanda. As conversas dos outros canais permanecem disponíveis.": "Bu talebin sonucunu kaydeder. Diğer kanalların konuşmaları kullanılabilir kalır.",
   "Registra quem admitiu, quando, a origem e a revisão do arquivo.": "Kimin kabul ettiğini, ne zaman, kaynağı ve dosyanın revizyonunu kaydeder.",
   "Registra uma nova oportunidade de venda no funil, para que o interesse demonstrado pelo cliente não se perca.": "Satış hunisine yeni bir satış fırsatı kaydeder; böylece müşterinin gösterdiği ilgi kaybolmaz.",

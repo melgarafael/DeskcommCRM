@@ -16587,6 +16587,8 @@ export const DICIONARIO: Traducoes = {
   "Precisa achar no RAG": { es: "RAG debe coincidir" },
   "Bloqueio de entrada por regex": { es: "Bloqueo de entrada por regex" },
   "Marca do contato": { es: "Marca de contacto" },
+  "Padrão (regex)": { es: "Patrón (regex)" },
+  "Opções da regex": { es: "Opciones de la regex" },
   "Falha ao avançar:": { es: "Error al avanzar:" },
   "Nuvemshop": { es: "Nuvemshop" },
   "Billing": { es: "Facturación" },
