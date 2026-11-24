@@ -4793,4 +4793,4 @@ Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 8 do CI.
 - Celular 390 × 844: abrir e fechar a gaveta de navegação, sem rolagem horizontal da página.
 - Conferir também a largura da página no Inbox e na lista de funis.
 - Evidências a partir da raiz do repositório: `evidence/sidebar-scroll-lock/desktop-perfil.png`, `evidence/sidebar-scroll-lock/celular-navegacao.png` e `evidence/sidebar-scroll-lock/medidas-desktop.json`.
-- Resultado: PASS (2 testes, Chromium; 52,2 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.
+- Resultado: PASS (2 testes, Chromium; 17,6 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.
