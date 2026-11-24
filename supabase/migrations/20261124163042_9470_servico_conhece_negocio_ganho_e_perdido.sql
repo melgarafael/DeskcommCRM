@@ -1,6 +1,6 @@
 -- manifest: **O desfecho do negócio alcança a origem: `lead.won` e `lead.lost` entram na tabela de pares `(tipo, entidade) → contato` (#5077).** `fn_service_event_contact` conhecia `lead.created`, `lead.stage_changed`, `lead.tag_added`, `lead.date_field_due` e `lead.stage_stale`, mas não os dois tipos que o gatilho de `crm_leads` emite quando o negócio vira ganho ou perdido: com `suportado=false`, `fn_service_event_origin` levantava `service_event_origin_unsupported` (`PT409`), a ação `start_message_flow` virava `internal_error` no recibo e a execução terminava `partial` — o card criado por `create_or_move_lead` ficava, e nenhuma inscrição de follow-up nascia. O ramo novo resolve o contato por `crm_leads.contact_id`, na mesma forma dos outros tipos, e aceita `entity_kind='crm_lead'` (o que a issue nomeia) e `entity_kind='lead'` (o valor que `fn_log_event` deriva do prefixo do tipo e o que a linha de `event_log` realmente carrega) — sem o segundo, a recusa continuaria no caminho real. `lead.reopened` e o que a família de gatilho emitir além de won/lost ficam fora de escopo. Nenhum par existente muda e o `else` segue devolvendo `suportado=false`. Idempotente; apêndice espelhado no `baseline.sql` (corpo editado no lugar); `MANIFEST.md` é histórico e não recebe linha.
 --
--- 9465 — o serviço conhece negócio ganho e perdido (#5077).
+-- 9470 — o serviço conhece negócio ganho e perdido (#5077).
 --
 -- ─── O defeito ─────────────────────────────────────────────────────────────
 --
