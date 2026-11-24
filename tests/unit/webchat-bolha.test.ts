@@ -977,6 +977,8 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(iframe.style.display).toBe("block");
   });
+
+  it("som true sem interação prévia não toca", () => {
     const instanciados: unknown[] = [];
     class AudioContextDuble {
       constructor() {
