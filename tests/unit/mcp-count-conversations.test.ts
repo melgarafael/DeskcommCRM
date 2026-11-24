@@ -41,11 +41,18 @@ interface Call {
   nots: Array<[string, string, string]>;
 }
 
-type Counts = Partial<Record<"all" | "open" | "pending" | "claimed" | "ai_handling" | "closed" | "archived", number>>;
+type Counts = Partial<
+  Record<"all" | "open" | "pending" | "claimed" | "ai_handling" | "closed" | "archived", number>
+>;
 
 function makeCtx(
   counts: Counts,
-  opts: { error?: string; pessoais?: string[]; desativados?: string[]; contatoDoTurno?: string } = {},
+  opts: {
+    error?: string;
+    pessoais?: string[];
+    desativados?: string[];
+    contatoDoTurno?: string;
+  } = {},
 ): { ctx: McpContext; calls: Call[] } {
   const calls: Call[] = [];
   const from = (table: string) => {
