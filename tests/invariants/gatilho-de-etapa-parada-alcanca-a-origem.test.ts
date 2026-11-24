@@ -181,6 +181,32 @@ describe("9206 — lead.stage_stale alcança a origem (#4018)", () => {
     expect(fronteira.conversation_id).toBe(CONVERSA);
   });
 
+  it("#5077 — lead.won e lead.lost resolvem o contato nas duas grafias de entidade", () => {
+    // O gatilho de `crm_leads` emite `lead.won`/`lead.lost` com `entity_kind='lead'`
+    // (o `fn_log_event` deriva do prefixo), mas a issue nomeia `crm_lead`: os dois
+    // rótulos precisam resolver, senão a recusa continua no caminho real.
+    for (const tipo of ["lead.won", "lead.lost"]) {
+      expect(par(tipo, "lead", NEGOCIO), `${tipo}/lead não resolveu`).toEqual({
+        suportado: true,
+        contact_id: CONTATO,
+      });
+      expect(par(tipo, "crm_lead", NEGOCIO), `${tipo}/crm_lead não resolveu`).toEqual({
+        suportado: true,
+        contact_id: CONTATO,
+      });
+    }
+
+    // E a outra ponta aceita o evento real: o carimbo nasce e a fronteira resolve.
+    const eventoId = emitirSemOrigem("lead.won", "lead", NEGOCIO, GOV_ORG, { valor_cents: 100 });
+    expect(carimboDe(eventoId).kind, "o emit_event não carimbou lead.won").toBe("command");
+    const fronteira = JSON.parse(
+      lastLine(
+        sql(`select public.fn_service_event_origin('${GOV_ORG}'::uuid,'${eventoId}'::uuid,'${CONTATO}'::uuid,null);`),
+      ),
+    ) as { conversation_id?: string };
+    expect(fronteira.conversation_id).toBe(CONVERSA);
+  });
+
   it("LADO OPOSTO (a): o gatilho que JÁ funcionava (lead.date_field_due) continua alcançando a origem", () => {
     const eventoId = emitirSemOrigem("lead.date_field_due", "crm_lead", NEGOCIO, GOV_ORG, {
       campo: "data_inicio",
@@ -205,8 +231,10 @@ describe("9206 — lead.stage_stale alcança a origem (#4018)", () => {
     // `lead.silent_for` é o outro relógio do funil que a 0743 deixou de fora de
     // propósito: mesma varredura, mesma entidade, decisão própria.
     expect(par("lead.silent_for", "crm_lead", NEGOCIO).suportado).toBe(false);
-    // Os quatro do encanamento do trigger de lead usam `entity_kind='lead'`.
-    expect(par("lead.won", "lead", NEGOCIO).suportado).toBe(false);
+    // Dos quatro do encanamento do trigger de lead (`entity_kind='lead'`), a
+    // #5077 abriu won/lost; `reopened` e `assigned` seguem fora de propósito.
+    expect(par("lead.reopened", "lead", NEGOCIO).suportado).toBe(false);
+    expect(par("lead.assigned", "lead", NEGOCIO).suportado).toBe(false);
 
     const silencioso = emitirSemOrigem("lead.silent_for", "crm_lead", NEGOCIO, GOV_ORG, { dias: 7 });
     expect(carimboDe(silencioso), "o tipo fora da lista passou a ser carimbado").toEqual({});

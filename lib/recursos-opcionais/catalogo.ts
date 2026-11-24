@@ -202,6 +202,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Robô de mensagens (@BotFather)",
     oQueFaz: "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.",
   },
+  canal_webchat: {
+    nome: "Chat no site",
+    oQueFaz: "Cada empresa cola um chat na página do próprio site, e as conversas que começam nele chegam ao Inbox.",
+  },
   campanha_por_email: {
     nome: "Campanha por e-mail (em construção)",
     oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",

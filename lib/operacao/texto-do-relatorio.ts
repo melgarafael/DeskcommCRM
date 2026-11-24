@@ -36,6 +36,8 @@ export function nomeDaRede(canal: string): string {
       return "Facebook";
     case "telegram":
       return "Telegram";
+    case "webchat":
+      return "Chat no site";
     default:
       return canal;
   }

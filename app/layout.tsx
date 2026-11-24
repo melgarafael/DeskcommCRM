@@ -366,9 +366,27 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       */}
       <body className="min-h-dvh bg-bg font-sans text-text antialiased">
         <Providers>
-          <MarcaDosClientComponents>
-            <ThemeProvider>{children}</ThemeProvider>
-          </MarcaDosClientComponents>
+          {/*
+            A REDE CONTRA ROLAGEM LATERAL DE TODA PÁGINA mora neste `div`, e
+            não no `<html>` nem no `<body>` (#5215, medido na tela).
+
+            No `<html>`, qualquer overflow faz o `<body>` virar contêiner de
+            rolagem; quando o Radix trava a rolagem (menu do perfil, seletor
+            de organização, busca), a página salta e a barra lateral sticky
+            some para cima. Só no `<body>`, o valor passa para a JANELA como
+            `hidden`: a roda não rola, mas foco num campo fora da tela empurra
+            a página para o lado (1405 px no /login a 390, sem volta).
+
+            `clip` num elemento comum corta sem criar contêiner de rolagem:
+            o que sobra não entra na largura do documento, nada rola, e o
+            sticky da barra lateral segue valendo. Os portais do Radix vivem
+            fora daqui, no `<body>`, e não são cortados.
+          */}
+          <div className="overflow-x-clip">
+            <MarcaDosClientComponents>
+              <ThemeProvider>{children}</ThemeProvider>
+            </MarcaDosClientComponents>
+          </div>
           {/*
             O AVISO VAI PARA BAIXO, e isto foi medido na tela.
 
