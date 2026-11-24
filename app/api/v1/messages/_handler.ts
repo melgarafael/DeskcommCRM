@@ -31,8 +31,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
+import { lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { podeVerPessoal } from "@/lib/inbox/pessoal";
 import { assertOrgOperante } from "@/lib/organizacao/operante";
@@ -79,9 +81,12 @@ import {
 } from "@/lib/channels/numero-do-atendente";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { recebidasQueARespostaLe } from "@/lib/messaging/recebidas-a-ler";
+import { canalMarcaLidasPorMensagem } from "@/lib/channels/capabilities";
 import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
+import { CHAVE_DA_FALHA_DE_ENVIO, registroDaFalhaDeEnvio } from "@/lib/channels/falha-de-envio";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -218,6 +223,8 @@ export function origemDaMensagem(actor: Actor): "user" | "ai" | "automation" | "
   // rótulo errado no balão. Um mecanismo só decide os quatro valores — quando
   // eram dois (uma função e um mapa), o mesmo contrato tinha duas verdades.
   if (actor.type === "api_token") return "system";
+  // Módulo conectado também não é IA: é um sistema de fora (spec 33).
+  if (actor.type === "module") return "system";
   // A regra dispara, mas nem sempre ESCREVE. A ação "Mensagem escrita pela IA"
   // manda texto de um agente publicado com este mesmo ator, e a decisão da #652
   // é por AUTORIA: ali a linha é da IA. Decidir só pelo tipo do ator carimbaria
@@ -275,6 +282,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -286,7 +294,7 @@ function actorAuditPayload(actor: Actor): {
  * auditoria já espera.
  */
 function apiTokenIdDoActor(actor: Actor): string | undefined {
-  if (actor.type === "api_token") return actor.id;
+  if (actor.type === "api_token" || actor.type === "module") return actor.id;
   if (actor.type === "ai_agent") return actor.api_token_id;
   return undefined;
 }
@@ -560,7 +568,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, assigned_to_user_id, assignee_kind, metadata, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -615,6 +623,10 @@ export async function sendMessageHandler(
     is_group: boolean;
     group_chat_id: string | null;
     bot_silenced_until: string | null;
+    assigned_to_user_id?: string | null;
+    assignee_kind?: string | null;
+    /** `conversations.metadata` — de onde sai o modo "IA com o dono" (#3967). */
+    metadata?: unknown;
     /** Thread do provider, quando ele endereça por thread própria (migration 0132). */
     provider_conversation_id: string | null;
     /**
@@ -1354,6 +1366,23 @@ export async function sendMessageHandler(
       // adapter preserva o mesmo branch (e a mesma mensagem de erro de cada
       // método) do outro lado do seam.
       let externalId: string | null;
+      // As mensagens do cliente que ESTA resposta lê, para o canal marcá-las
+      // como lidas (visto azul, #2981): o NOWEB sem "Guardar histórico" só marca
+      // por mensagem (#5015). Template não passa por `adapter.send`, então não
+      // pergunta; grupo não leva visto; canal que não marca por id não paga a
+      // leitura (`marcaLidasPorMensagem`). Nada novo, falha ou leitura lenta =
+      // `undefined`, e o canal faz o pedido de antes.
+      const readExternalIds =
+        input.type === "template" ||
+        c.is_group ||
+        !canalMarcaLidasPorMensagem(c.channel_sessions?.provider ?? DEFAULT_CHANNEL_PROVIDER)
+          ? undefined
+          : await recebidasQueARespostaLe(supabase, {
+              organizationId: ctx.organization_id,
+              conversationId: c.id,
+              envioId: message.id,
+            });
+      const lidas = readExternalIds !== undefined ? { readExternalIds } : {};
       if (input.type === "template") {
         // Template é caminho próprio: não passa pelo `adapter.send` (que fala em
         // texto/mídia) porque o payload da plataforma é outro — e porque o envio
@@ -1449,6 +1478,7 @@ export async function sendMessageHandler(
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.media_url) {
         // A spec da proposta comercial já previa isto ("Enviar | sendFile com
@@ -1488,6 +1518,7 @@ export async function sendMessageHandler(
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       } else if (input.type === "contact") {
         const sc = outboundMetadata.shared_contact as
@@ -1517,6 +1548,7 @@ export async function sendMessageHandler(
             whatsappId: phoneToWhatsappId(telefone),
             vcard: buildVcard(nome, telefone),
           },
+          ...lidas,
         }));
       } else {
         await checkBoundary();
@@ -1529,6 +1561,7 @@ export async function sendMessageHandler(
           kind: input.type,
           body: corpoDoCanal(input.body ?? "") ?? "",
           replyToExternalId: citada?.external_id ?? null,
+          ...lidas,
         }));
       }
 
@@ -1727,12 +1760,19 @@ export async function sendMessageHandler(
         return message;
       }
 
+      // A NATUREZA da recusa vai junto (`lib/channels/falha-de-envio.ts`): o
+      // motor do agente lê daqui se re-tentar o turno repetiria a mesma recusa
+      // (4xx do provedor) ou se a próxima tentativa pode sair (5xx, rede).
       const { data: updated } = await supabase
         .from("messages")
         .update({
           status: "failed",
           error_code: code,
           error_message: msg,
+          metadata: {
+            ...((message.metadata ?? {}) as Record<string, unknown>),
+            [CHAVE_DA_FALHA_DE_ENVIO]: registroDaFalhaDeEnvio(err),
+          },
         })
         .eq("id", message.id)
         .select(MSG_COLS)
@@ -1798,8 +1838,40 @@ export async function sendMessageHandler(
   // mesma janela, mesma régua de quem lê `bot_silenced_until`; quem NÃO traz
   // `onBehalfOf` (automação, integração pura, agente) continua de fora.
   if (ctx.actor.type === "user" || ctx.onBehalfOf) {
-    const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
-    if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
+    const remetenteUserId = ctx.actor.type === "user" ? ctx.actor.id : ctx.onBehalfOf?.userId;
+    const ehResponsavel = Boolean(
+      remetenteUserId &&
+      c.assigned_to_user_id &&
+      c.assigned_to_user_id === remetenteUserId
+    );
+
+    // A RESPOSTA DO DONO É ATENDIMENTO, NÃO PAUSA. Quando quem escreve é o
+    // responsável pela conversa, o silêncio vira `'infinity'` — o mesmo valor do
+    // "Assumir" (`fn_conversation_assign`, migration 0173) — e só uma ação
+    // explícita o solta ("Devolver ao automático", encerrar marcando a devolução)
+    // ou o prazo de devolução automática, se a organização o ligou.
+    // A janela de 5 min abaixo serve à resposta pontual de quem NÃO é o dono; para
+    // o dono ela era só um relógio. O veto do dono (`assignee_kind = 'user'`)
+    // segura a IA enquanto o dono existe, mas `isLeadInHandoff` — que o follow-up
+    // de texto fixo e as varreduras consultam — lê o SILÊNCIO, não o dono: sem o
+    // `'infinity'`, esses caminhos viam a conversa como livre cinco minutos
+    // depois da última fala do técnico.
+    //
+    // Exceção: o modo "IA com o dono" (#3967). Ali a pessoa LIGOU de propósito a
+    // IA para responder junto dela, e calar para sempre na primeira fala dela
+    // desligaria em silêncio o que ela acabou de pedir.
+    const ehDonoSemIaJunto = ehResponsavel && !lerModoIaComDono(c.metadata);
+    if (ehDonoSemIaJunto) {
+      if (c.bot_silenced_until !== "infinity") {
+        conversationUpdate.bot_silenced_until = "infinity";
+      }
+    } else {
+      // Quem não é o dono (colega comentando, conversa sem responsável): a janela
+      // deslizante de 5 minutos de sempre. Não assume a conversa por ninguém nem
+      // cala a IA para sempre por uma resposta pontual.
+      const silenceUntil = extendBotSilence(c.bot_silenced_until, now);
+      if (silenceUntil) conversationUpdate.bot_silenced_until = silenceUntil;
+    }
   }
 
   await supabase.from("conversations").update(conversationUpdate).eq("id", c.id);

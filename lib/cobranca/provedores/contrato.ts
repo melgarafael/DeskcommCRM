@@ -162,12 +162,22 @@ export interface AdaptadorDeCobranca {
   iniciarAjusteProporcional(p: { clienteRef: string; orgId: string; plano: PlanoParaProvedor; valorCents: number; chaveIdempotencia: string; urlDeVolta: string }): Promise<{ pagamentoRef: string; url: string }>;
   lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado">;
   /**
-   * `assinaturaRef` é a assinatura que quem chama JÁ tem na linha. O Efi não tem
-   * cliente nem lista assinaturas por cliente: com a referência, a leitura é a
+   * A situação DA ORGANIZAÇÃO no cliente (#4862). `organizacao` não é decoração: o
+   * cliente pode ser ADOTADO do painel (a #4768) e carregar assinaturas e cobranças
+   * de OUTRA integração. O Asaas devolve tudo que está vinculado à organização —
+   * assinatura, cobrança, `assinaturaRef`, `jaPagou` e `proximoVencimento`; nada de
+   * fora entra. A Stripe amarra o vínculo no `metadata.organization_id` desde a
+   * criação (não existe assinatura de fora no cliente dela) e ignora o parâmetro.
+   *
+   * `assinaturaRef` é a assinatura que quem chama JÁ tem na linha (#4056). O Efi não
+   * tem cliente nem lista assinaturas por cliente: com a referência, a leitura é a
    * dela (`GET /v1/subscription/:id`); sem ela, o adaptador cai na lista de
    * cobranças da empresa. Stripe e Asaas ignoram o campo.
+   *
+   * Os dois campos convivem: o `organizacao` é o recorte da leitura no Asaas, o
+   * `assinaturaRef` é o atalho do Efi. Nenhum deles afrouxa o outro.
    */
-  lerSituacao(p: { clienteRef: string; assinaturaRef?: string | null }): Promise<Situacao>;
+  lerSituacao(p: { clienteRef: string; organizacao: string; assinaturaRef?: string | null }): Promise<Situacao>;
   /** Atualiza o preço recorrente sem mudar a data de renovação. Pode recusar com ErroDoProvedor não transitório. */
   trocarPlano(p: { assinaturaRef: string; plano: PlanoParaProvedor }): Promise<void>;
   /**
@@ -180,5 +190,6 @@ export interface AdaptadorDeCobranca {
    */
   expirarSessao(sessaoId: string): Promise<void>;
   cancelarNoFim(assinaturaRef: string): Promise<void>;
-  urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string }): Promise<string | null>;
+  /** No Asaas é a leitura filtrada pela organização (#4862): `organizacao` é obrigatória. A Stripe não a usa. */
+  urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string | null>;
 }

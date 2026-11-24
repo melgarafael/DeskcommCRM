@@ -78,11 +78,15 @@ Sem novos workers de infra — reusa `event_log` + cron Spec 07.
 | openai | `gpt-5` | GPT-5 | Flagship OpenAI |
 | openai | `gpt-5-mini` | GPT-5 Mini | Cheap/fast |
 | openai | `gpt-4o` | GPT-4o (legacy) | Compat |
-| google | `gemini-2.5-pro` | Gemini 2.5 Pro | Flagship Google |
-| google | `gemini-2.5-flash` | Gemini 2.5 Flash | Cheap/fast |
+| google | `gemini-2.5-pro` | Gemini 2.5 Pro | Aposentado pelo provedor |
+| google | `gemini-2.5-flash` | Gemini 2.5 Flash | Aposentado pelo provedor |
 | google | `gemini-3.5-flash-lite` | Gemini 3.5 Flash-Lite | Ferramentas e visão; 1.048.576 tokens de entrada |
 
 A tabela `ai_models` é populada via seed. UI consulta `GET /api/v1/ai/providers/{p}/models` que retorna lista filtrada por `deprecated_at IS NULL`.
+O seletor de agentes do Google e os campos de modelo de **IA › Provedores** (padrão da organização
+e modelo por ponto) usam a lista de `lib/agent-engine/edge/llm/modelos-aposentados.ts`
+para ocultar os modelos aposentados das novas escolhas. Um modelo já salvo segue visível com
+um aviso para trocá-lo, e seus preços continuam disponíveis para calcular o uso anterior.
 
 ### 2.3 Decisões locked (do dossier de pesquisa)
 
@@ -418,7 +422,7 @@ Resposta retorna `*_safe` view (sem campos cifrados).
 
 ```
 GET    /api/v1/ai/agents                         [manager+]
-POST   /api/v1/ai/agents                         [admin]   (kind='mcp_agent')
+POST   /api/v1/ai/agents                         [admin]
 GET    /api/v1/ai/agents/:id                     [manager+]
 PATCH  /api/v1/ai/agents/:id                     [admin]   (name, description, priority)
 DELETE /api/v1/ai/agents/:id                     [admin]   (soft delete: archived_at)
@@ -458,6 +462,13 @@ Resposta 201:
   }
 }
 ```
+
+**Agente de telefonia.** Envie `{"name": "Recepção", "channel": "voice"}` ao
+mesmo POST. `description` e `system_prompt` são opcionais. A resposta 201 traz
+`{ data: agente }` com `channel: "voice"` e `is_active: false`. A voz usa a
+configuração do cadastro, sem criar a versão acima. Configure e ative o agente
+no editor de voz ou pelo PATCH do agente antes de selecioná-lo em Conexões ›
+Telefone. O PATCH do cadastro mantém o canal definido na criação.
 
 ### 4.4 Versões
 

@@ -28,6 +28,15 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${APP_MEM_LIMIT:-768m}
+    # Teto de CPU — DESLIGADO por padrão. `0` é "sem limite" no Compose (o
+    # serviço nem recebe o campo: `docker compose config` o omite, e o contêiner
+    # sobe com NanoCpus=0), então quem não escreve nada no `.env` fica como
+    # sempre. Serve a quem divide o host com outras aplicações: `APP_CPUS=1.5`
+    # no `.env` limita o app a um núcleo e meio. Pelo `.env`, e não por um
+    # override, porque o dc() do kit passa uma lista fixa de `-f` e ignora
+    # COMPOSE_FILE. O mesmo vale para os `<SERVIÇO>_CPUS` dos demais serviços.
+    # Acima do número de CPUs do host o daemon recusa criar o contêiner.
+    cpus: ${APP_CPUS:-0}
     # Imagem GENÉRICA pré-buildada: o leigo só puxa (sobe em ~2min, roda em 2GB).
     # Os NEXT_PUBLIC_* reais vêm em RUNTIME (env_file abaixo) — o browser lê via
     # <PublicEnvScript/> e o servidor via lib/env.ts. Não precisa buildar no VPS.
@@ -123,6 +132,8 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${WORKER_MEM_LIMIT:-512m}
+    # Teto de CPU pelo `.env`; `0` = sem limite (ver o comentário do `app`).
+    cpus: ${WORKER_CPUS:-0}
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
@@ -207,6 +218,8 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${WAHA_MEM_LIMIT:-1280m}
+    # Teto de CPU pelo `.env`; `0` = sem limite (ver o comentário do `app`).
+    cpus: ${WAHA_CPUS:-0}
     # Core grátis por padrão; troque para devlikeapro/waha-plus via WAHA_IMAGE se
     # precisar de multi-número/retry/S3 (licença paga).
     #
@@ -241,7 +254,12 @@ services:
       # O WAHA trata reação como evento PRÓPRIO — sem assiná-lo, um gesto que o
       # CRM recebe pela API oficial nunca chegaria pelo canal por QR. `message.any`
       # NÃO o cobre (a reação não vem como mensagem).
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
+      #
+      # `call.received` entra: é a ligação de voz que chega no número. Só tem
+      # efeito quando a empresa liga "Bloquear chamadas recebidas" em
+      # Configurações › Segurança — aí ela é recusada na hora
+      # (lib/organizacao/bloqueio-de-chamadas.ts). Desligado, o evento é ignorado.
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change,call.received"
       # Nome EXATO da doc do WAHA (events#hmac-authentication): WHATSAPP_HOOK_HMAC
       # não existe nele — sem o _KEY ele ignora e nunca assina.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
@@ -262,6 +280,12 @@ services:
     networks: [internal]
 
   redis:
+    # Teto de memória — 12 MiB de memory.peak MEDIDO (evidence/2026-10-07-
+    # coolify-consumo/64-resumo-sem-swap.txt). Os dados são efêmeros e com TTL
+    # (rate limit, debounce); 256m deixa mais de 20x de folga e só existe para
+    # que um vazamento mate o redis, e não a máquina. Sobe pelo `.env`.
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0}
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]  # efêmero (rate-limit/debounce)
@@ -284,6 +308,11 @@ services:
     # O digest congela o que já está em produção HOJE: zero mudança de conteúdo,
     # e o `:latest` deixa de poder mudar sozinho debaixo de todo mundo.
     # Quando a T6 for validada, isto vira `:0.0.10` e o comentário sai.
+    #
+    # Teto de memória — 104 MiB de memory.peak MEDIDO (mesma evidência do
+    # redis; o maior dos três serviços pequenos). 256m é ~2,5x esse pico.
+    mem_limit: ${SRH_MEM_LIMIT:-256m}
+    cpus: ${SRH_CPUS:-0}
     image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
     restart: unless-stopped
     environment:
@@ -306,6 +335,11 @@ services:
     # serviço `restart: unless-stopped`, isso significa que o cron do cliente só
     # voltava se a VPS tivesse internet e o mirror do Alpine estivesse de pé,
     # justamente no momento em que a máquina está se recuperando de algo.
+    #
+    # Teto de memória — 30 MiB de memory.peak MEDIDO (mesma evidência do
+    # redis): é crond + curl. 128m é ~4x esse pico.
+    mem_limit: ${SCHEDULER_MEM_LIMIT:-128m}
+    cpus: ${SCHEDULER_CPUS:-0}
     image: ${SCHEDULER_IMAGE:-ghcr.io/melgarafael/deskcomm-scheduler:stable}
     pull_policy: ${SCHEDULER_PULL_POLICY:-always}
     build:
@@ -343,18 +377,24 @@ services:
   #      em serviço de profile inativo não sobe — o CRM inteiro deixaria de
   #      subir em toda instalação que não usa a feature.
   #
-  # ═══ POR QUE A IMAGEM É DO UPSTREAM, PINADA POR DIGEST ═══
+  # ═══ DE ONDE VEM A IMAGEM, PINADA POR DIGEST ═══
   #
-  # WaCalls (github.com/JotaDev66/WaCalls, MIT) é peça UPSTREAM, e a doutrina
-  # (docs/doctrine/packaging.md) é explícita: peça upstream se REFERENCIA, nunca
-  # se republica — "a regra vale para todas, não só a licenciada, porque a
-  # exceção é o que apaga a regra". Construir e publicar `deskcomm-wacalls`
-  # seria republicar.
+  # WaCalls (github.com/JotaDev66/WaCalls, MIT) é peça de terceiro, e a doutrina
+  # (docs/doctrine/packaging.md) manda referenciá-la, nunca republicá-la. Até
+  # 18/11/2026 o compose apontava a imagem dos autores (`ghcr.io/jotadev66/wacalls`).
+  # Ela parou no whatsmeow de 13/07 (d8960d9), que o WhatsApp passou a recusar
+  # com "Client outdated (405)": a sessão ficava em "connecting" para sempre,
+  # sem QR e sem log (issue #4937). Os autores não mantêm mais o projeto nem
+  # aceitam PR, e o conserto saiu no fork mantido pela DeskLabs
+  # (github.com/DeskLabs-OpenSource/WaCalls, PR #1, revisão a6f66b9). O CI desse
+  # fork publica `ghcr.io/desklabs-opensource/wacalls`: é a mesma peça, mantida
+  # num fork público com o código à vista, e não uma imagem montada por nós a
+  # partir do código alheio.
   #
-  # O digest é o pin mais forte que existe e o único disponível aqui: `:latest`
-  # e `:latest-pure` NÃO existem neste registry (404 medido em 2026-09-08); as
-  # tags publicadas são `develop` e `sha-*`. Ele resolve para
-  # `sha-d16a076`/`develop`, index OCI multi-arch (linux/amd64 + linux/arm64).
+  # Medido em 18/11 numa cópia descartável: com esta imagem, `POST /api/sessions`
+  # chega a `state=qr` em menos de 25 s ("scan the QR code to pair this
+  # session"); a imagem anterior fica em `connecting`. O índice é multi-arch
+  # (linux/amd64 + linux/arm64) e embute o whatsmeow 19d6135, de 16/11.
   #
   # `pull_policy: missing` porque o digest é imutável: com `always`, um GHCR
   # fora do ar impediria o contêiner de subir mesmo com a imagem já no disco.
@@ -366,7 +406,8 @@ services:
   wacalls:
     profiles: ["voz"]
     mem_limit: 256m
-    image: ${WACALLS_IMAGE:-ghcr.io/jotadev66/wacalls@sha256:9ff52ef9455cf42125a911c38bb8c855f0cc205516cada2054e5c05546909022}
+    cpus: ${WACALLS_CPUS:-0}
+    image: ${WACALLS_IMAGE:-ghcr.io/desklabs-opensource/wacalls@sha256:03f9e47fadc1afa909f512bbdda0fa4091d4646310f9a76ce3c752f05eafd1ff}
     pull_policy: ${WACALLS_PULL_POLICY:-missing}
     restart: unless-stopped
     environment:
@@ -436,6 +477,7 @@ services:
   asterisk:
     profiles: ["telefonia"]
     mem_limit: 256m
+    cpus: ${ASTERISK_CPUS:-0}
     image: ${ASTERISK_IMAGE:-andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27}
     pull_policy: ${ASTERISK_PULL_POLICY:-missing}
     restart: unless-stopped
@@ -473,6 +515,7 @@ services:
   voice-agent:
     profiles: ["telefonia"]
     mem_limit: 512m
+    cpus: ${VOICE_AGENT_CPUS:-0}
     image: ${VOICE_AGENT_IMAGE:-ghcr.io/melgarafael/deskcomm-voice-agent:stable}
     pull_policy: ${VOICE_AGENT_PULL_POLICY:-always}
     build:
@@ -496,6 +539,11 @@ services:
     networks: [internal]
 
   caddy:
+    # Teto de memória — sem medida no repositório; 512m é folgado para um
+    # proxy reverso com TLS (o proxy do Coolify, Traefik, mediu 123 MiB de
+    # memory.peak na mesma evidência do redis). Sobe pelo `.env`.
+    mem_limit: ${CADDY_MEM_LIMIT:-512m}
+    cpus: ${CADDY_CPUS:-0}
     image: caddy:2-alpine
     restart: unless-stopped
     ports:

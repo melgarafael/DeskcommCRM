@@ -88,9 +88,13 @@ const triggerConfigSchema = z
         include_sources: [],
         exclude_sources: [],
       }),
-    concurrency: z
-      .enum(["one_per_conversation", "one_per_contact"])
-      .default("one_per_conversation"),
+    concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
+    // Retomar ao devolver: quando a equipe devolve o atendimento ao automático
+    // e a última fala é dela, o agente continua NA HORA, sem esperar o cliente
+    // escrever (lib/escalacao/retomada-ao-devolver.ts). Opcional e sem default
+    // de propósito: versão antiga sem o campo lê como desligado, e salvar uma
+    // versão não grava a chave em quem nunca mexeu.
+    resume_on_handback: z.boolean().optional(),
   })
   .strict();
 
@@ -195,8 +199,8 @@ const versionShapeSchema = z
       // tela salvar e a publicação devolver `tool_id_invalid`.
       .refine(
         (ids) =>
-          ids.every(
-            (id) => ehToolIdRemoto(id) || (VALID_TOOL_IDS as readonly string[]).includes(id),
+          ids.every((id) =>
+            ehToolIdRemoto(id) || (VALID_TOOL_IDS as readonly string[]).includes(id),
           ),
         { message: "tool_id_invalid" },
       ),
@@ -297,8 +301,8 @@ const versionShapeSchema = z
       // tela salvar e a publicação devolver `tool_id_invalid`.
       .refine(
         (ids) =>
-          ids.every(
-            (id) => ehToolIdRemoto(id) || (VALID_TOOL_IDS as readonly string[]).includes(id),
+          ids.every((id) =>
+            ehToolIdRemoto(id) || (VALID_TOOL_IDS as readonly string[]).includes(id),
           ),
         { message: "tool_id_invalid" },
       ),
@@ -418,12 +422,10 @@ export const testeHistoryMessageSchema = z
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
-    contact_id: UUID.optional(),
-    required_source_tool: z
-      .string()
-      .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    history: z
+      .array(testeHistoryMessageSchema)
+      .max(LIMITE_DO_HISTORICO_EM_MENSAGENS)
       .optional(),
-    history: z.array(testeHistoryMessageSchema).max(LIMITE_DO_HISTORICO_EM_MENSAGENS).optional(),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
@@ -438,21 +440,15 @@ export const testRunSchema = z
       .transform((tags) => normalizarTags(tags))
       .optional(),
   })
-  .strict()
-  .refine((v) => !v.contact_id || !v.sample_contact, {
-    message: "Escolha um contato cadastrado ou use uma amostra, sem misturar as identidades.",
-    path: ["contact_id"],
-  })
-  .refine((v) => !v.required_source_tool || !!v.contact_id, {
-    message: "A consulta de dados cadastrais exige um contato selecionado.",
-    path: ["contact_id"],
-  });
+  .strict();
 
 export const runsListQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
-    status: z.enum(["pending", "running", "completed", "failed", "aborted", "handoff"]).optional(),
+    status: z
+      .enum(["pending", "running", "completed", "failed", "aborted", "handoff"])
+      .optional(),
   })
   .strict();
 

@@ -12,7 +12,13 @@
 import type { McpToolDefinition } from "../types";
 import { amigoTools } from "./amigo";
 import { TOOL_CATALOG, VALID_TOOL_IDS } from "./catalog";
-import { crmSearchContacts, crmGetContact, crmProposeContactField } from "./contacts";
+import { crmSearchContacts, crmGetContact, crmProposeContactField, crmUpdateContact } from "./contacts";
+import {
+  crmPauseAi,
+  crmResumeAi,
+  crmCloseConversation,
+  crmReopenConversation,
+} from "./comandos-de-conversa";
 import {
   crmListConversations,
   crmGetConversation,
@@ -101,6 +107,16 @@ import {
   crmProposeReactivation,
 } from "./retencao";
 import { crmDraftProposal, crmPrepararProposta } from "./propostas";
+import {
+  crmGetAiAgentTurn,
+  crmGetAiAgentVersion,
+  crmListAiAgents,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+} from "./agentes";
+import { crmCreateTask, crmListTasks, crmUpdateTask } from "./tarefas";
 import { crmSaveLeadDiagnosis } from "./diagnostico";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
@@ -118,7 +134,13 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSearchContacts,
   crmGetContact,
   crmProposeContactField,
+  crmUpdateContact,
   crmListConversations,
+  // #4517 — os quatro comandos da conversa, por token e pelo agente.
+  crmPauseAi,
+  crmResumeAi,
+  crmCloseConversation,
+  crmReopenConversation,
   crmGetConversation,
   crmGetConversationHistory,
   crmGetQueueStatus,
@@ -147,6 +169,7 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmConsultarReceita,
   crmListPrivacyRequests,
   crmGetProspectingSiteAudit,
+  crmListTasks,
   // read — organizar a operação (W4)
   crmListStages,
   crmListTags,
@@ -162,6 +185,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmListAvailableAttendants,
   crmListHumanCases,
   crmGetHumanCase,
+  // read — editar os assistentes de IA (só admin; ver `./agentes.ts`)
+  crmListAiAgents,
+  crmGetAiAgentVersion,
+  crmGetAiAgentTurn,
   // write
   // A que consulta E marca numa chamada só vem primeiro: quando o cliente já deu
   // dia e hora, é o caminho curto, e é o que evita o turno morrer no meio (#831).
@@ -208,6 +235,13 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCloseHumanCase,
   crmResumeAiAttendance,
   crmDraftProposal,
+  // write — editar os assistentes de IA: rascunho, teste, publicar, reverter
+  crmSaveAiAgentDraft,
+  crmTestAiAgentVersion,
+  crmPublishAiAgentVersion,
+  crmRollbackAiAgent,
+  crmCreateTask,
+  crmUpdateTask,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;

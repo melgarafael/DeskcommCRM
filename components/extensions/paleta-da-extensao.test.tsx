@@ -81,6 +81,8 @@ function installation(overrides: Partial<InstalledExtensionView> = {}): Installe
     active_organizations: 1,
     removed_at: null,
     deactivated_by_removal_at: null,
+    profile: "declarative",
+    disabled_at: null,
     ...overrides,
   };
 }

@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
@@ -203,6 +204,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -239,8 +241,15 @@ export async function listConversationsHandler(
   // pergunta e a posição responder outra — sem sintoma nenhum, porque as duas
   // telas continuam populadas e plausíveis.
   const sortCol = isQueue ? ORDEM_DA_ESPERA.coluna : "last_message_at";
-  const ordem = isQueue ? ORDEM_DA_ESPERA.opcoes : ({ ascending: false, nullsFirst: false } as const);
-  const asc = isQueue;
+  // `ordem_fila=recentes`: a MESMA coluna de espera, ao contrário — quem chegou
+  // agora em cima. O cursor acompanha pelo `asc` (gt/lt), sem régua nova.
+  const filaPelasRecentes = isQueue && q.ordem_fila === "recentes";
+  const ordem = isQueue
+    ? filaPelasRecentes
+      ? ({ ascending: false, nullsFirst: false } as const)
+      : ORDEM_DA_ESPERA.opcoes
+    : ({ ascending: false, nullsFirst: false } as const);
+  const asc = isQueue && !filaPelasRecentes;
 
   let query = supabase
     .from("conversations")

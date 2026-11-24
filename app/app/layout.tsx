@@ -29,6 +29,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
+import { modulosNaTela } from "@/lib/extensions/modulos-na-tela";
 import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { ehOperante } from "@/lib/organizacao/operante";
 import {
@@ -146,7 +147,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    aplica. Vigiado por
      *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia, conectados] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
@@ -167,6 +168,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
       // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.
       telefoniaEmUso(admin, activeOrg.orgId),
+      // Módulos CONECTADOS desta organização (Spec 33, F4): alimenta o grupo "Módulos" do menu e
+      // o ⌘K. Uma vez por requisição, no mesmo `Promise.all`. Lado seguro: erro vira lista vazia
+      // e o CRM segue inteiro.
+      modulosNaTela(activeOrg.orgId, user.idioma ? { locale: user.idioma } : {}).catch(
+        (): Awaited<ReturnType<typeof modulosNaTela>> => [],
+      ),
     ]);
 
     const orgRow = orgRes.data;
@@ -182,7 +189,52 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Suspensão ANTES de onboarding: a org suspensa que nunca terminou o
     // onboarding ia para `/onboarding` e escapava da tela da suspensão.
     if (!ehOperante(orgRow?.status)) redirect("/account-suspended");
-    if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
+    if (orgRow && !orgRow.onboarded_at && !user.support) {
+      // #5127: quem ACEITOU UM CONVITE não é mandado ao wizard da empresa. Numa
+      // instalação nova o dono convida o time antes de terminar a configuração,
+      // e o convidado caía em `/onboarding/welcome` — o assistente que configura
+      // uma empresa que não é dele (o passo da chave da IA, por exemplo, exige
+      // `admin`). Ele segue para o CRM; o wizard continua acessível pela URL.
+      //
+      // A marca de "entrou por convite" é `user_organizations.invited_by`, que
+      // o aceite de convite (`fn_accept_team_invite`) e a criação de membro pela
+      // Equipe (`app/api/v1/team/users/route.ts`) preenchem. Ficam no
+      // wizard os vínculos sem `invited_by` (dono criado pelo cadastro,
+      // `bootstrap-owner`, provisionamento externo, vínculo antigo ou criado à
+      // mão) e o DONO de um tenant aberto pelo painel de plataforma, que entra
+      // como `admin` convidado por quem abriu.
+      //
+      // Esse dono convidado é reconhecido pelo CONVIDADOR, não pelo papel: o
+      // convite dele veio do administrador de plataforma, e o aceite como
+      // admin APAGA o vínculo provisório desse administrador
+      // (`fn_accept_team_invite`, migration 0237). Quem convida alguém que
+      // continua na empresa — o dono que convida um admin no meio do wizard
+      // (#5127), ou o próprio dono convidando o time — manda o convidado para
+      // o CRM. Só o admin cujo convidador já não é membro fica com o wizard:
+      // ele é o único que pode terminar a configuração.
+      //
+      // A leitura é SÓ neste ramo raro: organização já configurada não paga
+      // nenhuma consulta a mais, e o caminho normal de `/app` não muda.
+      const { data: vinculo } = await admin
+        .from("user_organizations")
+        .select("invited_by")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const convidadorId = (vinculo?.invited_by as string | null | undefined) ?? null;
+      let vaiAoWizard = convidadorId === null;
+      if (!vaiAoWizard && roleAtLeast(activeOrg.role, "admin")) {
+        const { data: convidador } = await admin
+          .from("user_organizations")
+          .select("user_id")
+          .eq("organization_id", activeOrg.orgId)
+          .eq("user_id", convidadorId)
+          .is("revoked_at", null)
+          .maybeSingle();
+        vaiAoWizard = !convidador;
+      }
+      if (vaiAoWizard) redirect("/onboarding");
+    }
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
     const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
@@ -199,6 +251,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       modulos_ligados: modulos,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos, telefonia),
+      // Só slug e título descem ao navegador; o endereço do serviço fica no servidor.
+      modulos_conectados: conectados.map((m) => ({ slug: m.slug, titulo: m.titulo })),
     };
 
     // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com

@@ -3,10 +3,11 @@
 import { useState, type ReactNode } from "react";
 import { useT } from "@/hooks/i18n/useT";
 
-export function VisoesGoogleAds({ crm, midia }: { crm: ReactNode; midia: ReactNode }) {
+type Visao = "crm" | "midia";
+export function VisoesGoogleAds({ crm, midia, inicial = "crm" }: { crm: ReactNode; midia: ReactNode; inicial?: Visao }) {
   const t = useT();
-  const [visao, setVisao] = useState<"crm" | "midia">("crm");
-  const [midiaVisitada, setMidiaVisitada] = useState(false);
+  const [visao, setVisao] = useState<Visao>(inicial);
+  const [midiaVisitada, setMidiaVisitada] = useState(inicial === "midia");
   return (
     <section
       className="min-h-full bg-bg p-4 text-text sm:p-[clamp(16px,3vw,42px)] [&>div]:mx-auto [&>div]:max-w-[1220px]"

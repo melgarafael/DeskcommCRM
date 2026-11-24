@@ -56,6 +56,8 @@ interface Estado {
   /** O que a função do banco recebeu em `p_lead_ids`. */
   rpcLeadIds: string[] | null;
   rpcArgs: Record<string, unknown> | null;
+  /** O funil da etapa de destino. Ausente = o mesmo funil dos cards. */
+  funilDaEtapa?: string;
 }
 
 function clienteStub(estado: Estado) {
@@ -114,7 +116,7 @@ function clienteStub(estado: Estado) {
           return c;
         },
         maybeSingle: () =>
-          Promise.resolve({ data: { id: PERDIDO_ID, name: "Perdido", is_lost: true }, error: null }),
+          Promise.resolve({ data: { id: PERDIDO_ID, name: "Perdido", pipeline_id: estado.funilDaEtapa ?? PIPELINE_ID, is_lost: true }, error: null }),
         then(onF: (v: unknown) => unknown) {
           return Promise.resolve({ data: null, error: null }).then(onF);
         },
@@ -218,8 +220,33 @@ describe("perdido em lote (#2484 F2) respeita a organização da sessão, por it
     expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(emitLeadActivity).mock.calls[0]?.[1]).toMatchObject({
       leadId: LEAD_DA_ORG,
+      // O contato vai na linha: é por ele que a anonimização alcança o histórico
+      // de um negócio apagado (migration 9466, #4852).
+      contactId: "77777777-7777-4777-8777-777777777777",
       type: "stage_changed",
       reason: "Perdido — preço alto",
     });
+  });
+
+  it("P-01: etapa de OUTRO funil é recusada como no arrasto, e a função do banco NÃO roda (#4852)", async () => {
+    // `fn_mover_leads_em_lote` grava o funil da etapa (migration 9466): sem a
+    // recusa, o lote levaria o negócio para outro funil sem a cópia.
+    estado.funilDaEtapa = "88888888-8888-4888-8888-888888888888";
+    const res = await POST(
+      pedido({
+        action: "move",
+        lead_ids: [LEAD_DA_ORG],
+        params: { stage_id: PERDIDO_ID, lost_reason: "preço alto" },
+      }),
+    );
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as {
+      error: { code: string; details: { lead_ids: string[]; use: string } };
+    };
+    expect(corpo.error.code).toBe("pipeline_immutable_use_clone");
+    expect(corpo.error.details.lead_ids).toEqual([LEAD_DA_ORG]);
+    expect(corpo.error.details.use).toBe("/api/v1/leads/{id}/clone");
+    expect(estado.rpcLeadIds).toBeNull();
   });
 });

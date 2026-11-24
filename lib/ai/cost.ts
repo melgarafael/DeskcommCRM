@@ -6,8 +6,8 @@
  * (`lib/agent-engine/edge/llm/pricing.ts`) e às colunas `numeric` de
  * `llm_calls`/`ai_invocations`.
  *
- * Exceção: os ids com promoção datada (Gemini 3.6/3.7/3.8 Flash, migration
- * 0649; Gemini 4 Argon, migration 0703 — e o prefixo `provider/`) não usam a
+ * Exceção: os ids com promoção datada (Gemini 3.5/3.6/3.7/3.8 Flash, migrations
+ * 0649 e 9462; Gemini 4 Argon, migration 0703 — e o prefixo `provider/`) não usam a
  * linha. Ela já guarda a tarifa POSTERIOR à promo, para a lista mostrá-la. O
  * gasto sai de `costCentsComVirada`, o mesmo corte de `costCents`.
  *

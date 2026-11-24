@@ -146,7 +146,36 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     expressao: "resultado.motivo",
     porque:
       "#3881 — a recusa da régua do setor (conversa encerrada, setor de outra organização, setor escolhido por uma pessoa) chega à tela pelo `error` do resultado; os códigos possíveis estão escritos no tipo RecusaDoSetor, em lib/atendimento/setor-da-conversa.ts, e a frase que o operador lê é a do mapa MOTIVO_DA_PARADA — o detalhe da recusa não leva `explicacao`, que venceria a tradução",
-    produtor: { arquivo: "lib/atendimento/setor-da-conversa.ts" },
+    produtor: {
+      arquivo: "lib/atendimento/setor-da-conversa.ts",
+      // `limparSetorDaIaNaDevolucao` mora no mesmo módulo (é ele o dono da
+      // escrita do setor), mas só a retomada (`lib/escalacao/retomada.ts`) a
+      // chama: nenhuma ação de automação devolve estes códigos, então eles nunca
+      // chegam à aba Atividade. A retomada só os registra no log quando a
+      // limpeza não acontece.
+      excecoes: [
+        {
+          motivo: "sem_setor",
+          porque:
+            "desfecho de limparSetorDaIaNaDevolucao, chamada só pela retomada: vai para o log, nunca para o resultado de uma ação",
+        },
+        {
+          motivo: "setor_de_pessoa",
+          porque:
+            "desfecho de limparSetorDaIaNaDevolucao, chamada só pela retomada: vai para o log, nunca para o resultado de uma ação",
+        },
+        {
+          motivo: "corrida",
+          porque:
+            "desfecho de limparSetorDaIaNaDevolucao, chamada só pela retomada: vai para o log, nunca para o resultado de uma ação",
+        },
+        {
+          motivo: "devolucao_ao_automatico",
+          porque:
+            "é o `motivo` da auditoria conversation.sector_changed gravada pela limpeza na devolução, não o `reason` de uma ação de automação",
+        },
+      ],
+    },
   },
   {
     arquivo: "lib/automation/actions/apply-task-plan.ts",

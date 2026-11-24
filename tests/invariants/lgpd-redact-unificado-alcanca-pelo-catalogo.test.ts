@@ -247,6 +247,14 @@ const DECISOES: Record<string, Decisao> = {
     razao: "0482 (grupos na inbox, #1647): subject é o NOME do grupo e vira null; contact_id aponta para o placeholder do grupo (contacts.kind = 'whatsapp_group'), e número, conversa e liga/desliga ficam. O que o TITULAR escreveu em grupo é redigido pelo gatilho fn_redigir_conversas_ao_anonimizar, em messages.",
   },
   // ── redigir pela virada de is_anonymized (gatilho) ────────────────────────
+  vendas_registradas: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9449 (#5087): `observacao` é texto livre sobre o cliente e as tags podem nomeá-lo — " +
+      "`trg_vendas_do_contato_anonimizado`, em `contacts` AFTER UPDATE OF is_anonymized, zera as duas. " +
+      "Valor, moeda e dia FICAM: são o registro do dinheiro, e o painel de vendas continua somando.",
+  },
   mensagens_agendadas: {
     decidida: "redigir",
     caminho: "gatilho",

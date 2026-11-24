@@ -247,18 +247,34 @@ chmod 600 /root/.env.antes-remediacao
 
 **Rollback:** nada a desfazer — só leitura e cópia.
 
-### A2. Confirmar que há espaço em disco `[NÃO VERIFICADO]`
+### A2. Confirmar que há espaço em disco `[VERIFICADO no código desde a #4837]`
 
-O update baixa três imagens novas sem apagar as antigas, e faz um dump do banco.
+O update baixa três imagens novas antes de as antigas perderem a referência, e faz um
+dump do banco antes disso. Desde a #4837 ele **mede o disco antes de qualquer escrita** e
+recusa com mensagem própria quando a conta não fecha — a checagem manual abaixo deixou de
+ser obrigatória para atualizar, e continua útil para diagnosticar.
 
 ```bash
 df -h / | tail -1
 docker system df
 ```
 
-**Se faltar espaço:** `docker image prune -a` remove imagens **sem contêiner usando**.
-Não use `docker system prune --volumes` — ele apaga volumes, e é lá que mora a sessão
-pareada do WhatsApp.
+**Se faltar espaço**, nesta ordem — nenhum destes passos apaga volume, banco ou a última
+cópia de um backup:
+
+```bash
+bash hostgator-setup-kit/backup.sh --podar            # aplica a retenção (BACKUP_KEEP)
+docker image prune -f --filter "until=168h"           # camadas sem tag, mais velhas que 7 dias
+```
+
+`docker image prune -a` remove imagens sem contêiner usando — inclusive a da versão
+anterior, que é justamente para onde a volta automática vai. Use só quando não houver
+volta a considerar. Não use `docker system prune --volumes`: ele apaga volumes, e é lá que
+mora a sessão pareada do WhatsApp e o banco.
+
+A partir da #4837, a atualização também poda, sozinha e de forma conservadora, as versões
+antigas das imagens do produto **depois** de o app voltar saudável. A retenção de backups
+passou a ser configurável (`BACKUP_KEEP`, padrão 14, por tipo).
 
 ### A3. Rodar o update `[ENSAIADO — ver §5.0: pode exigir duas execuções]`
 

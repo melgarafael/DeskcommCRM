@@ -946,6 +946,7 @@ jobs:
         publico-por-origem-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
+        retomar-ao-devolver.spec.ts
         etapa-avisa-na-central.spec.ts
         gatilho-de-caso.spec.ts
         conversa-do-caso.spec.ts
@@ -1190,6 +1191,7 @@ jobs:
         inbox-tempo-real.spec.ts
         inbox-rotulo-de-origem.spec.ts
         troca-de-organizacao-tem-volta.spec.ts
+        convite-nao-cai-no-onboarding.spec.ts
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
@@ -1524,6 +1526,12 @@ jobs:
       # aplica um funil com nome novo e reaplica o mesmo arquivo em
       # Configurações › Funis. Só usa o seed de credenciais e arquiva pela API o
       # funil que criou. PREVISÃO, não medida no CI: ~30 s de caso.
+      #
+      # `operacao-do-dia` entrou em 2026-11-16: cria a PRÓPRIA organização
+      # sintética (fuso de Beirute, admin/viewer/agent sem MFA), semeia uma
+      # conversa `projeto` pelo service role, gera o relatório pela tela e
+      # apaga tudo no fim. Não fala com WAHA nem com o Graph. PREVISÃO, não
+      # medida no CI: ~60 s de caso (quatro logins).
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1540,6 +1548,7 @@ jobs:
         aviso-pelo-numero-oficial.spec.ts
         molde-de-ia-empresas-novas.spec.ts
         blueprint-de-funis.spec.ts
+        operacao-do-dia.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #

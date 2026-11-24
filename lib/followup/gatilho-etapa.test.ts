@@ -227,6 +227,7 @@ describe("aplicaGatilhoDeEtapa — o enrollment que nasce", () => {
         pointer_id: POINTER,
         version_id: VERSION,
         contact_id: CONTATO,
+        lead_id: NEGOCIO,
         current_node_id: "t1",
         agent_id: AGENT,
       },

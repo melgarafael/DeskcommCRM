@@ -64,8 +64,10 @@ import { PAIS_PADRAO, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { EmpresaDaProspeccao } from "@/components/crm-b2b/EmpresaDaProspeccao";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { useTiposDeLink } from "@/hooks/leads/useTiposDeLink";
 import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
 import { podeEditarDiagnostico } from "@/lib/contacts/diagnostico-do-contato";
 
@@ -139,6 +141,9 @@ export function ContactDetailClient({
   const jaTemNome = typeof metadataDoContato.campaign_name === "string";
   const origemGoogle = (metadataDoContato.ad_platform ?? q.data?.data.source) === "google_ads";
   const hierarquia = useHierarquiaDoAnuncio(contactId, !origemGoogle && temAnuncio && !jaTemNome);
+  // #5128: os tipos que a organização escolheu mostrar. Hook antes dos `return`
+  // condicionais (regra dos hooks) e com o catálogo inteiro como fallback.
+  const tiposDeLink = useTiposDeLink();
 
   if (q.isLoading) {
     return (
@@ -161,7 +166,9 @@ export function ContactDetailClient({
   // O documento do titular é o do PAÍS da organização (CPF, NIF): o rótulo da
   // linha e a máscara saem do perfil, a mesma régua do cadastro.
   const perfilDoPaisDaOrg = perfilDoPais(activeOrg?.country);
-  const linksDoContato = linksParaExibir(contact.custom_fields);
+  const linksDoContato = linksParaExibir(contact.custom_fields).filter(({ tipo }) =>
+    tiposDeLink.includes(tipo),
+  );
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este
@@ -428,7 +435,7 @@ export function ContactDetailClient({
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="timeline">{t("Linha do tempo")}</TabsTrigger>
           <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
@@ -455,7 +462,7 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Email</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Email")}</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
               {/*
@@ -570,7 +577,7 @@ export function ContactDetailClient({
                 </div>
               )}
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Tags</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Tags")}</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
                   {contact.tags.length === 0
                     ? "—"
@@ -600,6 +607,16 @@ export function ContactDetailClient({
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />
+              {/* #3198, fatia 3: o contato que veio da prospecção vira Empresa. */}
+              <div className="mt-4">
+                <EmpresaDaProspeccao
+                  contactId={contactId}
+                  podeCriar={Boolean(
+                    (user.is_platform_admin && !user.support) ||
+                      (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                  )}
+                />
+              </div>
             </div>
           )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
@@ -745,6 +762,7 @@ export function ContactDetailClient({
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        funilDosCampos={pipelineQuery.data?.pipeline ?? null}
         vocabulario={vocabularioDeEtiquetas.data}
         canonicalTags={canonicalTags}
       />

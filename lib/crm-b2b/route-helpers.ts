@@ -17,9 +17,27 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * dele existe: 404, a mesma resposta de uma rota nunca instalada — e a mesma de
  * `notFound()` na tela. Toda rota do módulo chama isto primeiro, como as de
  * `/api/v1/external-db`.
+ *
+ * ─── A EMPRESA (#3868, F2 da #4871) ────────────────────────────────────────
+ *
+ * `organizacaoId` é OPCIONAL porque este é o portão de uma BIBLIOTECA: 12 rotas
+ * o chamam em 20 pontos, e todas perguntam antes de autorizar (o módulo
+ * desligado não tem regra de papel para responder) — ali a empresa ainda não
+ * está no contexto. Esses chamadores se DECLARAM sem ela. Quem tem a empresa em
+ * mãos a passa, e a decisão vira a de `moduloLigado`: linha da empresa vence,
+ * ausência herda a instalação, instalação desligada é teto e falha de leitura
+ * da empresa fecha. Sem o argumento, o comportamento é o de hoje — só a
+ * instalação, com a chamada de dois argumentos de sempre.
  */
-export async function seModuloB2bDesligado(requestId: string): Promise<Response | null> {
-  if (await moduloLigado(createAdminClient(), "crm_b2b")) return null;
+export async function seModuloB2bDesligado(
+  requestId: string,
+  organizacaoId?: string | null,
+): Promise<Response | null> {
+  const admin = createAdminClient();
+  const ligado = organizacaoId
+    ? await moduloLigado(admin, "crm_b2b", organizacaoId)
+    : await moduloLigado(admin, "crm_b2b");
+  if (ligado) return null;
   return fail("not_found", "Not found.", 404, { requestId });
 }
 

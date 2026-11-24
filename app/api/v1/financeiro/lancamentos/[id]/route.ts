@@ -78,6 +78,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_pago",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: id,
     requestId,
@@ -134,6 +136,8 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_removido",
+    actorUserId: authz.user.id,
+    organizationId: authz.org.orgId,
     resourceType: "financial_entry",
     resourceId: id,
     requestId,

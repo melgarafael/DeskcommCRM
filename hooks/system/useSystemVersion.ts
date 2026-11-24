@@ -1,5 +1,5 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import type { RuntimeIdentity, RuntimeConfirmation } from "@/lib/system/runtime-identity";
@@ -15,6 +15,13 @@ export interface SystemVersion {
   is_owner: boolean;
   latest_version?: string;
   official_latest_version?: string;
+  /**
+   * A release oficial mais nova JÁ SAIU, mas o host não a anuncia porque ainda
+   * não há imagem instalável dela (ausente ou incompleta) — #4955. É o estado em
+   * que a tela antes dizia "é a mais recente" com uma release mais nova impressa
+   * logo acima. `null`/ausente = não há preparo pendente.
+   */
+  pending_release_version?: string | null;
   update_available?: boolean;
   off_release?: boolean;
   /** O host não conseguiu comparar a versão instalada com a última publicada. */
@@ -62,6 +69,11 @@ export interface SystemVersion {
     last_step: string | null;
     /** Quando o pedido foi registrado — a tela conta o tempo a partir daqui. */
     dispatched_at?: string;
+    /**
+     * Quando o agente vai executar o pedido que espera a janela de manutenção
+     * (#4334). Nulo/ausente = sem janela, o pedido roda no próximo ciclo.
+     */
+    scheduled_for?: string | null;
     /** Versão que estava instalada quando o run começou. */
     from_version: string;
     /** Versão que o run tentou instalar. */
@@ -96,7 +108,12 @@ export interface SystemVersion {
  * tela de atualização. Poll folgado (5 min) porque o agente do host só reporta
  * a cada 5 min — bater mais rápido não traria informação nova.
  */
-export function useSystemVersion(opts?: { refetchInterval?: number }) {
+export function useSystemVersion(opts?: {
+  refetchInterval?:
+    | number
+    | false
+    | ((query: Query<SystemVersion, Error, SystemVersion, readonly unknown[]>) => number | false | undefined);
+}) {
   return useQuery({
     queryKey: ["system-version"],
     queryFn: async () => {

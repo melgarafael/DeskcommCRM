@@ -81,6 +81,8 @@ interface LeadCru {
   /** A mensalidade do negócio (fatia 1 da #3602) — a segunda parcela do período. */
   recurring_value_cents: number | null;
   recurring_period: string | null;
+  /** #4191 — classificação não comercial; `null` é o estado comercial. */
+  nao_comercial_em: string | null;
 }
 
 /** Número do jsonb vira `null` se não for número de verdade — nunca NaN. */
@@ -194,7 +196,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase
         .from("crm_leads")
         .select(
-          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period",
+          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period, nao_comercial_em",
           contar ? { count: "exact" } : undefined,
         )
         .eq("organization_id", orgId)
@@ -208,7 +210,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase
         .from("crm_leads")
         .select(
-          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period",
+          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period, nao_comercial_em",
           contar ? { count: "exact" } : undefined,
         )
         .eq("organization_id", orgId)
@@ -276,6 +278,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     currency: l.currency,
     created_at: l.created_at,
     closed_at: l.closed_at,
+    nao_comercial_em: l.nao_comercial_em ?? null,
   }));
 
   const etapas: EtapaReferencia[] = (

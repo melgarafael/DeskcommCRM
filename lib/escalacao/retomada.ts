@@ -59,6 +59,9 @@ import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { logger } from "@/lib/logger";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
+import { limparSetorDaIaNaDevolucao } from "@/lib/atendimento/setor-da-conversa";
+import { CHAVE_DA_RETOMADA_DA_IA, marcaDeRetomada } from "@/lib/routing/retomada-da-ia";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { lerContinuidadeHumana, type ContinuidadeHumana } from "./continuidade";
 
@@ -121,6 +124,7 @@ interface ConversaRow {
   assigned_to_user_id: string | null;
   assignee_kind: string | null;
   bot_silenced_until: string | null;
+  metadata?: unknown;
 }
 
 export async function devolverAtendimentoAoAgente(
@@ -130,13 +134,21 @@ export async function devolverAtendimentoAoAgente(
     origem?: OrigemDaRetomada;
     /** Dono autorizado pela rota; ausente nos chamadores automáticos. null é uma precondição. */
     expectedAssignee?: string | null;
+    /**
+     * Uma PESSOA devolveu (botão, encerrar com devolução, tool chamada por gente,
+     * `#on` do celular): o atendimento acabou, e o setor que a IA ou uma automação
+     * escolheu para ele é limpo (`limparSetorDaIaNaDevolucao`). Ausente nos
+     * caminhos automáticos — o cron e a reação à derivação técnica devolvem porque
+     * ninguém atendeu, e ali a necessidade classificada continua valendo.
+     */
+    limparClassificacaoDaIa?: boolean;
   },
 ): Promise<RetomadaResultado> {
   const { supabase, organizationId } = deps;
 
   const { data: convData, error: convErr } = await supabase
     .from("conversations")
-    .select("id, contact_id, status, assigned_to_user_id, assignee_kind, bot_silenced_until")
+    .select("id, contact_id, status, assigned_to_user_id, assignee_kind, bot_silenced_until, metadata")
     .eq("id", input.conversationId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -246,6 +258,19 @@ export async function devolverAtendimentoAoAgente(
       assignee_kind: "ai",
       status: proximoStatus,
       status_changed_at: new Date().toISOString(),
+      // A marca que segura a distribuição automática enquanto a IA atende e a
+      // conversa não passa para humano de novo (`lib/routing/retomada-da-ia.ts`).
+      // Na MESMA escrita da devolução: gravada depois, um "oi" do cliente no meio
+      // já pediria — e ganharia — a distribuição.
+      metadata: {
+        ...(conv.metadata && typeof conv.metadata === "object"
+          ? (conv.metadata as Record<string, unknown>)
+          : {}),
+        [CHAVE_DA_RETOMADA_DA_IA]: marcaDeRetomada(
+          input.limparClassificacaoDaIa ? "pessoa" : "automatica",
+          new Date(),
+        ),
+      },
     })
     .eq("id", input.conversationId)
     .eq("organization_id", organizationId)
@@ -294,6 +319,40 @@ export async function devolverAtendimentoAoAgente(
       conversation_id: input.conversationId,
       error: passagemErr.message,
     });
+  }
+
+  // (3d) A CLASSIFICAÇÃO DO ATENDIMENTO QUE ACABOU (só quando uma PESSOA devolve).
+  // O setor que a IA/automação escolheu era da necessidade daquele atendimento; a
+  // próxima passagem precisa ser classificada pelo assunto novo. Setor escolhido
+  // por pessoa fica. A leitura do módulo vai pelo cliente de serviço
+  // (`platform_config` só é legível por ele); a escrita na conversa, pelo cliente
+  // de quem devolveu. Falha aqui NÃO derruba a devolução: o comando já voltou.
+  if (input.limparClassificacaoDaIa) {
+    try {
+      const limpeza = await limparSetorDaIaNaDevolucao({
+        db: supabase,
+        admin: createAdminClient(),
+        organizationId,
+        conversationId: input.conversationId,
+        ator: {
+          tipo: deps.actor.type === "user" ? "user" : "automacao",
+          userId: deps.actor.type === "user" ? deps.actor.id : null,
+          apiTokenId: deps.apiTokenId ?? null,
+        },
+        requestId: deps.requestId,
+      });
+      if (!limpeza.limpou && limpeza.motivo === "falha") {
+        logger.warn("[escalacao.retomada] setor da IA não foi limpo", {
+          conversation_id: input.conversationId,
+          detalhe: limpeza.mensagem,
+        });
+      }
+    } catch (erro) {
+      logger.warn("[escalacao.retomada] limpeza do setor da IA lançou", {
+        conversation_id: input.conversationId,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      });
+    }
   }
 
   // (4) Sinal durável de fim do episódio. AWAITED, não fire-and-forget, pela

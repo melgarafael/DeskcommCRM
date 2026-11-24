@@ -32,6 +32,18 @@ const PROVEDORES = ["anthropic", "openai", "google"] as const;
  */
 const SEM_PRECO_NO_MOTOR_CONHECIDOS = new Set(["gpt-5", "gpt-5-mini"]);
 
+/**
+ * DIVERGÊNCIA DECLARADA entre o banco e o motor — sem migration nesta onda.
+ *
+ * Esta lista está vazia: todo modelo Gemini em ai_pricing concorda com o motor.
+ * A divergência do `gemini-3.5-flash` (150/900 no banco, 150/750 no motor) foi
+ * alinhada pela migration 9462 (#5090).
+ */
+const DIVERGENCIA_DE_BANCO: Record<
+  string,
+  { banco: { prompt: number; completion: number }; motor: { input: number; output: number }; em: Date }
+> = {};
+
 const baseline = readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8");
 const segmentos = baseline.split(/\ninsert into /).slice(1);
 
@@ -95,12 +107,26 @@ describe("o catálogo e a tabela de preço do motor", () => {
       expect.soft(t, `${id} sem linha em ai_pricing`).toBeDefined();
       if (!t) continue;
       const vazio = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-      // 3.6/3.7/3.8 Flash: a tabela só cabe um preço (PK em `model`) e guarda a
+      const divergente = DIVERGENCIA_DE_BANCO[id];
+      if (divergente) {
+        // Declarada, medida e com data de validade: banco no preço velho, motor no
+        // preço oficial do modelo que de fato atende a chamada.
+        expect.soft(t.prompt, `${id}: entrada em ai_pricing`).toBe(divergente.banco.prompt);
+        expect.soft(t.completion, `${id}: saída em ai_pricing`).toBe(divergente.banco.completion);
+        expect
+          .soft(costCents(id, { ...vazio, inputTokens: 1_000_000 }, "1h", divergente.em), `${id}: entrada`)
+          .toBeCloseTo(divergente.motor.input, 6);
+        expect
+          .soft(costCents(id, { ...vazio, outputTokens: 1_000_000 }, "1h", divergente.em), `${id}: saída`)
+          .toBeCloseTo(divergente.motor.output, 6);
+        continue;
+      }
+      // 3.5/3.6/3.7/3.8 Flash: a tabela só cabe um preço (PK em `model`) e guarda a
       // tarifa de 2027. O motor só a aplica a partir de 2027-01-01T00:00:00Z;
       // comparar com `new Date()` ficaria vermelho até lá e verde depois, sem mudança.
       // O 4 Argon (0703) segue o mesmo desenho com a tarifa de 2026-12-01T00:00:00Z.
       const em =
-        id === "gemini-3.6-flash" || id === "gemini-3.7-flash" || id === "gemini-3.8-flash"
+        id === "gemini-3.5-flash" || id === "gemini-3.6-flash" || id === "gemini-3.7-flash" || id === "gemini-3.8-flash"
           ? new Date("2027-01-01T00:00:00.000Z")
           : id === "gemini-4-argon"
             ? new Date("2026-12-01T00:00:00.000Z")
