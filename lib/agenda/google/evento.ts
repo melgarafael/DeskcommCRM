@@ -566,6 +566,18 @@ function donoRecusou(evento: EventoDoGoogle): boolean {
 }
 
 /**
+ * O evento é uma lápide de cancelamento?
+ *
+ * Exportado porque a leitura da agenda precisa da MESMA resposta antes de
+ * decidir o que fazer com um evento do produto sem vínculo (#5109): um
+ * `CANCELLED` de caixa alta vindo de um cliente de terceiro tem de cair aqui
+ * nos dois lugares, não só em um.
+ */
+export function estaCancelado(evento: EventoDoGoogle): boolean {
+  return (evento.status ?? "").trim().toLowerCase() === "cancelled";
+}
+
+/**
  * Lê um evento do Google como ocupação de agenda.
  *
  * `fusoDoCalendario` é o fuso da agenda conectada (`calendarList.timeZone`), e
@@ -584,8 +596,8 @@ export function doEventoDoGoogle(
   // `{ id, status: "cancelled" }`, SEM start nem end. Recusar por "sem
   // instante" deixaria o evento apagado ocupando horário para sempre — que é
   // exatamente o fantasma que a pesquisa mediu no cal.com.
+  if (estaCancelado(evento)) return { tipo: "cancelado", externalEventId: id };
   const statusBruto = (evento.status ?? "").trim().toLowerCase();
-  if (statusBruto === "cancelled") return { tipo: "cancelado", externalEventId: id };
 
   // Série não expandida: o evento-mestre traz `recurrence` e descreve só a
   // PRIMEIRA ocorrência. Guardá-lo como ocupação isolada esconderia todas as
