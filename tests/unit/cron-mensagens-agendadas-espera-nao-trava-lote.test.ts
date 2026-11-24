@@ -31,7 +31,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * aplica os UPDATEs e reordena a cada SELECT mede o progresso do lote.
  */
 
-interface LinhaAgendada {
+type LinhaAgendada = {
   id: string;
   organization_id: string;
   contact_id: string;
@@ -46,7 +46,7 @@ interface LinhaAgendada {
   claimed_until: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
 type Resumo = {
   processadas: number;
