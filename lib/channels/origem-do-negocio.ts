@@ -73,6 +73,15 @@ export function origemDoNegocioPeloCanal(canal: string | null | undefined): Orig
       motivo: "primeira mensagem recebida no Telegram",
     };
   }
+  // O chat no site (Spec 36) não está em `SOCIAL_NETWORKS`: sem este ramo, o
+  // negócio que ele abre nasceria como WhatsApp.
+  if (canal === "webchat") {
+    return {
+      rotulo: "Chat no site",
+      source: "webchat",
+      motivo: "primeira mensagem recebida no chat do site",
+    };
+  }
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;
   return {
