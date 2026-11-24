@@ -43,6 +43,7 @@ const MOTIVOS: MotivoDoAviso[] = [
   "pediu_humano",
   "suspeita_de_opt_out",
   "orcamento_de_ia",
+  "teto_do_visitante_anonimo",
   "outro",
 ];
 const ESTADOS: Array<{ rotulo: string; quem: QuemPodeAssumir | null }> = [
@@ -102,6 +103,24 @@ describe("o texto respeita o estado REAL da equipe", () => {
       ),
     );
     expect(fechos.size).toBe(3);
+  });
+});
+
+describe("teto do visitante anônimo pede contato e passa para a equipe", () => {
+  it("motivoDoAviso mapeia o código do banco para o motivo do aviso", () => {
+    expect(motivoDoAviso("teto_do_visitante_anonimo")).toBe("teto_do_visitante_anonimo");
+  });
+
+  it("frase pede telefone ou e-mail para a equipe continuar (sem prometer prazo de IA)", () => {
+    const t = textoDoAviso("teto_do_visitante_anonimo", { disponiveis: 2, total: 3 }, LEAD);
+    expect(t).toMatch(/telefone|e-mail|e-mail|contato/i);
+    expect(t).not.toMatch(/limite de gasto|orcamento/i);
+  });
+
+  it("quem pediu para parar não recebe a frase do teto (o motivo é outro)", () => {
+    const t = textoDoAviso("teto_do_visitante_anonimo", { disponiveis: 0, total: 0 }, LEAD);
+    expect(t).toMatch(/registr|anotad|primeira oportunidade/i);
+    expect(t).not.toMatch(/aguard/i);
   });
 });
 

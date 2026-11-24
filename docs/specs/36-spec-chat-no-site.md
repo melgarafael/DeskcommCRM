@@ -354,17 +354,26 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   de hoje.
 - **Teto do visitante anônimo (entregue na F4, Tarefa 2).** Enquanto o visitante não deixou telefone
   nem e-mail, a IA responde até um número de vezes por conversa: padrão 20, configurável na aba
-  "Chat no site" em Conexões. Passado o teto, a IA para de responder e a conversa segue para a
-  equipe. O motivo: cada mensagem anônima pode custar uma chamada à IA, e o teto mensal da
-  organização (`ai_budgets`) vem desligado de fábrica. Quem deixa telefone ou e-mail sai deste
-  teto (segue o teto por conversa que já existe, `teto-de-respostas.ts`, que continua valendo para
-  todos). O teto chega ao motor pelos dois caminhos de leitura (pg e supabase), com o mesmo
-  resultado. O código mora em `lib/channels/teto-do-anonimo.ts` (`tetoDoAnonimoDoCanal`) e no
-  gate de elegibilidade (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
-- **Pendente (F4 completa):** o visitante não pode pedir o contato pelo chat quando bate o teto;
-  essa mensagem e o aviso na Central ficam para a F4 completa. O horário de atendimento (janela
-  por dia, feriado, fora do expediente) fica para a F3. A origem e o relatório por canal ficam
-  para a F5.
+  "Chat no site" em Conexões. Passado o teto, a IA para de responder, o visitante recebe uma frase
+  pedindo telefone ou e-mail, e a conversa passa para a equipe com aviso na Central. O motivo:
+  cada mensagem anônima pode custar uma chamada à IA, e o teto mensal da organização (`ai_budgets`)
+  vem desligado de fábrica. Quem deixa telefone ou e-mail sai deste teto (segue o teto por conversa
+  que já existe, `teto-de-respostas.ts`, que continua valendo para todos). O teto chega ao motor
+  pelos dois caminhos de leitura (pg e supabase), com o mesmo resultado. O código mora em
+  `lib/channels/teto-do-anonimo.ts` (`tetoDoAnonimoDoCanal`) e no gate de elegibilidade
+  (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
+- **Frase e passagem no teto (F4-A).** No turno do agente (`inbound-turn.ts`), o veto
+  `teto_do_visitante_anonimo` segue a escolta do teto de gasto: a frase ao visitante sai antes da
+  passagem, aviso que falha não impede a passagem, e passagem que falha encerra o turno sem chamar
+  o modelo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
+  'teto_do_visitante_anonimo'` (migration 9470). Depois dela, o `force_human` veta a IA antes do
+  teto, então a frase sai uma vez por conversa. **Não coberto:** o worker de quem ainda não
+  publicou agente (`workers/ai-response-worker.ts`) continua só parando a IA no teto, sem frase nem
+  passagem: ali o veto acontece antes de existir a fronteira do atendimento que a passagem exige.
+- **Pendente (F4-B):** "pode ser o mesmo contato" e "Continuar no WhatsApp": se o telefone ou
+  e-mail digitado no chat já é de outra ficha, a tela de Duplicados mostra o par para conferir
+  (nunca junta sozinho), e a janela ganha o botão opcional "Continuar no WhatsApp" com o código
+  `dk1`.
 - **Contato deixado no chat.** O telefone e o e-mail que o visitante digita entram na ficha do
   contato do chat. O CRM **nunca** junta fichas sozinho, porque qualquer um pode digitar o telefone
   de outra pessoa. Se o dado bater com outra ficha, a tela de Duplicados mostra o par como motivo

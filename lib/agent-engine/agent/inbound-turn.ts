@@ -1201,10 +1201,11 @@ async function briefingDoCheckpointDuravel(
   tenantId: string,
   leadId: string,
   log: Logger,
+  codigo: 'orcamento_de_ia' | 'teto_do_visitante_anonimo' = 'orcamento_de_ia',
 ): Promise<BriefingDaPassagem> {
   const idioma = (await fatosDaOrganizacao(pool, tenantId, log)).idioma;
   const montar = (checkpoint: Awaited<ReturnType<typeof latestCheckpoint>>) =>
-    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' }, idioma });
+    montarBriefingDaPassagem({ checkpoint, motivo: { codigo }, idioma });
   try {
     return montar(await latestCheckpoint(pool, tenantId, leadId));
   } catch (err) {
@@ -2928,6 +2929,78 @@ async function executarTurnoDoAgente(
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
       if (elegib !== null && !elegib.permite) {
+        // TETO DO VISITANTE ANÔNIMO (Spec 36, F4): em vez de silêncio, a mesma
+        // escolta do teto de gasto — o aviso ao visitante ANTES da passagem (que
+        // arma o `force_human` e vetaria o envio), e aviso que falha não impede a
+        // passagem. Nenhum modelo é chamado. Depois da passagem, o `force_human`
+        // veta a IA antes do teto, então a frase sai uma vez por conversa.
+        if (elegib.motivo === 'teto_do_visitante_anonimo' && liveJob().kind === 'inbound_turn') {
+          let aviso: DesfechoDoAviso;
+          try {
+            aviso = await avisarLeadLendoOContato(
+              pool,
+              {
+                tenantId,
+                leadId,
+                conversationId: input.conversationId,
+                channelSessionId: input.channelSessionId,
+                jobId: liveJob().id,
+              },
+              {
+                motivo: 'teto_do_visitante_anonimo',
+                channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+                origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
+                now: deps.clock?.() ?? new Date(),
+                log: runLog,
+                ...(deps.knobs.disclosureMode !== undefined
+                  ? { disclosureMode: deps.knobs.disclosureMode }
+                  : {}),
+                ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              },
+            );
+          } catch (erroDoAviso) {
+            runLog.warn('aviso ao visitante falhou antes da passagem pelo teto do anônimo', {
+              error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 160),
+            });
+            aviso = { avisado: false, porque: 'erro_no_envio' };
+          }
+          const briefing = await briefingDoCheckpointDuravel(
+            pool,
+            tenantId,
+            leadId,
+            runLog,
+            'teto_do_visitante_anonimo',
+          );
+          // A passagem que falha NÃO pode cair no `catch` de fora, que segue o turno
+          // e chamaria o modelo além do teto: falhou, o turno para aqui.
+          try {
+            await performHumanHandoff(
+              pool,
+              { tenantId, leadId, conversationId: input.conversationId },
+              {
+                reason: 'teto_do_visitante_anonimo',
+                conversationSummary: briefing.body,
+                passagem: {
+                  origem: 'teto_do_anonimo',
+                  motivoCodigo: 'teto_do_visitante_anonimo',
+                  briefing,
+                },
+                avisoAoLead: aviso,
+                log: runLog,
+              },
+            );
+          } catch (erroDaPassagem) {
+            runLog.error('passagem pelo teto do anônimo falhou — turno encerrado sem chamar o modelo', {
+              error: (erroDaPassagem instanceof Error ? erroDaPassagem.message : String(erroDaPassagem)).slice(0, 160),
+            });
+            return;
+          }
+          runLog.info('turno pulado — teto do visitante anônimo, conversa devolvida à fila humana', {
+            kind: liveJob().kind,
+            lead_avisado: aviso.avisado,
+          });
+          return;
+        }
         runLog.info('turno pulado — conversa não elegível para IA', {
           kind: liveJob().kind,
           motivo: elegib.motivo,

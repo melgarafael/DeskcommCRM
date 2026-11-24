@@ -17438,6 +17438,8 @@ export const DICIONARIO: Traducoes = {
     { es: "El cliente parece haber pedido no recibir más mensajes" },
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa":
     { es: "Se alcanzó el límite de gasto en IA — el cliente no pidió hablar con una persona" },
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa":
+    { es: "La IA llegó al límite de respuestas para visitante sin contacto — el cliente no pidió hablar con una persona" },
   "O cliente demonstrou irritação na conversa":
     { es: "El cliente mostró molestia en la conversación" },
   // D11: só na passagem e no aviso da equipe (`MARCA_DO_JEV`), nunca ao cliente.

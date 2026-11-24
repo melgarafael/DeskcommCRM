@@ -8263,6 +8263,7 @@
   "O cliente pediu para falar com uma pessoa": "The client asked to speak with a person",
   "O cliente parece ter pedido para não receber mais mensagens": "The client appears to have asked to stop receiving messages",
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa": "The AI spending limit was reached — the client didn't ask for a person",
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa": "The AI reached the reply limit for a visitor without contact details — the client didn't ask for a person",
   "O cliente demonstrou irritação na conversa": "The client showed irritation in the conversation",
   "(percebido pelo Jev)": "(detected by Jev)",
   "O assistente não teve confiança suficiente para responder": "The assistant wasn't confident enough to respond",
