@@ -80,16 +80,26 @@ c_grn "✓ login trocado: $ATUAL → $NOVO (a senha continua a mesma)"
 raiz="$(cd "$(dirname "$0")/.." && pwd -P)"
 credenciais="${CREDENTIALS_FILE:-$raiz/.runtime/admin-credentials}"
 
-atual_nas_credenciais="$( ( load_env "$credenciais" >/dev/null 2>&1; printf '%s' "${OWNER_EMAIL:-}" ) )"
-if [ "$atual_nas_credenciais" = "$ATUAL" ] && [ -f "$credenciais" ]; then
-  set_env_var "$credenciais" OWNER_EMAIL "$NOVO"
-  c_grn "✓ $(basename "$credenciais") atualizado: o login agora é $NOVO"
-elif [ -n "$atual_nas_credenciais" ]; then
-  c_ylw "• $(basename "$credenciais") guardava outro endereço ($atual_nas_credenciais) — não mexi nele."
+# `unset OWNER_EMAIL` antes do load, e leitura só quando o arquivo existe: o
+# `enter_project` já carregou o `.env`, que também exporta OWNER_EMAIL. Sem isso,
+# um `.runtime/admin-credentials` ausente (instalação antiga, arquivo movido)
+# herdava o valor do `.env` e o script anunciava "guardava outro endereço"
+# olhando um valor que não estava naquele arquivo — medido no teste de payload.
+atual_nas_credenciais=""
+if [ -f "$credenciais" ]; then
+  atual_nas_credenciais="$( ( unset OWNER_EMAIL; load_env "$credenciais" >/dev/null 2>&1
+                              printf '%s' "${OWNER_EMAIL:-}" ) || true )"
+  if [ "$atual_nas_credenciais" = "$ATUAL" ]; then
+    set_env_var "$credenciais" OWNER_EMAIL "$NOVO"
+    c_grn "✓ $(basename "$credenciais") atualizado: o login agora é $NOVO"
+  elif [ -n "$atual_nas_credenciais" ]; then
+    c_ylw "• $(basename "$credenciais") guardava outro endereço ($atual_nas_credenciais) — não mexi nele."
+  fi
 fi
 
 if [ -f "${PROJECT_DIR:-.}/.env" ]; then
-  atual_no_env="$( ( load_env "${PROJECT_DIR:-.}/.env" >/dev/null 2>&1; printf '%s' "${OWNER_EMAIL:-}" ) )"
+  atual_no_env="$( ( unset OWNER_EMAIL; load_env "${PROJECT_DIR:-.}/.env" >/dev/null 2>&1
+                     printf '%s' "${OWNER_EMAIL:-}" ) || true )"
   if [ "$atual_no_env" = "$ATUAL" ]; then
     set_env_var "${PROJECT_DIR:-.}/.env" OWNER_EMAIL "$NOVO"
     c_grn "✓ OWNER_EMAIL do .env atualizado"
