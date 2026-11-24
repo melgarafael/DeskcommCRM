@@ -91,7 +91,7 @@ describe("ReservarServicoNaConversa — escolha do lugar", () => {
 
     const args = vi.mocked(AC.post).mock.calls.find((c) => String(c[0]).includes("agendamentos"));
     expect(args).toBeDefined();
-    expect(args![1].space_id).toBe("s-2");
+    expect((args![1] as { space_id?: string }).space_id).toBe("s-2");
   });
 
   it("o recibo mostra 'Lugar: <nome>' quando o serviço tem service_space_id", async () => {
