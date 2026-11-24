@@ -166,6 +166,8 @@ interface ConfigDoHtml {
   saudacao: string;
   coleta: unknown;
   controlador: { razaoSocial: string; politicaUrl: string | null };
+  /** Campos dos ajustes (avatar, autoAbrirSegundos, som, respostasRapidas): o HTML não os usa, o teste os troca no JSON. */
+  [outro: string]: unknown;
 }
 
 function htmlDaJanela(config: ConfigDoHtml): string {
@@ -829,8 +831,8 @@ describe("janela no DOM", () => {
   });
 
   it("avatar https cria um img 28x28 no cabeçalho; avatar http e javascript não criam", async () => {
-    const { pai } = await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
-    const img = document.querySelector(".cabecalho img");
+    await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
+    const img = document.querySelector(".cabecalho img") as HTMLImageElement | null;
     expect(img).not.toBeNull();
     expect(img!.getAttribute("src")).toBe("https://exemplo.com.br/avatar.png");
     expect(img!.getAttribute("alt")).toBe("");
@@ -841,7 +843,7 @@ describe("janela no DOM", () => {
 
     // avatar http não cria (reabre com config diferente)
     document.body.textContent = "";
-    const { pai: pai2 } = await abrirJanela(
+    await abrirJanela(
       roteador().fn,
       SOMENTE_CONVERSA,
       {},
