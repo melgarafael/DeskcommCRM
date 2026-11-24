@@ -154,15 +154,90 @@ describe("ConversationListItem — seleção em lote", () => {
   });
 });
 
-describe("ConversationListItem — etiquetas que não couberam (#3649)", () => {
-  it("o +N diz no title quais etiquetas ficaram de fora", () => {
-    const base = conversaDeExemplo.conversation;
+/**
+ * AS ETIQUETAS DA LINHA — DUAS FONTES, UM TETO (#3649 → #5212).
+ *
+ * Até a #5212 a faixa mostrava no máximo DUAS etiquetas, e só as do CONTATO.
+ * A conversa também tem etiquetas (`conversations.tags`, que o handler já
+ * devolve no `SELECT_COLS`), e elas não apareciam em lugar nenhum da lista:
+ * quem marcava a conversa como "urgente" via a marca só depois de abrir.
+ * Agora as duas fontes entram juntas — contato primeiro, depois conversa,
+ * sem repetir —, e o teto é 4.
+ *
+ * O `+N` continua sendo a saída para o que não coube, e o `title` lista as
+ * que ficaram de fora: é a única forma de ler o resto sem abrir a conversa.
+ */
+function conversaComEtiquetas(doContato: string[], daConversa: string[] = []) {
+  const base = conversaDeExemplo.conversation;
+  return {
+    ...base,
+    tags: daConversa,
+    contacts: { ...base.contacts!, tags: doContato },
+  };
+}
+
+describe("ConversationListItem — etiquetas que não couberam (#3649, teto de 4 pela #5212)", () => {
+  it("com 6 etiquetas, o +2 diz no title quais ficaram de fora", () => {
     render(
       <ConversationListItem
-        conversation={{ ...base, contacts: { ...base.contacts!, tags: ["vip", "quente", "retorno", "boleto"] } }}
+        conversation={conversaComEtiquetas(["vip", "quente", "retorno", "boleto", "pix", "entrega"])}
         {...conversaDeExemplo.props}
       />,
     );
-    expect(screen.getByText("+2")).toHaveAttribute("title", "retorno, boleto");
+    // Os quatro primeiros são os que cabem; o title é o que revela o resto.
+    expect(screen.getByText("vip")).toBeInTheDocument();
+    expect(screen.getByText("boleto")).toBeInTheDocument();
+    expect(screen.getByText("+2")).toHaveAttribute("title", "pix, entrega");
+  });
+
+  it("com exatamente 4 etiquetas não aparece +N nenhum", () => {
+    render(
+      <ConversationListItem
+        conversation={conversaComEtiquetas(["vip", "quente", "retorno", "boleto"])}
+        {...conversaDeExemplo.props}
+      />,
+    );
+    for (const tag of ["vip", "quente", "retorno", "boleto"]) {
+      expect(screen.getByText(tag)).toBeInTheDocument();
+    }
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
+  });
+
+  it("junta contato e conversa sem repetir: a etiqueta que está nos dois aparece UMA vez", () => {
+    render(
+      <ConversationListItem
+        conversation={conversaComEtiquetas(["vip", "quente"], ["retorno", "vip", "boleto"])}
+        {...conversaDeExemplo.props}
+      />,
+    );
+    // 2 do contato + 3 da conversa, uma repetida = 4 chips: cabe tudo, sem +N.
+    expect(screen.getAllByText("vip")).toHaveLength(1);
+    expect(screen.getByText("quente")).toBeInTheDocument();
+    expect(screen.getByText("retorno")).toBeInTheDocument();
+    expect(screen.getByText("boleto")).toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
+  });
+
+  it("contato sem etiqueta: a da conversa aparece sozinha", () => {
+    render(
+      <ConversationListItem
+        conversation={conversaComEtiquetas([], ["urgente"])}
+        {...conversaDeExemplo.props}
+      />,
+    );
+    expect(screen.getByText("urgente")).toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
+  });
+
+  it("conversa sem `tags` (cache antigo) não quebra: vale só a etiqueta do contato", () => {
+    // `tags` chegou ao payload depois; uma resposta em cache de antes da coluna
+    // existir não pode derrubar a lista inteira.
+    const semTags = {
+      ...conversaComEtiquetas(["vip"]),
+      tags: undefined as unknown as string[],
+    };
+    render(<ConversationListItem conversation={semTags} {...conversaDeExemplo.props} />);
+    expect(screen.getByText("vip")).toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
   });
 });
