@@ -1831,11 +1831,13 @@ async function handleOutboundFromUserPhone(
   //   mexer no automa. -> ESTRITO   (na dúvida NÃO age; calar/ligar a IA por
   //                                  engano é pior que não agir)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
-  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
-  let comandoAplicado: typeof comando = null;
+  //
   // #5179: motivo pelo qual a pausa foi DISPENSADA nesta fala (só a prospecção sem
   // resposta do lead). Vai no `audit` no fim — a trilha diz por que a IA seguiu ligada.
+  // Fica ANTES da guarda porque só é preenchido DENTRO dela; nada aqui decide nada.
   let pausaPulada: string | null = null;
+  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
+  let comandoAplicado: typeof comando = null;
   if (!ehEco) {
     let revogar = true;
     // C-076: o interruptor é do agente que atende ESTA conversa
@@ -1874,11 +1876,8 @@ async function handleOutboundFromUserPhone(
         });
       }
     } else {
-      // #5179: na PROSPECÇÃO, a fala do vendedor pelo celular antes da primeira
-      // resposta do lead não cala a IA — a campanha acabou de disparar e é o
-      // próprio vendedor quem está complementando a abordagem. A opção é por
-      // organização e vem DESLIGADA; fora dessa janela (conversa que não é de
-      // campanha, ou lead que já respondeu) a pausa é a de sempre.
+      // #5179: prospecção sem resposta do lead não pausa (opção por organização,
+      // padrão desligado). Fora dessa janela, a pausa é a de sempre.
       pausaPulada = await pularPausaDaProspeccaoSemResposta(
         admin,
         session.organization_id,
