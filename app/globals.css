@@ -769,8 +769,11 @@
 
   html {
     color-scheme: light;
-    /* O recorte horizontal fica nas cascas: overflow na raiz interfere
-       no sticky quando o Radix trava a rolagem do body. */
+    /* SEM overflow aqui, de propósito (#5215). Com `overflow` no `<html>`, o
+       do `<body>` deixa de passar para a janela e o `<body>` vira contêiner
+       próprio: quando o Radix trava a rolagem (menu do perfil, seletor de
+       organização, busca), a página salta e a barra lateral sticky some para
+       cima. A rede contra rolagem lateral mora no `<body>`, logo abaixo. */
   }
   [data-theme="dark"] {
     color-scheme: dark;
@@ -784,6 +787,15 @@
   }
 
   body {
+    /* Rede contra rolagem lateral da PÁGINA inteira, inclusive nas telas fora
+       das cascas do CRM e do painel (login, cadastro, configuração inicial,
+       duas etapas, convite). Com o `<html>` sem overflow, este valor passa
+       para a janela, e o `<body>` não vira contêiner de rolagem: o sticky da
+       barra lateral continua valendo, e a trava do Radix não faz a página
+       saltar. `clip` depois de `hidden`: `hidden` é a reserva para motor que
+       não conhece `clip` (Safari < 16). */
+    overflow-x: hidden;
+    overflow-x: clip;
     background-color: var(--color-bg);
     color: var(--color-text);
     font-family:

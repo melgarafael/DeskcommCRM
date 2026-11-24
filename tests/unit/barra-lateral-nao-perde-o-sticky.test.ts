@@ -7,15 +7,20 @@ const raiz = join(__dirname, "..", "..");
 const ler = (arquivo: string) => readFileSync(join(raiz, arquivo), "utf8");
 const css = ler("app/globals.css");
 
+const bloco = (seletor: string): string => {
+  const inicio = css.indexOf(`\n  ${seletor} {`);
+  expect(inicio).toBeGreaterThan(-1);
+  return css.slice(inicio, css.indexOf("\n  }", inicio));
+};
+
 describe("a rede contra scroll horizontal não pode matar o sticky", () => {
-  for (const seletor of ["html", "body"]) {
-    it(`${seletor} permite que o Radix trave a rolagem da janela`, () => {
-      const inicio = css.indexOf(`\n  ${seletor} {`);
-      expect(inicio).toBeGreaterThan(-1);
-      const bloco = css.slice(inicio, css.indexOf("\n  }", inicio));
-      expect(bloco).not.toMatch(/overflow(?:-x|-y)?:\s*(hidden|clip|auto|scroll)\s*;/);
-    });
-  }
+  it("html fica sem overflow, para o do body passar à janela e o Radix travar sem salto", () => {
+    expect(bloco("html")).not.toMatch(/overflow(?:-x|-y)?:\s*(hidden|clip|auto|scroll)\s*;/);
+  });
+
+  it("body mantém a rede contra rolagem lateral, com clip depois de hidden", () => {
+    expect(bloco("body")).toMatch(/overflow-x:\s*hidden;\s*overflow-x:\s*clip;/);
+  });
 
   for (const arquivo of ["app/app/_components/AppShell.tsx", "components/admin/AdminShell.tsx"]) {
     it(`${arquivo} contém o recorte horizontal na casca`, () => {
