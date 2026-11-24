@@ -844,6 +844,66 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     expect(badge.style.display).toBe("none");
   });
 
+  it("abrir e fechar não reativa o badge antigo", () => {
+    const { bolha, iframe } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    // 3 respostas com a bolha fechada
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(badge.textContent).toBe("3");
+
+    // abrir zera o contador
+    fireEvent.click(bolha);
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+
+    // fechar: o contador não volta a 3 (fica escondido, texto 0)
+    fireEvent.click(bolha);
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+    expect(iframe.style.display).toBe("none");
+  });
+
+  it("som toca com a bolha aberta (AudioContext instanciado) e badge não sobe", () => {
+    const instanciados: unknown[] = [];
+    class AudioContextDuble {
+      constructor() {
+        instanciados.push("constructor");
+      }
+      createOscillator() {
+        return { start: () => {}, stop: () => {}, disconnect: () => {}, type: "", frequency: { setValueAtTime: () => {} } };
+      }
+      createGain() {
+        return { gain: { setValueAtTime: () => {} }, connect: () => {} };
+      }
+      close() {
+        return Promise.resolve();
+      }
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: AudioContextDuble,
+      configurable: true,
+      writable: true,
+    });
+    let interagiu = false;
+    document.addEventListener("pointerdown", () => {
+      interagiu = true;
+    });
+    const { bolha, badge: _ } = montarNoDom("bolha");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "ajustes", autoAbrirSegundos: 0, som: true }, ORIGEM_CRM, {
+      postMessage: vi.fn(),
+    });
+    document.dispatchEvent(new Event("pointerdown"));
+    fireEvent.click(bolha); // abre a bolha
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    expect(instanciados).toHaveLength(1);
+    // com a bolha aberta o badge não sobe
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+  });
+
   // ---------- som ----------
 
   it("som toca bip com interação prévia (AudioContext instanciado)", () => {
@@ -880,7 +940,51 @@ describe("ajustes e resposta - comportamento da bolha (Tarefa 10b)", () => {
     expect(instanciados).toHaveLength(1);
   });
 
-  it("sem interação prévia, som não toca mesmo com som true", () => {
+  // ---------- embutido ----------
+
+  it("embutido: iframe visível, position static e width 100% depois de montar", () => {
+    const { iframe } = montarNoDom("embutido");
+    expect(iframe.style.display).toBe("block");
+    expect(iframe.style.position).toBe("static");
+    expect(iframe.style.width).toBe("100%");
+  });
+
+  it("embutido: resposta não sobe contador nem toca bip", () => {
+    const instanciados: unknown[] = [];
+    class AudioContextDuble {
+      constructor() {
+        instanciados.push("constructor");
+      }
+      createOscillator() {
+        return { start: () => {}, stop: () => {}, disconnect: () => {}, type: "", frequency: { setValueAtTime: () => {} } };
+      }
+      createGain() {
+        return { gain: { setValueAtTime: () => {} }, connect: () => {} };
+      }
+      close() {
+        return Promise.resolve();
+      }
+    }
+    Object.defineProperty(window, "AudioContext", {
+      value: AudioContextDuble,
+      configurable: true,
+      writable: true,
+    });
+    const { bolha, iframe } = montarNoDom("embutido");
+    const badge = bolha.querySelector("span") as HTMLSpanElement;
+    dispararMensagem({ tipo: "resposta" }, ORIGEM_CRM, { postMessage: vi.fn() });
+    // o iframe continua visível e o contador não sobe
+    expect(iframe.style.display).toBe("block");
+    expect(badge.textContent).toBe("0");
+    expect(badge.style.display).toBe("none");
+    expect(instanciados).toHaveLength(0);
+  });
+
+  it("embutido: Escape no documento não muda o display do iframe", () => {
+    const { iframe } = montarNoDom("embutido");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(iframe.style.display).toBe("block");
+  });
     const instanciados: unknown[] = [];
     class AudioContextDuble {
       constructor() {

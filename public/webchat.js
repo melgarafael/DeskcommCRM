@@ -53,7 +53,7 @@
     }
   }
 
-  /** Fazenda pura: devolve { autoAbrirSegundos, som } quando o dado é um `ajustes` válido. */
+  /** Função pura: devolve { autoAbrirSegundos, som } quando o dado é um `ajustes` válido. */
   function ajustesDaMensagem(dado) {
     if (!dado || typeof dado !== "object") return null;
     if (dado.tipo !== "ajustes") return null;
@@ -259,6 +259,23 @@
 
     // Só o tamanho e a visibilidade do iframe mudam ao abrir e fechar.
     function aplicarTamanho() {
+      // No formato embutido o iframe fica dentro do elemento alvo: nunca fixo, sem sombra.
+      if (formato === "embutido") {
+        estilo(iframe, {
+          position: "static",
+          top: "auto",
+          left: "auto",
+          right: "auto",
+          bottom: "auto",
+          width: "100%",
+          height: "600px",
+          maxHeight: "none",
+          borderRadius: "12px",
+          boxShadow: "none",
+        });
+        return;
+      }
+
       var telaCheia = window.innerWidth <= LARGURA_TELA_CHEIA;
       if (formato === "painel" && aberto) {
         if (telaCheia) {
@@ -310,11 +327,11 @@
     }
 
     function atualizar() {
-      iframe.style.display = aberto ? "block" : "none";
+      iframe.style.display = aberto || formato === "embutido" ? "block" : "none";
       bolha.setAttribute("aria-expanded", aberto ? "true" : "false");
       bolha.setAttribute("aria-label", aberto ? "Fechar chat" : "Abrir chat");
       badge.textContent = String(naoLidas);
-      badge.style.display = !aberto && naoLidas > 0 ? "block" : "none";
+      badge.style.display = !aberto && formato !== "embutido" && naoLidas > 0 ? "block" : "none";
       aplicarTamanho();
     }
 
@@ -333,6 +350,7 @@
     function abrirOuFechar(abrir) {
       aberto = abrir;
       visitanteMexeu = true;
+      if (abrir) naoLidas = 0;
       atualizar();
       if (aberto) iframe.focus();
       else bolha.focus();
@@ -346,9 +364,9 @@
       abrirOuFechar(!aberto);
     });
 
-    // Esc no documento do site fecha o painel quando ele está aberto.
+    // Esc no documento do site fecha o painel quando ele está aberto (não no embutido, que é sempre visível).
     document.addEventListener("keydown", function (evento) {
-      if (evento.key === "Escape" && aberto) abrirOuFechar(false);
+      if (evento.key === "Escape" && aberto && formato !== "embutido") abrirOuFechar(false);
     });
 
     // O visitante interagiu com a página: necessário para o som tocar.
@@ -390,17 +408,19 @@
           setTimeout(function () {
             if (!aberto && !visitanteMexeu) {
               aberto = true;
+              naoLidas = 0;
               atualizar();
             }
           }, a.autoAbrirSegundos * 1000);
         }
       } else if (dado.tipo === "resposta") {
-        if (!aberto) {
+        var visivel = aberto || formato === "embutido";
+        if (!visivel) {
           naoLidas = Math.min(naoLidas + 1, LIMITE_DO_BADGE);
           atualizar();
-          if (somAtual && visitanteInteragiu) {
-            tocarBip();
-          }
+        }
+        if (!visivel && somAtual && visitanteInteragiu) {
+          tocarBip();
         }
       }
     });

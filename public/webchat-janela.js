@@ -452,6 +452,7 @@
     /** Mostra os botões de respostas rápidas antes da primeira mensagem. */
     function mostrarRespostasRapidas() {
       if (respostasRapidasMostradas) return;
+      if (estado.primeiraEnviada) return;
       var lista = config.respostasRapidas;
       if (!Array.isArray(lista) || lista.length === 0) return;
       respostasRapidasMostradas = true;
@@ -471,7 +472,7 @@
         container.appendChild(btn);
       });
       containerRespostasRapidas = container;
-      ui.passo.appendChild(container);
+      ui.rodape.insertBefore(container, ui.form);
     }
 
     /** Remove a fileira de respostas rápidas após o primeiro envio. */

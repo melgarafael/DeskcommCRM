@@ -902,4 +902,52 @@ describe("janela no DOM", () => {
     );
     expect(botoesDepois).toHaveLength(0);
   });
+
+  // ---------- Correção 1: respostas rápidas visíveis ----------
+
+  /** O elemento está visível se ele e nenhum ancestral (até o body) têm display none. */
+  function estaVisivel(el: Element): boolean {
+    let node: Element | null = el;
+    while (node && node !== document.body) {
+      const style = window.getComputedStyle(node);
+      if (style.display === "none") return false;
+      node = node.parentElement;
+    }
+    return true;
+  }
+
+  it("respostas rápidas aparecem visíveis no rodapé depois de telaConversa", async () => {
+    const r = roteador();
+    await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    await esperarTudo();
+
+    const container = document.querySelector(".rodape > div");
+    expect(container).not.toBeNull();
+    expect(estaVisivel(container!)).toBe(true);
+
+    const botoes = Array.from(document.querySelectorAll("button")).filter((b) =>
+      b.textContent === "Sim" || b.textContent === "Não",
+    );
+    expect(botoes).toHaveLength(2);
+  });
+
+  it("visitante que volta (flag + token) não vê a fileira de respostas rápidas", async () => {
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    const { pai } = await abrirJanela(roteador().fn, CONFIG_PADRAO, { armazenamento });
+
+    // vai direto à conversa, sem aviso/coleta
+    await esperarTudo();
+    expect(document.querySelector(".rodape > div")).toBeNull();
+    expect(temTexto("Aceitar e continuar")).toBe(false);
+
+    // mas ainda manda ajustes ao pai
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    expect(chamadas.find((c) => c.tipo === "ajustes")).toEqual({
+      tipo: "ajustes",
+      autoAbrirSegundos: 30,
+      som: true,
+    });
+  });
 });
