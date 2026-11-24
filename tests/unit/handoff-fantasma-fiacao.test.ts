@@ -22,8 +22,14 @@ const FONTE_INBOUND = fs.readFileSync(
  * `podeAbrirCasoNoFailsafe` (sem pedido explícito do cliente nem promessa
  * explícita de humano, o caso não abre) e o `summary` da conversa. O que a
  * asserção afirma não mudou: o caso aberto pelo fail-safe move o lead.
+ *
+ * #5191 subiu a janela de 2600 para 4200 pelo MESMO motivo: a guarda
+ * `passagemDispensaCasoHumano` (passagem explícita + ferramenta no turno → não
+ * abrir caso) entrou entre a checagem e o `openCase`, e o par
+ * `openedCaseThisTurn = true` + `moverParaHandoffBestEffort` continua depois do
+ * auto-abre-caso — que é o que a asserção afirma.
  */
-const JANELA_DO_FAILSAFE = 2600;
+const JANELA_DO_FAILSAFE = 4200;
 const FONTE_INGEST = fs.readFileSync(path.join(process.cwd(), "lib/waha/ingest.ts"), "utf8");
 
 describe("fiação — casePromiseGate recebe o nome do gerente do tenant", () => {

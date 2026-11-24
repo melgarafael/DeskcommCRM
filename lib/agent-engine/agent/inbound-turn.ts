@@ -283,6 +283,7 @@ import {
   loadChannelProvider,
   loadNotaDeVozDoCanal,
   nomesDasFerramentas,
+  RAZAO_DE_PASSAGEM_SEM_CASO,
   runBeforeSend,
   tipoDeEnvio,
   type GateContext,
@@ -311,7 +312,7 @@ import {
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
 import { classifyPromise, memoizarPorCandidata, protegerRevisaoDeAgendamento } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
-import { deveAbrirCasoDoFailsafe } from '../guardrails/failsafe-do-caso';
+import { deveAbrirCasoDoFailsafe, passagemDispensaCasoHumano } from '../guardrails/failsafe-do-caso';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import { montarResumoDoCaso } from '@/lib/escalacao/resumo-do-caso';
 import {
@@ -405,7 +406,26 @@ import {
  * não mexer em nada não muda nada. O texto de um lado só existe uma vez: quem
  * editar o rodapé altera os dois.
  */
-export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): string {
+export function descricaoDaFerramentaDePassagem(
+  handoffLegalEnabled: boolean,
+  casosLigados = false,
+): string {
+  // #5191 — com casos LIGADOS, o aviso que o gate anti-alucinação veta é o
+  // MESMO texto que a ferramenta pede. Quem escreve o aviso é o sistema
+  // (`aviso-de-escalacao`, que roda com `casesEnabled: false` porque ali a
+  // promessa é verdadeira por construção) e a frase é configurável em "Frase do
+  // aviso de passagem". Então a instrução inverte: NÃO escreva, CHAME.
+  //
+  // Sem casos, o texto fica byte a byte o de hoje — o `false` é o lado que
+  // `AGENT_TOOL_DEFS` publica, e é o que `aplicaAChaveDeAssuntoJuridico` troca
+  // no turno quando a coluna desliga.
+  const aviso = casosLigados
+    ? 'NÃO escreva o aviso você mesmo: não diga que vai chamar alguém nem que vai passar a conversa. ' +
+      'Chame esta ferramenta e encerre o turno — o sistema avisa o lead com a frase do aviso de ' +
+      'passagem. '
+    : 'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
+      'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
+      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ';
   return (
     'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
     'uma pessoa, quando a situação exigir alguém humano ' +
@@ -414,9 +434,7 @@ export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): s
       : '(reclamação séria, questão financeira sensível; assunto jurídico é o trabalho normal ' +
         'deste atendimento e não é, sozinho, motivo para passar a conversa) ') +
     'ou quando você atingir o limite do que pode resolver. ' +
-    'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
-    'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
-    'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
+    aviso +
     'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
     'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de ' +
     'verdade. Preencha por_que, o_que_tentei e cliente_quer — quem assumir só vê o que você escrever ' +
@@ -432,21 +450,34 @@ export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): s
  * está mais no conjunto (chave irmã desligada), aqui não há o que trocar e a
  * função devolve sem tocar em nada — a ausência é da irmã, não dela.
  *
+ * Duas chaves decidem o texto, e ele sai sempre da MESMA função
+ * (`descricaoDaFerramentaDePassagem`, uma fonte só):
+ *
+ *   - `handoffLegalEnabled` (#2156) escolhe o trecho do assunto jurídico;
+ *   - `casosLigados` (#5191) escolhe entre "AVISE O LEAD ANTES" e "não escreva
+ *     o aviso, chame a ferramenta" — com casos ligados o aviso que o modelo
+ *     escreveria é vetado pelo `casePromiseGate`, e quem avisa é o sistema.
+ *
  * `undefined` (fixture antiga que ainda não lê a coluna) conta como LIGADO:
  * é o lado seguro e é o padrão da coluna.
  */
 export function aplicaAChaveDeAssuntoJuridico(
   rawTools: Record<string, unknown>,
   handoffLegalEnabled: boolean | undefined,
+  casosLigados = false,
 ): void {
-  if (handoffLegalEnabled !== false) return;
   const ferramenta = rawTools.request_human_handoff;
-  if (typeof ferramenta === 'object' && ferramenta !== null) {
-    rawTools.request_human_handoff = {
-      ...ferramenta,
-      description: descricaoDaFerramentaDePassagem(false),
-    };
-  }
+  if (typeof ferramenta !== 'object' || ferramenta === null) return;
+  const desejada = descricaoDaFerramentaDePassagem(
+    handoffLegalEnabled !== false,
+    casosLigados,
+  );
+  const atual = (ferramenta as { description?: unknown }).description;
+  if (atual === desejada) return;
+  rawTools.request_human_handoff = {
+    ...ferramenta,
+    description: desejada,
+  };
 }
 
 /**
@@ -475,7 +506,9 @@ const camposDoRetornoNativo = {
  * A descrição de `request_human_handoff` sai de
  * `descricaoDaFerramentaDePassagem(true)` — valor de módulo, constante como o
  * literal que estava aqui, e com UMA fonte só: a versão desligada da frase mora
- * na mesma função, então os dois lados não podem divergir.
+ * na mesma função, então os dois lados não podem divergir. O segundo argumento
+ * (casos ligados, #5191) fica no default: o texto de módulo é o lado SEM casos,
+ * e o turno troca pelo lado com casos quando a versão publicada os habilita.
  */
 export const AGENT_TOOL_DEFS = {
   get_lead_context: {
@@ -5494,6 +5527,12 @@ async function executarTurnoDoAgente(
             casesEnabled: agentConfig?.casesEnabled ?? false,
             hasOpenCase,
             openedCaseThisTurn,
+            // #5191 — a ferramenta de PASSAGEM está NO TURNO? É o que o
+            // `casePromiseGate` lê para aceitar a promessa explícita de humano
+            // como o aviso que a própria passagem completa (a conversa vai para
+            // `pending` e a Central avisa). Lido do conjunto REAL, não da coluna:
+            // o turno pode ter removido a ferramenta (`handoff_tool_enabled`).
+            handoffDisponivel: rawTools.request_human_handoff !== undefined,
             // Nome(s) próprio(s) que o prompt do tenant usa pra retaguarda humana (ex.:
             // "Fulano") — o mesmo vocabulário que `matchesHandoffKeyword` já usa do lado
             // do CLIENTE, agora somado ao alvo genérico do `casePromiseGate` do lado do
@@ -5721,6 +5760,29 @@ async function executarTurnoDoAgente(
                 { vetos: casePromiseVetoCount },
               );
               return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            // #5191 — PASSAGEM explícita pedida e ferramenta de passagem NO TURNO:
+            // o caso NÃO abre. É aqui que nascia o caso DUPLICADO do mesmo
+            // atendimento: o modelo prometia a passagem, o gate vetava e este
+            // fail-safe abria um caso ao lado da passagem que o modelo ia fazer.
+            // A passagem já é destino real (conversa em `pending`, roteamento G5,
+            // aviso na Central); o certo é devolver ao modelo o caminho da
+            // ferramenta — a MESMA frase que o gate usaria.
+            if (
+              passagemDispensaCasoHumano({
+                corpo: body,
+                alvosExtras: agentConfig?.handoffKeywords ?? [],
+                passagemDisponivel: rawTools.request_human_handoff !== undefined,
+              })
+            ) {
+              runLog.warn(
+                'fail-safe de caso: passagem explícita e ferramenta no turno — caso NÃO aberto',
+                { vetos: casePromiseVetoCount },
+              );
+              return {
+                ok: false,
+                error: { code: chain.code, message: RAZAO_DE_PASSAGEM_SEM_CASO },
+              };
             }
             const auto = await openCase(
               pool,
@@ -6365,7 +6427,12 @@ async function executarTurnoDoAgente(
   // `AGENT_TOOL_DEFS` já carrega a descrição ligada. A lógica mora em
   // `aplicaAChaveDeAssuntoJuridico` para o teste do turno exercitá-la fora do
   // turno (tests/unit/chave-juridico-so-troca-a-descricao.test.ts).
-  aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled);
+  //
+  // #5191 — o MESMO ponto troca o trecho do aviso: com casos ligados, o texto
+  // vira "não escreva o aviso, chame a ferramenta" (quem avisa é o sistema).
+  // Sem a troca, o modelo continua lendo a instrução contrária ao gate.
+  const casosLigados = agentConfig !== null && agentConfig.casesEnabled;
+  aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled, casosLigados);
 
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
