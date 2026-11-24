@@ -39,6 +39,11 @@ vi.mock("@/hooks/pipelines/usePipelines", () => ({
   useCriarFunil: () => ({ isPending: false, mutate: mocks.criar }),
   useEditarFunil: () => ({ isPending: false, mutate: mocks.editar }),
   useArquivarFunil: () => ({ isPending: false, mutate: mocks.arquivar }),
+  // #4802 (item 3) — o dublê descreve o módulo inteiro: `_client` monta
+  // `TransferirNegocios`, que lê estes três. Sem eles a tela estoura no render.
+  useNegociosDoFunil: () => ({ negocios: 0, carregando: false, erro: null }),
+  useEtapasDoFunil: () => ({ etapas: [], carregando: false }),
+  useMoverNegociosDoFunil: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/app/app/kanban/_components/ImportarLeads", () => ({ ImportarLeads: () => null }));
 

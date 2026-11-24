@@ -6965,7 +6965,7 @@ export type Database = {
           created_at: string;
           evidence: Json | null;
           id: string;
-          lead_id: string;
+          lead_id: string | null;
           metadata: NonNullable<Json>;
           organization_id: string;
           payload: NonNullable<Json>;
@@ -6984,7 +6984,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id: string;
           payload?: NonNullable<Json>;
@@ -7002,7 +7002,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id?: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id?: string;
           payload?: NonNullable<Json>;
@@ -12850,7 +12850,9 @@ export type Database = {
       };
       platform_meta_app: {
         Row: {
+          app_id: string | null;
           app_secret_encrypted: string | null;
+          config_id: string | null;
           id: number;
           updated_at: string;
           updated_by: string | null;
@@ -12859,7 +12861,9 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;
@@ -12867,7 +12871,9 @@ export type Database = {
           verify_token_encrypted?: string | null;
         };
         Update: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;

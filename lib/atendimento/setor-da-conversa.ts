@@ -354,3 +354,99 @@ export async function definirSetorDaConversa(entrada: EntradaDoSetor): Promise<R
 
   return { ok: true, de, para: sectorId, mudou: true, redistribuiu };
 }
+
+/**
+ * A DEVOLUÇÃO AO AUTOMÁTICO ENCERRA A CLASSIFICAÇÃO QUE A PRÓPRIA IA FEZ.
+ *
+ * Medido numa instalação de teste (D6, 2026-11-20): a IA classificou a conversa como
+ * "Departamento Técnico" por causa de um defeito, o técnico atendeu e devolveu, e
+ * no dia seguinte o mesmo cliente pediu um orçamento — a passagem caiu na fila
+ * técnica, porque a fila de ontem continuava gravada. A classificação é da
+ * NECESSIDADE daquele atendimento; quando uma pessoa devolve a conversa ao
+ * automático, aquele atendimento acabou e a próxima passagem precisa ser
+ * classificada pelo assunto novo.
+ *
+ * Só limpa o que a IA ou uma automação gravou (`setor_origem` = `ia`/`automacao`).
+ * Setor escolhido por PESSOA — ou sem marca, que conta como pessoa (regra 4 do
+ * cabeçalho) — fica: uma pessoa decidiu a fila, e só uma pessoa a desfaz.
+ *
+ * Não pede distribuição: a conversa voltou para a IA (ver
+ * `lib/routing/retomada-da-ia.ts`). A escrita é condicional ao setor lido
+ * (`.eq("sector_id", de)`) — se alguém reclassificou entre a leitura e aqui, a
+ * escrita nova ganha e nada é apagado. Falha aqui NUNCA derruba a devolução:
+ * devolve o motivo e o chamador registra.
+ */
+export type ResultadoDaLimpezaNaDevolucao =
+  | { limpou: true; de: string }
+  | {
+      limpou: false;
+      motivo: "sem_setor" | "setor_de_pessoa" | "setores_desligados" | "corrida" | "falha";
+      mensagem?: string;
+    };
+
+export async function limparSetorDaIaNaDevolucao(entrada: {
+  /** Cliente de quem devolveu: lê e escreve a conversa. */
+  db: SupabaseClient;
+  /** Cliente de serviço para a chave do módulo (`platform_config` só ele lê). */
+  admin?: SupabaseClient;
+  organizationId: string;
+  conversationId: string;
+  ator: AtorDoSetor;
+  requestId?: string | null;
+}): Promise<ResultadoDaLimpezaNaDevolucao> {
+  const { db, organizationId, conversationId } = entrada;
+  if (!(await moduloLigado(entrada.admin ?? db, "setores"))) {
+    return { limpou: false, motivo: "setores_desligados" };
+  }
+
+  const { data, error } = await db
+    .from("conversations")
+    .select("sector_id, metadata")
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) return { limpou: false, motivo: "falha", mensagem: error.message };
+  const conversa = data as { sector_id: string | null; metadata: unknown } | null;
+  if (!conversa?.sector_id) return { limpou: false, motivo: "sem_setor" };
+  const origem = origemGravada(conversa);
+  if (origem !== "ia" && origem !== "automacao") return { limpou: false, motivo: "setor_de_pessoa" };
+
+  const de = conversa.sector_id;
+  const metadata =
+    conversa.metadata && typeof conversa.metadata === "object"
+      ? { ...(conversa.metadata as Record<string, unknown>) }
+      : {};
+  delete metadata[CHAVE_DA_ORIGEM_DO_SETOR];
+  const { data: atualizada, error: erroUpdate } = await db
+    .from("conversations")
+    .update({ sector_id: null, metadata })
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
+    .eq("sector_id", de)
+    .select("id")
+    .maybeSingle();
+  if (erroUpdate) return { limpou: false, motivo: "falha", mensagem: erroUpdate.message };
+  if (!atualizada) return { limpou: false, motivo: "corrida" };
+
+  await audit({
+    action: "conversation.sector_changed",
+    actorUserId: entrada.ator.userId ?? null,
+    actorApiTokenId: entrada.ator.apiTokenId ?? null,
+    organizationId,
+    resourceType: "conversation",
+    resourceId: conversationId,
+    requestId: entrada.requestId ?? null,
+    metadata: {
+      de,
+      para: null,
+      redistribuiu: false,
+      mudou: true,
+      origem: "manual",
+      motivo: "devolucao_ao_automatico",
+      origem_do_setor_limpo: origem,
+      actor_type: entrada.ator.tipo,
+      ...(entrada.ator.id ? { actor_id: entrada.ator.id } : {}),
+    },
+  });
+  return { limpou: true, de };
+}

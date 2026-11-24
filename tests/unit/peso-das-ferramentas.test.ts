@@ -82,7 +82,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_count_leads": { tokens: 348, motivo: "#4996: ganhou por_etapa (+31 tokens): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -278,13 +278,20 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // 45880 = 43286 + 2594 (2026-11-20), não somado à mão.
 // +39 de `crm_send_whatsapp_message` com media_storage_path e media_filename (#5034).
 // MEDIDO no merge com a main de 20/11: 45919 = 45880 + 39 (2026-11-20), não somado à mão.
+// +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242), MEDIDO
+// neste head em 2026-11-18 contra a main de então. MEDIDO de novo no merge com a
+// main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
+// +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
+// 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
 // +431 com as DUAS ferramentas de tarefa que a main não tem (#4516): 245 de
 // `crm_complete_task` e 186 de `crm_delete_task`. As outras três da família
 // (`list/create/update`) são as da main (#4838) e já estão contadas nos 45919
 // acima — o `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main.
-// MEDIDO na árvore mesclada com a main de 2026-11-23 (`03604fd978`), não somado à
-// mão: 47962 no catálogo completo (o teste imprime a tabela com a soma medida).
-const TETO_TOTAL = 47962;
+// MEDIDO na árvore mesclada com a main de 2026-11-24 (`9d00681611`, que já tinha
+// 47562 = 47531 + 31 do `por_etapa` em `crm_count_leads`, #4996), não somado à
+// mão: 47993 no catálogo completo = 47562 + 431 (o teste imprime a tabela com a
+// soma medida).
+const TETO_TOTAL = 47993;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
