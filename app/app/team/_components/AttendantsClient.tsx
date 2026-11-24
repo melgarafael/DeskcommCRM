@@ -519,7 +519,7 @@ export function ScheduleDialog({
           ) : (
             <>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                Cancelar
+                {t("Cancelar")}
               </Button>
               <Button disabled={isPending} onClick={salvar}>
                 {t("Salvar")}
