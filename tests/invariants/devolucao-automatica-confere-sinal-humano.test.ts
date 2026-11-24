@@ -14,14 +14,24 @@ import { GOV_AGENT_A, GOV_AGENT_B, GOV_ORG, GOV_SESSION, lastLine, seedGov, sql 
  * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
  *   - tirar a linha de `last_outbound_at` do `where` da função: o caso
  *     "respondeu depois do corte" solta o dono e fica vermelho.
+ *   - tirar a de `assigned_at`: fica vermelho "assumiu de novo depois do corte".
+ *   - tirar a de `last_handoff_at`: fica vermelho "nova passagem depois do corte".
  */
 
 const CONTATO = "cccccccc-3333-4000-8000-000000009467";
 const CONVERSA = "cccccccc-4444-4000-8000-000000009467";
 const CORTE = "now() - interval '1 hour'";
 
-/** A conversa com dono A, passagem há 3 h, e a última saída quando o caso mandar. */
-function conversaComDono(ultimaSaida: string): void {
+const HA_3_HORAS = "now() - interval '3 hours'";
+
+/**
+ * A conversa com dono A e a última saída quando o caso mandar. Atribuição e
+ * passagem ficam há 3 h, a menos que o caso mova uma delas para depois do corte.
+ */
+function conversaComDono(
+  ultimaSaida: string,
+  { assumidaEm = HA_3_HORAS, passagemEm = HA_3_HORAS }: { assumidaEm?: string; passagemEm?: string } = {},
+): void {
   sql(`
     insert into public.contacts (id, organization_id, display_name)
       values ('${CONTATO}', '${GOV_ORG}', 'Invariante 9467')
@@ -31,7 +41,7 @@ function conversaComDono(ultimaSaida: string): void {
        assigned_to_user_id, assignee_kind, assigned_at, last_handoff_at, last_outbound_at,
        bot_silenced_until)
       values ('${CONVERSA}', '${GOV_ORG}', '${CONTATO}', '${GOV_SESSION}', 'claimed',
-              '${GOV_AGENT_A}', 'user', now() - interval '3 hours', now() - interval '3 hours',
+              '${GOV_AGENT_A}', 'user', ${assumidaEm}, ${passagemEm},
               ${ultimaSaida}, 'infinity')
       on conflict (id) do update set
         status = excluded.status,
@@ -67,6 +77,18 @@ describe("fn_conversation_release_if_idle", () => {
 
   it("o atendente respondeu depois do corte: não solta, o dono fica", () => {
     conversaComDono("now() - interval '1 minute'");
+    expect(soltar(GOV_AGENT_A)).toBe("f");
+    expect(donoAtual()).toBe(GOV_AGENT_A);
+  });
+
+  it("assumiu de novo depois do corte: não solta, o dono fica", () => {
+    conversaComDono("now() - interval '2 hours'", { assumidaEm: "now() - interval '1 minute'" });
+    expect(soltar(GOV_AGENT_A)).toBe("f");
+    expect(donoAtual()).toBe(GOV_AGENT_A);
+  });
+
+  it("nova passagem depois do corte: não solta, o dono fica", () => {
+    conversaComDono("now() - interval '2 hours'", { passagemEm: "now() - interval '1 minute'" });
     expect(soltar(GOV_AGENT_A)).toBe("f");
     expect(donoAtual()).toBe(GOV_AGENT_A);
   });
