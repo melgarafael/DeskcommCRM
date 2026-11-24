@@ -1093,10 +1093,17 @@ export const DICIONARIO: Traducoes = {
   'Incluir na coluna "Conversões" (os lances otimizam por ela)': {
     es: 'Incluir en la columna "Conversiones" (las pujas optimizan por ella)',
   },
-  "As conversões só saem quando o negócio muda de etapa — pela equipe, pela IA ou por automação — e só para quem veio de anúncio do Google. Movimentos anteriores a ligar a regra não são enviados.":
+  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.":
     {
-      es: "Las conversiones solo salen cuando el negocio cambia de etapa, por el equipo, por la IA o por una automatización, y solo para quien llegó desde un anuncio de Google. Los movimientos anteriores a activar la regla no se envían.",
+      es: "La regla usa el clic del propio negocio y se aplica a los cambios de etapa que haga el equipo, la IA o una automatización después de activarla. Si hay una sola cuenta de Google Ads registrada, el CRM le envía la conversión incluso si el clic no identifica la cuenta o indica otra. Si hay varias cuentas, solo la envía si el clic identifica la cuenta de destino.",
     },
+  "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.":
+    {
+      es: "El clic no tiene un ID de cliente de Google Ads válido. Revisa el parámetro google_customer_id del enlace de seguimiento.",
+    },
+  "O clique pertence a outra conta do Google Ads. A conversão desta etapa não foi enviada.": {
+    es: "El clic pertenece a otra cuenta de Google Ads. No se envió la conversión de esta etapa.",
+  },
   "Salvar regras": { es: "Guardar reglas" },
   "Toda etapa ligada precisa de um nome e do ID da ação de conversão.": {
     es: "Toda etapa activada necesita un nombre y el ID de la acción de conversión.",
