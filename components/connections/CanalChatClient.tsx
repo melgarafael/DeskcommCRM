@@ -58,6 +58,11 @@ interface Config {
   formato?: FormatoDoChat;
   /** Posição da janela do chat (`metadata.webchat.posicao`). */
   posicao?: PosicaoDoChat;
+  /** Ajustes da janela (Tarefa 10a). */
+  avatar_url?: string;
+  auto_abrir_segundos?: number;
+  som?: boolean;
+  respostas_rapidas?: string[];
 }
 
 interface Estado {
@@ -586,7 +591,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             type="checkbox"
             checked={som}
             onChange={(e) => setSom(e.target.checked)}
-            className="h-4 w-4 rounded border-input"
+            className="h-4 w-4 rounded-sm border-input"
           />
         </div>
         <div className="flex flex-col gap-1.5">
