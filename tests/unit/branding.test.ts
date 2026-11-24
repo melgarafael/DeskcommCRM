@@ -986,6 +986,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da API Gemini (visão e tradução). Domínio do fornecedor, sem alternativa que não seja proxy nosso.",
   },
+  "connect.facebook.net": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "SDK JavaScript do Facebook que abre a janela do Embedded Signup em Conexões › API Oficial (`components/connections/ConectarPeloFacebook.tsx`, #4074). É o único jeito que a Meta oferece de abrir essa janela — contrato do fornecedor, não escolha nossa.",
+  },
   "graph.facebook.com": {
     categoria: "FORNECEDOR",
     motivo:

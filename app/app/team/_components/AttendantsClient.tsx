@@ -360,7 +360,7 @@ export function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="grid-cols-1">
         <DialogHeader>
           <DialogTitle>{t("Horário de")} {attendant.name}</DialogTitle>
           <DialogDescription>
@@ -398,7 +398,7 @@ export function ScheduleDialog({
               </p>
             ) : null}
             {windows.map((w, i) => (
-              <div key={i} data-testid="janela" data-dow={w.dow} className="flex items-center gap-2">
+              <div key={i} data-testid="janela" data-dow={w.dow} className="flex items-center gap-2 max-[400px]:flex-wrap">
                 <Select
                   value={String(w.dow)}
                   onValueChange={(v) =>
@@ -407,7 +407,7 @@ export function ScheduleDialog({
                     )
                   }
                 >
-                  <SelectTrigger className="w-[90px]" aria-label={t("Dia da semana")}>
+                  <SelectTrigger className="w-[90px] max-[400px]:basis-full" aria-label={t("Dia da semana")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -420,7 +420,7 @@ export function ScheduleDialog({
                 </Select>
                 <Input
                   type="time"
-                  className="min-w-0 max-md:px-2"
+                  className="min-w-0 max-md:px-2 max-[400px]:flex-1"
                   value={w.start}
                   aria-label={t("Início")}
                   onChange={(e) =>
@@ -432,7 +432,7 @@ export function ScheduleDialog({
                 <span className="text-muted-foreground">–</span>
                 <Input
                   type="time"
-                  className="min-w-0 max-md:px-2"
+                  className="min-w-0 max-md:px-2 max-[400px]:flex-1"
                   value={w.end}
                   aria-label={t("Fim")}
                   onChange={(e) =>
@@ -444,6 +444,7 @@ export function ScheduleDialog({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="max-[400px]:shrink-0"
                   aria-label={t("Remover janela")}
                   onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
                 >
@@ -458,7 +459,7 @@ export function ScheduleDialog({
                 setWindows((ws) => [...ws, { dow: 1, start: "08:00", end: "18:00" }])
               }
             >
-              <Plus size={16} className="mr-1" /> Adicionar janela
+              <Plus size={16} className="mr-1" /> {t("Adicionar janela")}
             </Button>
             {/*
               O DEFEITO DA #2312 EM UMA LINHA: preenchia-se a segunda e o
@@ -518,10 +519,10 @@ export function ScheduleDialog({
           ) : (
             <>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                Cancelar
+                {t("Cancelar")}
               </Button>
               <Button disabled={isPending} onClick={salvar}>
-                Salvar
+                {t("Salvar")}
               </Button>
             </>
           )}

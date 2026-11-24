@@ -29,15 +29,15 @@ import {
   modoDeReabertura,
   recusaReabertura,
 } from "@/lib/leads/reabertura";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import {
-  camposComAnexo,
-  recusaDeCamposObrigatorios,
-  settingsDoFunil,
-  validaCamposExigidos,
-} from "@/lib/leads/campos-exigidos";
+  recusaDeCamposDoLote,
+  type NegocioDoLote,
+} from "@/lib/leads/campos-obrigatorios-em-lote";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
+import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
@@ -185,13 +185,31 @@ export async function POST(req: NextRequest): Promise<Response> {
       // etapa de perda não é uma perda nova.
       const { data: etapaDeDestino, error: etapaErr } = await supabase
         .from("crm_stages")
-        .select("id, name, is_lost, is_won")
+        .select("id, name, pipeline_id, is_lost, is_won")
         .eq("id", input.params.stage_id)
         .eq("organization_id", organizationId)
         .maybeSingle();
       if (etapaErr) return fail("internal_error", etapaErr.message, 500, { requestId });
       if (!etapaDeDestino) {
         return fail("not_found", t("Stage não encontrado."), 404, { requestId });
+      }
+
+      // ── P-01: O LOTE NÃO TROCA O NEGÓCIO DE FUNIL ──────────────────────────
+      //
+      // `fn_mover_leads_em_lote` grava o `pipeline_id` da etapa de destino
+      // (migration 9466, #4802): sem esta recusa, uma etapa de outro funil no
+      // lote levaria o negócio para lá sem a cópia. A recusa é a MESMA do arrasto
+      // (`/move`) e do `moveLeadHandler`. O único caminho que muda de funil é a
+      // transferência do arquivar/excluir (`/pipelines/[id]/negocios`), que só
+      // leva negócio em andamento e não passa por aqui.
+      const deOutroFunil = visible
+        .filter((linha) => linha.pipeline_id !== etapaDeDestino.pipeline_id)
+        .map((linha) => linha.id);
+      if (deOutroFunil.length > 0) {
+        return fail("pipeline_immutable_use_clone", t(RECUSA_DE_TROCA_DE_FUNIL), 422, {
+          requestId,
+          details: { lead_ids: deOutroFunil, use: "/api/v1/leads/{id}/clone" },
+        });
       }
 
       const motivoDoLote = input.params.lost_reason ?? null;
@@ -266,39 +284,28 @@ export async function POST(req: NextRequest): Promise<Response> {
       // `details.faltando`, por card.
       // O lote pode cruzar funis: a régua é a do funil de CADA card (cache
       // montado acima), nunca a do primeiro da lista.
-      const leadIdsSemCampos: string[] = [];
-      const faltandoPorCard: Record<string, { chave: string; rotulo: string }[]> = {};
-      for (const linha of visible) {
-        const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? null;
-        const settingsDaLinha = settingsPorFunil.get(funilId ?? "") ?? null;
-        const veredito = validaCamposExigidos({
-          lead: linha as unknown as Record<string, unknown>,
-          settingsDoFunil: settingsDaLinha,
-          // ponytail: uma ida ao banco por card, e só em funil com campo de arquivo exigível.
-          camposComAnexo: await camposComAnexo(supabase, settingsDaLinha, organizationId, linha.id),
-          destino: {
-            stageId: etapaDeDestino.id,
-            desfecho: etapaDeDestino.is_won
-              ? "won"
-              : etapaDeDestino.is_lost
-                ? "lost"
-                : null,
-          },
-          motivoDeGanho: (linha as { won_reason?: string | null }).won_reason ?? null,
-        });
-        if (veredito.faltando.length > 0) {
-          leadIdsSemCampos.push(linha.id);
-          faltandoPorCard[linha.id] = veredito.faltando;
-        }
-      }
-      if (leadIdsSemCampos.length > 0) {
-        const recusa = recusaDeCamposObrigatorios(
-          Object.values(faltandoPorCard).flat(),
-          idioma,
-        );
-        return fail(recusa.codigo, recusa.mensagem, 422, {
+      const camposDoLote = await recusaDeCamposDoLote({
+        supabase,
+        organizationId,
+        negocios: visible as unknown as NegocioDoLote[],
+        settingsDoFunilDe: (funilId) => settingsPorFunil.get(funilId ?? "") ?? null,
+        destino: {
+          stageId: etapaDeDestino.id,
+          desfecho: etapaDeDestino.is_won
+            ? "won"
+            : etapaDeDestino.is_lost
+              ? "lost"
+              : null,
+        },
+        idioma,
+      });
+      if (camposDoLote.recusa) {
+        return fail(camposDoLote.recusa.codigo, camposDoLote.recusa.mensagem, 422, {
           requestId,
-          details: { lead_ids: leadIdsSemCampos, faltando: faltandoPorCard },
+          details: {
+            lead_ids: camposDoLote.recusa.lead_ids,
+            faltando: camposDoLote.faltandoPorCard,
+          },
         });
       }
 
@@ -424,6 +431,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       // O discriminador é o MESMO do banco e da `/lose`: o `status` lido ANTES
       // da escrita — `visible`, a leitura que `decideMotivoDaPerda` já usa.
       const statusDoCard = new Map(visible.map((l) => [l.id, l.status]));
+      // O contato vai na linha: é por ele que a anonimização (LGPD) alcança o
+      // histórico de um negócio apagado (migration 9466).
+      const contatoDoCard = new Map(visible.map((l) => [l.id, l.contact_id ?? null]));
       const motivoDoCard = new Map(visible.map((l) => [l.id, l.lost_reason ?? null]));
       // Perda NOVA é a que a etapa de destino fecha AGORA: etapa de perda e card
       // que não estava perdido. Quem já estava perdido só troca de etapa.
@@ -442,6 +452,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           const r = await emitLeadActivity(supabase, {
             organizationId,
             leadId: row.lead_id,
+            contactId: contatoDoCard.get(row.lead_id) ?? null,
             // ⚠️ O TIPO SEGUE `stage_changed`, e isso é decisão declarada, não
             // esquecimento: `crm_lead_activities.type = 'stage_changed'` é a
             // fonte de `lib/metrics/taxa-da-etapa.ts` e da rota `win-rates`
