@@ -3180,6 +3180,10 @@ export const DICIONARIO: Traducoes = {
     es: "Modelo del registro; todavía no hay versión publicada.",
   },
   Tipo: { es: "Tipo" },
+  Lugar: { es: "Lugar" },
+  lugar: { es: "lugar" },
+  "Pessoas ao mesmo tempo": { es: "Personas al mismo tiempo" },
+  "Lugar (sala, mesa…)": { es: "Lugar (sala, mesa…)" },
   Prioridade: { es: "Prioridad" },
   Visualizar: { es: "Ver" },
   // ─── Agentes de IA: editor de detalhe (AgentForm) ───
@@ -12967,16 +12971,16 @@ export const DICIONARIO: Traducoes = {
   "Oi {{nome}}! Passando pra lembrar: {{titulo}}, {{dia}} às {{hora}}.": {
     es: "¡Hola {{nome}}! Te recuerdo: {{titulo}}, {{dia}} a las {{hora}}.",
   },
-  "Deixe em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.": {
-    es: "Déjalo en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+  "Deixe em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
+    es: "Déjalo en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   },
   "Quanto antes": { es: "Cuánto antes" },
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },
   "Adicionar lembrete": { es: "Agregar recordatorio" },
-  "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.": {
-    es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+  "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
+    es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   },
   "texto próprio": { es: "texto propio" },
   "A mensagem do lembrete cabe em 1000 caracteres.": {
