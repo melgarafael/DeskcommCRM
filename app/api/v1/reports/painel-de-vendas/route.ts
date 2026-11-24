@@ -48,6 +48,7 @@ import {
   type VendaRegistradaDoPainel,
 } from "@/lib/relatorios/painel-de-vendas";
 import { lerPaginado } from "@/lib/supabase/pagina";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { data, error, count } = await supabase
       .from("crm_leads")
       .select(
-        "id, status, closed_at, value_cents, currency, pipeline_id, tags, contact_id, title",
+        "id, status, closed_at, value_cents, currency, pipeline_id, tags, contact_id, title, owner_user_id",
         contar ? { count: "exact" } : undefined,
       )
       .eq("organization_id", org.orgId)
@@ -131,7 +132,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const registradas = await lerPaginado<VendaRegistradaDoPainel>(async (inicio, fim, contar) => {
     const { data, error, count } = await supabase
       .from("vendas_registradas")
-      .select("id, lead_id, contact_id, valor_cents, currency, data, tags", contar ? { count: "exact" } : undefined)
+      .select("id, lead_id, contact_id, valor_cents, currency, data, tags, created_by", contar ? { count: "exact" } : undefined)
       .eq("organization_id", org.orgId)
       .gte("data", de)
       .lte("data", ate)
@@ -220,12 +221,20 @@ export async function GET(req: NextRequest): Promise<Response> {
     for (const f of (data ?? []) as Array<{ id: string; name: string | null }>) nomesDosFunis[f.id] = f.name?.trim() || null;
   }
 
+  // ─── 6. O nome de quem vendeu (só membros da empresa; só o nome) ─────────
+  const nomesDosVendedores = await nomesDosAtendentes(
+    org.orgId,
+    painel.lista.map((v) => v.vendedor_user_id),
+  );
+  const vendedores: Record<string, string | null> = Object.fromEntries(nomesDosVendedores);
+
   return ok(
     {
       janela,
       ...painel,
       contatos,
       nomes_dos_funis: nomesDosFunis,
+      vendedores,
       truncado: leitura.truncado || registradas.truncado,
     },
     { requestId },

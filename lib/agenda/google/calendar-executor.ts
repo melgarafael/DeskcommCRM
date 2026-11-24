@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
-import { doEventoDoGoogle, type EventoDoGoogle, type MotivoDeRecusa } from "./evento";
+import { doEventoDoGoogle, estaCancelado, type EventoDoGoogle, type MotivoDeRecusa } from "./evento";
 import { ehEventoNosso } from "./escrita";
 import { classificarErroDoGoogle } from "./erros";
 import { googleTransport, GoogleHttpError, type GoogleFetch } from "./transport";
@@ -84,6 +84,27 @@ export class EventoRecusadoNaLeitura extends Error {
   }
 }
 
+/**
+ * O evento foi criado por este sistema, mas o compromisso que o publicou não
+ * existe mais no banco (#5109).
+ *
+ * Só chega aqui o evento que ainda OCUPA horário: a lápide cancelada sem par é
+ * podada antes, porque não há o que reconciliar. A frase carrega o dia e a hora
+ * de parede — e nada do conteúdo do evento (título, pessoa), pela mesma tesoura
+ * de privacidade do `EventoRecusadoNaLeitura`.
+ */
+export class EventoDoProdutoSemVinculo extends Error {
+  constructor(
+    /** Dia (e hora, quando o evento tem) de parede, pronto para a tela. */
+    readonly quando: string,
+  ) {
+    super(
+      `O evento de ${quando} foi criado por este sistema, mas não tem mais compromisso correspondente. Corrija ou remova esse evento no Google Agenda.`,
+    );
+    this.name = "EventoDoProdutoSemVinculo";
+  }
+}
+
 /** `YYYY-MM-DD` com hora opcional, exatamente como o Google devolve o `start`. */
 const DATA_DE_PAREDE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
 
@@ -111,6 +132,9 @@ export function mensagemDaRecusaDeLeitura(erro: unknown): string {
   // A recusa do evento é diagnóstica por natureza: data e hora já passaram pelo
   // recorte que remove título e pessoa, então a frase pode ir para a tela.
   if (erro instanceof EventoRecusadoNaLeitura) return erro.message;
+  // Mesma regra para o evento do produto sem vínculo (#5109): a frase nomeia o
+  // evento e o que fazer, e nada mais.
+  if (erro instanceof EventoDoProdutoSemVinculo) return erro.message;
   return "A leitura não terminou. Tente sincronizar novamente nas configurações.";
 }
 
@@ -224,8 +248,17 @@ export async function syncCalendar(
         pruneIds.add(eventId);
         continue;
       }
-      if (ehEventoNosso(event.id))
-        throw new Error("Evento do produto sem vínculo. Revise a publicação antiga.");
+      if (ehEventoNosso(event.id)) {
+        // Lápide do produto sem par (#5109): o compromisso que a publicou foi
+        // excluído, então não há o que reconciliar. Podar em vez de lançar —
+        // lançar aqui derrubava a página inteira a cada leitura, inclusive na
+        // completa, e a agenda nunca mais sincronizava.
+        if (estaCancelado(event)) {
+          pruneIds.add(eventId);
+          continue;
+        }
+        throw new EventoDoProdutoSemVinculo(quandoDoEvento(event));
+      }
       const read = doEventoDoGoogle(event, { fusoDoCalendario: timeZone! });
       if (read.tipo === "recusado")
         throw new EventoRecusadoNaLeitura(read.motivo, quandoDoEvento(event));
@@ -279,6 +312,10 @@ export async function syncCalendar(
       class: diag.class,
       code: diag.code,
       constraint: diag.constraint,
+      // A frase que a tela mostra também vai para o log (#5109): sem ela o log
+      // só tinha class/code/constraint e a causa real se perdia. É a versão
+      // SANITIZADA — a mensagem crua do erro continua fora do log (LGPD/PII).
+      message: mensagemDaRecusaDeLeitura(e),
     });
     try {
       if (e instanceof GoogleHttpError && e.status === 410) await call("reset");
