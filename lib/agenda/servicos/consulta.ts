@@ -142,14 +142,17 @@ function juncaoPreviasPorLugar(
 }
 
 /** Para UM horário, uma prévia por lugar (em paralelo) e devolve o primeiro lugar
- * livre (ordem de lugaresDoServico) cuja linha 0 vem available. `null` se o serviço
- * não tem lugar ou nenhum está livre. Mesmo p_owner. */
+ * livre (ordem de lugaresDoServico) cuja linha 0 vem available, com `motivo: null`.
+ * Se nenhum está livre, `livre: null` e o motivo pela regra de juncaoPreviasPorLugar:
+ * space_capacity_reached só se TODOS deram esse motivo, senão o do primeiro lugar
+ * (fora da programação, bloqueio etc. não podem virar "lugar ocupado").
+ * Serviço sem lugar: `{ livre: null, motivo: null }`. Mesmo p_owner. */
 export async function primeiroLugarLivre(
   db: SupabaseClient, organizationId: string, service: DadosDoServico,
   startsAt: string, ownerUserId?: string | null,
-): Promise<{ id: string; name: string } | null> {
+): Promise<{ livre: { id: string; name: string } | null; motivo: string | null }> {
   const lugares = lugaresDoServico(service);
-  if (lugares.length === 0) return null;
+  if (lugares.length === 0) return { livre: null, motivo: null };
   const agora = new Date();
   const porLugar: unknown[][] = await Promise.all(lugares.map(async (lugar) =>
     z.array(z.unknown()).parse(await googleRpc(db, "fn_calendar_service_preview", {
@@ -158,15 +161,13 @@ export async function primeiroLugarLivre(
       p_space: lugar.id,
     })),
   ));
+  const linhas = lugares.map((_lugar, i) => (porLugar[i] ?? [])[0] as DisponibilidadeDoServico | undefined);
   for (let i = 0; i < lugares.length; i += 1) {
-    const linha = (porLugar[i] ?? [])[0] as DisponibilidadeDoServico | undefined;
-    if (linha?.available === true) {
-      const lugar = lugares[i];
-      if (!lugar) continue;
-      return { id: lugar.id, name: lugar.name };
-    }
+    const lugar = lugares[i];
+    if (linhas[i]?.available === true && lugar) return { livre: { id: lugar.id, name: lugar.name }, motivo: null };
   }
-  return null;
+  const todosCapacidade = linhas.every((l) => l?.reason === "space_capacity_reached");
+  return { livre: null, motivo: todosCapacidade ? "space_capacity_reached" : (linhas[0]?.reason ?? null) };
 }
 
 export { MOTIVOS_DO_SERVICO } from "./motivos";

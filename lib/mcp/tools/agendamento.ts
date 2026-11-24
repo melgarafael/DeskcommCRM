@@ -839,14 +839,16 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       if (tipo.servicoLigado && !spaceId) {
         serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
         if (serviceComLugar && lugaresDoServico(serviceComLugar).length > 0) {
-          const livre = await primeiroLugarLivre(
+          const { livre, motivo: motivoSemLugar } = await primeiroLugarLivre(
             ctx.supabase, ctx.organizationId, serviceComLugar, input.starts_at, input.owner_user_id ?? null,
           );
           if (!livre) {
+            // O motivo real do horário (fora da programação, bloqueio...), não "lugar ocupado" fixo.
+            const motivo = motivoSemLugar ?? "space_capacity_reached";
             return {
               marcado: false,
-              motivo: "space_capacity_reached",
-              mensagem: `${MOTIVOS_DO_SERVICO.space_capacity_reached} Consulte os horários de novo.`,
+              motivo,
+              mensagem: `${MOTIVOS_DO_SERVICO[motivo] ?? "Horário indisponível."} Consulte os horários de novo.`,
             };
           }
           spaceId = livre.id;

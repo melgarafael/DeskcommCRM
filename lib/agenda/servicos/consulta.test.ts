@@ -130,7 +130,7 @@ describe("consulta por lugar", () => {
 
     const lugar = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, starts_at, "owner-1");
     // Primeira sala livre em ordem de nome é Sala A (id SALA_B, ocupado), depois Sala B (id SALA_A, livre)
-    expect(lugar).toEqual({ id: SALA_A, name: "Sala B" });
+    expect(lugar).toEqual({ livre: { id: SALA_A, name: "Sala B" }, motivo: null });
     expect(googleRpc).toHaveBeenCalledTimes(3);
   });
 
@@ -144,10 +144,24 @@ describe("consulta por lugar", () => {
     });
 
     const lugar = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, startsAtFuso, "owner-1");
-    expect(lugar).toEqual({ id: SALA_A, name: "Sala B" });
+    expect(lugar).toEqual({ livre: { id: SALA_A, name: "Sala B" }, motivo: null });
     for (const chamada of vi.mocked(googleRpc).mock.calls) {
       expect(chamada[2].p_starts).toEqual([startsAtFuso]);
     }
+  });
+
+  it("primeiroLugarLivre sem sala livre e fora da programação devolve outside_schedule, não lugar ocupado", async () => {
+    vi.mocked(googleRpc).mockResolvedValue([{ available: false, starts_at, reason: "outside_schedule" }]);
+
+    const r = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, starts_at, "owner-1");
+    expect(r).toEqual({ livre: null, motivo: "outside_schedule" });
+  });
+
+  it("primeiroLugarLivre só diz space_capacity_reached quando TODAS as salas deram esse motivo", async () => {
+    vi.mocked(googleRpc).mockResolvedValue([{ available: false, starts_at, reason: "space_capacity_reached" }]);
+
+    const r = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, starts_at, "owner-1");
+    expect(r).toEqual({ livre: null, motivo: "space_capacity_reached" });
   });
 
   it("lugaresDoServico ordena por nome pt-BR", () => {

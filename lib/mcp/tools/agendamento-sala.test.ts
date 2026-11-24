@@ -94,7 +94,7 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
     vi.clearAllMocks();
     deps.tipoPorSlug.mockResolvedValue({ id: "tipo-1", nome: "Consulta", servicoLigado: true });
     deps.lerServico.mockResolvedValue(servicoComLugar);
-    deps.primeiroLugarLivre.mockResolvedValue({ id: SALA_B, name: "Sala B" });
+    deps.primeiroLugarLivre.mockResolvedValue({ livre: { id: SALA_B, name: "Sala B" }, motivo: null });
     deps.lugaresDoServico.mockReturnValue([
       { id: SALA_A, name: "Sala A", sector: null },
       { id: SALA_B, name: "Sala B", sector: null },
@@ -117,12 +117,23 @@ describe("crm_book_appointment — sala escolhida em cada consulta", () => {
   });
 
   it("todas as salas ocupadas: não grava e devolve space_capacity_reached", async () => {
-    deps.primeiroLugarLivre.mockResolvedValue(null);
+    deps.primeiroLugarLivre.mockResolvedValue({ livre: null, motivo: "space_capacity_reached" });
 
     const r = (await crmBookAppointment.handler(ENTRADA_BASE, CTX)) as Record<string, unknown>;
 
     expect(r.marcado).toBe(false);
     expect(r.motivo).toBe("space_capacity_reached");
+    expect(deps.marcar).not.toHaveBeenCalled();
+  });
+
+  it("nenhuma sala livre por estar fora da programação: repassa outside_schedule, não 'lugar ocupado'", async () => {
+    deps.primeiroLugarLivre.mockResolvedValue({ livre: null, motivo: "outside_schedule" });
+
+    const r = (await crmBookAppointment.handler(ENTRADA_BASE, CTX)) as Record<string, unknown>;
+
+    expect(r.marcado).toBe(false);
+    expect(r.motivo).toBe("outside_schedule");
+    expect(String(r.mensagem)).toContain("Fora da programação");
     expect(deps.marcar).not.toHaveBeenCalled();
   });
 
