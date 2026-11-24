@@ -7164,6 +7164,11 @@ export const DICIONARIO: Traducoes = {
   "Crítico (<24h)": { es: "Crítico (<24h)" },
   "Alerta (>50%)": { es: "Alerta (>50%)" },
   "Limpar filtros": { es: "Limpiar filtros" },
+  "Restaurar filtros": { es: "Restablecer filtros" },
+  "Sem vendedor": { es: "Sin vendedor" },
+  "Escolher o período": { es: "Elegir el período" },
+  "Clique no dia inicial e depois no final.": { es: "Haga clic en el día inicial y luego en el final." },
+  "Agora clique no dia final.": { es: "Ahora haga clic en el día final." },
   "solicitação vencendo em menos de 24h ou já vencida": {
     es: "solicitud que vence en menos de 24h o ya venció",
   },
@@ -9016,6 +9021,13 @@ export const DICIONARIO: Traducoes = {
   },
   "Ler contatos": { es: "Leer contactos" },
   "Criar e editar contatos": { es: "Crear y editar contactos" },
+  // #5160 — escopo `conversations:write` da tela de Tokens de API: existia na
+  // lista `SCOPES` (ApiTokensClient.tsx) sem esta linha, e em espanhol o rótulo
+  // caía no português. A cerca só passou a cobrá-lo quando a varredura aprendeu
+  // a abrir o array iterado por `.map` (tests/unit/helpers/chave-dinamica.ts).
+  "Pausar e retomar a IA, encerrar e reabrir conversas": {
+    es: "Pausar y reanudar la IA, cerrar y reabrir conversaciones",
+  },
   "Ler leads": { es: "Leer leads" },
   "Criar e editar leads": { es: "Crear y editar leads" },
   "Ler mensagens": { es: "Leer mensajes" },
@@ -11383,6 +11395,9 @@ export const DICIONARIO: Traducoes = {
   "Atividade registrada": { es: "Actividad registrada" },
   "Você/time": { es: "Tú/equipo" },
   "Sistema": { es: "Sistema" },
+  // #5160 — rótulo do balão para `sent_via='system'` (envio por token de API ou
+  // por módulo). O NOME do token entra depois, como dado do operador.
+  "Integração": { es: "Integración" },
   // #1613 — autoria "em nome de" no balão e os recusos da rota.
   "via": { es: "vía" },
   "Envio em nome de outro usuário exige o escopo messages:on_behalf.": {
@@ -17948,11 +17963,17 @@ export const DICIONARIO: Traducoes = {
   "Endereço inválido.": { es: "Dirección inválida." },
   "Salvar links": { es: "Guardar enlaces" },
   // Rótulos dos tipos de link (`lib/leads/links-de-contato.ts`) — lidos por
-  // lookup dinâmico, que o teste de cobertura não enxerga. As marcas
-  // (Instagram, Facebook…) não mudam de idioma e ficam de fora.
+  // lookup dinâmico. Até o #5160 a varredura não abria o array iterado por
+  // `.map` e estas marcas ficavam fora por isso; agora ela cobra cada
+  // `rotulo`, e as que não mudam de idioma entram com o espanhol igual ao
+  // português (mesma decisão de `Sistema`/`Telegram`).
   Site: { es: "Sitio web" },
   "Google Meu Negócio": { es: "Google Mi Negocio" },
   "Link na bio": { es: "Enlace en la bio" },
+  Facebook: { es: "Facebook" },
+  LinkedIn: { es: "LinkedIn" },
+  TikTok: { es: "TikTok" },
+  YouTube: { es: "YouTube" },
   // ─── Aba Diagnóstico da ficha (components/contacts/DiagnosticoDoContato.tsx) ───
   "Diagnóstico da empresa": { es: "Diagnóstico de la empresa" },
   "Escrito pela IA": { es: "Escrito por la IA" },
@@ -23365,8 +23386,11 @@ export const DICIONARIO: Traducoes = {
   "Outro funil…": { es: "Otro embudo…" },
   "Levar selecionados para outro funil": { es: "Llevar seleccionados a otro embudo" },
   'Cada negócio é recriado no funil escolhido e encerra aqui como perdido, com o motivo "Levado para outro funil" — o mesmo que acontece ao levar um card só.': {
-    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Llevado a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
+    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Movido a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
   },
+  // #5024: o singular do diálogo em lote reaproveita o molde da barra
+  // ("1 negócio selecionado"): a chave `negócio` já existe no dicionário
+  // (linha ~9745); o plural continua na chave abaixo.
   "negócios selecionados.": { es: "negocios seleccionados." },
   "Só os 50 primeiros serão levados nesta vez.": { es: "Solo los 50 primeros se llevarán esta vez." },
   "Levar": { es: "Llevar" },
