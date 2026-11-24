@@ -118,4 +118,128 @@ describe("LevarLoteParaOutroFunilDialog", () => {
       post.mockRestore();
     }
   });
+
+  it("ao fechar depois de uma falha parcial, limpa a seleção: o negócio já tem cópia no destino", async () => {
+    const pipeline = {
+      id: "p2",
+      name: "Pós-venda",
+      stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+    };
+    destinos([pipeline]);
+    const post = vi
+      .spyOn(apiClient, "post")
+      .mockRejectedValueOnce(
+        new ApiError(500, "internal_error", { cloned_lead_id: "clone-de-a" }, "qa-1", "Falha ao vincular a origem"),
+      )
+      .mockRejectedValueOnce(
+        new ApiError(422, "required_fields_missing", undefined, "qa-2", "Campos obrigatórios faltando"),
+      );
+    const onConcluido = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a", "b"]}
+          onConcluido={onConcluido}
+        />
+      </QueryClientProvider>,
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Levar" }));
+      await screen.findByTestId("resultado-do-lote");
+
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
+
+      // Qualquer cópia criada no destino conta como efeito: a seleção inteira
+      // é limpa (mesma regra de antes, agora também para quem falhou depois do
+      // clone nascer). Sem isso, o "Levar" seguinte recriava o negócio.
+      expect(onConcluido).toHaveBeenCalledTimes(1);
+      expect(onConcluido).toHaveBeenCalledWith();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("ao fechar depois de levar todos, limpa a seleção", async () => {
+    const pipeline = {
+      id: "p2",
+      name: "Pós-venda",
+      stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+    };
+    destinos([pipeline]);
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} } as never);
+    const onConcluido = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a", "b"]}
+          onConcluido={onConcluido}
+        />
+      </QueryClientProvider>,
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Levar" }));
+      await screen.findByTestId("resultado-do-lote");
+
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
+
+      expect(onConcluido).toHaveBeenCalledTimes(1);
+      expect(onConcluido).toHaveBeenCalledWith();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("ao fechar sem nenhuma cópia criada, não mexe na seleção", async () => {
+    const pipeline = {
+      id: "p2",
+      name: "Pós-venda",
+      stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+    };
+    destinos([pipeline]);
+    const post = vi
+      .spyOn(apiClient, "post")
+      .mockRejectedValueOnce(
+        new ApiError(422, "required_fields_missing", undefined, "qa-1", "Campos obrigatórios faltando"),
+      );
+    const onConcluido = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a"]}
+          onConcluido={onConcluido}
+        />
+      </QueryClientProvider>,
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Levar" }));
+      await screen.findByTestId("resultado-do-lote");
+
+      await user.click(within(screen.getByTestId("levar-lote-para-outro-funil")).getAllByRole("button", { name: "Fechar" })[0]!);
+
+      expect(onConcluido).not.toHaveBeenCalled();
+    } finally {
+      post.mockRestore();
+    }
+  });
 });
