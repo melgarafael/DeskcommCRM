@@ -34,7 +34,9 @@ create index if not exists idx_followup_historico_rascunho
 
 create or replace function public.fn_followup_origem_do_envio(p_org uuid, p_job uuid)
 returns table (enrollment_id uuid, node_id text, source_step_key text)
-language sql stable set search_path = public, pg_catalog as $$
+language plpgsql stable set search_path = public, pg_catalog as $$
+begin
+  return query
   select e.id, origem.node_id, origem.idempotency_key
   from public.job_queue j
   join public.followup_enrollments e
@@ -59,6 +61,7 @@ language sql stable set search_path = public, pg_catalog as $$
     on d.organization_id = j.organization_id and d.send_job_id = j.id
     and d.id::text = j.payload->>'draft_id' and d.conversation_id = e.conversation_id
   where j.id = p_job and j.organization_id = p_org and j.kind = 'approved_reply';
+end;
 $$;
 revoke execute on function public.fn_followup_origem_do_envio(uuid,uuid) from public, anon, authenticated;
 grant execute on function public.fn_followup_origem_do_envio(uuid,uuid) to service_role;
