@@ -17,9 +17,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   editarAgendamentoSchema,
-  horarioNoFuturo,
   motivoRegraInvalida,
-  primeiraOcorrenciaIso,
+  proximoScheduledAtDaEdicao,
   regraDoCorpo,
 } from "@/lib/agendamento-mensagem/schema";
 
@@ -66,10 +65,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const regra = regraDoCorpo(v);
   const motivo = motivoRegraInvalida(regra);
   if (motivo) return fail("validation_failed", "Confira a recorrência e as datas.", 422, { requestId, details: { motivo } });
-  const scheduledAt = primeiraOcorrenciaIso(regra);
-  if (!horarioNoFuturo(scheduledAt)) {
-    return fail("validation_failed", "Escolha um horário no futuro.", 422, { requestId, details: { motivo: "horario_no_passado" } });
+  const proxima = proximoScheduledAtDaEdicao(regra);
+  if (!proxima.ok) {
+    return proxima.motivo === "serie_sem_proxima_ocorrencia"
+      ? fail("validation_failed", "Esta repetição já terminou. Ajuste a data de término.", 422, { requestId, details: { motivo: proxima.motivo } })
+      : fail("validation_failed", "Escolha um horário no futuro.", 422, { requestId, details: { motivo: proxima.motivo } });
   }
+  const scheduledAt = proxima.scheduledAt;
 
   const orgId = auth.org.orgId;
   const visivel = await visivelPelaSessao(id, orgId);

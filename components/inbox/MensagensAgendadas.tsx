@@ -510,8 +510,9 @@ function FormularioDeAgendamento({
     if (!data || !hora) return toast.error(t("Escolha a data e a hora."));
     if (recorrencia === "a_cada_n_dias" && !intervaloDias) return toast.error(t("Informe de quantos em quantos dias."));
     // `new Date("AAAA-MM-DDTHH:mm")` lê no fuso do navegador: é a hora que a pessoa viu na tela.
+    // Série em andamento tem o início no passado: na edição, quem decide é o servidor (próxima ocorrência).
     const quando = new Date(`${data}T${hora}`);
-    if (quando.getTime() <= Date.now()) return toast.error(t("Escolha um horário no futuro."));
+    if ((!inicial || recorrencia === "nenhuma") && quando.getTime() <= Date.now()) return toast.error(t("Escolha um horário no futuro."));
 
     setSalvando(true);
     // O servidor calcula a primeira ocorrência a partir da hora de parede e do fuso: o cliente não manda `scheduled_at`.

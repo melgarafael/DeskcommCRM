@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { RECORRENCIAS, motivoRegraInvalida, primeiraOcorrencia, type RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
+import {
+  RECORRENCIAS,
+  motivoRegraInvalida,
+  primeiraOcorrencia,
+  proximaOcorrenciaDepois,
+  type RegraDeRecorrencia,
+} from "@/lib/agendamento-mensagem/recorrencia";
 
 /**
  * Edição de uma mensagem de texto agendada: o texto, a série (recorrência, início,
@@ -53,6 +59,23 @@ export function primeiraOcorrenciaIso(regra: RegraDeRecorrencia): string {
 /** O horário precisa estar no futuro: agendar para o passado seria enviar agora sem ninguém pedir. */
 export function horarioNoFuturo(scheduledAt: string, agora: Date = new Date()): boolean {
   return new Date(scheduledAt).getTime() > agora.getTime();
+}
+
+/**
+ * `scheduled_at` de uma EDIÇÃO. Envio único: o horário escolhido, que precisa estar
+ * no futuro. Série: a próxima ocorrência depois de agora. Uma série que já começou
+ * tem o início no passado, e recalcular a partir dele recusaria editar até o texto.
+ */
+export function proximoScheduledAtDaEdicao(
+  regra: RegraDeRecorrencia,
+  agora: Date = new Date(),
+): { ok: true; scheduledAt: string } | { ok: false; motivo: "horario_no_passado" | "serie_sem_proxima_ocorrencia" } {
+  if (regra.recorrencia === "nenhuma") {
+    const scheduledAt = primeiraOcorrenciaIso(regra);
+    return horarioNoFuturo(scheduledAt, agora) ? { ok: true, scheduledAt } : { ok: false, motivo: "horario_no_passado" };
+  }
+  const proxima = proximaOcorrenciaDepois(regra, agora);
+  return proxima ? { ok: true, scheduledAt: proxima.toISOString() } : { ok: false, motivo: "serie_sem_proxima_ocorrencia" };
 }
 
 export { motivoRegraInvalida };
