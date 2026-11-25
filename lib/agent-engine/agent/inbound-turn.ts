@@ -4426,11 +4426,14 @@ async function executarTurnoDoAgente(
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
   // barra o modelo sem gastar uma chamada de before-send à toa.
-  // A21: na rede com limite próprio o modelo manda UM texto por turno; as fotos (até
-  // `fotosPorTurnoDaIa`, sem legenda) saem pelo mesmo envio e têm a sua própria folga.
+  // A21: na rede com limite próprio o turno manda UM texto e, depois dele, até
+  // `fotosPorTurnoDaIa` fotos sem legenda — o teto físico do turno é a soma, e o do TEXTO
+  // (o que `send_message` confere) é 1, para o modelo não gastar as respostas da janela.
   const maxSendsPerTurn =
-    limitesDoCanal !== null ? 1 : (deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN);
-  const folgaDeFotosDoCanal = limitesDoCanal?.fotosPorTurnoDaIa ?? 0;
+    limitesDoCanal !== null
+      ? 1 + limitesDoCanal.fotosPorTurnoDaIa
+      : (deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN);
+  const maxTextosPorTurno = limitesDoCanal !== null ? 1 : maxSendsPerTurn;
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -5277,13 +5280,13 @@ async function executarTurnoDoAgente(
             vetos: falseEmptyInboundVetoCount,
           });
         }
-        if (seq >= maxSendsPerTurn) {
+        if (seq >= maxTextosPorTurno) {
           return {
             ok: false,
             error: {
               code: 'max_sends_per_turn',
               message:
-                `você já enviou ${seq} mensagens neste turno (teto: ${maxSendsPerTurn}). ` +
+                `você já enviou ${seq} mensagens neste turno (teto: ${maxTextosPorTurno}). ` +
                 'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
             },
           };
@@ -5803,7 +5806,7 @@ async function executarTurnoDoAgente(
                     {
                       sleep,
                       jitter,
-                      restantes: () => maxSendsPerTurn + folgaDeFotosDoCanal - seq,
+                      restantes: () => maxSendsPerTurn - seq,
                       ...(limitesDoCanal !== null
                         ? { legendaSeparada: true, maxFotos: limitesDoCanal.fotosPorTurnoDaIa }
                         : {}),

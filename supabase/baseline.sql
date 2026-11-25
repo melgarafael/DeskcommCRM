@@ -92249,16 +92249,8 @@ end $clone_aberto_unico$;
 
 -- ---- canal TikTok (migration 9476, A21) ----
 -- Espelho de supabase/migrations/20261125103015_9476_canal_tiktok.sql.
--- `'tiktok'` já foi somado ao bloco ÚNICO de `conversations_channel_check`, lá em
--- cima (a última definição da constraint é a que vale); este bloco repete o
--- drop + add idempotente para que o apêndice sozinho também deixe a constraint
--- certa. Não cria função, então pode ficar depois da VARREDURA anon.
-do $canal_tiktok$
-begin
-  alter table public.conversations drop constraint if exists conversations_channel_check;
-  alter table public.conversations add constraint conversations_channel_check
-    check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'webchat', 'tiktok'));
-end
-$canal_tiktok$;
+-- `'tiktok'` foi somado ao bloco ÚNICO de `conversations_channel_check`, lá em cima
+-- (uma constraint, um bloco: `tests/unit/baseline-constraint-reconstruida.test.ts`);
+-- este bloco só registra a migration. Não há coluna, função nem índice novo.
 
 notify pgrst, 'reload schema';
