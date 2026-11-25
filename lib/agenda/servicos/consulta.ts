@@ -149,7 +149,7 @@ function juncaoPreviasPorLugar(
  * Serviço sem lugar: `{ livre: null, motivo: null }`. Mesmo p_owner. */
 export async function primeiroLugarLivre(
   db: SupabaseClient, organizationId: string, service: DadosDoServico,
-  startsAt: string, ownerUserId?: string | null,
+  startsAt: string, ownerUserId?: string | null, partySize?: number | null,
 ): Promise<{ livre: { id: string; name: string } | null; motivo: string | null }> {
   const lugares = lugaresDoServico(service);
   if (lugares.length === 0) return { livre: null, motivo: null };
@@ -159,6 +159,7 @@ export async function primeiroLugarLivre(
       p_org: organizationId, p_type: service.event_type_id, p_starts: [startsAt],
       p_owner: ownerUserId ?? null, p_now: agora.toISOString(),
       p_space: lugar.id,
+      ...(partySize ? { p_party: partySize } : {}),
     })),
   ));
   const linhas = lugares.map((_lugar, i) => (porLugar[i] ?? [])[0] as DisponibilidadeDoServico | undefined);

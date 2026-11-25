@@ -20748,6 +20748,13 @@ export const DICIONARIO: Traducoes = {
   "Os retornos automáticos deste número estão parados até você liberar. Eles esperam na fila, nada é perdido, e voltam espaçados ao longo das horas seguintes. Responder quem te escreveu continua funcionando normalmente. Marque este item como resolvido quando o número estiver pronto para disparar.": {
     es: "Los seguimientos automáticos de este número están detenidos hasta que lo liberes. Esperan en la cola, no se pierde nada, y vuelven espaciados a lo largo de las horas siguientes. Responder a quien te escribió sigue funcionando con normalidad. Marca este elemento como resuelto cuando el número esté listo para enviar.",
   },
+  // A mesma trava numa conexão de rede social (A3, parte 2).
+  "Conexão nova do {rede} aguardando liberação (go-live)": {
+    es: "Conexión nueva de {rede} en espera de liberación (go-live)",
+  },
+  "Os retornos automáticos desta conexão do {rede} estão parados até você liberar. Eles esperam na fila, nada é perdido, e voltam espaçados ao longo das horas seguintes. Responder quem te escreveu continua funcionando normalmente. Marque este item como resolvido quando a conexão estiver pronta para disparar.": {
+    es: "Los seguimientos automáticos de esta conexión de {rede} están detenidos hasta que la liberes. Esperan en la cola, no se pierde nada, y vuelven espaciados a lo largo de las horas siguientes. Responder a quien te escribió sigue funcionando con normalidad. Marca este elemento como resuelto cuando la conexión esté lista para enviar.",
+  },
   // ─── Videochamada (Jitsi Meet, #2440) ───
   Videochamada: { es: "Videollamada" },
   "Sala de videochamada": { es: "Sala de videollamada" },
@@ -22071,7 +22078,7 @@ export const DICIONARIO: Traducoes = {
   "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.": {
     es: "El valor a cobrar se registra en una conversación por la API, en /api/v1/conversations/[id]/pagamentos (una integración; todavía no hay botón en la pantalla), y la respuesta trae una dirección para pegar en el enlace de pago; cuando el cliente paga, el proveedor avisa y el negocio pasa a ganado.",
   },
-  "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.": { es: "Activado, cada empresa puede registrar en la agenda un lugar, como mesa, palco o cancha, con capacidad en personas, y la reserva pasa a elegir el lugar e indicar cuántas personas vienen. Desactivado, nadie crea un lugar nuevo; los lugares y las reservas que ya existen quedan guardados." },
+  "Ligado, cada empresa pode cadastrar na agenda um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados, e reservar em lugar que já existe continua valendo — o serviço com lugar exige lugar na reserva.": { es: "Activado, cada empresa puede registrar en la agenda un lugar, como mesa, palco o cancha, con capacidad en personas, y la reserva pasa a elegir el lugar e indicar cuántas personas vienen. Desactivado, nadie crea un lugar nuevo; los lugares y las reservas que ya existen quedan guardados, y reservar en un lugar que ya existe sigue funcionando — un servicio que requiere un lugar sigue necesitando uno en la reserva." },
   "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.": { es: "No crea entrada en el menú del CRM: por ahora el lugar se registra y se reserva por la API, en /api/v1/agenda/servicos." },
   // O módulo opcional dos servidores MCP por agente (#3857, doc 252) em /admin/sistema e em Recursos opcionais.
   "Ferramentas externas por agente": { es: "Herramientas externas por agente" },
