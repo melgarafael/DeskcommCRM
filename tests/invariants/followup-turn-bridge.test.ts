@@ -625,6 +625,10 @@ async function rodarTurnoDeEnvio(
   corpo?: string,
 ) {
   const workerId = "historico-de-envio";
+  await pool.query(
+    "update job_queue set status='done', locked_at=null, locked_by=null where id<>$1 and status in ('pending','running')",
+    [cenario.job.id],
+  );
   const [job] = await claimJobs(pool, { workerId, maxConcurrency: 1, batchSize: 1 });
   expect(job?.id).toBe(cenario.job.id);
   const handler = turnoDeTeste(canalDeTeste(cenario, status), corpo);
