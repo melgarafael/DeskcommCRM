@@ -477,14 +477,26 @@ it("o dossiê distingue uma mensagem aguardando o canal de um pedido para o agen
   );
   expect(ledger).toEqual([{ status: "queued" }]);
 
-  const { rows } = await pool.query(
-    "select * from followup_enrollment_events where organization_id=$1 and enrollment_id=$2 order by created_at",
-    [org, enrollmentId],
-  );
+  const rows = await eventosDoDossiePg(org, enrollmentId);
   const titulos = rows.map((row) => descreveEvento(row, {}, "pt-BR").titulo);
   expect(titulos).not.toContain("Mensagem enviada");
   expect(titulos).toContain("Mensagem aguardando o canal");
 });
+
+async function eventosDoDossiePg(org: string, enrollmentId: string): Promise<EventoDeEnrollment[]> {
+  const { rows: [schema] } = await pool.query("select to_regclass('public.followup_delivery_events') as entrega");
+  const entregar = schema.entrega
+    ? `union all select id, node_id, event_type, payload, created_at
+                 from followup_delivery_events where organization_id=$1 and enrollment_id=$2`
+    : "";
+  const { rows } = await pool.query<EventoDeEnrollment>(
+    `select id, node_id, event_type, payload, created_at
+      from followup_enrollment_events where organization_id=$1 and enrollment_id=$2
+      ${entregar} order by created_at, id`,
+    [org, enrollmentId],
+  );
+  return rows;
+}
 
 async function prepararEnvioDoDossie(
   mode: "ai_message" | "text" = "ai_message",
@@ -522,10 +534,7 @@ async function prepararEnvioDoDossie(
   }, { limit: 5 });
   expect(failed).toBe(0);
   expect(jobs).toHaveLength(1);
-  const eventos = async () => (await pool.query<EventoDeEnrollment>(
-    "select * from followup_enrollment_events where organization_id=$1 and enrollment_id=$2 order by created_at, id",
-    [org, enrollmentId],
-  )).rows;
+  const eventos = () => eventosDoDossiePg(org, enrollmentId);
   return { org, contactId, conversationId, sessionId, enrollmentId, job: jobs[0]!, eventos };
 }
 
