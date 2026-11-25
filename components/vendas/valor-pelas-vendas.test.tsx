@@ -16,6 +16,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { EditLeadDialog } from "@/components/kanban/EditLeadDialog";
 import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import type { Lead } from "@/lib/types/leads";
 
@@ -137,5 +138,47 @@ describe("o Valor do negócio e as vendas registradas", () => {
 
     expect(screen.getByTestId("valor-pelas-vendas")).toBeTruthy();
     expect(screen.queryByTestId("valor-registrar-venda")).toBeNull();
+  });
+
+  it("EditLeadDialog com vendas: Valor fica em leitura com a soma e Salvar não manda value_cents", async () => {
+    estado.vendas = [{ id: "v1", valor_cents: 10_000, currency: "BRL" }];
+    render(
+      <EditLeadDialog
+        open
+        onOpenChange={() => {}}
+        lead={{ ...negocio, value_cents: 10_000, valor_pelas_vendas: true }}
+        pipelineId={negocio.pipeline_id}
+      />,
+    );
+
+    const campo = screen.getByTestId("valor-pelas-vendas") as HTMLInputElement;
+    expect(campo.readOnly).toBe(true);
+    expect(campo.value).toMatch(/R\$.100,00/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
+    expect(estado.editarLead.mock.calls[0]![0].patch).not.toHaveProperty("value_cents");
+  });
+
+  it("EditLeadDialog sem vendas: Valor é editável e Salvar manda value_cents", async () => {
+    estado.vendas = [];
+    render(
+      <EditLeadDialog
+        open
+        onOpenChange={() => {}}
+        lead={{ ...negocio, value_cents: 10_000, valor_pelas_vendas: false }}
+        pipelineId={negocio.pipeline_id}
+      />,
+    );
+
+    const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
+    expect(campo.readOnly).toBe(false);
+
+    fireEvent.change(campo, { target: { value: "50,00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
+    expect(estado.editarLead.mock.calls[0]![0].patch.value_cents).toBe(5_000);
   });
 });
