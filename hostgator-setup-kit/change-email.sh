@@ -16,6 +16,11 @@
 # com a MESMA senha. O arquivo `.runtime/admin-credentials` do kit é atualizado
 # quando guardava o endereço antigo.
 source "$(dirname "$0")/_common.sh"
+# `raiz` sai ANTES do `enter_project`: ele pode dar `cd deskcommcrm`, e daí em
+# diante um `$0` relativo (rodado da pasta acima do projeto) já não resolve — o
+# `cd` falhava DEPOIS da troca no Supabase, e os dois arquivos ficavam com o
+# endereço antigo.
+raiz="$(cd "$(dirname "$0")/.." && pwd -P)"
 enter_project
 
 ATUAL="${1:-}"
@@ -77,7 +82,6 @@ c_grn "✓ login trocado: $ATUAL → $NOVO (a senha continua a mesma)"
 # procurar um login que já não existe — então os dois acompanham a troca, e só
 # quando o valor neles é mesmo o endereço trocado (numa instalação em que o dono
 # já foi outro, o arquivo não é mexido).
-raiz="$(cd "$(dirname "$0")/.." && pwd -P)"
 credenciais="${CREDENTIALS_FILE:-$raiz/.runtime/admin-credentials}"
 
 # `unset OWNER_EMAIL` antes do load, e leitura só quando o arquivo existe: o
