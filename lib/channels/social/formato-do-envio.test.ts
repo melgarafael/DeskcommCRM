@@ -5,6 +5,7 @@ import { recusaDeFormatoDaRede } from "./formato-do-envio";
 describe("recusaDeFormatoDaRede (TikTok, A21)", () => {
   it("texto e imagem JPG/PNG sem legenda saem", () => {
     expect(recusaDeFormatoDaRede("tiktok", { kind: "text" })).toBeNull();
+    expect(recusaDeFormatoDaRede("tiktok", { kind: "text", texto: "a".repeat(6000) })).toBeNull();
     expect(recusaDeFormatoDaRede("tiktok", { kind: "image", mime: "image/jpeg" })).toBeNull();
     expect(recusaDeFormatoDaRede("tiktok", { kind: "image", mime: "image/png" })).toBeNull();
     // mime com parâmetro e caixa alta, como vêm do storage
@@ -35,5 +36,13 @@ describe("recusaDeFormatoDaRede (TikTok, A21)", () => {
     for (const rede of ["instagram", "facebook", "telegram", "", null, undefined, "constructor"]) {
       expect(recusaDeFormatoDaRede(rede, { kind: "video", mime: "video/mp4", legenda: "x" }), String(rede)).toBeNull();
     }
+  });
+
+  it("texto acima de 6.000 caracteres é recusado com a saída no texto", () => {
+    const motivo = recusaDeFormatoDaRede("tiktok", { kind: "text", texto: "a".repeat(6001) });
+    expect(motivo).toMatch(/até 6\.000 caracteres/);
+    expect(motivo).toMatch(/divida o texto/);
+    // outra rede não é afetada
+    expect(recusaDeFormatoDaRede("instagram", { kind: "text", texto: "a".repeat(6001) })).toBeNull();
   });
 });

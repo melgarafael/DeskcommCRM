@@ -19,7 +19,8 @@
  * Mesma fonte do `teto-de-respostas.ts`: as linhas que o envio já grava. Aqui a
  * contagem é de TODA mensagem da empresa depois da última do cliente — IA, equipe e
  * automação, porque o TikTok conta todas —, sem as que falharam (`failed` não
- * chegou ao cliente e não gasta o limite da rede).
+ * chegou ao cliente e não gasta o limite da rede). Conta o que VAI sair: `queued` e
+ * `sending` ainda não têm `sent_at`, e valem pelo `created_at`.
  *
  * ## Só a IA passa por aqui
  *
@@ -100,7 +101,7 @@ export async function carregarLimiteDaRede(
           and m.conversation_id = $2
           and m.direction = 'outbound'
           and m.status <> 'failed'
-          and m.sent_at >= $3`,
+          and coalesce(m.sent_at, m.created_at) >= $3`,
       [input.organizationId, linha.id, lastInboundAt],
     );
     return { limites, respostasNaJanela: contagem.rows[0]?.total ?? 0, lastInboundAt };

@@ -141,7 +141,12 @@ export const socialAdapter: ChannelAdapter = {
     // mensagem, como as de cima: repetir o turno só repetiria o mesmo balão vermelho.
     const recusaDoFormato = recusaDeFormatoDaRede(
       await redeDaConta(envelope.organizationId, envelope.sessionRef),
-      { kind: envelope.kind, mime: envelope.media?.mime, legenda: envelope.media?.caption },
+      {
+        kind: envelope.kind,
+        mime: envelope.media?.mime,
+        legenda: envelope.media?.caption,
+        texto: envelope.body,
+      },
     );
     if (recusaDoFormato !== null) throw new FalhaDeEnvioDoCanal(recusaDoFormato, "permanente");
     const creds = await zernioCredsForAccountId(createAdminClient(), {

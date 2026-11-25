@@ -16,7 +16,8 @@
  *
  * ## O que NÃO é validado aqui
  *
- * O limite de 3 MB. O adapter não conhece o tamanho da imagem — só a URL assinada —,
+ * O limite de 3 MB (fica como segue: carregar o tamanho do upload no metadata da
+ * mensagem e conferi-lo aqui, sem baixar nada). O adapter não conhece o tamanho da imagem — só a URL assinada —,
  * e baixá-la só para medir custaria uma segunda transferência a cada envio. Imagem
  * acima disso volta do provedor como 400, que já é classificado como falha
  * permanente (não é repetido).
@@ -25,8 +26,11 @@ export interface MensagemDeSaida {
   kind: string;
   mime?: string | null;
   legenda?: string | null;
+  /** O corpo da mensagem de texto (`kind: "text"`). */
+  texto?: string | null;
 }
 
+const LIMITE_DE_TEXTO_DO_TIKTOK = 6000;
 const IMAGENS_DO_TIKTOK = new Set(["image/jpeg", "image/jpg", "image/png"]);
 
 /** Texto de GENTE que diz o que o TikTok aceita, ou `null` se esta mensagem pode sair. */
@@ -36,7 +40,11 @@ export function recusaDeFormatoDaRede(
 ): string | null {
   if (rede !== "tiktok") return null;
 
-  if (mensagem.kind === "text") return null;
+  if (mensagem.kind === "text") {
+    return (mensagem.texto ?? "").length > LIMITE_DE_TEXTO_DO_TIKTOK
+      ? "O TikTok aceita até 6.000 caracteres por mensagem. Esta mensagem não foi enviada: divida o texto."
+      : null;
+  }
 
   if (mensagem.kind !== "image") {
     return (

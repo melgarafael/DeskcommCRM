@@ -27,7 +27,7 @@ const ENTRADA = { organizationId: "org-1", contactId: "contato-1", channelSessio
 
 type Linhas = Record<string, unknown>[];
 function fakeDb(respostas: { sessao: Linhas; conversa?: Linhas; contagem?: Linhas }) {
-  const query = vi.fn(async (sql: string) => {
+  const query = vi.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes("from channel_sessions")) return { rows: respostas.sessao };
     if (sql.includes("from conversations")) return { rows: respostas.conversa ?? [] };
     if (sql.includes("from messages")) return { rows: respostas.contagem ?? [{ total: 0 }] };
@@ -61,7 +61,7 @@ describe("carregarLimiteDaRede", () => {
     expect(sqlDaContagem).toMatch(/direction = 'outbound'/);
     expect(sqlDaContagem).toMatch(/status <> 'failed'/);
     expect(sqlDaContagem).toMatch(/conversation_id = \$2/);
-    expect(sqlDaContagem).toMatch(/sent_at >= \$3/);
+    expect(sqlDaContagem).toMatch(/coalesce\(m\.sent_at, m\.created_at\) >= \$3/);
     expect(db.query.mock.calls[2]?.[1]).toEqual(["org-1", "conv-1", ultima]);
   });
 

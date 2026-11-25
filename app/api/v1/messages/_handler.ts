@@ -53,6 +53,7 @@ import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { CHAVE_DO_NOME_DA_INTEGRACAO } from "@/lib/messaging/nome-da-integracao";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { decidirLimiteDaRede, limitesDaRede } from "@/lib/channels/social/limites-da-rede";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 import { contarRespostasNaJanela } from "@/lib/channels/social/respostas-na-janela";
 import {
   CHAVE_DO_NOME_NA_METADATA,
@@ -901,7 +902,10 @@ export async function sendMessageHandler(
   const redeDaSessao = c.channel_sessions?.metadata?.social_platform;
   const limitesDaRedeSocial = limitesDaRede(typeof redeDaSessao === "string" ? redeDaSessao : null);
   if (limitesDaRedeSocial !== null) {
-    const ultimaDoCliente = c.last_inbound_at ? new Date(c.last_inbound_at) : null;
+    // A mesma régua de transporte da cadeia da IA (`instanteDoBanco`): a borda é
+    // exatamente 48 h, e as duas portas leem a hora do banco do mesmo jeito.
+    const instanteDoCliente = instanteDoBanco(c.last_inbound_at);
+    const ultimaDoCliente = instanteDoCliente === null ? null : new Date(instanteDoCliente);
     const respostas =
       ultimaDoCliente === null
         ? 0
