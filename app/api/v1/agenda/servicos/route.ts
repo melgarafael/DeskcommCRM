@@ -49,7 +49,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     const preview = service && query.data.de && query.data.ate ? await consultarServico(db, org, service,
       { de: new Date(query.data.de), ate: new Date(query.data.ate), agora: new Date() }) : null;
     const calendars = await googleRpc(db, "fn_calendar_service_catalog", { p_org: org });
-    return ok({ service, resources: resources ?? [], blocks: blocks ?? [], calendars, preview }, { requestId });
+    const lugaresLigado = await moduloLigado(createAdminClient(), "reservas_de_lugar");
+    return ok({ service, resources: resources ?? [], blocks: blocks ?? [], calendars, preview, lugares_ligado: lugaresLigado }, { requestId });
   } catch {
     return fail("internal_error", t("Não foi possível ler a configuração do serviço."), 500, { requestId });
   }

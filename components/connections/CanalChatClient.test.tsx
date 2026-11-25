@@ -340,3 +340,279 @@ it("com o cache do app (30 s), gerar nova chave troca o código na tela sem reca
   await waitFor(() => expect((screen.getByLabelText("Código para colar no site") as HTMLTextAreaElement).value).toContain("wck_nova"));
   expect(h.get).toHaveBeenCalledTimes(2);
 });
+
+it("salvar formato e posicao manda o PATCH com ambos os valores", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Formato");
+
+  const formato = screen.getByLabelText("Formato") as HTMLSelectElement;
+  const posicao = screen.getByLabelText("Posição") as HTMLSelectElement;
+
+  fireEvent.change(formato, { target: { value: "painel" } });
+  fireEvent.change(posicao, { target: { value: "esquerda" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar formato" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { formato: "painel" } }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Salvar posição" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { posicao: "esquerda" } }),
+  );
+});
+
+it("salvar formato e salvar posição só ligam quando algo mudou", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  mount();
+  await screen.findByLabelText("Formato");
+
+  const salvarFormato = screen.getByRole("button", { name: "Salvar formato" }) as HTMLButtonElement;
+  const salvarPosicao = screen.getByRole("button", { name: "Salvar posição" }) as HTMLButtonElement;
+  expect(salvarFormato.disabled).toBe(true);
+  expect(salvarPosicao.disabled).toBe(true);
+
+  fireEvent.change(screen.getByLabelText("Formato"), { target: { value: "embutido" } });
+  expect(salvarFormato.disabled).toBe(false);
+  fireEvent.change(screen.getByLabelText("Formato"), { target: { value: "bolha" } });
+  expect(salvarFormato.disabled).toBe(true);
+
+  fireEvent.change(screen.getByLabelText("Posição"), { target: { value: "esquerda" } });
+  expect(salvarPosicao.disabled).toBe(false);
+  fireEvent.click(salvarPosicao);
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { posicao: "esquerda" } }));
+});
+
+it("codigo para colar mostra o formato e posicao salvos", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      ...comConexao,
+      config: { ...comConexao.config, formato: "painel", posicao: "esquerda" },
+    },
+  });
+  mount();
+  const codigo = (await screen.findByLabelText("Código para colar no site")) as HTMLTextAreaElement;
+  expect(codigo.value).toContain("&f=painel");
+  expect(codigo.value).toContain("&p=esquerda");
+});
+
+it("ajustes da janela aparecem com os valores da configuracao", async () => {
+  h.get.mockResolvedValue({
+    data: {
+      ...comConexao,
+      config: {
+        ...comConexao.config,
+        avatar_url: "https://example.com/avatar.png",
+        auto_abrir_segundos: 30,
+        som: true,
+        respostas_rapidas: ["Sim", "Nao"],
+      },
+    },
+  });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  const avatar = screen.getByLabelText("Avatar") as HTMLInputElement;
+  expect(avatar.value).toBe("https://example.com/avatar.png");
+
+  const autoAbrir = screen.getByLabelText("Abrir sozinho após (segundos)") as HTMLInputElement;
+  expect(autoAbrir.value).toBe("30");
+
+  const som = screen.getByLabelText("Tocar som ao chegar resposta") as HTMLInputElement;
+  expect(som.checked).toBe(true);
+
+  const respostas = screen.getByLabelText("Respostas rápidas do chat") as HTMLTextAreaElement;
+  expect(respostas.value).toBe("Sim\nNao");
+});
+
+it("salvar ajustes manda os campos preenchidos pelo PATCH", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "https://example.com/novo.png" } });
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), { target: { value: "45" } });
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  fireEvent.change(screen.getByLabelText("Respostas rápidas do chat"), { target: { value: "Oi\nTchau" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, {
+      config: {
+        avatar_url: "https://example.com/novo.png",
+        auto_abrir_segundos: 45,
+        som: true,
+        respostas_rapidas: ["Oi", "Tchau"],
+      },
+    }),
+  );
+});
+
+it("mudar so o som manda apenas som", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { som: true } }));
+});
+
+it("auto-abrir em branco desliga e envia 0", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, auto_abrir_segundos: 30 } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Abrir sozinho após (segundos)");
+
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { auto_abrir_segundos: 0 } }),
+  );
+});
+
+it("auto-abrir ausente e campo em branco nao liga o botao salvar ajustes", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Abrir sozinho após (segundos)");
+
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), {
+    target: { value: "" },
+  });
+
+  expect(
+    (screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("avatar invalido mostra erro em portugues e nao envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "http://inseguro.com/a.png" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  expect(screen.getByText("Use https:// na URL do avatar.")).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("auto_abrir_segundos invalido mostra erro e nao envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Abrir sozinho após (segundos)");
+
+  fireEvent.change(screen.getByLabelText("Abrir sozinho após (segundos)"), { target: { value: "121" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  expect(screen.getByText("Use um número inteiro de 0 a 120 segundos.")).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("mais de 5 respostas rapidas mostra erro e nao envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Respostas rápidas do chat");
+
+  fireEvent.change(screen.getByLabelText("Respostas rápidas do chat"), {
+    target: { value: ["1", "2", "3", "4", "5", "6"].join("\n") },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  expect(screen.getByText("Use até 5 respostas rápidas, de 1 a 80 caracteres cada.")).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("apagar respostas rapidas envia array vazio", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, respostas_rapidas: ["Sim"] } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Respostas rápidas do chat");
+
+  fireEvent.change(screen.getByLabelText("Respostas rápidas do chat"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, {
+      config: { respostas_rapidas: [] },
+    }),
+  );
+});
+
+it("salvar ajustes so liga quando algo mudou", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  const salvar = screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement;
+  expect(salvar.disabled).toBe(true);
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "https://example.com/a.png" } });
+  expect(salvar.disabled).toBe(false);
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "" } });
+  expect(salvar.disabled).toBe(true);
+});
+
+it("som desmarcado e marcado volta ao estado inicial desliga o botao", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  mount();
+  await screen.findByLabelText("Tocar som ao chegar resposta");
+
+  const salvar = screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement;
+  expect(salvar.disabled).toBe(true);
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  expect(salvar.disabled).toBe(false);
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  expect(salvar.disabled).toBe(true);
+});
+
+it("depois de salvar o som, a caixinha mostra o que o servidor guardou e o botão desliga", async () => {
+  h.get
+    .mockResolvedValueOnce({ data: comConexao })
+    .mockResolvedValue({ data: { ...comConexao, config: { ...comConexao.config, som: true } } });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Tocar som ao chegar resposta");
+
+  fireEvent.click(screen.getByLabelText("Tocar som ao chegar resposta"));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { som: true } }));
+  await waitFor(() => expect(h.get).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+  const som = screen.getByLabelText("Tocar som ao chegar resposta") as HTMLInputElement;
+  await waitFor(() => expect(som.checked).toBe(true));
+  expect((screen.getByRole("button", { name: "Salvar ajustes" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("apagar o avatar manda avatar_url vazio, e não um PATCH vazio que diz 'salvo'", async () => {
+  h.get.mockResolvedValue({
+    data: { ...comConexao, config: { ...comConexao.config, avatar_url: "https://example.com/a.png" } },
+  });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Avatar");
+
+  fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
+  await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { avatar_url: "" } }));
+});

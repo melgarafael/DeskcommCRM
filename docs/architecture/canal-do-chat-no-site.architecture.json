@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Chat no site (canal webchat)",
-    "subtitle": "Partes 1 e 2 (Spec 36, F1+F2): conexão pela organização, chave pública, token de visitante, entrada pela ingestão do canal, respostas pelo handler comum entregues por stream; janela /chat/<chave>, script da bolha e aba de administração em Conexões; módulo canal_webchat desligado de fábrica; pausa em metadata.webchat.pausado",
+    "subtitle": "Partes 1, 2 e 3 (Spec 36, F1+F2+F3): conexão pela organização, chave pública, token de visitante, entrada pela ingestão do canal, respostas pelo handler comum entregues por stream; janela /chat/<chave>, script da bolha e aba de administração em Conexões; módulo canal_webchat desligado de fábrica; pausa em metadata.webchat.pausado",
     "output": "canal-do-chat-no-site.html",
     "quality_profile": "standard"
   },
@@ -32,7 +32,9 @@
     { "id": "redact", "lane": "banco", "col": 3, "type": "database", "label": "trg_redigir_conversas_ao_anonimizar: ao virar is_anonymized, zera contacts.social_identity e redige as mensagens" },
     { "id": "janela", "lane": "servidor", "col": 2, "type": "route", "label": "GET /chat/<chave>: HTML da janela com CSP frame-ancestors da lista de domínios; referencia /webchat-janela.js; sem React" },
     { "id": "bolha", "lane": "visitante", "col": 1, "type": "external", "label": "public/webchat.js: lê a chave do ?k= do próprio src, cria a bolha e o iframe; postMessage com href/referrer/UTMs" },
-    { "id": "aba", "lane": "operador", "col": 2, "type": "frontend", "label": "Conexões › Chat no site (CanalChatClient): ativa conexão, domínios, aparência, coleta, pausa (metadata.webchat.pausado), giro da chave" }
+    { "id": "aba", "lane": "operador", "col": 2, "type": "frontend", "label": "Conexões › Chat no site (CanalChatClient): ativa conexão, domínios, aparência, coleta, pausa (metadata.webchat.pausado), giro da chave" },
+    { "id": "agente_versao", "lane": "banco", "col": 3, "type": "database", "label": "ai_agent_versions publicada da conexão (ai_agents.published_version_id): trigger_config.filters.business_hours e o aviso; agente pausado ou arquivado não conta" },
+    { "id": "atendimento", "lane": "servidor", "col": 2, "type": "service", "label": "decidirAtendimento (pura) e carregarAtendimento: estado sem_agente, aberto ou fechado, com abre_em e aviso; erro de leitura vira aberto" }
   ],
   "edges": [
     { "id": "e1", "from": "admin", "to": "conexao_rota", "label": "cria, muda domínios, gira a chave" },
@@ -63,6 +65,10 @@
     { "id": "e26", "from": "aba", "to": "sessao_banco", "label": "grava webchat_public_key, allowed_origins, metadata.webchat" },
     { "id": "e27", "from": "janela", "to": "chave_rota", "label": "POST /api/v1/webchat/sessao com a chave pública" },
     { "id": "e28", "from": "janela", "to": "mensagens_rota", "label": "POST /api/v1/webchat/mensagens com bearer token" },
-    { "id": "e29", "from": "janela", "to": "eventos_rota", "label": "GET /api/v1/webchat/eventos stream com bearer token" }
+    { "id": "e29", "from": "janela", "to": "eventos_rota", "label": "GET /api/v1/webchat/eventos stream com bearer token" },
+    { "id": "e30", "from": "agente_versao", "to": "atendimento", "label": "lê a versão publicada da conexão, com organization_id e channel_session_id" },
+    { "id": "e31", "from": "atendimento", "to": "janela", "label": "entrega o estado pela sessão (data.atendimento): a janela mostra o aviso ou a linha de sem agente" },
+    { "id": "e32", "from": "chave_rota", "to": "atendimento", "label": "carrega o estado do agente da conexão que a chave resolveu" },
+    { "id": "e33", "from": "agente_versao", "to": "posentrada", "label": "o motor do agente adia o turno fora da mesma janela (já existia, não mudou)" }
   ]
 }

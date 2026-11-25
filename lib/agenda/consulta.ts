@@ -643,7 +643,7 @@ export interface AgendamentoListado {
    * explica por que ele aparece na agenda de quem não é o dono.
    */
   convidadosDaEquipe?: string[];
-  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number };
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number; lugar: string | null };
 }
 
 export interface ParametrosDaLista {
@@ -962,7 +962,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
+      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids, service_space_id, calendar_resources!calendar_appointments_service_space_fk(name)",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1138,6 +1138,12 @@ export async function listaAgendamentos(
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
           pessoas: Number(l.service_party_size ?? 1),
+          lugar: (() => {
+            const cr = l.calendar_resources;
+            if (!cr) return null;
+            const arr = Array.isArray(cr) ? cr : [cr];
+            return arr[0]?.name ?? null;
+          })(),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
             : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;
@@ -1162,14 +1168,14 @@ export async function idDoTipoPorSlug(
   supabase: SupabaseClient,
   organizationId: string,
   slug: string,
-): Promise<{ id: string; nome: string } | null> {
+): Promise<{ id: string; nome: string; servicoLigado?: boolean } | null> {
   const { data } = await supabase
     .from("calendar_event_types")
-    .select("id, name")
+    .select("id, name, service_enabled")
     .eq("organization_id", organizationId)
     .eq("slug", slug)
     .maybeSingle();
-  return data ? { id: String(data.id), nome: String(data.name) } : null;
+  return data ? { id: String(data.id), nome: String(data.name), servicoLigado: data.service_enabled === true } : null;
 }
 
 

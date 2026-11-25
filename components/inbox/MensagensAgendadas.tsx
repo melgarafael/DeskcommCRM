@@ -35,6 +35,12 @@ interface Agendamento {
   title: string | null;
   body: string;
   scheduled_at: string;
+  /** Série: recorrência, intervalo (só em "a cada N dias"), início e término locais, e o fuso. */
+  recorrencia?: "nenhuma" | "diaria" | "semanal" | "quinzenal" | "mensal" | "trimestral" | "semestral" | "anual" | "a_cada_n_dias";
+  intervalo_dias?: number | null;
+  inicio_local?: string | null;
+  termino_local?: string | null;
+  tz?: string | null;
   status: "agendada" | "encaminhada" | "falhou" | "cancelada";
   se_desconectado: "esperar" | "cancelar";
   motivo: string | null;
@@ -111,6 +117,31 @@ function useAgendamentos(conversationId: string) {
       apiClient.get<{ data: Agendamento[] }>(
         `/api/v1/mensagens-agendadas?conversation_id=${encodeURIComponent(conversationId)}`,
       ),
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** Uma ocorrência já tratada de uma série (segunda parte da #3118): o histórico, uma linha por envio. */
+interface OcorrenciaLinha {
+  id: string;
+  prevista_para: string;
+  status: "encaminhada" | "falhou" | "cancelada";
+  motivo: string | null;
+  mensagem: { status: string } | null;
+  agendamento: { title: string | null; body: string; recorrencia: string } | null;
+}
+
+/** Histórico das ocorrências da conversa. Filha da chave da conversa: quando a conversa muda, este cache acompanha. */
+function useOcorrencias(conversationId: string, ativo: boolean) {
+  return useQuery({
+    queryKey: [...chave(conversationId), "ocorrencias"] as const,
+    queryFn: () =>
+      apiClient.get<{ data: OcorrenciaLinha[] }>(
+        `/api/v1/mensagens-agendadas/ocorrencias?conversation_id=${encodeURIComponent(conversationId)}`,
+      ),
+    enabled: ativo,
     staleTime: 0,
     retry: 3,
     refetchOnWindowFocus: true,
@@ -197,6 +228,8 @@ function MensagensAgendadasDialog({
   const todos = consulta.data?.data ?? [];
   const pendentes = todos.filter((a) => a.status === "agendada");
   const historico = todos.filter((a) => a.status !== "agendada");
+  const ocorrencias = useOcorrencias(conversationId, relatorio);
+  const historicoDasSeries = ocorrencias.data?.data ?? [];
   const quando = (iso: string) => new Date(iso).toLocaleString(tag, { dateStyle: "short", timeStyle: "short" });
   const atualizar = () => qc.invalidateQueries({ queryKey: chave(conversationId) });
 
@@ -334,27 +367,52 @@ function MensagensAgendadasDialog({
             ) : consulta.isPending ? (
               <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
             ) : relatorio ? (
-              historico.length === 0 ? (
+              historico.length === 0 && historicoDasSeries.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t("Nenhum envio agendado saiu desta conversa ainda.")}</p>
               ) : (
-                <ul className="divide-y rounded-md border">
-                  {historico.map((a) => {
-                    const d = desfechoDoAgendamento(a);
-                    const motivo = rotuloDoMotivo(a.motivo, t);
-                    return (
-                      <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{a.title || a.body}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {quando(a.scheduled_at)}
-                            {motivo ? ` · ${motivo}` : ""}
-                          </p>
-                        </div>
-                        <Badge variant={d.tom}>{rotuloDoDesfecho(d.desfecho, t)}</Badge>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="space-y-3">
+                  {historicoDasSeries.length > 0 && (
+                    <ul className="divide-y rounded-md border">
+                      {historicoDasSeries.map((o) => {
+                        const d = desfechoDoAgendamento({ status: o.status, mensagem: o.mensagem });
+                        const motivo = rotuloDoMotivo(o.motivo, t);
+                        return (
+                          <li key={o.id} className="flex items-center gap-3 p-3 text-sm">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{o.agendamento?.title || o.agendamento?.body || t("Mensagem")}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {quando(o.prevista_para)}
+                                {o.agendamento && o.agendamento.recorrencia !== "nenhuma" ? ` · ${t("repetição")}` : ""}
+                                {motivo ? ` · ${motivo}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant={d.tom}>{rotuloDoDesfecho(d.desfecho, t)}</Badge>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {historico.length > 0 && (
+                    <ul className="divide-y rounded-md border">
+                      {historico.map((a) => {
+                        const d = desfechoDoAgendamento(a);
+                        const motivo = rotuloDoMotivo(a.motivo, t);
+                        return (
+                          <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{a.title || a.body}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {quando(a.scheduled_at)}
+                                {motivo ? ` · ${motivo}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant={d.tom}>{rotuloDoDesfecho(d.desfecho, t)}</Badge>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               )
             ) : pendentes.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada nesta conversa.")}</p>
@@ -366,7 +424,13 @@ function MensagensAgendadasDialog({
                       <p className="truncate font-medium">{a.title || a.body}</p>
                       <p className="text-xs text-muted-foreground">
                         {quando(a.scheduled_at)}
-                        {a.se_desconectado === "cancelar" ? ` · ${t("cancela se o número estiver desconectado")}` : ""}
+                        {a.se_desconectado === "cancelar"
+                          ? ` · ${
+                              a.recorrencia !== "nenhuma"
+                                ? t("pula esta vez se o número estiver desconectado")
+                                : t("cancela se o número estiver desconectado")
+                            }`
+                          : ""}
                       </p>
                     </div>
                     <Button
@@ -430,26 +494,42 @@ function FormularioDeAgendamento({
   onSalvo: () => Promise<void>;
 }) {
   const t = useT();
-  const inicio = inicial ? partesLocais(inicial.scheduled_at) : { data: "", hora: "" };
+  // A série guarda a hora de parede (`inicio_local`); linha antiga, sem série, cai no `scheduled_at`.
+  const inicio = inicial
+    ? inicial.inicio_local
+      ? { data: inicial.inicio_local.slice(0, 10), hora: inicial.inicio_local.slice(11, 16) }
+      : partesLocais(inicial.scheduled_at)
+    : { data: "", hora: "" };
   const [titulo, setTitulo] = useState(inicial?.title ?? "");
   const [texto, setTexto] = useState(inicial ? inicial.body : textoInicial);
   const [data, setData] = useState(inicio.data);
   const [hora, setHora] = useState(inicio.hora);
+  const [recorrencia, setRecorrencia] = useState<string>(inicial?.recorrencia ?? "nenhuma");
+  const [intervaloDias, setIntervaloDias] = useState(inicial?.intervalo_dias ? String(inicial.intervalo_dias) : "");
+  const [temTermino, setTemTermino] = useState(Boolean(inicial?.termino_local));
+  const [termino, setTermino] = useState(inicial?.termino_local ? inicial.termino_local.slice(0, 10) : "");
   const [seDesconectado, setSeDesconectado] = useState<"esperar" | "cancelar">(inicial?.se_desconectado ?? "esperar");
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
     if (!texto.trim()) return toast.error(t("Escreva a mensagem."));
     if (!data || !hora) return toast.error(t("Escolha a data e a hora."));
+    if (recorrencia === "a_cada_n_dias" && !intervaloDias) return toast.error(t("Informe de quantos em quantos dias."));
     // `new Date("AAAA-MM-DDTHH:mm")` lê no fuso do navegador: é a hora que a pessoa viu na tela.
+    // Série em andamento tem o início no passado: na edição, quem decide é o servidor (próxima ocorrência).
     const quando = new Date(`${data}T${hora}`);
-    if (quando.getTime() <= Date.now()) return toast.error(t("Escolha um horário no futuro."));
+    if ((!inicial || recorrencia === "nenhuma") && quando.getTime() <= Date.now()) return toast.error(t("Escolha um horário no futuro."));
 
     setSalvando(true);
+    // O servidor calcula a primeira ocorrência a partir da hora de parede e do fuso: o cliente não manda `scheduled_at`.
     const corpo = {
       title: titulo.trim() || null,
       body: texto,
-      scheduled_at: quando.toISOString(),
+      recorrencia,
+      intervalo_dias: recorrencia === "a_cada_n_dias" ? Number(intervaloDias) : null,
+      inicio_local: `${data}T${hora}`,
+      termino_local: temTermino && termino ? `${termino}T23:59` : null,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       se_desconectado: seDesconectado,
     };
     try {
@@ -489,6 +569,44 @@ function FormularioDeAgendamento({
         </div>
       </div>
       <div className="space-y-1">
+        <Label htmlFor="ag-recorrencia">{t("Recorrência")}</Label>
+        <select
+          id="ag-recorrencia"
+          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+          value={recorrencia}
+          onChange={(e) => setRecorrencia(e.target.value)}
+        >
+          <option value="nenhuma">{t("Nenhuma (envio único)")}</option>
+          <option value="diaria">{t("Diária")}</option>
+          <option value="semanal">{t("Semanal")}</option>
+          <option value="quinzenal">{t("Quinzenal")}</option>
+          <option value="mensal">{t("Mensal")}</option>
+          <option value="trimestral">{t("Trimestral")}</option>
+          <option value="semestral">{t("Semestral")}</option>
+          <option value="anual">{t("Anual")}</option>
+          <option value="a_cada_n_dias">{t("A cada N dias")}</option>
+        </select>
+      </div>
+      {recorrencia === "a_cada_n_dias" && (
+        <Input
+          type="number"
+          min={1}
+          max={365}
+          value={intervaloDias}
+          onChange={(e) => setIntervaloDias(e.target.value)}
+          placeholder={t("Insira de quantos em quantos dias")}
+        />
+      )}
+      {recorrencia !== "nenhuma" && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={temTermino} onChange={(e) => setTemTermino(e.target.checked)} />
+            {t("Definir data de término")}
+          </label>
+          {temTermino && <Input type="date" value={termino} onChange={(e) => setTermino(e.target.value)} />}
+        </div>
+      )}
+      <div className="space-y-1">
         <Label htmlFor="ag-desconectado">{t("Se o WhatsApp estiver desconectado na hora")}</Label>
         <select
           id="ag-desconectado"
@@ -497,7 +615,9 @@ function FormularioDeAgendamento({
           onChange={(e) => setSeDesconectado(e.target.value === "cancelar" ? "cancelar" : "esperar")}
         >
           <option value="esperar">{t("Esperar reconectar e enviar")}</option>
-          <option value="cancelar">{t("Cancelar este envio")}</option>
+          <option value="cancelar">
+            {recorrencia !== "nenhuma" ? t("Pular este envio") : t("Cancelar este envio")}
+          </option>
         </select>
       </div>
       <div className="flex justify-end gap-2">
