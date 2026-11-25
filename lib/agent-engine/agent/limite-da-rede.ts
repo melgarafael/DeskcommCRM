@@ -27,9 +27,14 @@
  * O envio da equipe não atravessa a cadeia; ele aplica a MESMA função pura em
  * `sendMessageHandler`, com `autor: "equipe"` (e o teto cheio de 10).
  *
- * Fail-open com registro, como o teto vizinho: se a leitura falhar, o gate passa
- * com `skipped: 'nao_conferido'`, e o pior que acontece é o TikTok recusar o
- * envio com o erro dele — a recusa que sempre existiu.
+ * A leitura NÃO é fail-open. Ela roda no `client` do `before-send`, que já está dentro
+ * de `begin` (com o lock do número): no Postgres uma consulta que falha ABORTA a
+ * transação inteira, e o `insert` do envio que vem depois cai junto
+ * ("current transaction is aborted"). Capturar o erro e seguir só esconderia o
+ * erro — medido pelo mantenedor no #5258. Por isso o erro propaga, como o das
+ * outras leituras desta cadeia, e o turno é refeito. O `nao_conferido` do gate
+ * fica para quem entregar a contagem como `null` (o envio da equipe, que lê pelo
+ * cliente HTTP do Supabase e não está numa transação).
  */
 import type pg from 'pg';
 
@@ -64,57 +69,45 @@ export async function carregarLimiteDaRede(
     organizationId: string;
     contactId: string;
     channelSessionId: string;
-    log?: Logger;
   },
 ): Promise<LimiteDaRedeDoEnvio | undefined> {
-  try {
-    const sessao = await db.query<{ rede: string | null }>(
-      `select metadata->>'social_platform' as rede
-         from channel_sessions
-        where organization_id = $1 and id = $2`,
-      [input.organizationId, input.channelSessionId],
-    );
-    const limites = limitesDaRede(sessao.rows[0]?.rede ?? null);
-    if (limites === null) return undefined;
+  const sessao = await db.query<{ rede: string | null }>(
+    `select metadata->>'social_platform' as rede
+       from channel_sessions
+      where organization_id = $1 and id = $2`,
+    [input.organizationId, input.channelSessionId],
+  );
+  const limites = limitesDaRede(sessao.rows[0]?.rede ?? null);
+  if (limites === null) return undefined;
 
-    const conversa = await db.query<{ id: string; last_inbound_at: Date | string | null }>(
-      `select id, last_inbound_at from conversations
-        where organization_id = $1 and contact_id = $2 and channel_session_id = $3
-        order by last_inbound_at desc nulls last
-        limit 1`,
-      [input.organizationId, input.contactId, input.channelSessionId],
-    );
-    const linha = conversa.rows[0];
-    const bruto = linha?.last_inbound_at ?? null;
-    const instante = bruto === null ? null : instanteDoBanco(bruto);
-    const lastInboundAt = instante === null ? null : new Date(instante);
-    // Sem conversa ou sem mensagem do cliente a janela está fechada e a contagem
-    // não muda o veredito: não gasta a segunda leitura.
-    if (linha === undefined || lastInboundAt === null) {
-      return { limites, respostasNaJanela: 0, lastInboundAt };
-    }
-
-    const contagem = await db.query<{ total: number }>(
-      `select count(*)::int as total
-         from messages m
-        where m.organization_id = $1
-          and m.conversation_id = $2
-          and m.direction = 'outbound'
-          and m.status <> 'failed'
-          and coalesce(m.sent_at, m.created_at) >= $3`,
-      [input.organizationId, linha.id, lastInboundAt],
-    );
-    return { limites, respostasNaJanela: contagem.rows[0]?.total ?? 0, lastInboundAt };
-  } catch (err) {
-    input.log?.warn('limite da rede: leitura falhou — envio segue', {
-      channel_session_id: input.channelSessionId,
-      erro: err instanceof Error ? err.message : String(err),
-    });
-    // A rede não pôde ser lida: não dá nem para dizer qual é o limite. Sem
-    // `limites` o gate não tem o que conferir; devolver `undefined` é registrar
-    // "não se aplica", e a falha fica no log acima.
-    return undefined;
+  const conversa = await db.query<{ id: string; last_inbound_at: Date | string | null }>(
+    `select id, last_inbound_at from conversations
+      where organization_id = $1 and contact_id = $2 and channel_session_id = $3
+      order by last_inbound_at desc nulls last
+      limit 1`,
+    [input.organizationId, input.contactId, input.channelSessionId],
+  );
+  const linha = conversa.rows[0];
+  const bruto = linha?.last_inbound_at ?? null;
+  const instante = bruto === null ? null : instanteDoBanco(bruto);
+  const lastInboundAt = instante === null ? null : new Date(instante);
+  // Sem conversa ou sem mensagem do cliente a janela está fechada e a contagem
+  // não muda o veredito: não gasta a segunda leitura.
+  if (linha === undefined || lastInboundAt === null) {
+    return { limites, respostasNaJanela: 0, lastInboundAt };
   }
+
+  const contagem = await db.query<{ total: number }>(
+    `select count(*)::int as total
+       from messages m
+      where m.organization_id = $1
+        and m.conversation_id = $2
+        and m.direction = 'outbound'
+        and m.status <> 'failed'
+        and coalesce(m.sent_at, m.created_at) >= $3`,
+    [input.organizationId, linha.id, lastInboundAt],
+  );
+  return { limites, respostasNaJanela: contagem.rows[0]?.total ?? 0, lastInboundAt };
 }
 
 /** Código que o turno reconhece no veto para deixar a conversa com uma pessoa. */

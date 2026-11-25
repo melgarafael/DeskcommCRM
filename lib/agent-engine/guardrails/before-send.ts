@@ -1917,7 +1917,6 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       organizationId: args.tenantId,
       contactId: args.leadId,
       channelSessionId: args.channelSessionId,
-      log: args.log,
     });
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);

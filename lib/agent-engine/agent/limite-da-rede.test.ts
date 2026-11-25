@@ -80,14 +80,6 @@ describe("carregarLimiteDaRede", () => {
     expect(await carregarLimiteDaRede(nuncaEscreveu, ENTRADA)).toMatchObject({ lastInboundAt: null });
     expect(nuncaEscreveu.query).toHaveBeenCalledTimes(2);
   });
-
-  it("banco fora: nunca lança, devolve `undefined` e deixa o aviso no log", async () => {
-    const db = { query: vi.fn().mockRejectedValue(new Error("conexão caiu")) } as never;
-    const warn = vi.fn();
-    const log = { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never;
-    await expect(carregarLimiteDaRede(db, { ...ENTRADA, log })).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1);
-  });
 });
 
 function ctxCom(limiteDaRede: GateContext["limiteDaRede"]): GateContext {
@@ -155,3 +147,14 @@ describe("o turno da IA numa rede com limite próprio", () => {
   });
 });
 
+
+describe("carregarLimiteDaRede: erro de leitura", () => {
+  it("propaga: dentro da transação do before-send, engolir o erro deixaria o envio cair abortado", async () => {
+    const db = {
+      query: vi.fn(async () => {
+        throw new Error("current transaction is aborted");
+      }),
+    } as unknown as Parameters<typeof carregarLimiteDaRede>[0];
+    await expect(carregarLimiteDaRede(db, ENTRADA)).rejects.toThrow(/aborted/);
+  });
+});
