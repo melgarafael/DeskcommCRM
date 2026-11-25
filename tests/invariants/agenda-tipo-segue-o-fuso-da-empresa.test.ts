@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from "vitest";
  * certo chega depois por UPDATE (boas-vindas, Configurações > Empresa), então o
  * tipo fica em São Paulo para sempre.
  *
- * As três peças da migration 9469:
+ * As três peças da migration 9477 (aberta como 9469 no #5216):
  *  (a) backfill idempotente dos tipos já semeados (roda uma vez);
  *  (b) trigger BEFORE INSERT que herda o fuso da empresa ao criar o tipo;
  *  (c) trigger AFTER UPDATE OF timezone que propaga a troca de fuso da empresa

@@ -1,4 +1,4 @@
--- 9469 — o tipo de agendamento segue o fuso da empresa (#5205)
+-- 9477 — o tipo de agendamento segue o fuso da empresa (#5205)
 -- manifest: O tipo de agendamento (calendar_event_types.service_timezone) nasce e acompanha o fuso da organização (organizations.timezone), em vez de ficar travado em America/Sao_Paulo. (a) backfill idempotente dos tipos já semeados, roda uma vez; (b) trigger BEFORE INSERT herda o fuso da empresa ao criar tipo; (c) trigger AFTER UPDATE OF timezone propaga a troca de fuso da empresa para os tipos que ainda estavam no fuso antigo; (d) revoke de EXECUTE nas duas funções definer. Psql puro, sem BEGIN/COMMIT, idempotente.
 
 -- (a) Ajuste dos tipos que já existem — roda UMA vez só.

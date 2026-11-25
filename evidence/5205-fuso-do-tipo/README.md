@@ -1,6 +1,6 @@
 # #5205 — o tipo de agendamento segue o fuso da empresa
 
-Prova pela tela em 24/11/2026, numa instalação de teste na 1.124.0 com a migration 9469 aplicada ao banco (a mudança é só de banco; a imagem do app é a publicada).
+Prova pela tela em 24/11/2026, numa instalação de teste na 1.124.0 com a migration 9469 aplicada (renumerada para 9477 na entrada na main) ao banco (a mudança é só de banco; a imagem do app é a publicada).
 
 1. Configurações › Organização: fuso trocado de `America/Sao_Paulo` para `America/Manaus` e salvo ("Organização atualizada").
 2. Configurações › Agendamentos › Novo tipo de agendamento: tipo criado pela tela, sem tocar em fuso.
