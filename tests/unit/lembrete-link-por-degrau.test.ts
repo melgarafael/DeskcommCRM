@@ -160,6 +160,25 @@ describe("o cron respeita o interruptor de cada degrau (#5154)", () => {
     expect(mocks.corpos).toHaveLength(0);
   });
 
+  it("texto com {{link}} e link pendente no apuro dos 15 min: a frase de que ele chega ainda entra", async () => {
+    // Aos 15 min o cron não espera mais. Se o texto pede `{{link}}`, sair sem a
+    // frase deixa "Entre por aqui: " — pior que o aviso com o link a caminho.
+    compromisso = linha({
+      minutosParaComecar: 14,
+      extras: null,
+      semLink: [60],
+      estadoDoLink: "pending",
+      body: "Oi {{nome}}! Entre por aqui: {{link}}",
+    });
+
+    const { data } = await (await GET(pedido())).json();
+
+    expect(data.enviados).toBe(1);
+    expect(mocks.corpos[0]).toContain("Oi Ana! Entre por aqui:");
+    expect(mocks.corpos[0]).toContain("O link da reunião chega por aqui");
+    expect(mocks.corpos[0]).not.toContain("https://");
+  });
+
   it("texto com {{link}} e link pronto: o texto manda, sem linha automática duplicada", async () => {
     compromisso = linha({
       minutosParaComecar: 30,

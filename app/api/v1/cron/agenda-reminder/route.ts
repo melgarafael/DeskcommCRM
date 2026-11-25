@@ -897,7 +897,20 @@ async function handle(req: NextRequest): Promise<Response> {
     // #5154: uma mensagem pode cobrir mais de um degrau; ela leva o link se
     // QUALQUER um dos degraus vencidos pedir (a união está em
     // `levaOLinkNoLembrete`). O texto continua vindo do degrau mais próximo.
-    const corpo = montarLembrete({ ...dadosDoLembrete, molde, linkDaReuniao: link, incluirLink });
+    //
+    // O molde pode PEDIR o link por conta própria (`{{link}}`). Aí a mensagem
+    // não pode sair antes de o link existir: com o interruptor desligado, o
+    // `{{link}}` continua sendo substituído, então o "chega por aqui" também é
+    // necessário para a frase não ficar pela metade. Isso é decidido com o
+    // molde FINAL (o do banco, quando houver) — usar `textoPedeOLink` aqui
+    // acrescentaria a linha automática a um texto que não pediu link.
+    const moldeUsaOLink = /\{\{\s*link\s*\}\}/i.test(molde ?? "");
+    const corpo = montarLembrete({
+      ...dadosDoLembrete,
+      molde,
+      linkDaReuniao: link,
+      incluirLink: incluirLink || moldeUsaOLink,
+    });
 
     // ─── O CARIMBO ANTES DO ENVIO (issue #2223) ────────────────────────────
     //
