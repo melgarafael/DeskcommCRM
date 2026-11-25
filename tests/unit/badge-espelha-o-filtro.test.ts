@@ -160,15 +160,17 @@ describe("o marcador da contagem é o da lista — uma régua só", () => {
 /**
  * ⭐ A GUARDA QUE TORNA A SABOTAGEM POSSÍVEL.
  *
- * Os filtros são aplicados DENTRO de `countExact()`, então toda contagem os herda
- * por construção. Isso é melhor que um teste — mas some no dia em que alguém
- * montar uma contagem por fora da fábrica, que é a única forma de o defeito
- * voltar. É isso que este caso vigia.
+ * Os filtros são aplicados DENTRO da fábrica (`consultaCom()`, exposta como
+ * `countCom()` para as abas exatas e `linhasCom()` para as pastas de histórico
+ * com teto — #4325/#4451), então toda consulta os herda por construção. Isso é
+ * melhor que um teste — mas some no dia em que alguém montar uma consulta por
+ * fora da fábrica, que é a única forma de o defeito voltar. É isso que este caso
+ * vigia.
  */
 describe("nenhuma contagem é montada por fora da fábrica", () => {
   const fonte = readFileSync("app/api/v1/conversations/counts/route.ts", "utf8");
 
-  it("toda contagem sai de `countExact()`", () => {
+  it("toda contagem sai da fábrica (`countCom`/`linhasCom`)", () => {
     const dentroDoPromiseAll = fonte.slice(
       fonte.indexOf("await Promise.all(["),
       fonte.indexOf("]);", fonte.indexOf("await Promise.all([")),
@@ -180,13 +182,30 @@ describe("nenhuma contagem é montada por fora da fábrica", () => {
       .filter((l) => l.startsWith("supabase") || l.includes('.from("conversations")'));
     expect(
       linhasDeContagem,
-      "contagem montada direto no supabase, por fora de countExact() — ela não herda nem a organização nem os filtros",
+      "contagem montada direto no supabase, por fora de countCom() — ela não herda nem a organização nem os filtros",
     ).toEqual([]);
+  });
+
+  it("as duas saídas da fábrica herdam os filtros: `countExact` E `linhasCom`", () => {
+    // #4451: as pastas de histórico passaram a trazer LINHAS com teto. Se
+    // `linhasCom()` montasse o `select` por conta própria, ela perderia
+    // organização, auxiliares e não-lidas — e o badge voltaria a contar o que a
+    // aba não mostra, agora pelo caminho novo.
+    expect(fonte).toMatch(/const countExact = \([\s\S]*?consultaCom\(/);
+    expect(fonte).toMatch(/const linhasCom = \([\s\S]*?consultaCom\(/);
+    expect(fonte).toContain("TETO_DAS_PASTAS");
+  });
+
+  it("nenhuma consulta deste arquivo pede estimativa (`planned`)", () => {
+    // #4451: `count: 'planned'` era o defeito — o planejador nunca estima menos
+    // de uma linha, e a pasta vazia mostrava 1. Cerca de texto porque a troca é
+    // um objeto de opções: quem reintroduzir a estimativa passa por aqui.
+    expect(semComentarios(fonte)).not.toContain("planned");
   });
 
   it("a fábrica aplica os auxiliares E o não-lidas", () => {
     const fabrica = fonte.slice(
-      fonte.indexOf("const countExact = ("),
+      fonte.indexOf("const consultaCom = ("),
       fonte.indexOf("await Promise.all(["),
     );
     expect(fabrica).toContain("organization_id");
@@ -199,7 +218,7 @@ describe("nenhuma contagem é montada por fora da fábrica", () => {
     // a contagem ignora o marcador em silêncio — e o badge passa a contar o que a
     // aba não mostra, que é o defeito que este arquivo existe para pegar.
     const fabrica = fonte.slice(
-      fonte.indexOf("const countExact = ("),
+      fonte.indexOf("const consultaCom = ("),
       fonte.indexOf("await Promise.all(["),
     );
     expect(fabrica, "o marcador não entra na fábrica").toContain("aplicarMarcadores(");

@@ -137,4 +137,60 @@ describe("isPublicPath", () => {
   it("e não libera nenhum sub-path dela de carona", () => {
     expect(isPublicPath("/account-suspended/qualquer")).toBe(false);
   });
+
+  /**
+   * O chat no site (spec 36, F1): o visitante não tem sessão. As duas POST que ele
+   * chama passam pelo proxy sem cookie; a autoridade mora dentro de cada rota (a
+   * chave pública e o token de visitante). Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera as duas POST públicas do chat no site, e nenhum sub-path delas", () => {
+    expect(isPublicPath("/api/v1/webchat/sessao")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/mensagens")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/sessao/qualquer")).toBe(false);
+    expect(isPublicPath("/api/v1/webchat/mensagens/qualquer")).toBe(false);
+    expect(isPublicPath("/api/v1/webchat")).toBe(false);
+  });
+
+  /**
+   * A janela do chat (spec 36, F2): o visitante abre `/chat/<chave>` sem sessão. A chave pública é a
+   * única coisa que a URL leva; a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera a janela do chat pela chave pública, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/chat/wck_abc")).toBe(true);
+    expect(isPublicPath("/chat")).toBe(false);
+    expect(isPublicPath("/chat/")).toBe(false);
+    expect(isPublicPath("/chat/wck_abc/x")).toBe(false);
+    expect(isPublicPath("/chat/outra")).toBe(false);
+  });
+
+  /**
+   * A GET de eventos do chat no site (spec 36, F1): o visitante também não tem sessão. O token
+   * vai no cabeçalho, e a autoridade mora na rota. Âncora `$`: nenhum sub-path nasce público.
+   */
+  it("libera a GET de eventos do chat no site, e nenhum sub-path dela", () => {
+    expect(isPublicPath("/api/v1/webchat/eventos")).toBe(true);
+    expect(isPublicPath("/api/v1/webchat/eventos/qualquer")).toBe(false);
+  });
+
+  /**
+   * A busca do token do módulo `connected` (spec 33, F2) é chamada pelo servidor do módulo, sem cookie.
+   * Entra SÓ o caminho exato: `/api/v1/extensions/` tem irmãos de sessão (girar segredo, instalar,
+   * operações) que não podem nascer públicos de carona.
+   */
+  it("libera a busca do token do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/token")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/token/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/token/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/tokens")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/11111111-1111-4111-8111-111111111111/segredo")).toBe(false);
+  });
+
+  it("libera a leitura de eventos do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/events")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/events/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/events/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/event")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/eventsx")).toBe(false);
+  });
 });

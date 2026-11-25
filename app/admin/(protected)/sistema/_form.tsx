@@ -380,8 +380,8 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     id: "modulo-reservas-de-lugar",
     rotulo: "Reservas de lugar",
     descricao:
-      "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
-    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.",
+      "Ligado, cada empresa pode cadastrar na agenda um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: o lugar é cadastrado na configuração do serviço, na Agenda, e escolhido ao reservar.",
   },
   {
     modulo: "link_de_pagamento",
@@ -401,6 +401,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     painelEm: "/app/connections",
   },
   {
+    modulo: "canal_webchat",
+    id: "modulo-canal-webchat",
+    rotulo: "Chat no site",
+    descricao:
+      "Ligado, cada empresa ganha o chat para colocar na página do próprio site, e as conversas que começam nele chegam ao Inbox. Desligado, o chat não recebe conversas novas; as que já chegaram ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a configuração do chat ainda não tem tela.",
+  },
+  {
     modulo: "campanha_por_email",
     id: "modulo-campanha-por-email",
     rotulo: "Campanha por e-mail (em construção)",
@@ -415,6 +423,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     descricao:
       "Ligado, o funil que declarar a régua de revisão por quilometragem passa a calcular a data prevista da próxima revisão quando o km do negócio é informado, pelo card, pela API, pelo MCP ou pela resposta do roteiro, e grava essa data no campo de data que o funil escolheu. Desligado, o km continua sendo gravado e nenhuma data é calculada; as datas já gravadas ficam como estão.",
     foraDoMenu: "Não cria porta no menu do CRM: a régua é declarada por funil, em pipelines.settings.revisao_por_km, e ainda não há tela para declará-la.",
+  },
+  {
+    modulo: "menu_de_atendimento",
+    id: "modulo-menu-de-atendimento",
+    rotulo: "Menu de atendimento sem IA",
+    descricao:
+      "Ligado, a primeira mensagem de uma conversa sem dono recebe um menu com opções numeradas, escrito pela empresa, e o cliente escolhe por número: a conversa vai para a fila, para uma pessoa, ou recebe um arquivo que já existe. Enquanto o menu espera a escolha, nenhuma resposta é gerada por IA — não há token gasto. Desligado, a entrada continua sendo da IA ou de quem atende, como hoje. A empresa ainda precisa ligar o menu em settings.menu_de_atendimento.ativa.",
+    foraDoMenu: "Não cria porta no menu do CRM: nesta fatia o menu é escrito em settings.menu_de_atendimento e a tela de edição ainda não existe.",
   },
   {
     modulo: "agencias",

@@ -460,14 +460,44 @@ describe("MessageBubble — rótulo de origem", () => {
     expect(screen.queryByText("Celular")).not.toBeInTheDocument();
   });
 
-  it("system leva 'Sistema' — a integração respondeu, mas não foi a IA", () => {
+  it("system sem nome de token leva 'Integração' — a integração respondeu, mas não foi a IA", () => {
     // Antes este caso exigia o CONTRÁRIO ("não inventa rótulo"), e estava certo
     // enquanto nenhuma linha gravava `system`. Desde a #866 o envio por token
     // grava esse valor: sem o ramo, a bolha voltava a omitir a autoria de quem
     // falou — e a tela lia como se tudo tivesse saído do CRM.
+    //
+    // #5160: o rótulo deixou de ser "Sistema" (que não dizia QUAL sistema).
+    // Sem nome gravado na linha — token antigo, revogado, leitura caída —, fica
+    // "Integração", que é o que `sent_via='system'` garante.
     render(<MessageBubble message={msg({ sent_via: "system" })} />);
-    expect(screen.getByText("Sistema")).toBeInTheDocument();
+    expect(screen.getByText("Integração")).toBeInTheDocument();
+    expect(screen.queryByText("Sistema")).not.toBeInTheDocument();
     expect(screen.queryByText("IA")).not.toBeInTheDocument();
+  });
+
+  it("#5160: system com o nome do token gravado mostra 'Integração · <nome>'", () => {
+    render(
+      <MessageBubble
+        message={msg({ sent_via: "system", metadata: { integration_actor_name: "ERP Externo" } })}
+      />,
+    );
+    expect(screen.getByText("Integração · ERP Externo")).toBeInTheDocument();
+  });
+
+  it("#5160: só `integration_actor_name` vale — apelido em metadata não vira nome", () => {
+    // O nome é escrito pelo HANDLER com a linha de `api_tokens`; metadata é
+    // entrada do cliente. Um token que mandasse o próprio nome no corpo não
+    // pode escolher como a chamada aparece na conversa (mesma lei do #3649).
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "system",
+          metadata: { agent_name: "Forjado", token_name: "Forjado", sender_name: "Forjado" },
+        })}
+      />,
+    );
+    expect(screen.getByText("Integração")).toBeInTheDocument();
+    expect(screen.queryByText(/Forjado/)).not.toBeInTheDocument();
   });
 
   it("em nome de (#1613) nomeia a PESSOA e a integração, em vez de 'Sistema'", () => {

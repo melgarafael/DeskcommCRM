@@ -38,6 +38,8 @@ import { allTools } from "@/lib/mcp/tools";
 const BASE = "linha de base, medida quando a cerca nasceu (2026-10-31)";
 /** Módulo opcional `amigo` (#4227): só entram no catálogo com o módulo instalado. */
 const AMIGO = "módulo amigo, fora do catálogo de quem não instalou";
+/** Editar os assistentes de IA pelo ChatGPT: só admin, nunca montadas no turno do agente. */
+const EDITAR_ASSISTENTES = "editar assistentes (só admin, por aplicativo conectado); nunca montada no turno do agente";
 
 const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_event_types": { tokens: 204, motivo: BASE },
@@ -46,6 +48,30 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_search_contacts": { tokens: 135, motivo: BASE },
   "crm_get_contact": { tokens: 188, motivo: BASE },
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
+  // #4517 — a ficha editável e os quatro comandos de conversa, medidos na
+  // criação (2026-11-12) e remedidos neste head em 2026-11-18. Os quatro comandos
+  // são pequenos de propósito: um input só (o id da conversa, mais a revisão
+  // opcional) e uma descrição que ensina o EFEITO, não a rota.
+  "crm_update_contact": {
+    tokens: 627,
+    motivo: "ferramenta nova de edição de ficha (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_pause_ai": {
+    tokens: 243,
+    motivo: "ferramenta nova de pausa da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_resume_ai": {
+    tokens: 244,
+    motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_close_conversation": {
+    tokens: 256,
+    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_reopen_conversation": {
+    tokens: 242,
+    motivo: "ferramenta nova de reabertura por token (#4517), medida na criação (2026-11-12)",
+  },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
   "crm_get_conversation_history": {
@@ -54,9 +80,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
       "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
   },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
+  "crm_count_conversations": { tokens: 117, motivo: "#4996 (item 2): ferramenta nova, só leitura, 1 filtro (status). Conta conversas por status sem paginar crm_list_conversations (que traz prévia de mensagem). Medido, não somado à mão" },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_count_leads": { tokens: 356, motivo: "#4996: ganhou por_etapa (+31 tokens) e a descrição passou a dizer que por_etapa traz só o stage_id, em vez de 'nunca ids' (+8, pedido do mantenedor no #5192): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -74,6 +101,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_improvement_proposals": { tokens: 85, motivo: BASE },
   "crm_get_org_memory": { tokens: 114, motivo: BASE },
   "crm_save_org_memory": { tokens: 285, motivo: BASE },
+  // Editar os assistentes de IA (só admin, por um aplicativo conectado como o
+  // ChatGPT). Pesam aqui porque a cerca mede `allTools` inteira; no turno do
+  // agente nenhuma é montada (`apenasHumano`, `lib/ai/runtime/tools.ts`).
+  "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
+  "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
+  "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
+  "crm_save_ai_agent_draft": { tokens: 1015, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens); nunca montada no turno do agente" },
+  "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
+  "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
+  "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
   "crm_list_contact_orders": { tokens: 234, motivo: BASE },
   "crm_search_products": { tokens: 362, motivo: BASE },
   "crm_get_honorarios_contrato": { tokens: 253, motivo: BASE },
@@ -102,8 +139,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_available_attendants": { tokens: 179, motivo: BASE },
   "crm_list_human_cases": { tokens: 149, motivo: BASE },
   "crm_get_human_case": { tokens: 208, motivo: BASE },
-  "crm_find_and_book_appointment": { tokens: 1028, motivo: BASE },
-  "crm_book_appointment": { tokens: 1203, motivo: BASE },
+  "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
+  "crm_book_appointment": { tokens: 1330, motivo: BASE },
   "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
@@ -118,7 +155,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
-  "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  "crm_send_whatsapp_message": {
+    tokens: 320,
+    motivo:
+      "#5034: media_storage_path e media_filename, para mandar arquivo já enviado ao CRM sem link público (documento de cliente não vai para a internet); a descrição ficou em uma frase, com a rota de upload",
+  },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
   // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
@@ -136,6 +177,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_set_webhook_source_active": { tokens: 199, motivo: BASE },
   "crm_set_automation_rule_active": { tokens: 232, motivo: BASE },
   "crm_schedule_followup": { tokens: 539, motivo: BASE },
+  "crm_create_task": { tokens: 736, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_list_tasks": { tokens: 901, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
+  "crm_update_task": { tokens: 919, motivo: "capacidade nova (#4838): tarefa da equipe pelo MCP, no pacote escalar; o peso é quase todo o regex que o zod gera para cada uuid e data — o mesmo das irmãs" },
   "crm_enroll_followup_flow": { tokens: 365, motivo: BASE },
   "crm_cancel_followup": { tokens: 254, motivo: BASE },
   "crm_close_demand": { tokens: 244, motivo: BASE },
@@ -214,9 +258,27 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +149 no `crm_update_lead` (#4666), que passou a dizer que `tags` substitui a
 // lista inteira e ganhou `tags_adicionar`/`tags_remover`. MEDIDO no merge com a
 // main pós-#4886 e #4684: 40675 (2026-11-18).
-// O total é MEDIDO no merge com a main (40730 = 40675 medidos nela + 55 deste
-// PR, remedido em 2026-11-18 sobre a main de `9da6943cc2`), não somado à mão.
-const TETO_TOTAL = 40730;
+// +2556 com as três ferramentas de tarefa (#4838): 736 de `crm_create_task`, 901 de
+// `crm_list_tasks` e 919 de `crm_update_task`. MEDIDO no merge com a main de 19/11
+// (que já tinha 40730): 43286 (2026-11-19), não somado à mão.
+// +2594 com as 7 ferramentas de editar os assistentes de IA (#4805; só admin, pelo
+// ChatGPT; nenhuma vai para o turno do agente): 2116 das ferramentas e 478 de
+// `configuracoes` no rascunho. MEDIDO no merge com a main de 20/11 (`4c7f1f2fd9`):
+// 45880 = 43286 + 2594 (2026-11-20), não somado à mão.
+// +39 de `crm_send_whatsapp_message` com media_storage_path e media_filename (#5034).
+// MEDIDO no merge com a main de 20/11: 45919 = 45880 + 39 (2026-11-20), não somado à mão.
+// +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242), MEDIDO
+// neste head em 2026-11-18 contra a main de então. MEDIDO de novo no merge com a
+// main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
+// +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
+// 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
+// +117 de `crm_count_conversations` (#4996, item 2). MEDIDO neste head sobre a main de
+// 2026-11-24 (`ceaa51d67`, que tinha 47562): 47679 = 47562 + 117, não somado à mão.
+// +8 da descrição de `crm_count_leads` corrigida (por_etapa traz stage_id). MEDIDO: 47687 = 47679 + 8.
+// +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
+// MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
+// não somado à mão.
+const TETO_TOTAL = 47941;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -225,7 +225,16 @@ async function gerarCheckout(
 ): Promise<{ url: string } | { vivo: string | null } | { recusa: ResultadoDoCheckout }> {
   const ad = adaptador(provedor);
   if (lida.provedor_cliente_id) {
-    const situacao = await ad.lerSituacao({ clienteRef: lida.provedor_cliente_id, assinaturaRef: lida.provedor_assinatura_id });
+    // A leitura tem dois recortes, e os dois valem: `organizacao` (#4862) é o
+    // vínculo pelo qual o Asaas filtra assinatura e cobrança — o cliente pode ter
+    // sido adotado do painel e carregar histórico de OUTRA integração; e
+    // `assinaturaRef` (#4056) é por onde o Efi lê a assinatura da linha, porque
+    // ele não tem cliente. Stripe e Asaas ignoram o segundo; o Efi ignora o primeiro.
+    const situacao = await ad.lerSituacao({
+      clienteRef: lida.provedor_cliente_id,
+      organizacao: orgId,
+      assinaturaRef: lida.provedor_assinatura_id,
+    });
     if (situacao.assinaturasVivas > 0) return { vivo: situacao.linkDePagamento };
   }
   if (lida.troca_id) {

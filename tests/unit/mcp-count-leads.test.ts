@@ -15,6 +15,7 @@
  *  - erro do banco propaga (nunca devolve 0 silencioso).
  */
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
@@ -39,17 +40,26 @@ interface Call {
   opts: Record<string, unknown> | undefined;
   eqs: Record<string, unknown>;
   nots: Array<[string, string, string]>;
+  orders: string[];
 }
 
 type Counts = { all?: number; open?: number; won?: number; lost?: number };
 
 function makeCtx(
   counts: Counts,
-  opts: { error?: string; pessoais?: string[]; contatoDoTurno?: string } = {},
+  opts: {
+    error?: string;
+    pessoais?: string[];
+    contatoDoTurno?: string;
+    /** Etapas devolvidas pela tabela `crm_stages`, na ordem do quadro. */
+    etapas?: string[];
+    /** Contagem por `stage_id` (quando a consulta filtra etapa). */
+    porEtapa?: Record<string, number>;
+  } = {},
 ): { ctx: McpContext; calls: Call[] } {
   const calls: Call[] = [];
   const from = (table: string) => {
-    const call: Call = { table, opts: undefined, eqs: {}, nots: [] };
+    const call: Call = { table, opts: undefined, eqs: {}, nots: [], orders: [] };
     calls.push(call);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
@@ -66,7 +76,17 @@ function makeCtx(
         return chain;
       },
       limit: () => chain,
+      order: (col: string) => {
+        call.orders.push(col);
+        return chain;
+      },
       then: (res: (v: unknown) => unknown) => {
+        if (table === "crm_stages") {
+          return Promise.resolve({
+            data: (opts.etapas ?? []).map((id) => ({ id })),
+            error: null,
+          }).then(res);
+        }
         if (table === "contacts") {
           return Promise.resolve({
             data: (opts.pessoais ?? []).map((id) => ({ id })),
@@ -75,6 +95,10 @@ function makeCtx(
         }
         if (opts.error) {
           return Promise.resolve({ count: null, error: { message: opts.error } }).then(res);
+        }
+        const etapa = call.eqs.stage_id as string | undefined;
+        if (etapa && opts.porEtapa) {
+          return Promise.resolve({ count: opts.porEtapa[etapa] ?? 0, error: null }).then(res);
         }
         const status = call.eqs.status as keyof Counts | undefined;
         return Promise.resolve({ count: counts[status ?? "all"] ?? 0, error: null }).then(res);
@@ -161,6 +185,97 @@ describe("crm_count_leads", () => {
   it("erro do banco propaga em vez de devolver 0", async () => {
     const { ctx } = makeCtx({}, { error: "boom" });
     await expect(crmCountLeads.handler({}, ctx)).rejects.toThrow("boom");
+  });
+
+  describe("por_etapa", () => {
+    const S1 = "55555555-5555-4555-8555-555555555551";
+    const S2 = "55555555-5555-4555-8555-555555555552";
+
+    it("devolve uma linha por etapa do funil, na ordem do quadro, só ids e números", async () => {
+      const { ctx, calls } = makeCtx(
+        { all: 10, open: 8, won: 1, lost: 1 },
+        { etapas: [S1, S2], porEtapa: { [S1]: 6, [S2]: 4 } },
+      );
+      const out = await crmCountLeads.handler({ pipeline_id: PIPE, por_etapa: true }, ctx);
+      expect(out).toEqual({
+        total: 10,
+        by_status: { open: 8, won: 1, lost: 1 },
+        por_etapa: [
+          { stage_id: S1, total: 6 },
+          { stage_id: S2, total: 4 },
+        ],
+      });
+      // as etapas vêm do funil DA organização
+      const stages = calls.find((c) => c.table === "crm_stages");
+      expect(stages?.eqs).toMatchObject({ organization_id: ORG, pipeline_id: PIPE });
+      // ordem do quadro, com desempate por id (etapas podem repetir `position`)
+      expect(stages?.orders).toEqual(["position", "id"]);
+      // toda contagem por etapa continua com organização, funil e head/count
+      const porEtapa = soLeads(calls).filter((c) => c.eqs.stage_id);
+      expect(porEtapa).toHaveLength(2);
+      for (const c of porEtapa) {
+        expect(c.eqs).toMatchObject({ organization_id: ORG, pipeline_id: PIPE });
+        expect(c.opts).toEqual({ count: "exact", head: true });
+      }
+    });
+
+    it("com status, conta cada etapa só nesse status", async () => {
+      const { ctx, calls } = makeCtx({ won: 3 }, { etapas: [S1], porEtapa: { [S1]: 2 } });
+      const out = await crmCountLeads.handler(
+        { pipeline_id: PIPE, status: "won", por_etapa: true },
+        ctx,
+      );
+      expect(out).toEqual({ total: 3, por_etapa: [{ stage_id: S1, total: 2 }] });
+      for (const c of soLeads(calls)) expect(c.eqs.status).toBe("won");
+    });
+
+    it("contato pessoal e contato do turno valem em cada etapa", async () => {
+      const { ctx, calls } = makeCtx(
+        { all: 1, open: 1 },
+        {
+          etapas: [S1],
+          porEtapa: { [S1]: 1 },
+          pessoais: [PESSOAL],
+          contatoDoTurno: CONTATO_TURNO,
+        },
+      );
+      await crmCountLeads.handler({ pipeline_id: PIPE, por_etapa: true }, ctx);
+      for (const c of soLeads(calls)) {
+        expect(c.nots).toEqual([["contact_id", "in", `(${PESSOAL})`]]);
+        expect(c.eqs.contact_id).toBe(CONTATO_TURNO);
+      }
+    });
+
+    it("funil sem etapas (ou de outra organização) devolve lista vazia, não contagem alheia", async () => {
+      const { ctx } = makeCtx({ all: 0, open: 0 }, { etapas: [] });
+      const out = (await crmCountLeads.handler({ pipeline_id: PIPE, por_etapa: true }, ctx)) as {
+        por_etapa?: unknown[];
+      };
+      expect(out.por_etapa).toEqual([]);
+    });
+
+    it("exige pipeline_id e não combina com stage_id", async () => {
+      const { ctx } = makeCtx({});
+      await expect(crmCountLeads.handler({ por_etapa: true }, ctx)).rejects.toThrow(/pipeline_id/);
+      await expect(
+        crmCountLeads.handler({ pipeline_id: PIPE, stage_id: S1, por_etapa: true }, ctx),
+      ).rejects.toThrow(/stage_id/);
+    });
+
+    it("o schema da ferramenta aceita por_etapa (o MCP não rejeita o parâmetro)", () => {
+      const schema = z.object(crmCountLeads.inputSchema);
+      expect(schema.parse({ pipeline_id: PIPE, por_etapa: true }).por_etapa).toBe(true);
+      expect(() => schema.parse({ pipeline_id: PIPE, por_etapa: "sim" })).toThrow();
+    });
+
+    it("sem por_etapa o payload é o de antes (sem a chave)", async () => {
+      const { ctx } = makeCtx({ all: 5, open: 5 });
+      const out = (await crmCountLeads.handler({ pipeline_id: PIPE }, ctx)) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(out).sort()).toEqual(["by_status", "total"]);
+    });
   });
 
   it("é leitura, role agent, scope mcp:read, e está no índice e no catálogo", () => {

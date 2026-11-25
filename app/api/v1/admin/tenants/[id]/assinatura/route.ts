@@ -171,7 +171,7 @@ export async function DELETE(_req: NextRequest, rota: Rota) {
     if (linha.provedor && linha.provedor_cliente_id) {
       let vivas: number;
       try {
-        vivas = (await adaptador(linha.provedor).lerSituacao({ clienteRef: linha.provedor_cliente_id })).assinaturasVivas;
+        vivas = (await adaptador(linha.provedor).lerSituacao({ clienteRef: linha.provedor_cliente_id, organizacao: tenantId })).assinaturasVivas;
       } catch (e) {
         logger.warn("cobranca.isencao_sem_leitura", { organization_id: tenantId, erro: e instanceof Error ? e.message : "desconhecido" });
         return fail(

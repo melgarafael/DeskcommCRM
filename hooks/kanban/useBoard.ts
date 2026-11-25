@@ -42,13 +42,59 @@ async function fetchBoard(pipelineId: string, leadPedido: string | null): Promis
  */
 const PULSE_MS = 1_200;
 
-/** O id do lead dentro do payload do postgres_changes (new, ou old no delete). */
+/**
+ * O id do lead dentro do payload do postgres_changes (new, ou old no delete).
+ */
 function idDoEvento(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as { new?: { id?: unknown }; old?: { id?: unknown } };
   const id = p.new?.id ?? p.old?.id;
   return typeof id === "string" ? id : null;
 }
+
+/**
+ * O FUNIL do evento, quando o payload o traz.
+ *
+ * O canal já assina com `filter: pipeline_id=eq.<funil>`, então na prática só
+ * chega o que é deste quadro. Ler o campo mesmo assim é a guarda que não depende
+ * do servidor ter aplicado o filtro: um canal sem filtro (versão antiga da
+ * peça, `REPLICA IDENTITY` mexida) entregaria o funil do vizinho, e reconciliar
+ * o quadro inteiro por causa de outro funil é exatamente o custo que a #4788
+ * manda tirar do caminho.
+ */
+function funilDoEvento(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as { new?: { pipeline_id?: unknown }; old?: { pipeline_id?: unknown } };
+  const funil = p.new?.pipeline_id ?? p.old?.pipeline_id;
+  return typeof funil === "string" ? funil : null;
+}
+
+/**
+ * A JANELA DA RAJADA (#4788): o tempo quieto que fecha um lote de eventos.
+ *
+ * Uma única ação do produto gera VÁRIAS linhas de `postgres_changes` — o
+ * `UPDATE` do movimento, o carimbo de `last_activity_at` da atividade, o
+ * fechamento que muda `status` — e cada uma delas reinvalidava o quadro. Num
+ * funil com milhares de negócios, dez eventos em 300 ms eram dez leituras do
+ * funil inteiro, cada uma enriquecida card a card: é o "quadro lento" da issue.
+ *
+ * 250 ms é curto o bastante para o operador não perceber atraso (o alvo do
+ * produto é ~250 ms de reconciliação entre usuários) e largo o bastante para
+ * caber a cascata inteira de um arrasto.
+ */
+export const JANELA_DA_RAJADA_MS = 250;
+
+/**
+ * O TETO da rajada, e não um detalhe.
+ *
+ * Debounce que só reinicia vira fome: num funil movimentado (ou durante um
+ * bulk de mil cards) sempre há um evento novo dentro da janela, o timer é
+ * sempre adiado e o quadro NUNCA reconcilia — a tela congela em silêncio, que é
+ * o pior desfecho possível para uma peça de frescor. Com o teto, a primeira
+ * leitura sai no máximo 1 s depois do primeiro evento do lote, mesmo sob
+ * tempestade; o resto do lote entra na leitura seguinte.
+ */
+export const TETO_DA_RAJADA_MS = 1_000;
 
 /**
  * A CHAVE DE CACHE DO QUADRO — uma só, e exportada.
@@ -98,6 +144,31 @@ export function useBoard(
   const [pulses, setPulses] = useState<Map<string, number>>(new Map());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  /**
+   * A RECONCILIAÇÃO DO LOTE (#4788).
+   *
+   * Uma rajada de eventos do MESMO funil vira UMA releitura do quadro — nunca
+   * uma por evento. `inicioDoLote` guarda o instante do primeiro evento ainda não
+   * atendido, e é ele que dá o teto: sem isso, um fluxo contínuo de eventos
+   * adiaria o timer para sempre e a tela pararia de acompanhar o servidor.
+   */
+  const reconciliacao = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inicioDoLote = useRef<number | null>(null);
+
+  const agendarReconciliacao = useCallback(() => {
+    const agora = Date.now();
+    if (inicioDoLote.current === null) inicioDoLote.current = agora;
+    const ateOTeto = TETO_DA_RAJADA_MS - (agora - inicioDoLote.current);
+    const atraso = Math.max(0, Math.min(JANELA_DA_RAJADA_MS, ateOTeto));
+
+    if (reconciliacao.current) clearTimeout(reconciliacao.current);
+    reconciliacao.current = setTimeout(() => {
+      reconciliacao.current = null;
+      inicioDoLote.current = null;
+      void qc.invalidateQueries({ queryKey });
+    }, atraso);
+  }, [qc, queryKey]);
+
   const query = useQuery({
     queryKey,
     queryFn: () => fetchBoard(pipelineId as string, leadPedido),
@@ -111,15 +182,22 @@ export function useBoard(
 
   const onChange = useCallback(
     (payload: unknown) => {
-      // Conservative: invalidate the board on any change. Optimistic patches
-      // arrive faster via useMoveCard's onMutate; this just reconciles
-      // cross-user changes within ~250ms.
-      qc.invalidateQueries({ queryKey });
+      // ─── EVENTO DE OUTRO FUNIL NÃO É ASSUNTO DESTE QUADRO (#4788) ────────
+      // A guarda é do payload, e não da assinatura do canal: quem entrega o
+      // evento não é quem decide se ele interessa a esta tela.
+      const funil = funilDoEvento(payload);
+      if (funil !== null && funil !== pipelineId) return;
 
       const leadId = idDoEvento(payload);
-      // Janela, não marca gasta por evento: uma ação minha chega aqui em DUAS
-      // parcelas (o movimento e o carimbo de `last_activity_at` da atividade).
-      if (!leadId || ehEcoLocal(leadId)) return;
+      // Eco da MINHA ação: o cache já tem o estado autoritativo (o `onSuccess`
+      // do move fundiu a resposta do servidor), então reler o funil aqui seria
+      // pagar de novo por uma leitura que acabou de ser respondida. O pulso
+      // também não entra — a ação local tem o feedback dela.
+      const eco = leadId !== null && ehEcoLocal(leadId);
+
+      if (!eco) agendarReconciliacao();
+
+      if (!leadId || eco) return;
 
       // CONTADOR, não booleano. Com um Set, o segundo evento remoto no mesmo
       // card dentro da janela não mudava nada: o id já estava lá, a classe
@@ -149,7 +227,7 @@ export function useBoard(
         }, PULSE_MS),
       );
     },
-    [qc, queryKey],
+    [agendarReconciliacao, pipelineId],
   );
 
   // O STATUS DO CANAL NÃO PODE SER DESCARTADO. `useRealtimeChannel` calcula
@@ -176,14 +254,29 @@ export function useBoard(
   });
 
   // Timers pendentes morrem com o componente — senão um setState chega depois
-  // do unmount e o React reclama (e o Map de timers vaza).
+  // do unmount e o React reclama (e o Map de timers vaza). A releitura do lote
+  // entra na mesma limpeza: um `invalidateQueries` agendado que dispara depois
+  // do unmount é rede pendurada sem tela para redesenhar.
   useEffect(() => {
     const pendentes = timers.current;
     return () => {
       for (const t of pendentes.values()) clearTimeout(t);
       pendentes.clear();
+      if (reconciliacao.current) clearTimeout(reconciliacao.current);
+      reconciliacao.current = null;
+      inicioDoLote.current = null;
     };
   }, []);
+
+  // Trocar de funil no mesmo componente não pode arrastar a rajada do funil
+  // ANTERIOR: o lote pendente releia a chave velha e some com ele.
+  useEffect(() => {
+    return () => {
+      if (reconciliacao.current) clearTimeout(reconciliacao.current);
+      reconciliacao.current = null;
+      inicioDoLote.current = null;
+    };
+  }, [queryKey]);
 
   // A REDE DE SEGURANÇA. Sem ela, um canal que para de entregar deixa o board
   // congelado num passado que parece presente — e nem voltar para a aba

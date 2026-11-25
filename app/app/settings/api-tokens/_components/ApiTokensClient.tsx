@@ -74,6 +74,11 @@ const SCOPES: { id: string; label: string }[] = [
   },
   { id: "contacts:read", label: "Ler contatos" },
   { id: "contacts:write", label: "Criar e editar contatos" },
+  // #4517 — pausar/retomar a IA e fechar/reabrir a conversa. Escopo separado de
+  // `contacts:write` de propósito: desligar o atendimento automático muda QUEM
+  // responde o cliente, não o cadastro. Sem esta linha, a permissão não existe
+  // para ser marcada e as quatro rotas nascem inalcançáveis em produção.
+  { id: "conversations:write", label: "Pausar e retomar a IA, encerrar e reabrir conversas" },
   { id: "leads:read", label: "Ler leads" },
   { id: "leads:write", label: "Criar e editar leads" },
   { id: "messages:read", label: "Ler mensagens" },
@@ -161,7 +166,7 @@ export function ApiTokensClient() {
                 <TableHead>{t("Nome")}</TableHead>
                 <TableHead>{t("Prefixo")}</TableHead>
                 <TableHead>{t("Escopos")}</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("Status")}</TableHead>
                 <TableHead>{t("Expira")}</TableHead>
                 <TableHead className="w-[120px]" />
               </TableRow>
@@ -169,7 +174,19 @@ export function ApiTokensClient() {
             <TableBody>
               {tokens.map((tok) => (
                 <TableRow key={tok.id}>
-                  <TableCell className="font-medium">{tok.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {tok.module_slug ? (
+                      // Token de MÓDULO conectado (spec 33, F2): identificado pelo módulo, nunca editável.
+                      <span className="flex flex-wrap items-center gap-2" data-token-de-modulo>
+                        {t("Módulo")} {tok.module_slug}
+                        <Badge variant="outline" className="text-xs">
+                          {t("Módulo conectado")}
+                        </Badge>
+                      </span>
+                    ) : (
+                      tok.name
+                    )}
+                  </TableCell>
                   <TableCell>
                     <code className="text-xs">{tok.prefix}…</code>
                   </TableCell>
@@ -201,8 +218,12 @@ export function ApiTokensClient() {
                         size="sm"
                         disabled={revoke.isPending}
                         onClick={async () => {
-                          await revoke.mutateAsync(tok.id);
-                          toast.success(t("Token revogado."));
+                          const res = await revoke.mutateAsync(tok.id);
+                          toast.success(
+                            res.data.module_deactivated
+                              ? t("Módulo desativado e token revogado.")
+                              : t("Token revogado."),
+                          );
                         }}
                       >
                         {t("Revogar")}

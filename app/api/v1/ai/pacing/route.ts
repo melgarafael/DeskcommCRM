@@ -13,9 +13,12 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { soltarAdiadosDaSessao } from "@/lib/agent-engine/pacing/adiados-da-janela";
@@ -34,7 +37,7 @@ export const dynamic = "force-dynamic";
 const KNOB_COLUMNS =
   // As duas janelas entram no SELECT: sem `resposta_*` aqui, a ficha Anti-ban
   // mostraria 7h-22h como se fosse a janela da resposta — e é a de DISPARO.
-  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, prospeccao_dias, timezone, warmup_daily_caps, number_activated_at, atraso_notar_ms, ms_por_caractere, atraso_minimo_ms, atraso_maximo_ms";
+  "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, teto_so_abordagem, prospeccao_dias, timezone, warmup_daily_caps, number_activated_at, atraso_notar_ms, ms_por_caractere, atraso_minimo_ms, atraso_maximo_ms";
 
 /**
  * `organizations.timezone`, para a tela mostrar o fuso em que o motor avalia a
@@ -49,12 +52,29 @@ async function lerFusoDaOrganizacao(
   return (data as { timezone?: string | null } | null)?.timezone ?? null;
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req?: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "channel_knobs" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  // Quem chama, pelo portão que o trouxe. Sem Bearer, a sessão segue como era.
+  let quem: { idioma: Idioma; org: { orgId: string } };
+  if (req && extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_knobs",
+      role: "agent",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_pacing", requestId);
+    if (teto) return teto;
+    quem = { idioma: authz.idioma ?? IDIOMA_PADRAO, org: { orgId: authz.organizationId } };
+  } else {
+    const authz = await requireRole("agent", { requestId, resource: "channel_knobs" });
+    if (!authz.ok) return authz.response;
+    quem = { idioma: authz.user.idioma, org: { orgId: authz.org.orgId } };
+  }
+  const t = (texto: string) => traduzir(texto, quem.idioma);
+  const org = quem.org;
 
   const admin = createAdminClient();
   const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }, fusoDaOrg] = await Promise.all([
@@ -175,6 +195,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       atraso_minimo_ms: null,
       atraso_maximo_ms: null,
       allow_sunday: null,
+      teto_so_abordagem: null,
       prospeccao_dias: null,
       timezone: null,
       warmup_daily_caps: null,

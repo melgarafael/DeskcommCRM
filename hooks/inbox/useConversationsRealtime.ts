@@ -104,6 +104,8 @@ export interface ConversationsFilters {
    * vida, este é quem responde a próxima mensagem do cliente.
    */
   comando?: readonly ComandoDoBanco[];
+  /** A ordem da Fila — `recentes` põe o contato que acabou de chegar em cima. */
+  ordem_fila?: "espera" | "recentes";
   search?: string;
   /**
    * Só as que têm mensagem não lida para o dono. Vai ao BANCO — migration nenhuma,
@@ -184,7 +186,7 @@ export function useConversationsRealtime(
     queryKey,
     enabled: habilitada,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam, signal }) => {
       const qs = new URLSearchParams();
       // Lista vira `open,pending`; valor único continua saindo como antes.
       if (filters.status) {
@@ -198,6 +200,7 @@ export function useConversationsRealtime(
       if (filters.comando && filters.comando.length > 0) {
         qs.set("comando", filters.comando.join(","));
       }
+      if (filters.ordem_fila) qs.set("ordem_fila", filters.ordem_fila);
       if (filters.exclude_finished) qs.set("exclude_finished", "true");
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);
@@ -222,9 +225,25 @@ export function useConversationsRealtime(
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {
-        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`);
+        // O `signal` do react-query VAI JUNTO (#4508).
+        //
+        // Sem ele, desistir desta lista não desistia da REQUISIÇÃO: o `fetch`
+        // seguia em voo, e quem trocou de aba (ou de filtro, ou de tela) pagava
+        // a espera inteira — até 10 s por tentativa — para depois DESCARTAR a
+        // resposta. Medido nos testes deste arquivo: sem o repasse, o `fetch`
+        // da lista nunca era abortado e a promessa da consulta ficava pendente
+        // até o timeout do cliente HTTP.
+        //
+        // O `apiClient` já sabia cancelar (`RequestOpts.signal`, e o `catch`
+        // dele propaga abort do chamador sem repetir) — o que faltava era a
+        // lista entregar o dela.
+        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, {
+          signal,
+        });
       } catch (err) {
-        showApiError(err);
+        // Aborto de quem chamou não é falha da API: não há motivo a mostrar, e
+        // o `showApiError` transformaria um cancelamento em toast de erro.
+        if (!signal.aborted) showApiError(err);
         throw err;
       }
     },

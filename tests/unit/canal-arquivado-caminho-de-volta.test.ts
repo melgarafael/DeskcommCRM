@@ -31,6 +31,7 @@ import { loadAuthUser, requireAuth, orgAtivaSemPortao } from "@/lib/auth/server"
 import type { AuthUser } from "@/lib/auth/types";
 import { CHANNEL_PROVIDER_META, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
+import { ORIGEM_DO_EMBEDDED_SIGNUP } from "@/lib/channels/meta/origem-da-conexao";
 import { validateMetaCredentials } from "@/lib/channels/meta/validate-credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sincronizarRecebimentoDeGrupos } from "@/lib/grupos/sincronizar-filtro";
@@ -415,6 +416,43 @@ describe("POST /api/v1/channels/official — reconectar é ressuscitar", () => {
     });
     const { POST } = await import("@/app/api/v1/channels/official/route");
     expect((await POST(reqOficial())).status).toBe(500);
+  });
+});
+
+describe("gravarCanalOficial — o metadataExtra também vale na reconexão (#4074)", () => {
+  const gravar = async (metadataExtra?: Record<string, unknown>) => {
+    const { gravarCanalOficial } = await import("@/lib/channels/meta/gravar-canal-oficial");
+    return gravarCanalOficial({
+      req: reqOficial(),
+      requestId: "req-1",
+      orgId: ORG,
+      userId: USER,
+      idioma: "pt-BR",
+      phoneNumberId: corpoOficial.phone_number_id,
+      wabaId: corpoOficial.waba_id,
+      token: corpoOficial.token,
+      origem: ORIGEM_DO_EMBEDDED_SIGNUP,
+      metadataExtra,
+    });
+  };
+
+  it("⭐ reconexão mescla as chaves novas sobre as que o canal já tinha", async () => {
+    const db = makeDb({
+      sessions: [canalOficial({ metadata: { ai_gate: "pre_go_live", meta_registro_pin_cifrado: "pin-velho" } })],
+    });
+    expect((await gravar({ meta_coexistencia: true })).status).toBe(200);
+    expect(db.linhas[0]?.metadata).toEqual({
+      ai_gate: "pre_go_live",
+      meta_registro_pin_cifrado: "pin-velho",
+      meta_coexistencia: true,
+    });
+  });
+
+  it("reconexão sem metadataExtra não toca no metadata", async () => {
+    const db = makeDb({ sessions: [canalOficial({ metadata: { ai_gate: "pre_go_live" } })] });
+    await gravar();
+    expect(patchDe(db, 0)).not.toHaveProperty("metadata");
+    expect(db.linhas[0]?.metadata).toEqual({ ai_gate: "pre_go_live" });
   });
 });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { useTiposDeLink } from "@/hooks/leads/useTiposDeLink";
 import { useT } from "@/hooks/i18n/useT";
 import type { Lead } from "@/lib/types/leads";
 import { EnvelopeSimple, Phone } from "@/lib/ui/icons";
@@ -28,6 +29,9 @@ interface Props {
  */
 export function ContatoNoCard({ lead }: Props) {
   const t = useT();
+  // #5128: o card mostra os mesmos tipos que a ficha. O hook compartilha o cache
+  // com o dossiê — uma chamada por sessão, não uma por card.
+  const tiposPermitidos = useTiposDeLink();
   const telefone = lead.contact_phone;
   const email = lead.contact_email;
   const links = (lead.contact_links ?? []).filter(({ href }) => /^https?:\/\//i.test(href));
@@ -60,7 +64,11 @@ export function ContatoNoCard({ lead }: Props) {
         </div>
       )}
       {links.length > 0 && (
-        <ListaDeLinks links={links} aoClicarNoLink={(e) => e.stopPropagation()} />
+        <ListaDeLinks
+          links={links}
+          tiposPermitidos={tiposPermitidos}
+          aoClicarNoLink={(e) => e.stopPropagation()}
+        />
       )}
     </div>
   );

@@ -133,8 +133,9 @@ Se precisar do modo sem perguntas (`--yes` com `.env` pronto), duas armadilhas m
   `.env.hostgator.example` — elas apontam para o canal móvel `stable`, e a instalação deve ficar
   presa a uma versão numerada. Deixe ausentes; o instalador põe a última versão publicada.
 - telemetria não é consentida por automação: se `SENTRY_DSN` estiver ausente, `--yes` grava
-  `SENTRY_DSN=off`. Só deixe `SENTRY_DSN=` vazio quando a pessoa já tiver aceitado explicitamente
-  o Sentry da comunidade; nas reexecuções essa escolha é preservada.
+  `SENTRY_DSN=off`. Para aceitar o Sentry do projeto escreva `SENTRY_DSN=comunidade` no `.env`
+  antes de rodar — o campo VAZIO significa **desligado** (issue #4936), e a escolha registrada é
+  preservada nas reexecuções (o `update.sh` converte sozinho o vazio de quem aceitou antes).
 
 A chave de IA é **opcional** (issue #670, resolvida): dá para instalar sem conta em provedor de IA
 e cadastrar depois em IA › Credenciais — a tela final da instalação lembra quem pulou, com o

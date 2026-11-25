@@ -2,6 +2,7 @@ import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { falasDaEquipeNoFim, ultimaFalaEDaEquipe } from "@/lib/escalacao/fala-da-equipe";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 /**
  * Handler do job `followup_turn` (F3-03; blueprint 1.3) — a peça BUILD da
@@ -33,6 +34,7 @@ import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
 import { rescheduleJob } from '../queue/queue';
 import {
+  corpoDaMensagem,
   getLeadContext,
   textoDoClienteNaUltimaMensagem,
   type LeadContext,
@@ -42,7 +44,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 import { applySendOutcome } from '../edge/crm/send-message';
 import { runBeforeSend } from '../guardrails/before-send';
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
-import { estadoDaJanela } from '@/lib/channels/janela';
+import { aJanelaRegulatoriaSeAplica, estadoDaJanela } from '@/lib/channels/janela';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { contextoDoContato, renderizarTextoDeFollowup } from '@/lib/automation/texto-do-followup';
 import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
@@ -135,7 +137,10 @@ export const followupTurnPayloadSchema = z
     // F3-04: 'template' = re-entrada DETERMINÍSTICA — envia a variante versionada
     // direto pela cadeia de guardrails, sem LLM (custo $0, blueprint). Ausente/'agent'
     // = run normal do agente (comportamento F3-03 intocado).
-    mode: z.enum(['agent', 'template']).optional(),
+    // 'retomada' = a equipe devolveu o atendimento ao agente e a última fala é
+    // dela (lib/escalacao/retomada-ao-devolver.ts enfileira). O agente continua
+    // de onde a pessoa parou — ver `runRetomadaAoDevolver`.
+    mode: z.enum(['agent', 'template', 'retomada']).optional(),
     // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO (lib/followup/engine.ts enfileira
     // este payload, campo a campo IDÊNTICO ao FollowupJobRequest.payload de lá).
     // Presente ⇒ ramo guardado em runFlowDrivenTurn; ausente ⇒ comportamento LEGADO
@@ -192,8 +197,12 @@ export type FollowupFlowTurnResult =
   | { kind: 'classified'; class: string }
   /** Classificar sem resposta ao envio do fluxo: nada a concluir, só o rastro da espera. */
   | { kind: 'awaiting_reply' }
-  /** O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi recusado. */
-  | { kind: 'deferred'; until: Date; reason: string }
+  /**
+   * O envio ficou estacionado até `until` (janela fechada) — nem saiu, nem foi
+   * recusado. `janelaRegulatoria` é o ESCOPO do canal deste turno: só ele
+   * autoriza o dossiê a falar em janela de 24 h (ver `aJanelaRegulatoriaSeAplica`).
+   */
+  | { kind: 'deferred'; until: Date; reason: string; janelaRegulatoria?: boolean }
   | { kind: 'planned'; propostas: PropostaDeEsperaBruta[]; modelo: string };
 
 /**
@@ -538,7 +547,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: pessoa.ate, reason: 'pessoa_no_comando' },
+            result: {
+              kind: 'deferred',
+              until: pessoa.ate,
+              reason: 'pessoa_no_comando',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -666,7 +680,12 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             organizationId: tenantId,
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
-            result: { kind: 'deferred', until: proximaAbertura, reason: 'followup_send_window' },
+            result: {
+              kind: 'deferred',
+              until: proximaAbertura,
+              reason: 'followup_send_window',
+              janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+            },
           });
           return;
         }
@@ -708,6 +727,14 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
       return;
     }
 
+    // Retomar ao devolver: continua o que a equipe começou. Caminho próprio
+    // porque a abertura de follow-up ("NÃO houve nova mensagem dele desde
+    // então", o bloco temporal) contaria ao modelo uma história errada.
+    if (payload.mode === 'retomada') {
+      await runRetomadaAoDevolver(deps, job, pool, ctx, target);
+      return;
+    }
+
     // F3-04: caminho determinístico ($0) — envia o template versionado direto pela
     // cadeia de guardrails, sem chamar o modelo. É um CAMINHO ADICIONAL: o run do
     // agente (abaixo) segue intocado quando o modo não é 'template'.
@@ -745,8 +772,117 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
  */
 type EnvioFixoDesfecho =
   | { kind: "sent" }
-  | { kind: "deferred"; until: Date; reason: string }
+  | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria: boolean }
   | { kind: "skipped" };
+
+/** Quantas mensagens do fim da conversa o turno de retomada lê para achar as falas da equipe. */
+const FALAS_DA_EQUIPE_LIDAS = 8;
+
+/**
+ * Abertura do turno de RETOMADA (retomar ao devolver): a equipe atendeu, a
+ * última fala é dela, e o atendimento voltou ao agente. As falas vão na
+ * íntegra porque é delas que o agente continua (o orçamento que a pessoa
+ * mandou, a condição que ela ofereceu) — o resumo do checkpoint conta o que foi
+ * decidido, não o que foi dito. Exportada PURA para teste, como as irmãs.
+ */
+export function buildRetomadaOpeningMessage(
+  falasDaEquipe: readonly string[],
+  previous: LeadCheckpointRow | null,
+  leadState: LeadStateRow | null,
+  context: LeadContext,
+  notesIndexBlock: string,
+  projeta = false,
+): string {
+  const falas = falasDaEquipe
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+    .map((t) => `- "${t}"`);
+  return [
+    'Retomada após atendimento da equipe: uma pessoa da equipe atendeu este cliente e acabou de devolver o atendimento a você.',
+    'A última mensagem da conversa é da equipe — o cliente ainda NÃO respondeu a ela.',
+    '',
+    '## O que a equipe acabou de enviar ao cliente',
+    ...(falas.length > 0 ? falas : ['(a equipe enviou um arquivo ou mídia sem texto — veja no histórico)']),
+    '',
+    ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta),
+    '',
+    'Continue o atendimento a partir do que a equipe enviou, seguindo as suas instruções (por exemplo: confirmar',
+    'se o cliente recebeu e conduzir ao próximo passo). NÃO repita o que a equipe já disse e não se apresente de novo.',
+    'Responda usando a tool send_message — NUNCA escreva a resposta como texto direto',
+    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
+    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+    'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+  ].join('\n');
+}
+
+/**
+ * Turno de RETOMADA. O consumidor do evento já decidiu enfileirar, mas entre a
+ * decisão e este instante o mundo pode ter andado — e falar por cima seria o
+ * defeito que a opção existe para evitar. Então confere DE NOVO, com a mesma
+ * régua (`lib/escalacao/fala-da-equipe.ts`):
+ *
+ *   - a última fala ainda é da equipe? Se o cliente escreveu, o turno de
+ *     resposta normal responde; se a IA ou um fluxo já falou, não há o que
+ *     retomar. Nos dois casos, no-op sem gastar modelo;
+ *   - nasceu um follow-up vivo para o contato? Uma voz só: ele fala.
+ *
+ * O resto dos portões é do núcleo (`runAgentTurn`) e da cadeia de envio:
+ * passagem para humano/`force_human`, elegibilidade, janela anti-ban e o veto
+ * do before-send (bloqueio, opt-out). A fronteira de atendimento já foi
+ * conferida no topo do handler.
+ */
+async function runRetomadaAoDevolver(
+  deps: FollowupTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  target: ReentrySendTarget,
+): Promise<void> {
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId });
+  const { rows } = await pool.query<{
+    direction: string;
+    sent_via: string | null;
+    type: string;
+    body: string | null;
+    media_url: string | null;
+    media_storage_path: string | null;
+    media_derived_text: string | null;
+  }>(
+    `select direction, sent_via, type, body, media_url, media_storage_path, media_derived_text
+       from messages
+      where organization_id = $1 and conversation_id = $2
+      order by coalesce(sent_at, created_at) desc, created_at desc, id desc
+      limit $3`,
+    [target.tenantId, target.conversationId, FALAS_DA_EQUIPE_LIDAS],
+  );
+  if (!ultimaFalaEDaEquipe(rows[0])) {
+    runLog.info('retomada no-op — a última fala já não é da equipe', {
+      ultima_direcao: rows[0]?.direction ?? null,
+      ultimo_envio: rows[0]?.sent_via ?? null,
+    });
+    return;
+  }
+  const { rows: vivos } = await pool.query<{ id: string }>(
+    `select id from followup_enrollments
+      where organization_id = $1 and contact_id = $2
+        and status in ('active','waiting_reply','paused_handoff','paused_manual')
+      limit 1`,
+    [target.tenantId, target.leadId],
+  );
+  if (vivos.length > 0) {
+    runLog.info('retomada no-op — há follow-up vivo para o contato (uma voz só)', {
+      enrollment_id: vivos[0]!.id,
+    });
+    return;
+  }
+  const falas = falasDaEquipeNoFim(rows).map((m) => corpoDaMensagem(m));
+  await runAgentTurn(deps, job, pool, ctx, {
+    channelSessionId: target.channelSessionId,
+    conversationId: target.conversationId,
+    buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) =>
+      buildRetomadaOpeningMessage(falas, previous, leadState, context, notesIndexBlock, projeta),
+  });
+}
 
 interface ReentrySendTarget {
   tenantId: string;
@@ -1037,7 +1173,7 @@ async function runFlowDrivenTurn(
       } else if (desfecho.kind === 'skipped') {
         await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'skipped',reason:'O envio foi recusado pelas regras do atendimento.'}});
       } else {
-        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason}});
+        await complete(pool,{jobId:job.id,jobClaim:claimOfJob(job),organizationId:target.tenantId,enrollmentId,nodeId,result:{kind:'deferred',until:desfecho.until,reason:desfecho.reason,janelaRegulatoria:desfecho.janelaRegulatoria}});
       }
       return;
     }
@@ -1066,7 +1202,12 @@ async function runFlowDrivenTurn(
         organizationId: target.tenantId,
         enrollmentId,
         nodeId,
-        result: { kind: 'deferred', until: aberturaAntiBan, reason: 'outside_window' },
+        result: {
+          kind: 'deferred',
+          until: aberturaAntiBan,
+          reason: 'outside_window',
+          janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+        },
       });
       return;
     }
@@ -1716,7 +1857,12 @@ async function sendFixedOutbound(
         code: chain.code,
         next_run_at: chain.nextAllowedAt.toISOString(),
       });
-      return { kind: "deferred", until: chain.nextAllowedAt, reason: chain.code };
+      return {
+        kind: "deferred",
+        until: chain.nextAllowedAt,
+        reason: chain.code,
+        janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, tenantId, target.channelSessionId),
+      };
     }
     /**
      * #4429 — A COLISÃO DE REPETIÇÃO ADIA, COMO A JANELA. O veto pode chegar por
@@ -1749,6 +1895,32 @@ async function sendFixedOutbound(
       throw new Error('envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
     case 'unavailable':
       throw new Error(`envio fixo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
+  }
+}
+
+/**
+ * O canal desta conversa impõe a janela de 24 h? Lido do PROVEDOR (capability),
+ * nunca do nome do canal, e só quando um adiamento está sendo registrado.
+ *
+ * O dado serve ao dossiê: `action_deferred` daqui carrega `janela_regulatoria`
+ * junto com o motivo, para a linha do tempo não anunciar a janela da Meta numa
+ * conexão por QR — que é o defeito medido na #4913. Falha de leitura responde
+ * `false`: o adiamento já está decidido, e o erro não pode derrubá-lo.
+ */
+async function janelaRegulatoriaDoCanal(
+  pool: pg.Pool,
+  tenantId: string,
+  channelSessionId: string | null | undefined,
+): Promise<boolean> {
+  if (!channelSessionId) return false;
+  try {
+    const { rows } = await pool.query<{ provider: string | null }>(
+      `select provider from channel_sessions where organization_id = $1 and id = $2 limit 1`,
+      [tenantId, channelSessionId],
+    );
+    return aJanelaRegulatoriaSeAplica(rows[0]?.provider);
+  } catch {
+    return false;
   }
 }
 
@@ -1799,7 +1971,12 @@ async function adiarPorRepeticao(
     adiamento: adiamentos + 1,
     teto: MAX_ADIAMENTOS_POR_REPETICAO,
   });
-  return { kind: 'deferred', until, reason: motivo };
+  return {
+    kind: 'deferred',
+    until,
+    reason: motivo,
+    janelaRegulatoria: await janelaRegulatoriaDoCanal(pool, target.tenantId, target.channelSessionId),
+  };
 }
 
 /** Quantos adiamentos POR REPETIÇÃO este passo já teve — o teto de `adiarPorRepeticao`. */

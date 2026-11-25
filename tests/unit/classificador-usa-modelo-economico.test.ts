@@ -53,8 +53,8 @@ const CATALOGO = [
   m("openai", "gpt-5.4-nano", 20, 125),
   m("openai", "text-embedding-3-small", 2, 0, { supports_embedding: true }),
   m("google", "gemini-3.5-flash", 150, 900),
-  m("google", "gemini-2.0-flash", 10, 40),
-  m("google", "gemini-2.5-flash-lite", 10, 40),
+  m("google", "gemini-3.1-flash-lite", 25, 150),
+  m("google", "gemini-3.5-flash-lite", 30, 250),
 ];
 
 describe("escolherModeloEconomico", () => {
@@ -68,11 +68,26 @@ describe("escolherModeloEconomico", () => {
     expect(escolherModeloEconomico(CATALOGO, "openai", "gpt-5.6-terra")).toBe("gpt-5.6-luna");
   });
 
+  it("escolhe o econômico do Google entre os que o provedor ainda serve", () => {
+    // O 2.0 Flash e o 2.5 Flash-Lite (10/40 cada) eram os mais baratos e são os
+    // que o Google aposentou: 404 medido em 18/11/2026 (#4925). Com eles fora do
+    // catálogo, o econômico é o 3.1 Flash-Lite (25/150) — $0,25/$1,50 na tabela
+    // Standard de aistudio.google.com/docs/pricing.
+    expect(escolherModeloEconomico(CATALOGO, "google", "gemini-3.5-flash")).toBe("gemini-3.1-flash-lite");
+  });
+
   it("desempata de forma determinística (saída menor, depois id mais novo)", () => {
     // luna (20/120) vence nano (20/125) pela saída.
     expect(escolherModeloEconomico(CATALOGO, "openai", "gpt-5.6-terra")).toBe("gpt-5.6-luna");
-    // Preço idêntico: o id em ordem decrescente — a versão mais nova.
-    expect(escolherModeloEconomico(CATALOGO, "google", "gemini-3.5-flash")).toBe("gemini-2.5-flash-lite");
+    // Preço idêntico: o id em ordem decrescente — a versão mais nova. Par
+    // SINTÉTICO de propósito: com os 2.5 aposentados (#4925) o catálogo vivo não
+    // tem dois Google de mesmo preço, e o desempate precisa continuar provado.
+    const empatados = [
+      ...CATALOGO,
+      m("google", "gemini-fixture-b", 25, 150),
+      m("google", "gemini-fixture-b.1", 25, 150),
+    ];
+    expect(escolherModeloEconomico(empatados, "google", "gemini-3.5-flash")).toBe("gemini-fixture-b.1");
   });
 
   it("não troca quando o agente já está no modelo mais barato", () => {

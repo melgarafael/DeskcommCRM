@@ -20,7 +20,11 @@ const ROOT = process.cwd();
 
 /** Todo arquivo que carrega uma cópia da lista de colunas de versão. */
 const FILES_WITH_VERSION_COLUMNS = [
-  "app/app/ai/agents/[id]/_actions.ts",
+  // A cópia das server actions do editor mudou de casa: salvar rascunho,
+  // publicar e reverter moram em lib/ai/agents/edicao.ts (compartilhados com o
+  // MCP do CRM), e a LISTA que eles usam mora em lib/ai/agents/linha-da-versao.ts
+  // — `edicao.ts` só a reexporta. A cerca vigia onde a lista é ESCRITA.
+  "lib/ai/agents/linha-da-versao.ts",
   "app/app/ai/agents/[id]/page.tsx",
   "app/api/v1/ai/agents/route.ts",
   "app/api/v1/ai/agents/[id]/versions/route.ts",
@@ -389,6 +393,12 @@ function chavesNomeadas(bloco: string): string[] {
 function chavesDoAlvo(alvo: string): string[] {
   const nomes = chavesNomeadas(alvo);
   if (/\.\.\.[\w$]+\.version\b/.test(alvo)) nomes.push(...chavesCobertasPeloEsquema());
+  // `...linhaDoRascunhoClonado(src)` (reverter em lib/ai/agents/edicao.ts): as
+  // chaves são as que o corpo da função ESCREVE, lidas no arquivo dela.
+  if (/\.\.\.linhaDoRascunhoClonado\(/.test(alvo)) {
+    const corpo = fonte("lib/ai/agents/linha-da-versao.ts").split("export function linhaDoRascunhoClonado")[1] ?? "";
+    nomes.push(...chavesNomeadas(corpo));
+  }
   return [...new Set(nomes)];
 }
 
@@ -413,7 +423,8 @@ describe("todo INSERT de versão leva todas as chaves de versionShapeSchema", ()
     for (const esperado of [
       "app/api/v1/ai/agents/route.ts",
       "app/api/v1/ai/agents/[id]/versions/route.ts",
-      "app/app/ai/agents/[id]/_actions.ts",
+      // O INSERT do rascunho e o do reverter saíram de `_actions.ts` (ver acima).
+      "lib/ai/agents/edicao.ts",
       "lib/ai/agents/duplicate.ts",
       "lib/ai/apply-proposal.ts",
       ...Object.keys(INSERTS_FORA_DA_COBRANCA),

@@ -29,7 +29,13 @@ export type ChannelProvider =
    * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
    * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
    */
-  | "telegram";
+  | "telegram"
+  /**
+   * Chat no site (Spec 36): o widget que o visitante abre no próprio site da
+   * empresa. Sem telefone e sem rede por trás — o endereço é o `visitante_id` da
+   * conversa. Ver `./adapters/webchat.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "webchat";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -47,6 +53,9 @@ export type ChannelProvider =
  * pareasse voz derrubava `getAdapter` com `unknown_channel_provider`.
  */
 export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls">;
+
+/** O que o canal faz com a nota de voz da IA — ver `ChannelCapabilities.voiceNote`. */
+export type NotaDeVoz = "server-convert" | "opus-only" | "wav-only" | "none";
 
 export interface ChannelCapabilities {
   /** Pode enviar texto livre a qualquer momento? false = exige template fora da janela. */
@@ -73,11 +82,16 @@ export interface ChannelCapabilities {
    * O que o canal faz com a NOTA DE VOZ que sai daqui:
    *   - 'server-convert' = o canal converte áudio (recebe mp3);
    *   - 'opus-only' = precisamos entregar ogg/opus mono;
+   *   - 'wav-only' = precisamos entregar WAV (PCM) — o que a DM do Instagram
+   *     aceita dos formatos que sabemos produzir sem ffmpeg;
    *   - 'none' = este canal não entrega nota de voz nossa — o agente responde
    *     em texto, e a tela do agente diz isso. Existe para não mentir com um
-   *     dos dois de cima num canal onde todo envio de áudio é recusado.
+   *     dos de cima num canal onde todo envio de áudio é recusado.
+   *
+   * Num provedor que serve várias redes, o valor daqui é o da rede NÃO medida;
+   * a rede medida sobrepõe por `notaDeVozDoCanal` (`./capabilities.ts`).
    */
-  voiceNote: "server-convert" | "opus-only" | "none";
+  voiceNote: NotaDeVoz;
   groups: "full" | "limited" | "none";
   /** Mensagem entregue gera custo → decisões de envio precisam considerar orçamento. */
   costPerMessage: boolean;
@@ -135,6 +149,15 @@ export interface ChannelCapabilities {
    * qualquer divergência entre as duas, nos dois sentidos.
    */
   reportaConversao: boolean;
+  /**
+   * O canal marca como lidas mensagens ESPECÍFICAS, pelos ids que o envelope
+   * traz em `readExternalIds` (o visto azul, #2981/#5015)?
+   *
+   * É a pergunta que o envio faz antes de ler o histórico da conversa atrás
+   * desses ids: canal que responde `false` ignora o campo, e a leitura seria
+   * trabalho jogado fora no caminho da resposta.
+   */
+  marcaLidasPorMensagem: boolean;
 }
 
 /**
@@ -251,6 +274,22 @@ export interface OutboundEnvelope extends ChannelTenantScope {
    * `undefined` = envio solto, que é o caso comum.
    */
   replyToExternalId?: string | null;
+  /**
+   * As mensagens do cliente que ESTA resposta lê, pelo id que o PROVIDER conhece
+   * (`messages.external_id` das linhas de entrada) — para o canal marcá-las como
+   * lidas depois do envio (o visto azul, #2981).
+   *
+   * Existe porque há transporte que só sabe marcar por mensagem: o NOWEB sem
+   * "Guardar histórico" recusa o "li a conversa inteira" (#5015). Quem monta o
+   * envelope lê o banco e resolve a lista; o adapter só repassa — mesma divisão
+   * do `replyToExternalId`, e pelo mesmo motivo (adapter não lê banco,
+   * `docs/doctrine/restricao-de-canal.md`).
+   *
+   * OPCIONAL: `undefined` (ou lista vazia) = não há ids conhecidos, e o canal
+   * faz o que fazia antes — "li a conversa inteira", que vale para quem tem o
+   * store ligado. Canal que não marca leitura ignora o campo.
+   */
+  readExternalIds?: string[];
 }
 
 /**

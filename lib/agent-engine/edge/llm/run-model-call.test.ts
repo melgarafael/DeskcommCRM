@@ -331,6 +331,105 @@ describe("Terra grava custo real por passo do seam", () => {
 });
 
 /**
+ * O degrau do Haiku 5.5 (#5017): acima de 100 mil tokens de entrada NUMA
+ * requisição (contando leitura e escrita de cache), a Anthropic cobra 5× aquela
+ * requisição. Cada passo do laço de ferramentas é uma requisição: o fator vale
+ * por passo, nunca pela soma do turno.
+ */
+describe("o degrau do Haiku 5.5 é cobrado por passo do seam", () => {
+  type Passo = { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
+  async function custoDoTurno(model: string, passos: Passo[]) {
+    const soma = (k: keyof Passo) => passos.reduce((t, p) => t + (p[k] ?? 0), 0);
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: soma("inputTokens"),
+        outputTokens: soma("outputTokens"),
+        inputTokenDetails: { cacheReadTokens: soma("cacheReadTokens"), cacheWriteTokens: soma("cacheWriteTokens") },
+      },
+      steps: passos.map((p) => ({
+        usage: {
+          inputTokens: p.inputTokens,
+          outputTokens: p.outputTokens,
+          inputTokenDetails: { cacheReadTokens: p.cacheReadTokens ?? 0, cacheWriteTokens: p.cacheWriteTokens ?? 0 },
+        },
+      })),
+      response: { id: "degrau-test", modelId: model },
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", model);
+    const resultado = await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+    expect(inserts[0]?.params[11]).toBeCloseTo(resultado.costCents ?? NaN, 9);
+    return resultado.costCents;
+  }
+
+  // 120 mil de entrada, dos quais só 20 mil sem cache: o degrau conta leitura e escrita.
+  const passoLongo: Passo = { inputTokens: 120_000, outputTokens: 1_000, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 };
+  const passoCurto: Passo = { inputTokens: 30_000, outputTokens: 1_000 };
+
+  it("⭐ passos de 120 mil e 30 mil: 5× só no primeiro", async () => {
+    const longo = costCents("claude-haiku-5-5", { ...passoLongo, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 })!;
+    const curto = costCents("claude-haiku-5-5", { ...passoCurto, cacheReadTokens: 0, cacheWriteTokens: 0 })!;
+    // 1× do passo longo: 20k×0,1 + 60k×0,01 + 40k×0,2 + 1k×0,5 = US$ 0,0111.
+    expect(longo).toBeCloseTo(1.11, 9);
+    expect(curto).toBeCloseTo(0.35, 9);
+    expect(await custoDoTurno("claude-haiku-5-5", [passoLongo, passoCurto])).toBeCloseTo(5 * 1.11 + 0.35, 9);
+  });
+
+  it("três passos de 40 mil (120 mil no turno): 1× nos três", async () => {
+    const passo: Passo = { inputTokens: 40_000, outputTokens: 0 };
+    expect(await custoDoTurno("claude-haiku-5-5", [passo, passo, passo])).toBeCloseTo(3 * 0.4, 9);
+  });
+
+  it("o mesmo turno no Sonnet 5.5 não muda", async () => {
+    // 20k×2 + 60k×0,1 + 40k×4 + 1k×10 = US$ 0,216; 30k×2 + 1k×10 = US$ 0,07.
+    expect(await custoDoTurno("claude-sonnet-5-5", [passoLongo, passoCurto])).toBeCloseTo(21.6 + 7, 9);
+  });
+});
+
+
+it("grava o custo do Luna com um passo longo e um passo curto", async () => {
+  const modelo = "gpt-6-luna";
+  vi.mocked(generateText).mockResolvedValue({
+    text: "ok",
+    usage: {
+      inputTokens: 450_000,
+      outputTokens: 200_000,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+    steps: [
+      { usage: { inputTokens: 300_000, outputTokens: 100_000 } },
+      { usage: { inputTokens: 150_000, outputTokens: 100_000 } },
+    ],
+    response: { id: "luna-test", modelId: modelo },
+    responseMessages: [],
+    toolCalls: [],
+    finishReason: "stop",
+  } as never);
+  const { pool, inserts } = poolDaAnthropic("openai", modelo);
+  const resultado = await runModelCall(
+    pool,
+    { openaiApiKey: "sk-de-teste" },
+    { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+    {
+      registry: {
+        openai: () => ({ modelId: modelo, provider: "openai.responses", specificationVersion: "v3" }),
+      } as never,
+    },
+  );
+  // 13,5 centavos no passo longo e 6,5 no curto.
+  expect(resultado.costCents).toBeCloseTo(20);
+  expect(inserts[0]?.params[11]).toBeCloseTo(20);
+});
+
+/**
  * CLAUDE PELA OPENROUTER, PELO SEAM INTEIRO.
  *
  * O seam decide o cache (4º argumento da fábrica) e o corpo da resposta (o
@@ -505,3 +604,85 @@ describe("o custo gravado na OpenRouter é o que ela cobrou (T8)", () => {
     expect(concluida).not.toHaveProperty("custo_origem");
   });
 });
+
+/**
+ * O ELO QUE DEIXA A PRÉVIA FECHAR COM O CUSTO DELA (#4664).
+ *
+ * `llm_calls.preview_run_id` é o que liga a chamada ao run de `ai_agent_runs` —
+ * é por ele que a rota de teste soma tokens e custo do PRÓPRIO teste, e é por
+ * ele que a aba "Execuções" acha a pergunta e a resposta (#4426). O turno real
+ * usa `job_id` e nasce sem este elo.
+ *
+ * Sem este caso, apagar o `preview_run_id` do INSERT não derrubava teste
+ * nenhum: a coluna ficaria nula, a prévia fecharia em zero e o defeito voltaria
+ * com outra roupa.
+ */
+describe("a chamada de prévia aponta para o run que a causou (#4664)", () => {
+  const RUN_DA_PREVIA = "55555555-5555-4555-8555-555555555555";
+
+  function respostaDoModelo() {
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+      steps: [],
+      response: { id: "resp-elo", modelId: "gpt-6.1-terra" },
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+  }
+
+  const registryTerra = {
+    openai: () => ({
+      modelId: "gpt-6.1-terra",
+      provider: "openai.responses",
+      specificationVersion: "v3",
+    }),
+  } as never;
+
+  it("⭐ o INSERT de llm_calls leva `preview_run_id` igual ao run do teste", async () => {
+    respostaDoModelo();
+    const { pool, inserts } = poolDaAnthropic("openai", "gpt-6.1-terra");
+
+    await runModelCall(
+      pool,
+      { openaiApiKey: "sk-de-teste", cacheTtl: "1h" },
+      {
+        tenantId: ORG,
+        purpose: "agent_preview",
+        previewRunId: RUN_DA_PREVIA,
+        messages: [{ role: "user", content: "que horas abrem?" }],
+      },
+      { registry: registryTerra },
+    );
+
+    expect(inserts).toHaveLength(1);
+    // `preview_run_id` é a ÚLTIMA coluna da instrução — o valor tem de ser o id
+    // do run, e não nulo: é a chave que a soma do fechamento usa.
+    expect(inserts[0]?.params.at(-1)).toBe(RUN_DA_PREVIA);
+  });
+
+  it("o turno real continua sem o elo — `job_id` é a chave dele, não esta", async () => {
+    respostaDoModelo();
+    const { pool, inserts } = poolDaAnthropic("openai", "gpt-6.1-terra");
+
+    await runModelCall(
+      pool,
+      { openaiApiKey: "sk-de-teste", cacheTtl: "1h" },
+      {
+        tenantId: ORG,
+        purpose: "agent_turn",
+        messages: [{ role: "user", content: "que horas abrem?" }],
+      },
+      { registry: registryTerra },
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.params.at(-1)).toBeNull();
+  });
+});
+

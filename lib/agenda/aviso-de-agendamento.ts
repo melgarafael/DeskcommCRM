@@ -114,6 +114,12 @@ export interface ConfigDoAvisoDeAgendamento {
    * desligado. Motor em `lib/agenda/lembrete-ao-dono.ts`.
    */
   lembrar_antes?: boolean;
+  /**
+   * O resumo das 7h só sai quando o dia tem agendamento ou houve mudança
+   * represada da madrugada (migration 9434, #4988). Opcional no tipo pelo
+   * mesmo motivo de `lembrar_antes`: ausente é desligado, o resumo sai todo dia.
+   */
+  resumo_so_com_agendamento?: boolean;
 }
 
 /** Para onde vai cada entrega: o número e o grupo, cada um quando existe. */
@@ -191,6 +197,12 @@ export interface AvisoDeAgendamentoDb
     destino: string;
     channelSessionId: string;
   }): Promise<{ criada: boolean; entrega: EntregaDeAgendamento | null }>;
+  /**
+   * Já existe a entrega do resumo deste dia para ESTE destino (enviada, falha
+   * ou ainda tentando). Só é perguntado no dia vazio com
+   * `resumo_so_com_agendamento` (#4988).
+   */
+  resumoJaReivindicado(orgId: string, dia: string, alvo: AlvoDaEntregaDeAgendamento): Promise<boolean>;
   atualizaEntrega(orgId: string, entregaId: string, patch: PatchDaEntregaDeAgendamento): Promise<void>;
   /** `pendente` e `para_o_resumo` do agendamento viram `cancelado`; devolve quantas. */
   cancelaPendentesDoAgendamento(orgId: string, appointmentId: string, excetoEventId: string): Promise<number>;
@@ -442,6 +454,9 @@ async function avisaUmDestino(
  *
  * Só age entre 7h e 10h no relógio da organização, e a entrega do dia é
  * única: a segunda rodada encontra o resumo enviado e sai sem tocar a rede.
+ *
+ * Com `resumo_so_com_agendamento` (#4988), o dia sem agendamento e sem
+ * mudança represada da madrugada não recebe resumo — ver `resumoParaUmDestino`.
  */
 export async function aplicaResumoDoDia(
   deps: Omit<AvisoDeAgendamentoDeps, "origemDoDreno">,
@@ -457,8 +472,9 @@ export async function aplicaResumoDoDia(
   const parede = partesNoFuso(agora, fuso);
   if (parede.hora < HORA_DO_RESUMO || parede.hora >= HORA_LIMITE_DO_RESUMO) return skipped("fora_da_hora");
 
+  const soComAgendamento = cfg.resumo_so_com_agendamento === true;
   return await porDestino(destinos, agora, (d) =>
-    resumoParaUmDestino(deps, { ...d, orgId, channelSessionId, fuso, parede, agora }),
+    resumoParaUmDestino(deps, { ...d, orgId, channelSessionId, fuso, parede, agora, soComAgendamento }),
   );
 }
 
@@ -471,10 +487,42 @@ async function resumoParaUmDestino(
     fuso: string;
     parede: ReturnType<typeof partesNoFuso>;
     agora: Date;
+    /** Dia vazio fica sem resumo (#4988). */
+    soComAgendamento: boolean;
   },
 ): Promise<DesfechoDoAvisoDeAgendamento> {
-  const { orgId, channelSessionId, fuso, parede, agora, alvo, destino } = ctx;
+  const { orgId, channelSessionId, fuso, parede, agora, alvo, destino, soComAgendamento } = ctx;
   const dia = diaLocalISO(agora, fuso);
+
+  // O dia local inteiro, de 00:00 a 00:00 do dia seguinte, em instantes —
+  // por `instanteDe`, que sabe o que fazer no dia em que o relógio muda.
+  const inicioDoDia = instanteDe({ ano: parede.ano, mes: parede.mes, dia: parede.dia }, fuso);
+  const amanha = partesNoFuso(new Date(inicioDoDia.getTime() + 36 * 60 * 60 * 1000), fuso);
+  const fimDoDia = instanteDe({ ano: amanha.ano, mes: amanha.mes, dia: amanha.dia }, fuso);
+  const lerODia = () =>
+    Promise.all([deps.db.agendaEntre(orgId, inicioDoDia, fimDoDia), deps.db.represadasParaOResumo(orgId, alvo)]);
+
+  // "Só quando houver agendamento" decide ANTES de reivindicar: o dia vazio
+  // não grava linha de entrega, então "Últimos avisos" não ganha uma linha por
+  // dia quieto. A represada da madrugada conta como dia não vazio — ela só
+  // vira `no_resumo` quando o resumo sai, e um horário cancelado de madrugada
+  // é notícia mesmo com a agenda de hoje vazia. A rodada seguinte (10 min)
+  // pergunta de novo: um horário marcado para hoje às 8h faz o resumo sair.
+  //
+  // O resumo JÁ reivindicado segue o caminho de sempre mesmo que o dia tenha
+  // esvaziado depois (o único horário foi cancelado enquanto o canal estava
+  // fora do ar): pular aqui deixaria a linha `pendente` para sempre em
+  // "Últimos avisos", como se ainda fosse sair.
+  const lidoAntes = soComAgendamento ? await lerODia() : null;
+  if (
+    lidoAntes &&
+    lidoAntes[0].length === 0 &&
+    lidoAntes[1].length === 0 &&
+    !(await deps.db.resumoJaReivindicado(orgId, dia, alvo))
+  ) {
+    return skipped("dia_vazio");
+  }
+
   const { criada, entrega } = await deps.db.reivindicaResumo({
     organizationId: orgId,
     dia,
@@ -492,14 +540,8 @@ async function resumoParaUmDestino(
     if (desdeOToque >= 0 && desdeOToque < JANELA_DE_REIVINDICACAO_MS) return skipped("outra rodada está enviando o resumo");
   }
 
-  // O dia local inteiro, de 00:00 a 00:00 do dia seguinte, em instantes —
-  // por `instanteDe`, que sabe o que fazer no dia em que o relógio muda.
-  const inicioDoDia = instanteDe({ ano: parede.ano, mes: parede.mes, dia: parede.dia }, fuso);
-  const amanha = partesNoFuso(new Date(inicioDoDia.getTime() + 36 * 60 * 60 * 1000), fuso);
-  const fimDoDia = instanteDe({ ano: amanha.ano, mes: amanha.mes, dia: amanha.dia }, fuso);
-  const [agendaBruta, represadas, marca] = await Promise.all([
-    deps.db.agendaEntre(orgId, inicioDoDia, fimDoDia),
-    deps.db.represadasParaOResumo(orgId, alvo),
+  const [[agendaBruta, represadas], marca] = await Promise.all([
+    lidoAntes ? Promise.resolve(lidoAntes) : lerODia(),
     deps.db.marcaDaOrganizacao(orgId),
   ]);
 
@@ -749,7 +791,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
     async carregaConfig(orgId) {
       const { data, error } = await admin
         .from("config_aviso_de_agendamento")
-        .select("organization_id, usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado, lembrar_antes")
+        .select("organization_id, usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado, lembrar_antes, resumo_so_com_agendamento")
         .eq("organization_id", orgId)
         .maybeSingle();
       if (error) throw new Error(error.message);
@@ -761,6 +803,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
         grupo_destino: string | null;
         ligado: boolean;
         lembrar_antes: boolean | null;
+        resumo_so_com_agendamento: boolean | null;
       } | null;
       if (!linha) return null;
       if (!linha.usa_numero_do_aviso_de_caso) {
@@ -771,6 +814,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
           grupo_destino: linha.grupo_destino,
           ligado: linha.ligado,
           lembrar_antes: linha.lembrar_antes === true,
+          resumo_so_com_agendamento: linha.resumo_so_com_agendamento === true,
         };
       }
       // "Usar o mesmo número do aviso de caso": a conexão e o número são LIDOS
@@ -790,6 +834,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
         grupo_destino: linha.grupo_destino,
         ligado: linha.ligado,
         lembrar_antes: linha.lembrar_antes === true,
+        resumo_so_com_agendamento: linha.resumo_so_com_agendamento === true,
       };
     },
 
@@ -864,6 +909,19 @@ export function createSupabaseAvisoDeAgendamentoDb(
         },
         { organization_id: organizationId, tipo: "resumo", dia, alvo },
       );
+    },
+
+    async resumoJaReivindicado(orgId, dia, alvo) {
+      const { data, error } = await admin
+        .from("entregas_de_aviso_de_agendamento")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("tipo", "resumo")
+        .eq("dia", dia)
+        .eq("alvo", alvo)
+        .limit(1);
+      if (error) throw new Error(error.message);
+      return (data ?? []).length > 0;
     },
 
     async atualizaEntrega(orgId, entregaId, patch) {

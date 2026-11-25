@@ -106,12 +106,12 @@ afterEach(cleanup);
 
 describe("ContatoNoCard", () => {
   it("não renderiza nada quando o negócio não tem dado de contato", () => {
-    const { container } = render(<ContatoNoCard lead={{}} />);
+    const { container } = comQuery(<ContatoNoCard lead={{}} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("⭐ mostra telefone, e-mail e um link por rede, abrindo em outra aba", () => {
-    render(
+    comQuery(
       <ContatoNoCard
         lead={{
           contact_phone: "+5511999998888",
@@ -146,7 +146,7 @@ describe("ContatoNoCard", () => {
   });
 
   it("⭐ só renderiza link http(s) — javascript: que chegue por fora não vira clicável", () => {
-    render(
+    comQuery(
       <ContatoNoCard
         lead={{
           contact_links: [
@@ -164,7 +164,7 @@ describe("ContatoNoCard", () => {
 
   it("⭐ clicar num link NÃO abre o dossiê (o card inteiro tem onClick)", () => {
     const abrirDossie = vi.fn();
-    render(
+    comQuery(
       <div onClick={abrirDossie}>
         <ContatoNoCard
           lead={{ contact_links: [{ tipo: "site", href: "https://exemplo.com.br/" }] }}
@@ -376,8 +376,10 @@ describe("a fiação — quem usa a regra a chama", () => {
     expect(inicio, "a etapa dos marcadores sumiu da rota").toBeGreaterThan(-1);
     const etapa = rota.slice(inicio, fim);
 
-    expect(etapa, "a consulta não traz telefone, e-mail e custom_fields").toMatch(
-      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized"\s*\)/,
+    // `avatar_storage_path` entra na MESMA consulta (a foto do card): nenhuma
+    // leitura nova de `contacts` por quadro.
+    expect(etapa, "a consulta não traz telefone, e-mail, custom_fields e a foto").toMatch(
+      /\.select\(\s*"id, tags, phone_number, email, custom_fields, is_anonymized, avatar_storage_path"\s*\)/,
     );
     expect(etapa, "anexarDadosDoContato não é chamada na etapa").toMatch(
       /anexarDadosDoContato\(\s*leadsDoQuadro,\s*linhas\s*\)/,

@@ -43,6 +43,15 @@ export interface Lead {
   description: string | null;
   status: LeadStatus;
   lost_reason: string | null;
+  /**
+   * #4191 — a classificação HUMANA do negócio como não comercial. `nao_comercial_em`
+   * é a coluna que DECIDE (nula = comercial, o estado de sempre); `motivo` e `por`
+   * são o lastro de por quê e quem. Opcionais porque nem toda leitura pede as
+   * três — a ficha do negócio pede, e o quadro as entrega no contrato.
+   */
+  nao_comercial_em?: string | null;
+  nao_comercial_motivo?: string | null;
+  nao_comercial_por?: string | null;
   position_in_stage: number;
   /**
    * O VALOR ÚNICO do contrato — setup, implantação, matrícula (fatia 1 da
@@ -50,6 +59,11 @@ export interface Lead {
    * este campo fica idêntico ao que era antes da recorrência existir.
    */
   value_cents: number | null;
+  /**
+   * 9450: `true` quando há ao menos uma venda registrada e `value_cents` é
+   * mantido pelo gatilho como a soma das vendas na moeda do negócio.
+   */
+  valor_pelas_vendas?: boolean;
   /**
    * A MENSALIDADE (fatia 1 da #3602), separada do valor único de propósito.
    * Somar os dois num número só é o defeito que a issue descreve: ninguém
@@ -155,6 +169,21 @@ export interface Lead {
   contact_phone?: string;
   contact_email?: string;
   contact_links?: Array<{ tipo: string; href: string }>;
+  /**
+   * Derivado (não é coluna): o contato tem foto de perfil guardada
+   * (`contacts.avatar_storage_path`, mantida pelo cron `contact-avatars`). O
+   * caminho do arquivo NÃO sai no payload — o card pede a imagem a
+   * `/api/v1/contacts/[id]/avatar`, a mesma rota da lista do Inbox. Ausente
+   * quando não há foto ou o contato foi anonimizado (LGPD).
+   */
+  contact_has_avatar?: true;
+  /**
+   * Derivado (não é coluna), SÓ para token de módulo sem a área `contatos`: o nome do contato, lido para o
+   * filtro de texto livre (`lib/modulo/redigir-contato.ts`) e anulado em seguida. Sessão e módulo com
+   * `contatos` nunca recebem estes campos.
+   */
+  contact_name?: string;
+  contact_display_name?: string;
   /**
    * Derivado (não é coluna): os marcadores das CONVERSAS do contato deste
    * negócio — a terceira caixa, "Tags da conversa" no painel do Inbox, onde a

@@ -6,9 +6,9 @@
  * nasce de uma diferença real e medida entre WAHA e Meta Cloud; capability que
  * ninguém consome é código morto, e o teste de matriz reprova.
  */
-import type { ChannelCapabilities, ChannelProvider, ProviderDeMensagem } from "./types";
+import type { ChannelCapabilities, ChannelProvider, NotaDeVoz, ProviderDeMensagem } from "./types";
 
-export type { ChannelProvider, ChannelCapabilities, ProviderDeMensagem };
+export type { ChannelProvider, ChannelCapabilities, NotaDeVoz, ProviderDeMensagem };
 
 /**
  * A matriz descreve o que um canal de MENSAGEM permite — por isso a chave é
@@ -41,6 +41,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    // O visto azul por id de mensagem (#5015): o NOWEB sem store só marca assim.
+    marcaLidasPorMensagem: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -67,6 +69,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -110,8 +113,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     //  - o provedor documenta `voiceNote` (bolha de voz) SÓ para WhatsApp, e não
     //    lista formato de áudio nenhum para Instagram/Facebook
     //    (https://docs.zernio.com/messages/send-inbox-message).
-    // Converter para um formato aceito fica para quando houver medição de ponta
-    // a ponta; até lá, prometer voz aqui é prometer uma bolha que falha.
+    //
+    // `none` é o valor da rede NÃO medida, o Facebook: a doc do Messenger não
+    // lista formato de áudio nenhum, e prometer voz lá é prometer uma bolha que
+    // falha. O Instagram, medido, sobrepõe em `NOTA_DE_VOZ_POR_REDE_SOCIAL`.
     voiceNote: "none",
     groups: "none",
     costPerMessage: true,
@@ -128,6 +133,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -155,6 +161,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // O provedor tem a ponte: reporta a venda ao conjunto de dados da Meta pela
     // conversa (`reportConversion` no adapter, `../zernio/conversoes.ts`).
     reportaConversao: true,
+    marcaLidasPorMensagem: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -187,6 +194,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
   /**
    * Bot do Telegram (Bot API, o robô do @BotFather — issue #3440).
@@ -241,6 +249,33 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // A conversão de venda volta à Meta pela conversa de WhatsApp; o robô do
     // Telegram não tem ponte, e `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
+    marcaLidasPorMensagem: false,
+  },
+  /**
+   * Chat no site (Spec 36, F1): o widget no próprio site da empresa.
+   *
+   * Texto livre a qualquer hora, porque o visitante é quem abriu a conversa e a
+   * janela é a da própria sessão de chat. Sem custo por mensagem, sem limite de
+   * ritmo imposto por plataforma (`minIntervalMs: 0`), sem nota de voz e sem
+   * grupos. Tudo o que não se aplica fica `false`, medido na matriz, não
+   * deduzido.
+   */
+  webchat: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 0,
+    voiceNote: "none",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
+    phonebook: false,
+    statusUpdates: false,
+    reportaConversao: false,
+    marcaLidasPorMensagem: false,
   },
 };
 
@@ -288,6 +323,39 @@ export const CHANNEL_PROVIDER_TELEGRAM: ChannelProvider = "telegram";
 export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
 
 /**
+ * A nota de voz por REDE, no provedor que serve várias (`zernio_social`): a
+ * capability é do provedor, mas o formato aceito é da rede de cada conta. A rede
+ * mora na sessão (`channel_sessions.metadata.social_platform`, gravada ao ligar
+ * a caixa de entrada) — cada sessão social é UMA conta de UMA rede.
+ *
+ * Só entra aqui rede MEDIDA. Instagram, 15/11/2026, instalação real: um WAV
+ * (PCM 16 bits, mono, 24 kHz, 405.860 bytes — o mesmo cabeçalho de
+ * `embrulharPcmEmWav`) mandado como `attachmentType: "audio"` voltou 200 com o
+ * id de mensagem do Instagram, e tocou no aplicativo. Na mesma conversa, os
+ * quatro mp3 da véspera tinham voltado 400.
+ */
+export const NOTA_DE_VOZ_POR_REDE_SOCIAL: Readonly<Record<string, NotaDeVoz>> = {
+  instagram: "wav-only",
+};
+
+/**
+ * A nota de voz que ESTE canal entrega: a da rede da sessão, quando o provedor
+ * serve várias e a rede foi medida; senão, a do provedor.
+ *
+ * Provedor desconhecido deste build responde `none` (não promete voz) — a mesma
+ * régua de `enviaNotaDeVoz` na lista de canais.
+ */
+export function notaDeVozDoCanal(provider: string | null, redeSocial: string | null): NotaDeVoz {
+  // `Object.hasOwn`, nunca `in` nem índice cru: `constructor` e `toString`
+  // existem em todo objeto, e uma rede ou provedor com esse nome viraria função.
+  if (provider === CHANNEL_PROVIDER_SOCIAL && redeSocial && Object.hasOwn(NOTA_DE_VOZ_POR_REDE_SOCIAL, redeSocial)) {
+    return NOTA_DE_VOZ_POR_REDE_SOCIAL[redeSocial]!;
+  }
+  if (!provider || !Object.hasOwn(CHANNEL_CAPABILITIES, provider)) return "none";
+  return CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote;
+}
+
+/**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
  * "este canal serve para conversar?".
  *
@@ -312,6 +380,9 @@ export const PROVIDERS_DE_MENSAGEM = [
   // fala com quem o iniciou. `PROVIDERS_DE_TELEFONE` fica de fora de propósito,
   // e o motivo está lá embaixo.
   "telegram",
+  // Chat no site (Spec 36): texto livre na conversa aberta pelo visitante. Sem
+  // telefone, pela mesma razão do Telegram.
+  "webchat",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -339,7 +410,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
-] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram">[];
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram" | "webchat">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
@@ -371,7 +442,18 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  */
 export function recusaNotaDeVoz(provider: string | null | undefined): boolean {
   if (!transportaMensagem(provider)) return false;
-  return CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote === "none";
+  return recusaOGravadorDoInbox(CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote);
+}
+
+/**
+ * A nota de voz do canal recusa o ogg/opus que o gravador do Inbox produz?
+ *
+ * `none` recusa tudo; `wav-only` (a DM do Instagram, que aceita o WAV do
+ * agente) recusa o ogg/opus — o agente fala lá porque sintetiza em WAV, o
+ * gravador não. Os outros dois aceitam: um converte, o outro exige opus.
+ */
+export function recusaOGravadorDoInbox(nota: NotaDeVoz): boolean {
+  return nota === "none" || nota === "wav-only";
 }
 
 /**
@@ -417,8 +499,11 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
  * não num `false` falso na capability de janela: mentir na janela mudaria o
  * que o atendimento pode fazer só para esconder a campanha.
+ *
+ * O chat no site (Spec 36) pelo mesmo motivo: só responde a quem está na página
+ * e abriu a conversa; não há a quem disparar em massa.
  */
-const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS_SEM_CAMPANHA = ["telegram", "webchat"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).
@@ -495,6 +580,20 @@ export function canalTemTransmissao(provider: string | null | undefined): boolea
   if (!transportaMensagem(provider)) return false;
   try {
     return capabilitiesOf(provider as ProviderDeMensagem).transmissao;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O canal desta sessão marca como lidas mensagens específicas (#5015)? Falso para
+ * provider fora da matriz, como `canalTemTransmissao`: na dúvida, o envio não lê
+ * o histórico atrás de ids que ninguém vai usar.
+ */
+export function canalMarcaLidasPorMensagem(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).marcaLidasPorMensagem;
   } catch {
     return false;
   }
