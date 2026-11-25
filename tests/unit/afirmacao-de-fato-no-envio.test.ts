@@ -508,7 +508,7 @@ describe("a forma da cadeia", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("factual_claim")).toBe(nomes.indexOf("semantic_promise") + 1);
     expect(nomes.indexOf("factual_claim")).toBeGreaterThan(nomes.indexOf("promise"));
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(14);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(15); // v15 (A21): `limite_da_rede` entra na cadeia
   });
 });
 
