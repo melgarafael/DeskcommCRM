@@ -90,6 +90,24 @@
     return typeof valor === "string" ? valor.slice(0, LIMITE_CONTEXTO) : "";
   }
 
+  /**
+   * O que vai no corpo da PRIMEIRA mensagem: só os campos com valor. `href` e `referrer` entram
+   * só se forem texto não vazio; `utm` só se tiver alguma chave. Sem nenhum valor, nulo, e o
+   * corpo não leva o campo `contexto`.
+   */
+  function contextoParaEnvio(contexto) {
+    if (!contexto || typeof contexto !== "object") return null;
+    var saida = {};
+    if (typeof contexto.href === "string" && contexto.href !== "") saida.href = contexto.href;
+    if (typeof contexto.referrer === "string" && contexto.referrer !== "") {
+      saida.referrer = contexto.referrer;
+    }
+    if (contexto.utm && typeof contexto.utm === "object" && Object.keys(contexto.utm).length > 0) {
+      saida.utm = contexto.utm;
+    }
+    return Object.keys(saida).length > 0 ? saida : null;
+  }
+
   /** Só aceita a mensagem da página que embute a janela, com tipo `contexto`. */
   function aceitarMensagemDoPai(evento, pai) {
     var referencia = pai || window.parent;
@@ -826,6 +844,8 @@
       if (!estado.primeiraEnviada) {
         corpo.aceite = { versao: config.versaoDoAviso };
         if (estado.contato) corpo.contato = estado.contato;
+        var contexto = contextoParaEnvio(estado.contexto);
+        if (contexto) corpo.contexto = contexto;
       }
 
       pedirJson(ROTA_MENSAGENS, "POST", corpo, estado.token).then(

@@ -58,6 +58,19 @@ const contatoSchema = z.object({
     .optional(),
 });
 
+/**
+ * Onde o visitante estava quando mandou a primeira mensagem (a janela envia só na primeira).
+ * Rótulo de origem, não permissão: nada aqui decide acesso. Texto acima de 200 caracteres dá 422.
+ * A ingestão grava só as chaves de UTM da lista fechada (`normalizarUtm`).
+ */
+const contextoSchema = z
+  .object({
+    href: z.string().max(200).optional(),
+    referrer: z.string().max(200).optional(),
+    utm: z.record(z.string(), z.string().max(200)).optional(),
+  })
+  .strict();
+
 const corpoSchema = z
   .object({
     mensagem_id: z.string().uuid(),
@@ -68,6 +81,7 @@ const corpoSchema = z
     // Só a versão do aviso. Qualquer `em` que o cliente mandar é descartado (não é schema estrito).
     aceite: z.object({ versao: z.string().trim().min(1).max(40) }).optional(),
     contato: contatoSchema.optional(),
+    contexto: contextoSchema.optional(),
   })
   .strict();
 
@@ -141,6 +155,7 @@ export async function POST(req: Request) {
       // A hora do aceite é a do servidor, nunca a do corpo.
       ...(corpo.aceite ? { aceite: { versao: corpo.aceite.versao, em: agora.toISOString() } } : {}),
       ...(corpo.contato ? { contato: corpo.contato } : {}),
+      ...(corpo.contexto ? { contexto: corpo.contexto } : {}),
       coleta: conexao.config.coleta,
     });
     // Primeira mensagem sem aceite ou sem campo obrigatório: 422 genérico, nada foi criado.
