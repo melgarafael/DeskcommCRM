@@ -1030,4 +1030,71 @@ describe("janela no DOM", () => {
     expect(temTexto("Estamos fora do horário")).toBe(false);
     expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
   });
+
+  // ---------- F5: contexto da página na primeira mensagem ----------
+
+  /** Entrega ao iframe a mensagem `contexto` da página de fora, com o pai como origem (como o navegador faz). */
+  function enviarContextoDoPai(pai: object, dados: Record<string, unknown>) {
+    const evento = new Event("message");
+    Object.defineProperty(evento, "data", { value: { tipo: "contexto", ...dados } });
+    Object.defineProperty(evento, "source", { value: pai });
+    window.dispatchEvent(evento);
+  }
+
+  /** Abre a janela sem coleta, entrega o contexto do pai e aceita, chegando à conversa. */
+  async function chegarAConversaComContexto(dados: Record<string, unknown> | null) {
+    const r = roteador();
+    const { pai } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    if (dados !== null) enviarContextoDoPai(pai, dados);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    return r;
+  }
+
+  it("a primeira mensagem leva o contexto da página (href, referrer e utm) e a segunda não leva", async () => {
+    const r = await chegarAConversaComContexto({
+      href: "https://example.com/preco",
+      referrer: "https://example.com/",
+      utm: { utm_source: "ig" },
+    });
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    digitarEEnviar("Tudo bem?");
+    await esperarTudo();
+
+    const [primeira, segunda] = corposDeMensagens(r.chamadas);
+    expect(primeira!.contexto).toEqual({
+      href: "https://example.com/preco",
+      referrer: "https://example.com/",
+      utm: { utm_source: "ig" },
+    });
+    expect("contexto" in segunda!).toBe(false);
+  });
+
+  it("sem contexto recebido do pai, a primeira mensagem não tem a chave contexto", async () => {
+    const r = await chegarAConversaComContexto(null);
+    digitarEEnviar("Oi");
+    await esperarTudo();
+
+    const [primeira] = corposDeMensagens(r.chamadas);
+    expect("contexto" in primeira!).toBe(false);
+  });
+
+  it("contexto com href e referrer vazios e utm vazio não gera a chave contexto", async () => {
+    const r = await chegarAConversaComContexto({ href: "", referrer: "", utm: {} });
+    digitarEEnviar("Oi");
+    await esperarTudo();
+
+    const [primeira] = corposDeMensagens(r.chamadas);
+    expect("contexto" in primeira!).toBe(false);
+  });
+
+  it("contexto só com utm leva contexto só com utm, sem href nem referrer", async () => {
+    const r = await chegarAConversaComContexto({ href: "", referrer: "", utm: { utm_campaign: "natal" } });
+    digitarEEnviar("Oi");
+    await esperarTudo();
+
+    const [primeira] = corposDeMensagens(r.chamadas);
+    expect(primeira!.contexto).toEqual({ utm: { utm_campaign: "natal" } });
+  });
 });

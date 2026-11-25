@@ -31,10 +31,16 @@ vi.mock("@/lib/channels/pos-entrada", () => ({
 vi.mock("@/lib/channels/marcar-conversa", () => ({
   marcarConversaComMensagem: vi.fn(async () => undefined),
 }));
+// `normalizarUtm` fica real; só a gravação da origem vira dublê. O padrão devolve `true` (gravou).
+vi.mock("@/lib/leads/origem-do-site", async (importOriginal) => {
+  const real = await importOriginal<object>();
+  return { ...real, estamparOrigemDaPagina: vi.fn(async () => true) };
+});
 
 const { ingerirMensagemDoChat, NOME_DO_VISITANTE } = await import("@/lib/channels/webchat/ingest");
 const { aplicarEfeitosPosEntrada } = await import("@/lib/channels/pos-entrada");
 const { marcarConversaComMensagem } = await import("@/lib/channels/marcar-conversa");
+const { estamparOrigemDaPagina } = await import("@/lib/leads/origem-do-site");
 
 const ORG = "org-1";
 const CS = "cs-1";
@@ -53,6 +59,7 @@ type Sobre = Partial<{
   aceite: { versao: string; em: string } | undefined;
   contato: { nome?: string; telefone?: string; email?: string } | undefined;
   coleta: Partial<Record<"nome" | "telefone" | "email", "oculto" | "opcional" | "obrigatorio">> | undefined;
+  contexto: { href?: string; referrer?: string; utm?: Record<string, string> } | undefined;
 }>;
 
 function cenario(linhas: Linhas = {}): Falso {
@@ -539,5 +546,77 @@ describe("isolamento — nenhuma cadeia nem RPC sai da organização", () => {
     await ingerir(falso, { mensagemId: "m-2", texto: "de novo", aceite: undefined, contato: { nome: "Ana B" } });
 
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG)).toEqual([]);
+  });
+});
+
+describe("origem da página e contexto — só na primeira mensagem", () => {
+  it("primeira mensagem com UTM estampa uma vez, no contato, só com as UTM da lista normalizadas", async () => {
+    const falso = cenario();
+    await ingerir(falso, { contexto: { utm: { utm_source: " ig ", utm_campaign: "verao", foo: "bar" } } });
+
+    const contato = linhasDaTabela(falso, "contacts")[0];
+    expect(contato?.id).toEqual(expect.any(String));
+    expect(vi.mocked(estamparOrigemDaPagina)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(estamparOrigemDaPagina)).toHaveBeenCalledWith(expect.anything(), ORG, contato!.id, {
+      utm: { utm_source: "ig", utm_campaign: "verao" },
+      capturadaEm: AGORA.toISOString(),
+    });
+  });
+
+  it("UTM só com chave fora da lista (foo) não estampa nada e a mensagem entra", async () => {
+    const falso = cenario();
+    const r = await ingerir(falso, { contexto: { utm: { foo: "bar" } } });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    expect(vi.mocked(estamparOrigemDaPagina)).not.toHaveBeenCalled();
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(1);
+  });
+
+  it("contexto sem UTM não estampa, mas grava a página no metadata junto do aceite", async () => {
+    const falso = cenario();
+    await ingerir(falso, {
+      contexto: { href: "https://loja.example/produto", referrer: "https://busca.example/" },
+    });
+
+    expect(vi.mocked(estamparOrigemDaPagina)).not.toHaveBeenCalled();
+    expect(linhasDaTabela(falso, "messages")[0]?.metadata).toEqual({
+      webchat_aceite: { versao: VERSAO, em: AGORA.toISOString() },
+      webchat_pagina: { href: "https://loja.example/produto", referrer: "https://busca.example/" },
+    });
+  });
+
+  it("segunda mensagem com contexto não estampa de novo e não grava a página", async () => {
+    const falso = cenario();
+    await ingerir(falso, { contexto: { href: "https://a.example/", utm: { utm_source: "ig" } } });
+    vincularConversa(falso);
+
+    await ingerir(falso, {
+      mensagemId: "m-2",
+      texto: "segunda",
+      aceite: undefined,
+      contexto: { href: "https://b.example/", utm: { utm_source: "google" } },
+    });
+
+    expect(vi.mocked(estamparOrigemDaPagina)).toHaveBeenCalledTimes(1);
+    expect(linhasDaTabela(falso, "messages")[1]).not.toHaveProperty("metadata");
+  });
+
+  it("estampar que lança não derruba a ingestão: a mensagem entra e a marcação segue", async () => {
+    const falso = cenario();
+    vi.mocked(estamparOrigemDaPagina).mockRejectedValueOnce(new Error("falha de teste"));
+    const r = await ingerir(falso, { contexto: { utm: { utm_source: "ig" } } });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(1);
+    expect(marcarConversaComMensagem).toHaveBeenCalledTimes(1);
+  });
+
+  it("estampar que devolve falso não derruba a ingestão: a mensagem entra", async () => {
+    const falso = cenario();
+    vi.mocked(estamparOrigemDaPagina).mockResolvedValueOnce(false);
+    const r = await ingerir(falso, { contexto: { utm: { utm_source: "ig" } } });
+
+    expect(r).toMatchObject({ status: "ingested" });
+    expect(linhasDaTabela(falso, "messages")).toHaveLength(1);
   });
 });
