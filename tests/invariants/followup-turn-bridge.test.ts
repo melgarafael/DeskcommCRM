@@ -590,7 +590,12 @@ function turnoDeTeste(canal: ChannelAdapter, corpo?: string) {
       };
     }
     return {
-      content: [], finishReason: { unified: "stop", raw: undefined }, usage: uso, warnings: [],
+      content: [{
+        type: "text",
+        text: JSON.stringify({ lead_facts: {}, open_threads: [], commitments: [], objections: [],
+          next_action: null, rolling_summary: "Turno de teste." }),
+      }],
+      finishReason: { unified: "stop", raw: undefined }, usage: uso, warnings: [],
     };
   });
   return createFollowupTurnHandler({
