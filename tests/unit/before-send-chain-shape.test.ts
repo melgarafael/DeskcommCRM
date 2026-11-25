@@ -29,6 +29,7 @@ const ORDEM_ESPERADA = [
   "pacing",
   "messaging_window",
   "teto_de_respostas",
+  "limite_da_rede",
   "spinning",
   "promise",
   "concessao_sem_lastro",
@@ -73,6 +74,15 @@ describe("forma da cadeia before_send", () => {
     expect(nomes.indexOf("teto_de_respostas")).toBeLessThan(nomes.indexOf("spinning"));
   });
 
+  it("o limite que a rede impõe roda logo depois do teto de respostas e antes do spinning (A21)", () => {
+    // Hetero-restrição da plataforma (TikTok: 48 h, 10 mensagens, 2 para a equipe): é
+    // uma contagem barata, lida sob o lock, e barra antes do gate que carrega a
+    // janela de cópias do número.
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("limite_da_rede")).toBe(nomes.indexOf("teto_de_respostas") + 1);
+    expect(nomes.indexOf("limite_da_rede")).toBeLessThan(nomes.indexOf("spinning"));
+  });
+
   it("lgpd vem antes de qualquer gate que gaste recurso", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("lgpd")).toBeLessThan(nomes.indexOf("pacing"));
@@ -82,8 +92,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(18);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(14);
+    expect(BEFORE_SEND_GATES).toHaveLength(19);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(15);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {

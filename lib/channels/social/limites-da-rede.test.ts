@@ -24,7 +24,12 @@ function entrada(parcial: { autor?: "ia" | "equipe"; respostas?: number; ultimaH
 
 describe("limitesDaRede", () => {
   it("o TikTok tem janela de 48 h, teto de 10 e reserva de 2 para a equipe", () => {
-    expect(tiktok).toEqual({ janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2 });
+    expect(tiktok).toEqual({
+      janelaMs: 48 * HORA,
+      maxRespostas: 10,
+      reservaParaEquipe: 2,
+      fotosPorTurnoDaIa: 2,
+    });
   });
 
   it("rede sem limite medido, vazia ou fora do mapa responde null — e o protótipo não vaza", () => {

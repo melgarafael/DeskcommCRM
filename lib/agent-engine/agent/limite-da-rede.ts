@@ -1,0 +1,232 @@
+/**
+ * O LIMITE DE RESPOSTA DA REDE, NA CADEIA `before_send` (A21, TikTok).
+ *
+ * A regra mora em `lib/channels/social/limites-da-rede.ts` (pura): janela de 48 h,
+ * teto de 10 mensagens e reserva de 2 para a equipe. Este arquivo é a COLA da
+ * cadeia da IA, no mesmo desenho do `teto-de-respostas.ts` vizinho: lê o que a
+ * regra precisa SOB o lock do número e entrega um gate puro, síncrono.
+ *
+ * ## Por que um gate, e não um `if` no adapter
+ *
+ * O limite do TikTok é hetero-restrição (a plataforma me proíbe, e o pedido falha
+ * na hora). A doutrina (`docs/doctrine/restricao-de-canal.md`, invariantes 2 e 4)
+ * manda declarar a origem e a física da restrição, e registrar `skipped` quando
+ * ela não se aplica. Um `if` dentro do adapter esconderia as duas coisas, e
+ * adapter não lê banco.
+ *
+ * ## A conta mora em `messages`
+ *
+ * Mesma fonte do `teto-de-respostas.ts`: as linhas que o envio já grava. Aqui a
+ * contagem é de TODA mensagem da empresa depois da última do cliente — IA, equipe e
+ * automação, porque o TikTok conta todas —, sem as que falharam (`failed` não
+ * chegou ao cliente e não gasta o limite da rede).
+ *
+ * ## Só a IA passa por aqui
+ *
+ * O envio da equipe não atravessa a cadeia; ele aplica a MESMA função pura em
+ * `sendMessageHandler`, com `autor: "equipe"` (e o teto cheio de 10).
+ *
+ * Fail-open com registro, como o teto vizinho: se a leitura falhar, o gate passa
+ * com `skipped: 'nao_conferido'`, e o pior que acontece é o TikTok recusar o
+ * envio com o erro dele — a recusa que sempre existiu.
+ */
+import type pg from 'pg';
+
+import {
+  decidirLimiteDaRede,
+  limitesDaRede,
+  type LimitesDaRede,
+} from '@/lib/channels/social/limites-da-rede';
+import { instanteDoBanco } from '@/lib/tempo/agora';
+
+import { insertInboxItem } from '../db/repository';
+import type { Gate, GateContext, GateVerdict } from '../guardrails/before-send';
+import type { Logger } from '../obs/logger';
+
+type Queryable = Pick<pg.Pool | pg.PoolClient, 'query'>;
+
+/** O que o gate lê do contexto. `respostasNaJanela: null` = a leitura da contagem falhou. */
+export interface LimiteDaRedeDoEnvio {
+  limites: LimitesDaRede;
+  respostasNaJanela: number | null;
+  lastInboundAt: Date | null;
+}
+
+/**
+ * A leitura desta tentativa. `undefined` = a rede da sessão não tem limite próprio
+ * medido (WhatsApp, Instagram, Facebook...): nada é lido além de uma linha da sessão
+ * e o gate registra `skipped`.
+ */
+export async function carregarLimiteDaRede(
+  db: Queryable,
+  input: {
+    organizationId: string;
+    contactId: string;
+    channelSessionId: string;
+    log?: Logger;
+  },
+): Promise<LimiteDaRedeDoEnvio | undefined> {
+  try {
+    const sessao = await db.query<{ rede: string | null }>(
+      `select metadata->>'social_platform' as rede
+         from channel_sessions
+        where organization_id = $1 and id = $2`,
+      [input.organizationId, input.channelSessionId],
+    );
+    const limites = limitesDaRede(sessao.rows[0]?.rede ?? null);
+    if (limites === null) return undefined;
+
+    const conversa = await db.query<{ id: string; last_inbound_at: Date | string | null }>(
+      `select id, last_inbound_at from conversations
+        where organization_id = $1 and contact_id = $2 and channel_session_id = $3
+        order by last_inbound_at desc nulls last
+        limit 1`,
+      [input.organizationId, input.contactId, input.channelSessionId],
+    );
+    const linha = conversa.rows[0];
+    const bruto = linha?.last_inbound_at ?? null;
+    const instante = bruto === null ? null : instanteDoBanco(bruto);
+    const lastInboundAt = instante === null ? null : new Date(instante);
+    // Sem conversa ou sem mensagem do cliente a janela está fechada e a contagem
+    // não muda o veredito: não gasta a segunda leitura.
+    if (linha === undefined || lastInboundAt === null) {
+      return { limites, respostasNaJanela: 0, lastInboundAt };
+    }
+
+    const contagem = await db.query<{ total: number }>(
+      `select count(*)::int as total
+         from messages m
+        where m.organization_id = $1
+          and m.conversation_id = $2
+          and m.direction = 'outbound'
+          and m.status <> 'failed'
+          and m.sent_at >= $3`,
+      [input.organizationId, linha.id, lastInboundAt],
+    );
+    return { limites, respostasNaJanela: contagem.rows[0]?.total ?? 0, lastInboundAt };
+  } catch (err) {
+    input.log?.warn('limite da rede: leitura falhou — envio segue', {
+      channel_session_id: input.channelSessionId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    // A rede não pôde ser lida: não dá nem para dizer qual é o limite. Sem
+    // `limites` o gate não tem o que conferir; devolver `undefined` é registrar
+    // "não se aplica", e a falha fica no log acima.
+    return undefined;
+  }
+}
+
+/** Código que o turno reconhece no veto para deixar a conversa com uma pessoa. */
+export const CODIGOS_DO_LIMITE_DA_REDE = [
+  'janela_da_rede_fechada',
+  'teto_da_rede',
+  'reserva_da_equipe',
+] as const;
+
+/**
+ * O GATE. Puro e síncrono, como os irmãos: a leitura chega pronta no contexto.
+ *
+ * Três estados, e a diferença entre eles é o que a auditoria lê:
+ *  - `ctx.limiteDaRede` AUSENTE → a rede não tem limite medido (`not_applicable`);
+ *  - `respostasNaJanela === null` → a leitura falhou (`nao_conferido`);
+ *  - senão, a decisão da regra pura, com a IA como autora.
+ */
+export const limiteDaRedeGate: Gate = {
+  name: 'limite_da_rede',
+  evaluate(ctx: GateContext): GateVerdict {
+    const estado = ctx.limiteDaRede;
+    if (estado === undefined) return { pass: true, skipped: 'not_applicable' };
+    if (estado.respostasNaJanela === null) return { pass: true, skipped: 'nao_conferido' };
+
+    const veredito = decidirLimiteDaRede({
+      limites: estado.limites,
+      autor: 'ia',
+      respostasNaJanela: estado.respostasNaJanela,
+      lastInboundAt: estado.lastInboundAt,
+      now: ctx.now,
+    });
+    if (veredito.permitido) return { pass: true };
+
+    return {
+      pass: false,
+      code: veredito.codigo,
+      reason: veredito.mensagem,
+      detail: {
+        na_janela: estado.respostasNaJanela,
+        teto: estado.limites.maxRespostas,
+        reserva_da_equipe: estado.limites.reservaParaEquipe,
+      },
+    };
+  },
+};
+
+/**
+ * A REDE da sessão (`metadata.social_platform`), ou `null` para quem não é rede
+ * social. É o que o turno pergunta UMA vez no começo para saber se esta conversa tem
+ * limites próprios (`limitesDaRede`): se tem, a IA manda uma mensagem por turno, sem
+ * dividir em bolhas e com as fotos sem legenda. Nunca lança — sem a rede, o turno
+ * segue como sempre foi.
+ */
+export async function carregarRedeDoCanal(
+  db: Queryable,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<string | null> {
+  try {
+    const { rows } = await db.query<{ rede: string | null }>(
+      `select metadata->>'social_platform' as rede
+         from channel_sessions
+        where organization_id = $1 and id = $2`,
+      [organizationId, channelSessionId],
+    );
+    return rows[0]?.rede ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Título FIXO por código: é parte da chave do dedupe (`kind_ref_e_titulo`). */
+const TITULO_DO_AVISO: Record<(typeof CODIGOS_DO_LIMITE_DA_REDE)[number], string> = {
+  janela_da_rede_fechada: 'A janela de resposta desta rede fechou: a IA não pode mais responder',
+  teto_da_rede: 'O limite de respostas desta rede foi usado: ninguém pode responder agora',
+  reserva_da_equipe: 'A IA parou de responder nesta conversa para deixar as últimas respostas à equipe',
+};
+
+/**
+ * A equipe é AVISADA na Central, um aviso aberto por conversa e por motivo (dedupe
+ * no repositório): a IA não vai tentar de novo, e quem atende precisa saber que a
+ * conversa está com ela. Nunca lança.
+ */
+export async function avisarEquipeDoLimiteDaRede(
+  db: Queryable,
+  input: {
+    organizationId: string;
+    conversationId: string;
+    codigo: string;
+    mensagem: string;
+    log?: Logger;
+  },
+): Promise<void> {
+  const titulo = (TITULO_DO_AVISO as Record<string, string | undefined>)[input.codigo];
+  if (titulo === undefined) return;
+  try {
+    await insertInboxItem(
+      db,
+      input.organizationId,
+      {
+        kind: 'other',
+        severity: 'warn',
+        title: titulo,
+        body: input.mensagem,
+        refKind: 'conversation',
+        refId: input.conversationId,
+      },
+      'kind_ref_e_titulo',
+    );
+  } catch (err) {
+    input.log?.warn('limite da rede: aviso na Central não gravado', {
+      conversation_id: input.conversationId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}

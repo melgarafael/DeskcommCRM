@@ -213,3 +213,80 @@ describe("corpoDoEnvio — a foto chega ao handler como imagem da conversa", () 
     expect(corpoDoEnvio({ ...base, body: "oi" }, "k")).toMatchObject({ type: "text", body: "oi" });
   });
 });
+
+describe("enviarComFotos — rede que não aceita imagem e texto juntos (TikTok, A21)", () => {
+  const FOTO = (n: number): FotoParaEnvio => ({
+    kind: "image",
+    storagePath: `${ORG}/${CONVERSA}/catalogo-${n}.jpg`,
+    mime: "image/jpeg",
+  });
+
+  function canal(desfechos: string[] = []) {
+    const enviados: Array<{ tipo: "texto" | "foto"; corpo: string; foto?: string }> = [];
+    let i = 0;
+    const proximo = () => ({ kind: desfechos[i++] ?? "sent", messageId: `m${i}` });
+    return {
+      enviados,
+      opts: {
+        enviarTexto: async (corpo: string) => (enviados.push({ tipo: "texto", corpo }), proximo()),
+        enviarFoto: async (foto: FotoParaEnvio, legenda: string) => (
+          enviados.push({ tipo: "foto", corpo: legenda, foto: foto.storagePath }), proximo()
+        ),
+        sleep: vi.fn(async () => undefined),
+        jitter: () => 1500,
+      },
+    };
+  }
+
+  it("o texto sai PRIMEIRO, sozinho, e cada foto vai sem legenda, no teto pedido", async () => {
+    const c = canal();
+    await enviarComFotos("Casa de 3 quartos", [FOTO(1), FOTO(2), FOTO(3)], {
+      ...c.opts,
+      legendaSeparada: true,
+      maxFotos: 2,
+    });
+    expect(c.enviados).toEqual([
+      { tipo: "texto", corpo: "Casa de 3 quartos" },
+      { tipo: "foto", corpo: "", foto: `${ORG}/${CONVERSA}/catalogo-1.jpg` },
+      { tipo: "foto", corpo: "", foto: `${ORG}/${CONVERSA}/catalogo-2.jpg` },
+    ]);
+  });
+
+  it("texto longo não vira legenda: o limite de 1.024 caracteres deixa de importar", async () => {
+    const c = canal();
+    const longo = "x".repeat(LIMITE_DA_LEGENDA + 50);
+    await enviarComFotos(longo, [FOTO(1)], { ...c.opts, legendaSeparada: true, maxFotos: 2 });
+    expect(c.enviados.map((e) => e.tipo)).toEqual(["texto", "foto"]);
+    expect(c.enviados[0]?.corpo).toBe(longo);
+  });
+
+  it("sem foto no catálogo, só o texto sai", async () => {
+    const c = canal();
+    await enviarComFotos("Oi", [], { ...c.opts, legendaSeparada: true, maxFotos: 2 });
+    expect(c.enviados).toEqual([{ tipo: "texto", corpo: "Oi" }]);
+  });
+
+  it("falha do texto para tudo: nenhuma foto vai atrás de um texto que não saiu", async () => {
+    const c = canal(["failed"]);
+    const r = await enviarComFotos("Oi", [FOTO(1), FOTO(2)], { ...c.opts, legendaSeparada: true, maxFotos: 2 });
+    expect(r.kind).toBe("failed");
+    expect(c.enviados).toHaveLength(1);
+  });
+
+  it("o teto do turno (`restantes`) também vale: sem mensagem sobrando, a foto não sai", async () => {
+    const c = canal();
+    await enviarComFotos("Oi", [FOTO(1), FOTO(2)], {
+      ...c.opts,
+      legendaSeparada: true,
+      maxFotos: 2,
+      restantes: () => 0,
+    });
+    expect(c.enviados).toEqual([{ tipo: "texto", corpo: "Oi" }]);
+  });
+
+  it("sem `legendaSeparada` nada muda: o texto segue como legenda da primeira foto", async () => {
+    const c = canal();
+    await enviarComFotos("Custa R$ 10", [FOTO(1), FOTO(2)], c.opts);
+    expect(c.enviados[0]).toMatchObject({ tipo: "foto", corpo: "Custa R$ 10" });
+  });
+});

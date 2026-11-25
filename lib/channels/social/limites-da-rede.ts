@@ -41,6 +41,12 @@ export interface LimitesDaRede {
   readonly maxRespostas: number;
   /** Quantas dessas ficam só para a equipe: a IA para em `maxRespostas - reservaParaEquipe`. */
   readonly reservaParaEquipe: number;
+  /**
+   * Quantas fotos do catálogo a IA anexa por turno, SEM legenda (a rede não aceita imagem
+   * e texto na mesma mensagem). Não é limite da rede e sim escolha de produto: cada foto
+   * gasta uma das mensagens da janela, e três fotos com legenda gastariam seis.
+   */
+  readonly fotosPorTurnoDaIa: number;
 }
 
 /**
@@ -49,7 +55,7 @@ export interface LimitesDaRede {
  * 10 messages within 48 hours. A send outside that window fails with TikTok's error."
  */
 export const LIMITES_POR_REDE_SOCIAL: Readonly<Record<string, LimitesDaRede>> = {
-  tiktok: { janelaMs: 48 * HORA_MS, maxRespostas: 10, reservaParaEquipe: 2 },
+  tiktok: { janelaMs: 48 * HORA_MS, maxRespostas: 10, reservaParaEquipe: 2, fotosPorTurnoDaIa: 2 },
 };
 
 /** Os limites desta rede, ou `null` quando ela não tem limite próprio medido. */
