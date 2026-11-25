@@ -2,6 +2,7 @@ import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 import { descreveEvento, type EventoDeEnrollment } from "@/lib/followup/eventos-legiveis";
+import { createApprovedReplyHandler } from "@/lib/agent-engine/agent/approved-reply";
 import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
 import { createFakeRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { claimJobs, completeJob, enqueueJob, type JobRow } from "@/lib/agent-engine/queue/queue";
@@ -624,27 +625,33 @@ function turnoDeTeste(canal: ChannelAdapter, corpo?: string) {
   });
 }
 
+async function adquirirEnvio(jobId: string) {
+  const workerId = "historico-de-envio";
+  await pool.query(
+    "update job_queue set status='done', locked_at=null, locked_by=null where id<>$1 and status in ('pending','running')",
+    [jobId],
+  );
+  const [job] = await claimJobs(pool, { workerId, maxConcurrency: 1, batchSize: 1 });
+  expect(job?.id).toBe(jobId);
+  return { job: job!, workerId };
+}
+
 async function rodarTurnoDeEnvio(
   cenario: CenarioDeEnvio,
   status: "queued" | "sent" | "failed",
   corpo?: string,
+  canal = canalDeTeste(cenario, status),
 ) {
-  const workerId = "historico-de-envio";
-  await pool.query(
-    "update job_queue set status='done', locked_at=null, locked_by=null where id<>$1 and status in ('pending','running')",
-    [cenario.job.id],
-  );
-  const [job] = await claimJobs(pool, { workerId, maxConcurrency: 1, batchSize: 1 });
-  expect(job?.id).toBe(cenario.job.id);
-  const handler = turnoDeTeste(canalDeTeste(cenario, status), corpo);
+  const { job, workerId } = await adquirirEnvio(cenario.job.id);
+  const handler = turnoDeTeste(canal, corpo);
   try {
-    await handler(job!, pool, { workerId });
+    await handler(job, pool, { workerId });
   } finally {
-    await completeJob(pool, job!.id, workerId);
+    await completeJob(pool, job.id, workerId);
   }
 }
 
-async function publicarAgente(cenario: CenarioDeEnvio) {
+async function publicarAgente(cenario: CenarioDeEnvio, assistido = false, bolhas = false) {
   const { org, contactId, conversationId, sessionId, enrollmentId } = cenario;
   await pool.query(`with v as (
        insert into playbook_versions (organization_id, layer, content)
@@ -655,14 +662,15 @@ async function publicarAgente(cenario: CenarioDeEnvio) {
      insert into playbook_pointers(organization_id, layer, version_id)
        select null, 'platform', id from v`);
   const { rows: [agent] } = await pool.query(
-    `insert into ai_agents (organization_id, name, system_prompt, kind)
-     values ($1, 'Agente fictício', 'Escreva um lembrete curto.', 'mcp_agent') returning id`, [org],
+    `insert into ai_agents (organization_id, name, system_prompt, kind, operation_mode)
+     values ($1, 'Agente fictício', 'Escreva um lembrete curto.', 'mcp_agent', $2) returning id`,
+    [org, assistido ? 'assisted' : 'automatic'],
   );
   const { rows: [version] } = await pool.query(
     `insert into ai_agent_versions (organization_id, agent_id, version_number, system_prompt,
-                                    provider, model, channel_session_id, status, published_at)
-     values ($1, $2, 1, 'Escreva um lembrete curto.', 'anthropic', 'claude-do-teste', $3, 'published', now())
-     returning id`, [org, agent.id, sessionId],
+                                    provider, model, channel_session_id, status, published_at, split_messages, split_max_chars)
+     values ($1, $2, 1, 'Escreva um lembrete curto.', 'anthropic', 'claude-do-teste', $3, 'published', now(), $4, 100)
+     returning id`, [org, agent.id, sessionId, bolhas],
   );
   await pool.query("update ai_agents set published_version_id=$2 where id=$1", [agent.id, version.id]);
   await pool.query("update followup_enrollments set agent_id=$2 where id=$1", [enrollmentId, agent.id]);
@@ -761,14 +769,104 @@ it("a mensagem sai e o passo avança quando gravar o histórico falha", async ()
   }
 });
 
-it("expõe os recibos para a própria organização e reserva as escritas para o sistema", async () => {
+async function criarMembro(org: string) {
   const membro = crypto.randomUUID();
-  const destaOrg = await prepararEnvioDoDossie("text");
-  const outraOrg = await prepararEnvioDoDossie("text");
   await pool.query("insert into auth.users (id, email) values ($1, $2)", [membro, `${membro}@invariant.test`]);
   await pool.query("insert into user_organizations(user_id, organization_id, role) values ($1,$2,'manager')", [
-    membro, destaOrg.org,
+    membro, org,
   ]);
+  return membro;
+}
+
+it("o texto editado e aprovado tem recibo na inscrição que originou o rascunho", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  await publicarAgente(cenario, true);
+  await rodarTurnoDeEnvio(cenario, "sent", "Podemos retomar a conversa esta semana?");
+  const { rows: [draft] } = await pool.query(
+    "select id, revision::text, status from ai_reply_drafts where organization_id=$1 and conversation_id=$2",
+    [cenario.org, cenario.conversationId],
+  );
+  expect(draft?.status).toBe("pending");
+  const gerado = (await cenario.eventos()).find((e) => e.event_type === "followup_draft_generated");
+  expect(gerado?.payload.draft_id).toBe(draft.id);
+  const membro = await criarMembro(cenario.org);
+  const textoEditado = "Podemos conversar na quinta-feira?";
+  const sessao = await pool.connect();
+  let aprovado: string;
+  try {
+    await sessao.query("begin");
+    await sessao.query("set local role authenticated");
+    await sessao.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: membro })]);
+    const { rows } = await sessao.query(
+      "select fn_reply_action($1,$2,$3,'approve',$4) as id",
+      [cenario.org, draft.id, draft.revision, textoEditado],
+    );
+    aprovado = rows[0].id;
+    await sessao.query("commit");
+  } catch (error) {
+    await sessao.query("rollback");
+    throw error;
+  } finally {
+    sessao.release();
+  }
+  const { job } = await adquirirEnvio(aprovado);
+  const canal = canalDeTeste(cenario, "sent");
+  const handler = createApprovedReplyHandler({
+    crmCfg: { supabase: {} as never } as never,
+    log: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    sleep: async () => {},
+    channel: () => ({
+      async send(input) {
+        expect(input.body).toBe(textoEditado);
+        return canal.send(input);
+      },
+    }),
+  });
+  await handler(job, pool);
+  const recebidos = (await cenario.eventos()).filter((e) => e.event_type === "followup_message_sent");
+  expect(recebidos).toHaveLength(1);
+  expect(recebidos[0]?.payload.job_id).toBe(aprovado);
+  expect(recebidos[0]?.payload.source_step_key).toBe(gerado?.payload.source_step_key);
+});
+
+it("fica sem evento de geração quando o turno encerra sem escrever mensagem", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  await publicarAgente(cenario);
+  await rodarTurnoDeEnvio(cenario, "sent");
+  expect((await cenario.eventos()).filter((e) => e.event_type.startsWith("followup_")).map((e) => e.event_type))
+    .toEqual(["followup_job_queued"]);
+});
+
+it("mostra envio parcial quando alguém segura a segunda parte antes da intenção no ledger", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  await publicarAgente(cenario, false, true);
+  const canal = canalDeTeste(cenario, "sent");
+  await rodarTurnoDeEnvio(cenario, "sent", [
+    "Olá! Estou voltando porque nossa conversa ficou em aberto e ainda posso ajudar.",
+    "Se quiser, escolha um horário nesta semana para a gente conversar com calma.",
+  ].join("\n\n"), {
+    ...canal,
+    async send(input) {
+      const resultado = await canal.send(input);
+      await pool.query(
+        "update conversations set bot_silenced_until='infinity' where organization_id=$1 and id=$2",
+        [cenario.org, cenario.conversationId],
+      );
+      return resultado;
+    },
+  });
+  const entregas = (await cenario.eventos()).filter((e) => e.event_type.startsWith("followup_"));
+  expect(entregas.map((e) => e.event_type)).toEqual([
+    "followup_job_queued", "followup_message_generated", "followup_message_sent", "followup_send_partial",
+  ]);
+  const { rows } = await pool.query("select seq from send_ledger where job_id=$1", [cenario.job.id]);
+  expect(rows).toEqual([{ seq: 1 }]);
+});
+
+it("expõe os recibos para a própria organização e reserva as escritas para o sistema", async () => {
+  const destaOrg = await prepararEnvioDoDossie("text");
+  const outraOrg = await prepararEnvioDoDossie("text");
+  const membro = await criarMembro(destaOrg.org);
 
   const conexao = await pool.connect();
   try {
