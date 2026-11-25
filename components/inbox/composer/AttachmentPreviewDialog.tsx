@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { useT } from "@/hooks/i18n/useT";
 
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,12 @@ import { FileText, X } from "@/lib/ui/icons";
 import { formatBytes } from "@/components/inbox/media/media-utils";
 import { anexoLevaLegenda } from "@/components/inbox/media/legenda-do-anexo";
 
+export interface AttachmentPreviewHandle {
+  lerLegenda: () => string;
+}
+
 interface Props {
+  ref?: Ref<AttachmentPreviewHandle>;
   /**
    * Uma FILA, não um arquivo (#2526).
    *
@@ -52,6 +57,7 @@ interface Props {
 /** Preview antes do envio (padrão WhatsApp): capa, demais imagens e legenda. */
 export function AttachmentPreviewDialog({
   files,
+  ref,
   suspenso = false,
   legendaInicial = null,
   notaInterna = false,
@@ -62,6 +68,7 @@ export function AttachmentPreviewDialog({
 }: Props) {
   const t = useT();
   const [caption, setCaption] = useState(legendaInicial ?? "");
+  useImperativeHandle(ref, () => ({ lerLegenda: () => caption }), [caption]);
   // A legenda é reposta NA MESMA renderização em que a fila muda, e não num
   // efeito depois dela: com o efeito, um Enviar entre a troca da fila e o
   // efeito mandava a legenda velha junto da imagem do retry (#2526).

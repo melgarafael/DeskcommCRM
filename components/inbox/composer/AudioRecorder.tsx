@@ -111,7 +111,8 @@ export function AudioRecorder({ conversationId, disabled, suspenso = false }: Pr
             notaDeVoz: true,
           })
           .then((uploaded) => {
-            if (suspensoRef.current || generation !== captureGeneration.current) return;
+            // O clique já confirmou o envio para a conversa capturada acima.
+            // A API volta a autorizar essa escrita mesmo depois de navegar.
             send.mutate(
               {
                 conversation_id: conversationId,

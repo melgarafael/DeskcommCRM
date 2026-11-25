@@ -30,7 +30,7 @@ import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
-import { Composer, type ComposerHandle } from "./Composer";
+import { Composer, type ComposerHandle, type RascunhoDoComposer } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
@@ -487,14 +487,6 @@ function InboxNoEscopo({
   const [rascunhoVivo, setRascunhoVivo] = useState(rascunho);
   if (rascunhoVivo && selectedId !== rascunhoVivo.conversationId) setRascunhoVivo(null);
 
-  useEffect(() => {
-    if (ultimoIdNaUrl.current === idNaUrl) return;
-    ultimoIdNaUrl.current = idNaUrl;
-    // O histórico do navegador também troca a conversa, sem carregar a página inteira.
-    setSelectedId(idNaUrl);
-    setRespondendo(null);
-    setEncaminhando(null);
-  }, [idNaUrl]);
 
   /**
    * A ORG tem automático de pé? Sobe para cá porque agora é a ABA que precisa —
@@ -531,6 +523,11 @@ function InboxNoEscopo({
   }, []);
   const composerRef = useRef<ComposerHandle | null>(null);
   const respostaComFoco = useRef<string | null>(null);
+  // Só a Inbox desta identidade pode manter rascunhos separados por conversa.
+  const rascunhosPorConversa = useRef(new Map<string, RascunhoDoComposer>());
+  const [editor, setEditor] = useState<{ versao: number; id: string | null; rascunho: RascunhoDoComposer | null }>({
+    versao: 0, id: null, rascunho: null,
+  });
 
   const filters: ConversationsFilters = useMemo(
     () => ({
@@ -623,7 +620,7 @@ function InboxNoEscopo({
   const recuperacao = useRecuperacaoDaConversa({
     id: selectedId, orgId, userId: user.id, lista: listaBruta.data, guardarAncora, fecharAcoes,
   });
-  const { estado, linhaPermitida, podeAgir, registrarFalha } = recuperacao;
+  const { estado, linhaPermitida, podeAgir, registrarFalha, temRodada } = recuperacao;
   const dadosDaLista = useMemo(() => filtrarListaProtegida(listaBruta.data, linhaPermitida),
     [listaBruta.data, linhaPermitida]);
   const listQ = { ...listaBruta, data: dadosDaLista };
@@ -675,15 +672,39 @@ function InboxNoEscopo({
     if (estado === "confirmada" && single.error) registrarFalha(single.error);
   }, [estado, single.error, registrarFalha]);
   const conversaDoComposer = selectedConversation?.id ?? (recuperando ? selectedId : null);
-  const [montagemDoComposer, setMontagemDoComposer] = useState({ id: selectedId, recuperando, versao: 0 });
-  if (montagemDoComposer.id !== selectedId || montagemDoComposer.recuperando !== recuperando) {
-    // Na navegação normal, a caixa segue montada como antes. Um rascunho
-    // recolhido pela revalidação pertence à conversa onde foi escrito.
-    const trocouDuranteRecuperacao = montagemDoComposer.id !== selectedId
-      && (montagemDoComposer.recuperando || recuperando);
-    setMontagemDoComposer({ id: selectedId, recuperando,
-      versao: montagemDoComposer.versao + (trocouDuranteRecuperacao ? 1 : 0) });
-  }
+  const trocarSelecao = useCallback((proxima: string | null) => {
+    if (proxima === selectedId) return;
+    if (temRodada(selectedId) || temRodada(proxima)) {
+      const rascunho = composerRef.current?.guardarRascunho?.();
+      if (selectedId && rascunho && !acessoEncerrado &&
+        (rascunho.texto || rascunho.arquivos.length || rascunho.modo === "note" || rascunho.sugestaoUsada)) {
+        rascunhosPorConversa.current.set(selectedId, rascunho);
+      }
+      const guardado = proxima ? rascunhosPorConversa.current.get(proxima) ?? null : null;
+      // O editor passa a ser dono do rascunho restaurado.
+      if (proxima) rascunhosPorConversa.current.delete(proxima);
+      setEditor((anterior) => ({ versao: anterior.versao + 1, id: proxima, rascunho: guardado }));
+    }
+    setSelectedId(proxima);
+    setRespondendo(null);
+    setEncaminhando(null);
+  }, [selectedId, temRodada, acessoEncerrado]);
+
+  useEffect(() => {
+    if (ultimoIdNaUrl.current === idNaUrl) return;
+    ultimoIdNaUrl.current = idNaUrl;
+    trocarSelecao(idNaUrl);
+  }, [idNaUrl, trocarSelecao]);
+
+  useLayoutEffect(() => {
+    if (estado === "sessao-expirada") rascunhosPorConversa.current.clear();
+    else if (estado === "sem-acesso" && selectedId) rascunhosPorConversa.current.delete(selectedId);
+  }, [estado, selectedId]);
+  useEffect(() => {
+    if (!editor.rascunho || (editor.id !== conversaDoComposer && !acessoEncerrado)) return;
+    setEditor((atual) => atual === editor ? { ...atual, rascunho: null } : atual);
+  }, [editor, conversaDoComposer, acessoEncerrado]);
+
   useLayoutEffect(() => {
     if (respostaComFoco.current !== selectedId || acessoEncerrado) {
       respostaComFoco.current = null;
@@ -760,12 +781,6 @@ function InboxNoEscopo({
   //
   const handleSelect = useCallback((id: string | null) => {
     if (id === selectedId || (id && !linhaPermitida(id))) return;
-    // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
-    // a citação junto — e a resposta sairia citando mensagem de outro cliente.
-    setRespondendo(null);
-    // O mesmo vale para o encaminhamento: o destino não pode sobreviver à
-    // troca de conversa.
-    setEncaminhando(null);
     // ?id= é o formato já usado pelos atalhos do CRM. A History API mantém a
     // seleção instantânea sem pedir um novo Server Component a cada clique.
     const params = new URLSearchParams(searchParams.toString());
@@ -776,9 +791,9 @@ function InboxNoEscopo({
     const query = params.toString();
     // Voltar pela história deixa a troca para o `popstate` (efeito de `idNaUrl`).
     if (navegarNoInbox(query ? `${pathname}?${query}` : pathname, selectedId, id) === "trocou") {
-      setSelectedId(id);
+      trocarSelecao(id);
     }
-  }, [selectedId, searchParams, pathname, linhaPermitida]);
+  }, [selectedId, searchParams, pathname, linhaPermitida, trocarSelecao]);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -1374,10 +1389,11 @@ function InboxNoEscopo({
         )}
         {conversaDoComposer && (
             <Composer
-              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : `composer:${montagemDoComposer.versao}`}
+              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : `composer:${editor.versao}`}
               ref={composerRef}
               conversationId={conversaDoComposer}
               suspenso={recuperando}
+              rascunhoGuardado={editor.id === conversaDoComposer ? editor.rascunho : null}
               agendamentoLigado={
                 Boolean(selectedConversation?.contacts?.id && selectedConversation?.channel_session_id) && !supportReadonly
               }

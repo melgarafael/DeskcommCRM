@@ -103,6 +103,21 @@ describe("AudioRecorder", () => {
     );
   });
 
+  it.each(["troca", "revalidação"])("conclui o envio confirmado durante %s", async (mudanca) => {
+    let terminarUpload!: (value: Awaited<ReturnType<typeof uploadMock>>) => void;
+    uploadMock.mockImplementationOnce(() => new Promise((resolve) => { terminarUpload = resolve; }));
+    const view = render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /enviar áudio/i }));
+    expect(uploadMock).toHaveBeenCalledOnce();
+    view.rerender(<AudioRecorder conversationId={mudanca === "troca" ? "conv-2" : "conv-1"}
+      suspenso={mudanca === "revalidação"} />);
+    await act(async () => terminarUpload({ storage_path: "anexo.ogg", media_mime: "audio/ogg",
+      media_size_bytes: 2, kind: "audio" }));
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ conversation_id: "conv-1" }), expect.anything());
+  });
+
   it("cancelar descarta sem upload", async () => {
     render(<AudioRecorder conversationId="conv-1" />);
     fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));

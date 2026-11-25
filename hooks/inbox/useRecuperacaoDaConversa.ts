@@ -42,6 +42,8 @@ export function useRecuperacaoDaConversa({
   const rodadaDaConversa = useCallback((conversa: string) =>
     Math.max(rodadas.geral, rodadas.pontuais.get(conversa) ?? 0), [rodadas]);
   const rodada = id ? rodadaDaConversa(id) : 0;
+  const temRodada = useCallback((conversa: string | null) =>
+    !!conversa && rodadaDaConversa(conversa) > 0, [rodadaDaConversa]);
   const chaveDaInstancia = useMemo(() => ["inbox-revalidacao", instancia, orgId, userId] as const, [instancia, orgId, userId]);
   const valorDaAncora = ancora?.conversa === id ? ancora?.valor ?? null : null;
   if (ancora && ancora.conversa !== id) setAncora(null);
@@ -171,7 +173,7 @@ export function useRecuperacaoDaConversa({
   const soltarAncora = useCallback(() => setAncora(null), []);
 
   return {
-    estado, linhaPermitida, podeAgir, ancora: valorDaAncora,
+    estado, linhaPermitida, podeAgir, temRodada, ancora: valorDaAncora,
     tentarDeNovo: () => { void leitura.refetch({ cancelRefetch: false }); },
     registrarFalha, soltarAncora, revalidar,
   };

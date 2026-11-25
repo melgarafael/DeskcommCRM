@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import type { ComposerHandle } from "@/components/inbox/Composer";
+import type { ComposerHandle, RascunhoDoComposer } from "@/components/inbox/Composer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/types";
@@ -84,12 +84,16 @@ vi.mock("@/components/inbox/ConversationHeader", () => ({
 }));
 vi.mock("@/components/inbox/ChatThread", () => ({ ChatThread: () => <p>Fio da conversa aberta</p> }));
 vi.mock("@/components/inbox/Composer", () => ({
-  Composer: ({ suspenso, ref }: { suspenso?: boolean; ref?: Ref<ComposerHandle> }) => {
-    const [texto, setTexto] = useState("");
+  Composer: ({ suspenso, ref, rascunhoGuardado }: {
+    suspenso?: boolean; ref?: Ref<ComposerHandle>; rascunhoGuardado?: RascunhoDoComposer | null;
+  }) => {
+    const [texto, setTexto] = useState(rascunhoGuardado?.texto ?? "");
     const campo = useRef<HTMLTextAreaElement | null>(null);
     useImperativeHandle(ref, () => ({
       focus: () => campo.current?.focus(),
       estaEditando: () => campo.current === document.activeElement,
+      guardarRascunho: () => ({ texto, arquivos: [], legenda: null, modo: "reply", modoDosArquivos: "reply",
+        mencoes: [], cursor: texto.length, sugestaoUsada: false }),
     }));
     return suspenso ? null : (
       <textarea ref={campo} aria-label="Resposta" value={texto} onChange={(e) => setTexto(e.target.value)} />
@@ -291,6 +295,32 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     expect(screen.getByRole("textbox", { name: "Resposta" })).toBe(campo);
     fireEvent.click(screen.getByRole("button", { name: "Abrir Nome da lista antiga" }));
     expect(campo).toHaveValue("Rascunho aberto");
+  });
+
+
+  it("recupera cada rascunho ao voltar para a conversa em uma rodada de reconexão", async () => {
+    montar();
+    await abrirDaLista();
+    const antes = get.getMockImplementation()!;
+    get.mockImplementation(async (url, opts) => {
+      if (url === detalhe) return { data: atual };
+      if (url === `/api/v1/conversations/${vizinha}`) return { data: conversa(vizinha, "Outra conversa") };
+      return antes(url, opts);
+    });
+    await reassinar();
+    await screen.findByRole("heading", { name: "Nome conferido na API" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Resposta" }), { target: { value: "Rascunho de A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Abrir Outra conversa" }));
+    await screen.findByRole("heading", { name: "Outra conversa" });
+    const campoB = screen.getByRole("textbox", { name: "Resposta" });
+    expect(campoB).toHaveValue("");
+    fireEvent.change(campoB, { target: { value: "Rascunho de B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Abrir Nome da lista antiga" }));
+    await screen.findByRole("heading", { name: "Nome conferido na API" });
+    expect(screen.getByRole("textbox", { name: "Resposta" })).toHaveValue("Rascunho de A");
+    fireEvent.click(screen.getByRole("button", { name: "Abrir Outra conversa" }));
+    await screen.findByRole("heading", { name: "Outra conversa" });
+    expect(screen.getByRole("textbox", { name: "Resposta" })).toHaveValue("Rascunho de B");
   });
 
 });
