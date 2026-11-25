@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState } from "react";
 
-import type { JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
 import { ErroDoPainel } from "./ErroDoPainel";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
@@ -131,11 +131,11 @@ function ReguaAbandono({ horas, padrao, podeEditar }: { horas: number; padrao: n
   );
 }
 
-export function AtritoPanel({ podeEditarRegua, janela }: { podeEditarRegua: boolean; janela: JanelaIso }) {
+export function AtritoPanel({ podeEditarRegua, janela }: { podeEditarRegua: boolean; janela: JanelaDeMetricas }) {
   const t = useT();
   const { data, isLoading, isError, isFetching, refetch } = useAtritoMetrics(janela);
 
-  if (isLoading) {
+  if (janela === undefined || isLoading) {
     return <p className="text-sm text-muted-foreground">{t("Carregando o índice de atrito…")}</p>;
   }
   // Falha aberta na informação: dizer que não carregou é melhor que sumir com a

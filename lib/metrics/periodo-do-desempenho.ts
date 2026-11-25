@@ -8,6 +8,9 @@ export interface JanelaIso {
   to: string;
 }
 
+/** undefined aguarda a janela do servidor; null usa o padrão da própria rota. */
+export type JanelaDeMetricas = JanelaIso | null | undefined;
+
 export interface DiasDoPeriodo {
   de: string;
   ate: string;

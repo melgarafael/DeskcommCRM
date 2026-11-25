@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import type { JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
 import { apiClient } from "@/lib/api/client";
 import { MetricsClient } from "./MetricsClient";
 
@@ -34,16 +35,10 @@ function recortePedido(endpoint: string, janela: { from: string; to: string }): 
   );
 }
 
-it("envia um só período aos cinco painéis e renova a janela do servidor ao limpar", async () => {
-  const padroes = [PRIMEIRA_JANELA, NOVA_JANELA];
-  vi.mocked(apiClient.get).mockImplementation(async (path) => {
-    const url = new URL(path, "http://localhost");
-    const from = url.searchParams.get("from");
-    const to = url.searchParams.get("to");
-    const janela = from && to ? { from, to } : undefined;
-    const padrao = url.pathname.endsWith("/attendants") && !janela ? padroes.shift() : undefined;
-    const resposta = {
-      window: janela ?? padrao,
+function respostaVazia(janela?: JanelaIso) {
+  return {
+    data: {
+      window: janela,
       owner_user_id: null,
       attendants: [],
       funnel: [],
@@ -58,16 +53,33 @@ it("envia um só período aos cinco painéis e renova a janela do servidor ao li
       porMoeda: [],
       baldes: [],
       truncado: false,
-    };
-    return { data: resposta } as never;
-  });
+    },
+  };
+}
 
+function montarPainel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <MetricsClient canCompare currentUserId="atendente" funis={[]} fuso="America/Sao_Paulo" />
     </QueryClientProvider>,
   );
+}
+
+beforeEach(() => vi.clearAllMocks());
+
+it("envia um só período aos cinco painéis e renova a janela do servidor ao limpar", async () => {
+  const padroes = [PRIMEIRA_JANELA, NOVA_JANELA];
+  vi.mocked(apiClient.get).mockImplementation(async (path) => {
+    const url = new URL(path, "http://localhost");
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    const janela = from && to ? { from, to } : undefined;
+    const padrao = url.pathname.endsWith("/attendants") && !janela ? padroes.shift() : undefined;
+    return respostaVazia(janela ?? padrao) as never;
+  });
+
+  montarPainel();
 
   await waitFor(() => {
     expect(pedidos()[0]?.href).toBe("http://localhost/api/v1/metrics/attendants");
@@ -90,4 +102,33 @@ it("envia um só período aos cinco painéis e renova a janela do servidor ao li
       .toHaveLength(2);
     for (const rota of ROTAS_EXTRAS) expect(recortePedido(rota, NOVA_JANELA), rota).toBe(true);
   });
+});
+
+it("mantém os painéis e consulta o padrão das outras rotas quando a leitura por atendente falha", async () => {
+  let rejeitarAtendentes: (erro: Error) => void = () => {};
+  const atendentes = new Promise<never>((_resolve, reject) => {
+    rejeitarAtendentes = reject;
+  });
+  vi.mocked(apiClient.get).mockImplementation(async (path) => {
+    if (path === "/api/v1/metrics/attendants") return atendentes;
+    return respostaVazia(PRIMEIRA_JANELA) as never;
+  });
+
+  montarPainel();
+  expect(screen.getByText("Carregando o índice de atrito…")).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Granularidade" })).toBeTruthy();
+  expect(pedidos().map((url) => url.pathname)).toEqual(["/api/v1/metrics/attendants"]);
+
+  rejeitarAtendentes(new Error("falha de teste"));
+  expect(await screen.findByText("Não consegui carregar o desempenho")).toBeTruthy();
+  expect(await screen.findByText("Atrito", { exact: true })).toBeTruthy();
+
+  for (const rota of ROTAS_EXTRAS) {
+    const pedido = pedidos().find((url) => url.pathname === `/api/v1/metrics/${rota}`);
+    expect(pedido, rota).toBeDefined();
+    expect(pedido!.searchParams.has("from"), rota).toBe(false);
+    expect(pedido!.searchParams.has("to"), rota).toBe(false);
+  }
+  expect(screen.getByRole("button", { name: "Aplicar" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Exportar vendas" })).toBeDisabled();
 });

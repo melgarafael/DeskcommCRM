@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/table";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
-import type { JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
 import { ErroDoPainel } from "./ErroDoPainel";
 import { type FunilDaSerie, useSerieTemporal } from "@/hooks/metrics/useSerieTemporal";
 import { granularidadeValida, type Granularidade } from "@/lib/metrics/serie-temporal";
@@ -66,7 +66,7 @@ function rotuloDoBalde(balde: string, tagDoIdioma: string): string {
     : d.toLocaleDateString(tagDoIdioma, { day: "2-digit", month: "2-digit" });
 }
 
-export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: JanelaIso | null }) {
+export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: JanelaDeMetricas }) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
   const [granularidade, setGranularidade] = useState<Granularidade>("dia");
@@ -76,8 +76,7 @@ export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: J
   const funilId = funil === TODOS_OS_FUNIS ? null : funil;
   const { data, isLoading, isError, isFetching, refetch } = useSerieTemporal(granularidade, funilId, janela);
 
-  const serie = isError ? undefined : data?.data;
-  if (!janela) return null;
+  const serie = janela === undefined || isError ? undefined : data?.data;
   const formatar = (n: number) => n.toLocaleString(tagDoIdioma);
 
   return (
@@ -133,7 +132,7 @@ export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: J
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {isLoading ? (
+        {janela === undefined || isLoading ? (
           <Skeleton className="h-64 w-full" aria-busy="true" aria-label={t("Carregando…")} />
         ) : !serie ? (
           <ErroDoPainel

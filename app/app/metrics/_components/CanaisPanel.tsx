@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
 import { ErroDoPainel } from "./ErroDoPainel";
 import { useT } from "@/hooks/i18n/useT";
 import { useChannelMetrics } from "@/hooks/metrics/useChannelMetrics";
@@ -36,14 +36,14 @@ const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left ma
 interface Props {
   /** O filtro de atendente da página (`null` = todos); a RLS escopa quem olha. */
   owner: string | null;
-  janela: JanelaIso;
+  janela: JanelaDeMetricas;
 }
 
 export function CanaisPanel({ owner, janela }: Props) {
   const t = useT();
   const { data, isLoading, isError, isFetching, refetch } = useChannelMetrics(owner, janela);
 
-  if (isLoading) {
+  if (janela === undefined || isLoading) {
     return (
       <div className="flex flex-col gap-2" aria-busy="true" aria-label={t("Por canal")}>
         <Skeleton className="h-5 w-40" />

@@ -76,7 +76,9 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
     useAttendantMetrics(selectedOwner, periodo?.janela ?? null, reinicio);
   const metrics = isError ? undefined : data?.data;
   // Sem datas escolhidas, o relógio do servidor define os últimos 30 dias.
-  const janela = periodo?.janela ?? metrics?.window ?? null;
+  // Se a leitura por atendente falhar, as outras rotas ainda podem consultar
+  // seus últimos 30 dias como faziam antes de compartilhar a janela.
+  const janela = periodo?.janela ?? metrics?.window ?? (isLoading ? undefined : null);
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
 
@@ -153,11 +155,11 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
           inteiro, ao qual as métricas de área se subordinam (doutrina §3.6).
           Não filtra por atendente — atrito é propriedade do sistema, e quebrá-lo
           por pessoa convida a otimização local que degrada o todo. */}
-      {janela && <AtritoPanel podeEditarRegua={canCompare} janela={janela} />}
+      <AtritoPanel podeEditarRegua={canCompare} janela={janela} />
 
       {/* Relatório "Perdas" (#1537): manager+, porque é o funil inteiro — o
           mesmo critério do /metrics para quem compara. */}
-      {canCompare && janela && <PerdasPanel janela={janela} />}
+      {canCompare && <PerdasPanel janela={janela} />}
 
       {/* Previsão ponderada do funil (issue #1535): por mês × moeda, com os
           baldes "sem data" e "sem probabilidade" à parte. Depois do atrito de
@@ -204,7 +206,7 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
           atendente da página, agora pelo NÚMERO — a unidade de trabalho da
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
-      {janela && <CanaisPanel owner={selectedOwner} janela={janela} />}
+      <CanaisPanel owner={selectedOwner} janela={janela} />
       <SeriePanel funis={funis} janela={janela} />
     </div>
   );
