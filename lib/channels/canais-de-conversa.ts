@@ -8,9 +8,9 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  * Duas listas precisavam concordar e nada as ligava:
  *
  *   1. `SOCIAL_NETWORKS[].inbox` — em TypeScript, decide se uma rede pode ter
- *      atendimento no CRM. Hoje: Instagram e Facebook.
+ *      atendimento no CRM. Hoje: Instagram, Facebook e TikTok.
  *   2. `conversations_channel_check` — no banco, decide o que a coluna aceita.
- *      Hoje: `whatsapp`, `instagram`, `facebook`.
+ *      Hoje: `whatsapp`, `instagram`, `facebook`, `telegram`, `webchat`, `tiktok`.
  *
  * `lib/channels/zernio/ingest.ts` grava a plataforma **crua** na coluna
  * (`.update({ channel: input.socialMessage.platform })`). Marcar `inbox: true`
