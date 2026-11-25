@@ -105,6 +105,54 @@ Registrado para ninguém revisitar:
 
 Toda segunda: as 10 buscas-alvo, as menções novas e as listagens desatualizadas. Para cada listagem velha fica pronto o pedido de correção a quem a mantém. **Quem envia** depende do canal: issue no GitHub sai pela conta do robô; formulário, "claim" com conta ou e-mail vai ao Plane para o Rafael.
 
+### 2026-11-23 · main `3fb7bc7`, release v1.124.0 (23/11), 5.526 estrelas
+
+**Origens do tráfego no GitHub (14 dias):** Google 3.238 · github.com 2.634 · youtube.com 1.387 · deskcomm.com.br 523 · Brave 74 · Bing 65 · l.instagram.com 43 · deskcomm.automatiklabs.com.br 25 · instagram.com 23 · perplexity.ai 12. Continua **sem nenhum diretório** entre as 10 primeiras origens. A perplexity.ai entra na lista: uma resposta de IA já manda gente ao repositório.
+
+**Site:** `www.deskcomm.com.br/sitemap.xml` e `/llms.txt` continuam **404** (o apex responde 308 → www → 404). Os PRs que resolvem isso, deskcomm-site#17 (sitemap) e #18 (llms.txt), estão abertos e esperam o Rafael aprovar o CI e o deploy de fork. O `noindex` ainda está nos layouts.
+
+**Buscas-alvo** (busca na web, 23/11):
+
+| Busca | O DeskcommCRM aparece? | Mudou desde 16/11? |
+|---|---|---|
+| CRM open source | não | não (itsfoss, monday, Bitrix24, Capterra, EspoCRM) |
+| CRM open source WhatsApp | não | não (Bitrix24, Odoo, Frappe, Krayin, wacrm em dev.co) |
+| alternativa Kommo | não | não (AlternativeTo, respond.io, G2, Capterra) |
+| alternativa Octadesk | não | não (InvGate, Capterra, G2, b2bstack, SocialHub) |
+| CRM self-hosted | não | não (Bitrix24, NocoBase, Relaticle, Krayin, openalternative.co) |
+| CRM com agentes de IA | não | não (Salesforce, folk, Breakcold, rework, Creatio) |
+| open source CRM WhatsApp | não | não (igual à busca em português) |
+| Kommo alternative open source | não | não (AlternativeTo, páginas 1 a 14) |
+| self-hosted CRM AI agents | **sim**, agora pelo próprio repositório: `README.en.md` (raw.githubusercontent.com) | sim: antes só por terceiros (zentor.ai, opensourcealternatives.to) |
+| CRM para clínica WhatsApp | não | não (Kommo, Clint, SocialHub, respond.io) |
+
+Leitura: o README em inglês já ranqueia na busca em inglês sobre agentes. O site segue fora de todas: sem sitemap e com `noindex`, não tem como entrar.
+
+**Menções e listagens** (conferidas em 23/11; nenhuma foi feita por nós):
+
+| Onde | O que diz | Estado | Pedido de correção |
+|---|---|---|---|
+| everydev.ai | "latest GitHub release listed is v1.80.0" | ❌ continua velha (atual: v1.124.0) | Texto (A) da semana passada, com a versão trocada para v1.124.0 (23/11). Rafael, pelo contato do site. |
+| Railway, template de Youssef Siam | `UPSTREAM.md` ainda fixado em v1.27.2; repositório sem push desde 15/09 | ❌ agora **112 releases** atrás (publicadas depois da v1.27.2, de 15/09 17:16Z, até a v1.124.0; a v1.27.3 saiu no mesmo dia e entra na conta) | Issue (B) pronta, **não aberta**: falta o OK pedido no Plane. Trocar no texto "v1.113.0 (2026-11-15)" por "v1.124.0 (2026-11-23)", "99" por "112" e "463" por "528" (arquivos `.sql` novos em `supabase/migrations/` entre v1.27.2 e v1.124.0). |
+| zentor.ai/blog/deskcommcrm | v1.19.0, 1.382 estrelas, "a documentação pública não diz" quais modelos | ❌ sem mudança | Igual: opcional, baixa prioridade, sem contato editorial. |
+| zekaiwork.com | categoria "E-commerce" | ❌ não deu para reconferir (403 para robô em 23/11) | Texto (C), sem mudança. |
+| opentools.ai | 4.156 estrelas, ainda sem licença | ❌ sem mudança | "Claim Tool", com conta: Plane. |
+| **novo:** [topai.tools/t/deskcomm](https://topai.tools/t/deskcomm) ("What is DeskComm?") | WhatsApp, agentes de IA, MIT, instalador de um comando; preço **"freemium"** | ⚠️ "freemium" está errado: não existe versão paga (o README só cita VPS e Supabase como custo) | Página bloqueia robô (403). Vai ao Plane: o Rafael confere se há rota de edição e, se houver, envia o texto (D). |
+| **novo:** [productcool.com/product/melgarafael-deskcommcrm](https://www.productcool.com/product/melgarafael-deskcommcrm), 11/09 | MIT, grátis, custos só de VPS e chaves de IA | ✅ correto | Nenhum. O site é ligado a um serviço pago de submissão em massa (DirSubmit): **não** usar. |
+| opensourcealternatives.to, ai-tldr.dev, provenlabs.ai, ai.miraheze.org | sem mudança desde 16/11 | igual | Igual. |
+
+**Diretórios (frente 4)**
+
+- **Glama:** continua não indexado (404 em 23/11). A decisão sobre o MCP embutido segue pendente.
+- **`punkpeye/awesome-mcp-servers`:** nenhum PR (busca por "deskcomm", 23/11). Espera o Glama.
+- **awesome-selfhosted:** nenhum PR em `awesome-selfhosted-data` (busca por "deskcomm", 23/11). A janela abre em 27/11 (primeira release v1.0.0 em 27/07). Quem escreve e abre é o Rafael (seção 1).
+
+**Plane fora do ar**: o túnel recusa conexão desde 11/11 (`curl` 56 / HTTP 000 em 11, 16, 18, 19 e 23/11). Por isso nenhum pedido desta seção chegou ao Rafael. Os itens ficam prontos para criar quando ele voltar: "correções de listagens" (A, C, D, claim do opentools, OK para a issue B) e "Glama: indexar o MCP embutido?".
+
+(D) topai.tools, para o Rafael enviar se houver rota:
+
+> Hi — the DeskComm listing (topai.tools/t/deskcomm) shows the pricing as freemium. DeskcommCRM is fully free and open source under MIT, with no paid tier: the only costs are your own server and AI API usage. Source: https://github.com/melgarafael/DeskcommCRM. Could you change it to Free / Open Source? Thanks — Rafael (maintainer)
+
 ### 2026-11-16 · main `9dea1ee`, release v1.113.0 (15/11), 5.427 estrelas
 
 **Origens do tráfego no GitHub (14 dias):** Google 3.801 · github.com 2.629 · youtube.com 1.862 · deskcomm.com.br 651 · Brave 101 · Bing 83. **Nenhum diretório** aparece entre as 10 primeiras origens.
@@ -169,4 +217,4 @@ Leitura: o site não aparece em nenhuma das 10 buscas. Isso é coerente com o `n
 
 ---
 
-*Última atualização: 16 de novembro de 2026: radar semanal (seção 6) e AlternativeTo segurado. Antes: 28 de julho de 2026 — datas do awesome-selfhosted conferidas contra o template e os releases; `btw-so/open-source-alternatives` medido e descartado.*
+*Última atualização: 23 de novembro de 2026: radar semanal (seção 6). Antes: 16 de novembro de 2026, radar semanal e AlternativeTo segurado; e 28 de julho de 2026 — datas do awesome-selfhosted conferidas contra o template e os releases; `btw-so/open-source-alternatives` medido e descartado.*
