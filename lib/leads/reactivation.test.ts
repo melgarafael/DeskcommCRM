@@ -24,12 +24,18 @@ interface PropostaMock {
   crm_leads: {
     title: string;
     contact_id: string | null;
-    crm_stages?: { name: string } | null;
   } | null;
 }
 
-function criarAdminMock(propostas: PropostaMock[], jaAberto = false) {
+interface AvisoAbertoMock {
+  id: string;
+  ref_kind: string;
+  ref_id: string;
+}
+
+function criarAdminMock(propostas: PropostaMock[], jaAberto: AvisoAbertoMock | null = null) {
   const insertsInbox: Array<Record<string, unknown>> = [];
+  const updatesInbox: Array<{ id: string; payload: Record<string, unknown> }> = [];
   const client = {
     from(tabela: string) {
       if (tabela === "crm_lead_reactivations") {
@@ -54,7 +60,7 @@ function criarAdminMock(propostas: PropostaMock[], jaAberto = false) {
             eq: () => ({
               eq: () => ({
                 eq: () => ({
-                  maybeSingle: async () => ({ data: jaAberto ? { id: "open-1" } : null, error: null }),
+                  maybeSingle: async () => ({ data: jaAberto, error: null }),
                 }),
               }),
             }),
@@ -67,6 +73,12 @@ function criarAdminMock(propostas: PropostaMock[], jaAberto = false) {
               }),
             };
           },
+          update: (payload: Record<string, unknown>) => ({
+            eq: async (_col: string, id: string) => {
+              updatesInbox.push({ id, payload });
+              return { error: null };
+            },
+          }),
         };
       }
       if (tabela === "organizations") {
@@ -82,11 +94,11 @@ function criarAdminMock(propostas: PropostaMock[], jaAberto = false) {
     },
   } as unknown as SupabaseClient;
 
-  return { client, insertsInbox };
+  return { client, insertsInbox, updatesInbox };
 }
 
 describe("venceReativacoes", () => {
-  it("para 1 negócio parado, aponta o aviso direto para o lead com nome e etapa", async () => {
+  it("para 1 negócio parado, aponta o aviso direto para o lead sem gravar o título no corpo", async () => {
     const { client, insertsInbox } = criarAdminMock([
       {
         id: PROP_1,
@@ -96,7 +108,6 @@ describe("venceReativacoes", () => {
         crm_leads: {
           title: "Empresa Alpha",
           contact_id: null,
-          crm_stages: { name: "Proposta" },
         },
       },
     ]);
@@ -110,10 +121,10 @@ describe("venceReativacoes", () => {
       ref_kind: "lead",
       ref_id: LEAD_1,
     });
-    expect(String(insertsInbox[0]?.body)).toContain("Empresa Alpha (Proposta)");
+    expect(String(insertsInbox[0]?.body)).not.toContain("Empresa Alpha");
   });
 
-  it("para vários negócios parados, agrupa na organização e lista cada um com nome e etapa", async () => {
+  it("para vários negócios parados, agrupa na organização mantendo apenas a contagem", async () => {
     const { client, insertsInbox } = criarAdminMock([
       {
         id: PROP_1,
@@ -123,7 +134,6 @@ describe("venceReativacoes", () => {
         crm_leads: {
           title: "Empresa Alpha",
           contact_id: null,
-          crm_stages: { name: "Proposta" },
         },
       },
       {
@@ -134,7 +144,6 @@ describe("venceReativacoes", () => {
         crm_leads: {
           title: "Empresa Beta",
           contact_id: null,
-          crm_stages: { name: "Qualificação" },
         },
       },
     ]);
@@ -148,7 +157,42 @@ describe("venceReativacoes", () => {
       ref_kind: "organization",
       ref_id: ORG,
     });
-    expect(String(insertsInbox[0]?.body)).toContain("Empresa Alpha (Proposta)");
-    expect(String(insertsInbox[0]?.body)).toContain("Empresa Beta (Qualificação)");
+    expect(String(insertsInbox[0]?.title)).toContain("2 negócios");
+    expect(String(insertsInbox[0]?.body)).toContain("2 negócios");
+    expect(String(insertsInbox[0]?.body)).not.toContain("Empresa Alpha");
+    expect(String(insertsInbox[0]?.body)).not.toContain("Empresa Beta");
+  });
+
+  it("quando já existe aviso aberto apontando para 1 negócio e outro vence, passa para organization e atualiza a contagem", async () => {
+    const { client, insertsInbox, updatesInbox } = criarAdminMock(
+      [
+        {
+          id: PROP_2,
+          lead_id: LEAD_2,
+          organization_id: ORG,
+          expires_at: "2026-01-01T00:00:00Z",
+          crm_leads: {
+            title: "Empresa Beta",
+            contact_id: null,
+          },
+        },
+      ],
+      { id: "open-1", ref_kind: "lead", ref_id: LEAD_1 },
+    );
+
+    const res = await venceReativacoes(client, ORG, new Date("2026-01-02T00:00:00Z"));
+    expect(res).toEqual({ vencidas: 1, itensDeCaixa: 0, falhasDeAtividade: 0 });
+    expect(insertsInbox).toHaveLength(0);
+    expect(updatesInbox).toHaveLength(1);
+    expect(updatesInbox[0]).toMatchObject({
+      id: "open-1",
+      payload: {
+        ref_kind: "organization",
+        ref_id: ORG,
+      },
+    });
+    expect(String(updatesInbox[0]?.payload.title)).toContain("2 negócios");
+    expect(String(updatesInbox[0]?.payload.body)).toContain("2 negócios");
+    expect(String(updatesInbox[0]?.payload.body)).not.toContain("Empresa Beta");
   });
 });

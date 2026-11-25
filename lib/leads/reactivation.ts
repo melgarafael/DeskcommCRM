@@ -110,18 +110,34 @@ interface PropostaVencida {
   lead_id: string;
   organization_id: string;
   expires_at: string;
-  crm_leads: {
-    title: string;
-    contact_id: string | null;
-    crm_stages?: { name: string } | null;
-  } | null;
+  crm_leads: { title: string; contact_id: string | null } | null;
 }
 
-function descreveNegocio(p: PropostaVencida): string | null {
-  const nome = p.crm_leads?.title?.trim();
-  if (!nome) return null;
-  const etapa = p.crm_leads?.crm_stages?.name?.trim();
-  return etapa ? `${nome} (${etapa})` : nome;
+function montaTextoDoAviso(
+  idioma: Awaited<ReturnType<typeof idiomaDoAviso>>,
+  total: number,
+): { title: string; body: string } {
+  const um = total === 1;
+  return {
+    title: preencher(
+      um
+        ? traduzir("Decida sobre {n} negócio parado — a sugestão de retomar venceu", idioma)
+        : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
+      { n: total },
+    ),
+    body: preencher(
+      um
+        ? traduzir(
+            "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+            idioma,
+          )
+        : traduzir(
+            "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+            idioma,
+          ),
+      { n: total },
+    ),
+  };
 }
 
 /**
@@ -144,7 +160,7 @@ export async function venceReativacoes(
 ): Promise<ResultadoDoVencimento> {
   const { data, error } = await admin
     .from("crm_lead_reactivations")
-    .select("id, lead_id, organization_id, expires_at, crm_leads(title, contact_id, crm_stages(name))")
+    .select("id, lead_id, organization_id, expires_at, crm_leads(title, contact_id)")
     .eq("organization_id", organizationId)
     .eq("status", "pending")
     .lt("expires_at", now.toISOString());
@@ -199,7 +215,7 @@ export async function venceReativacoes(
     // houver — item que se duplica ao reprocessar é a praga que ele evita.
     const { data: jaAberto } = await admin
       .from("agent_inbox_items")
-      .select("id")
+      .select("id, ref_kind, ref_id")
       .eq("organization_id", organizationId)
       .eq("kind", "reactivation_expired")
       .eq("status", "open")
@@ -207,46 +223,40 @@ export async function venceReativacoes(
     if (!jaAberto) {
       // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
       const idioma = await idiomaDoAviso(admin, organizationId);
-      const um = expiradas.length === 1;
-      const unico = um ? expiradas[0] : undefined;
-      const corpoBase = preencher(
-        um
-          ? traduzir(
-              "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-              idioma,
-            )
-          : traduzir(
-              "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-              idioma,
-            ),
-        { n: r.vencidas },
-      );
-      const descricoes = expiradas
-        .map(descreveNegocio)
-        .filter((d): d is string => d !== null);
-      const body =
-        descricoes.length > 0 ? `${corpoBase} — ${descricoes.join(", ")}.` : corpoBase;
+      const { title, body } = montaTextoDoAviso(idioma, r.vencidas);
+      const unico = expiradas.length === 1 ? expiradas[0] : undefined;
       const { data: item } = await admin
         .from("agent_inbox_items")
         .insert({
           organization_id: organizationId,
           kind: "reactivation_expired",
           severity: "warn",
-          title: preencher(
-            um
-              ? traduzir("Decida sobre {n} negócio parado — a sugestão de retomar venceu", idioma)
-              : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
-            { n: r.vencidas },
-          ),
+          title,
           body,
-          // Um único negócio leva direto a ele ("Abrir negócio"); vários listam
-          // nome e etapa no corpo e mantêm o link para o Radar.
+          // Um único negócio leva direto a ele ("Abrir negócio"); vários mantêm
+          // o link para o Radar.
           ref_kind: unico ? "lead" : "organization",
           ref_id: unico ? unico.lead_id : organizationId,
         })
         .select("id")
         .maybeSingle();
       if (item) r.itensDeCaixa = 1;
+    } else {
+      const aberto = jaAberto as { id: string; ref_kind: string | null; ref_id: string | null };
+      const outroNegocio = expiradas.some((p) => p.lead_id !== aberto.ref_id);
+      if (aberto.ref_kind === "lead" && outroNegocio) {
+        const idioma = await idiomaDoAviso(admin, organizationId);
+        const { title, body } = montaTextoDoAviso(idioma, 1 + r.vencidas);
+        await admin
+          .from("agent_inbox_items")
+          .update({
+            ref_kind: "organization",
+            ref_id: organizationId,
+            title,
+            body,
+          })
+          .eq("id", aberto.id);
+      }
     }
   }
 
