@@ -107,7 +107,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
-  "crm_save_ai_agent_draft": { tokens: 1015, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens); nunca montada no turno do agente" },
+  "crm_save_ai_agent_draft": { tokens: 1019, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens), +4 com o provedor aimlapi no enum; nunca montada no turno do agente" },
   "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
   "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
   "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
@@ -139,8 +139,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_available_attendants": { tokens: 179, motivo: BASE },
   "crm_list_human_cases": { tokens: 149, motivo: BASE },
   "crm_get_human_case": { tokens: 208, motivo: BASE },
-  "crm_find_and_book_appointment": { tokens: 1028, motivo: BASE },
-  "crm_book_appointment": { tokens: 1203, motivo: BASE },
+  "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
+  "crm_book_appointment": { tokens: 1330, motivo: BASE },
   "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
@@ -275,7 +275,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +117 de `crm_count_conversations` (#4996, item 2). MEDIDO neste head sobre a main de
 // 2026-11-24 (`ceaa51d67`, que tinha 47562): 47679 = 47562 + 117, não somado à mão.
 // +8 da descrição de `crm_count_leads` corrigida (por_etapa traz stage_id). MEDIDO: 47687 = 47679 + 8.
-const TETO_TOTAL = 47687;
+// +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
+// MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
+// não somado à mão.
+const TETO_TOTAL = 47945;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

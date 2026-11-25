@@ -65,6 +65,7 @@ const MEDIDO: readonly LinhaMedida[] = [
     },
   },
   { id: "requesty", pais: "desconhecido", sede: null, paisDeclarado: null, fonte: null },
+  { id: "aimlapi", pais: "desconhecido", sede: null, paisDeclarado: null, fonte: null },
   { id: "custom", pais: "operador", sede: null, paisDeclarado: null, fonte: null },
   { id: "typesafe", pais: "US", sede: "US", paisDeclarado: null, fonte: null },
   { id: "elevenlabs", pais: "desconhecido", sede: null, paisDeclarado: null, fonte: null },

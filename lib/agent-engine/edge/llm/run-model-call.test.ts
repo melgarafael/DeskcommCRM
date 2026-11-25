@@ -330,6 +330,71 @@ describe("Terra grava custo real por passo do seam", () => {
   });
 });
 
+/**
+ * O degrau do Haiku 5.5 (#5017): acima de 100 mil tokens de entrada NUMA
+ * requisição (contando leitura e escrita de cache), a Anthropic cobra 5× aquela
+ * requisição. Cada passo do laço de ferramentas é uma requisição: o fator vale
+ * por passo, nunca pela soma do turno.
+ */
+describe("o degrau do Haiku 5.5 é cobrado por passo do seam", () => {
+  type Passo = { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
+  async function custoDoTurno(model: string, passos: Passo[]) {
+    const soma = (k: keyof Passo) => passos.reduce((t, p) => t + (p[k] ?? 0), 0);
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: soma("inputTokens"),
+        outputTokens: soma("outputTokens"),
+        inputTokenDetails: { cacheReadTokens: soma("cacheReadTokens"), cacheWriteTokens: soma("cacheWriteTokens") },
+      },
+      steps: passos.map((p) => ({
+        usage: {
+          inputTokens: p.inputTokens,
+          outputTokens: p.outputTokens,
+          inputTokenDetails: { cacheReadTokens: p.cacheReadTokens ?? 0, cacheWriteTokens: p.cacheWriteTokens ?? 0 },
+        },
+      })),
+      response: { id: "degrau-test", modelId: model },
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", model);
+    const resultado = await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+    expect(inserts[0]?.params[11]).toBeCloseTo(resultado.costCents ?? NaN, 9);
+    return resultado.costCents;
+  }
+
+  // 120 mil de entrada, dos quais só 20 mil sem cache: o degrau conta leitura e escrita.
+  const passoLongo: Passo = { inputTokens: 120_000, outputTokens: 1_000, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 };
+  const passoCurto: Passo = { inputTokens: 30_000, outputTokens: 1_000 };
+
+  it("⭐ passos de 120 mil e 30 mil: 5× só no primeiro", async () => {
+    const longo = costCents("claude-haiku-5-5", { ...passoLongo, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 })!;
+    const curto = costCents("claude-haiku-5-5", { ...passoCurto, cacheReadTokens: 0, cacheWriteTokens: 0 })!;
+    // 1× do passo longo: 20k×0,1 + 60k×0,01 + 40k×0,2 + 1k×0,5 = US$ 0,0111.
+    expect(longo).toBeCloseTo(1.11, 9);
+    expect(curto).toBeCloseTo(0.35, 9);
+    expect(await custoDoTurno("claude-haiku-5-5", [passoLongo, passoCurto])).toBeCloseTo(5 * 1.11 + 0.35, 9);
+  });
+
+  it("três passos de 40 mil (120 mil no turno): 1× nos três", async () => {
+    const passo: Passo = { inputTokens: 40_000, outputTokens: 0 };
+    expect(await custoDoTurno("claude-haiku-5-5", [passo, passo, passo])).toBeCloseTo(3 * 0.4, 9);
+  });
+
+  it("o mesmo turno no Sonnet 5.5 não muda", async () => {
+    // 20k×2 + 60k×0,1 + 40k×4 + 1k×10 = US$ 0,216; 30k×2 + 1k×10 = US$ 0,07.
+    expect(await custoDoTurno("claude-sonnet-5-5", [passoLongo, passoCurto])).toBeCloseTo(21.6 + 7, 9);
+  });
+});
+
+
 it("grava o custo do Luna com um passo longo e um passo curto", async () => {
   const modelo = "gpt-6-luna";
   vi.mocked(generateText).mockResolvedValue({

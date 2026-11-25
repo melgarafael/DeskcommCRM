@@ -337,10 +337,16 @@ O que fica para a F2-B (formatos e ajustes de aparência):
 
 ### F3 — Horário
 
+Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável de ambiente nova).
+
 - O chat usa o horário do agente que atende a conexão (`agent-config.ts`). Fora da janela, o turno é
   adiado como já acontece hoje, e a janela do chat mostra o aviso de fora do horário que o agente já
   tem configurado.
-- Sem agente na conexão, a janela mostra "Recebemos sua mensagem", e a conversa espera a equipe.
+- Sem agente na conexão, ou com todos os agentes dela pausados ou arquivados, a janela mostra "Recebemos sua mensagem. Nossa equipe responde por aqui." depois do primeiro envio aceito, uma vez por carga da janela. A conversa espera a equipe.
+- Com a janela fechada e sem aviso configurado no agente, o texto padrão diz a hora da volta, no horário do aparelho do visitante.
+- Se a leitura do horário falhar, o chat segue como aberto e o erro vai ao log. O chat não fica mudo por erro de leitura.
+- Ficou de fora, de propósito: o feriado nacional (`fechado_em_feriado_nacional` precisa do país da organização), o horário próprio do canal (o horário é o do agente) e o formulário de recado fora do horário (a mensagem do visitante já vira conversa e lead pelo pós-entrada).
+- Também fora desta fatia: o aviso automático que o motor manda pelo canal (`enviaAvisoForaDoHorario`). A chegada dele à janela do chat fica para a F4, medida junto do agente.
 
 ### F4 — Agente, passagem e teto do visitante anônimo
 

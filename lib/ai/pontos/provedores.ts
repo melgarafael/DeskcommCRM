@@ -355,6 +355,28 @@ export const PROVEDORES = [
     prefixoDaChave: "rqsty-…",
   },
   {
+    id: "aimlapi",
+    rotulo: "AI/ML API",
+    // NÃO DECLARADO: a AI/ML API escolhe o provedor de origem por MODELO, como a
+    // OpenRouter, e este repo não tem fonte citável com data para a sede da
+    // empresa nem para uma região de processamento. O documento diz "não
+    // declara o país; consulte a política do provedor" em vez de chutar.
+    pais: "desconhecido",
+    sede: null,
+    paisDeclarado: null,
+    fonteDoPais: null,
+    motivoDaRegiaoNaoDeclarada:
+      "escolhe o provedor de origem por modelo e não publica, em fonte citável, o país de onde responde a API",
+    // Endpoint fixo em `api.aimlapi.com`: não há base URL própria a apontar.
+    ondeExecutaComEndpointProprio: null,
+    quandoUsar:
+      "Uma chave só para centenas de modelos de chat de vários fabricantes (OpenAI, Anthropic, Google, DeepSeek e outros), com cobrança por uso numa conta só. Bom para comparar modelos sem abrir conta em cada provedor.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: true,
+    ondePegarAChave: "https://aimlapi.com/app/keys",
+    prefixoDaChave: "a1b2c3…",
+  },
+  {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
     // O endpoint é do próprio operador (gateway, LiteLLM, proxy corporativo):

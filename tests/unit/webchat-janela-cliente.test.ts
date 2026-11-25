@@ -149,6 +149,10 @@ const CONFIG_PADRAO = {
   coleta: { nome: "obrigatorio", telefone: "opcional", email: "oculto" },
   versaoDoAviso: "v1",
   controlador: { razaoSocial: "Loja Exemplo Ltda", politicaUrl: "https://loja.exemplo.com.br/privacidade" },
+  avatar: "https://exemplo.com.br/avatar.png",
+  autoAbrirSegundos: 30,
+  som: true,
+  respostasRapidas: ["Sim", "Não"],
 };
 
 const SOMENTE_CONVERSA = {
@@ -162,6 +166,8 @@ interface ConfigDoHtml {
   saudacao: string;
   coleta: unknown;
   controlador: { razaoSocial: string; politicaUrl: string | null };
+  /** Campos dos ajustes (avatar, autoAbrirSegundos, som, respostasRapidas): o HTML não os usa, o teste os troca no JSON. */
+  [outro: string]: unknown;
 }
 
 function htmlDaJanela(config: ConfigDoHtml): string {
@@ -350,7 +356,7 @@ describe("janela no DOM", () => {
     );
     expect(texto).toBeDefined();
     expect(texto!.children.length).toBe(0);
-    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector(".msg-texto img")).toBeNull();
   });
 
   it("sem localStorage (lança) a janela continua funcionando", async () => {
@@ -782,5 +788,246 @@ describe("janela no DOM", () => {
     await esperarTudo();
     expect(temTexto("não enviada — tentar de novo")).toBe(true);
     expect(temTexto("Chat indisponível")).toBe(true);
+  });
+
+  // ---------- Tarefa 10b: ajustes, avatar e respostas rápidas ----------
+
+  it("mostrarResposta manda { tipo: resposta } ao pai", async () => {
+    const evento = `event: mensagem\ndata: {"id":"r1","texto":"Oi","em":"2026-11-21T10:00:00Z"}\n\n`;
+    const r = roteador({}, [evento]);
+    const { pai } = await abrirJanela(r.fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    await esperarTudo();
+    // a resposta do atendente chega pelo fluxo de eventos
+    const chamadasResposta = pai.postMessage.mock.calls.filter((c) => c[0]?.tipo === "resposta");
+    expect(chamadasResposta).toHaveLength(1);
+    expect(chamadasResposta[0]![0]).toEqual({ tipo: "resposta" });
+    expect(chamadasResposta[0]![1]).toBe("*");
+  });
+
+  it("ajustes sai depois de pronto com os valores da configuração", async () => {
+    const { pai } = await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    const pronto = chamadas.find((c) => c.tipo === "pronto");
+    const ajustes = chamadas.find((c) => c.tipo === "ajustes");
+    expect(pronto).toEqual({ tipo: "pronto" });
+    expect(ajustes).toEqual({ tipo: "ajustes", autoAbrirSegundos: 30, som: true });
+    // ajustes vem depois de pronto
+    expect(chamadas.indexOf(ajustes)).toBeGreaterThan(chamadas.indexOf(pronto));
+  });
+
+  it("ajustes usa padrões 0 e false quando ausentes ou de tipo errado", async () => {
+    const { pai } = await abrirJanela(
+      roteador().fn,
+      CONFIG_PADRAO,
+      {},
+      JSON.stringify({ ...CONFIG_PADRAO, autoAbrirSegundos: "trinta", som: "sim", avatar: null, respostasRapidas: null }),
+      { ...CONFIG_PADRAO, autoAbrirSegundos: "trinta", som: "sim", avatar: null, respostasRapidas: null },
+    );
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    const ajustes = chamadas.find((c) => c.tipo === "ajustes");
+    expect(ajustes).toEqual({ tipo: "ajustes", autoAbrirSegundos: 0, som: false });
+  });
+
+  it("avatar https cria um img 28x28 no cabeçalho; avatar http e javascript não criam", async () => {
+    await abrirJanela(roteador().fn, SOMENTE_CONVERSA);
+    const img = document.querySelector(".cabecalho img") as HTMLImageElement | null;
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("https://exemplo.com.br/avatar.png");
+    expect(img!.getAttribute("alt")).toBe("");
+    expect(img!.style.width).toBe("28px");
+    expect(img!.style.height).toBe("28px");
+    expect(img!.style.borderRadius).toBe("50%");
+    expect(img!.style.objectFit).toBe("cover");
+
+    // avatar http não cria (reabre com config diferente)
+    document.body.textContent = "";
+    await abrirJanela(
+      roteador().fn,
+      SOMENTE_CONVERSA,
+      {},
+      JSON.stringify({ ...SOMENTE_CONVERSA, avatar: "http://exemplo.com.br/a.png" }),
+      { ...SOMENTE_CONVERSA, avatar: "http://exemplo.com.br/a.png" },
+    );
+    expect(document.querySelector(".cabecalho img")).toBeNull();
+
+    // avatar javascript não cria
+    document.body.textContent = "";
+    await abrirJanela(
+      roteador().fn,
+      SOMENTE_CONVERSA,
+      {},
+      JSON.stringify({ ...SOMENTE_CONVERSA, avatar: "javascript:alert(1)" }),
+      { ...SOMENTE_CONVERSA, avatar: "javascript:alert(1)" },
+    );
+    expect(document.querySelector(".cabecalho img")).toBeNull();
+  });
+
+  /** O elemento está visível se ele e nenhum ancestral (até o body) têm display none. */
+  function estaVisivel(el: Element): boolean {
+    let node: Element | null = el;
+    while (node && node !== document.body) {
+      if (window.getComputedStyle(node).display === "none") return false;
+      node = node.parentElement;
+    }
+    return true;
+  }
+
+  /** Abre a janela sem coleta e passa pela tela do aceite, até a conversa. */
+  async function irParaAConversa(config: typeof SOMENTE_CONVERSA) {
+    const r = roteador();
+    const aberta = await abrirJanela(r.fn, config, {}, JSON.stringify(config), config);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+    return { r, ...aberta };
+  }
+
+  function botoesDeResposta(): HTMLButtonElement[] {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>(".rodape > div button"));
+  }
+
+  it("respostas rápidas aparecem como botões visíveis no rodapé, depois do aceite", async () => {
+    await irParaAConversa(SOMENTE_CONVERSA);
+    const container = document.querySelector(".rodape > div");
+    expect(container).not.toBeNull();
+    expect(estaVisivel(container!)).toBe(true);
+    expect(botoesDeResposta().map((b) => b.textContent)).toEqual(["Sim", "Não"]);
+  });
+
+  it("resposta rápida com <b> aparece como texto literal, sem criar elemento", async () => {
+    await irParaAConversa({ ...SOMENTE_CONVERSA, respostasRapidas: ["<b>x</b>"] });
+    expect(botoesDeResposta().map((b) => b.textContent)).toEqual(["<b>x</b>"]);
+    expect(document.querySelector(".rodape b")).toBeNull();
+  });
+
+  it("clicar numa resposta rápida envia o texto como mensagem normal e a fileira some", async () => {
+    const { r } = await irParaAConversa(SOMENTE_CONVERSA);
+    botoesDeResposta()[0]!.click();
+    await esperarTudo();
+    const corpos = corposDeMensagens(r.chamadas);
+    expect(corpos).toHaveLength(1);
+    expect(corpos[0]!.texto).toBe("Sim");
+    expect(document.querySelector(".rodape > div")).toBeNull();
+  });
+
+  it("visitante que volta (flag + token) não vê a fileira de respostas rápidas", async () => {
+    const armazenamento = memoria();
+    armazenamento.mapa.set("webchat:wck_teste:iniciada", "1");
+    armazenamento.mapa.set("webchat:wck_teste", "T0");
+    const { pai } = await abrirJanela(roteador().fn, CONFIG_PADRAO, { armazenamento });
+
+    // vai direto à conversa, sem aviso/coleta
+    await esperarTudo();
+    expect(document.querySelector(".rodape > div")).toBeNull();
+    expect(temTexto("Aceitar e continuar")).toBe(false);
+
+    // mas ainda manda ajustes ao pai
+    const chamadas = pai.postMessage.mock.calls.map((c) => c[0]);
+    expect(chamadas.find((c) => c.tipo === "ajustes")).toEqual({
+      tipo: "ajustes",
+      autoAbrirSegundos: 30,
+      som: true,
+    });
+  });
+
+  // ---------- F3: horário de atendimento e "Recebemos sua mensagem" ----------
+
+  const RECEBIDA = "Recebemos sua mensagem. Nossa equipe responde por aqui.";
+
+  /** Sessão que devolve o campo `atendimento` (F3). Só os testes deste bloco o usam. */
+  function sessaoComAtendimento(atendimento: unknown) {
+    return () =>
+      Promise.resolve(
+        json(200, { data: { token: "T1", visitante_id: "v1", configuracao: {}, atendimento } }),
+      );
+  }
+
+  /** Linhas do registro cujo texto é exatamente o dado. */
+  function linhasComTexto(texto: string): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".msg-texto")).filter(
+      (p) => p.textContent === texto,
+    );
+  }
+
+  /** Abre a janela com a sessão dada (sem o campo, se omitida) e chega à conversa pelo aceite. */
+  async function chegarAConversa(sessao?: () => Promise<unknown>) {
+    await abrirJanela(roteador(sessao ? { sessao } : {}).fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+  }
+
+  it("atendimento fechado com aviso mostra o aviso do agente ao abrir a conversa", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({
+        estado: "fechado",
+        abre_em: "2026-11-25T11:00:00.000Z",
+        aviso: "Voltamos amanhã.",
+      }),
+    );
+    expect(linhasComTexto("Voltamos amanhã.")).toHaveLength(1);
+  });
+
+  it("atendimento fechado sem aviso mostra o texto padrão com a hora de volta no relógio do aparelho", async () => {
+    const abreEm = "2026-11-25T11:00:00.000Z";
+    await chegarAConversa(sessaoComAtendimento({ estado: "fechado", abre_em: abreEm, aviso: null }));
+    const d = new Date(abreEm);
+    const dois = (n: number) => String(n).padStart(2, "0");
+    const esperado =
+      `Estamos fora do horário de atendimento. Voltamos às ${dois(d.getHours())}:${dois(d.getMinutes())}` +
+      ` de ${dois(d.getDate())}/${dois(d.getMonth() + 1)} (no horário do seu aparelho).`;
+    expect(linhasComTexto(esperado)).toHaveLength(1);
+  });
+
+  it("aviso do agente com marcação entra como texto, sem elemento filho", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({
+        estado: "fechado",
+        abre_em: "2026-11-25T11:00:00.000Z",
+        aviso: "<b>x</b>",
+      }),
+    );
+    expect(linhasComTexto("<b>x</b>")).toHaveLength(1);
+    expect(document.querySelector(".msg-texto b")).toBeNull();
+  });
+
+  it("atendimento fora do formato (abre_em que não é data) é ignorado por inteiro", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({ estado: "fechado", abre_em: "nao-e-data", aviso: null }),
+    );
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+  });
+
+  it("sem agente: a linha de recebido só aparece depois do primeiro envio aceito, e uma vez só", async () => {
+    await chegarAConversa(sessaoComAtendimento({ estado: "sem_agente", abre_em: null, aviso: null }));
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
+
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(1);
+
+    digitarEEnviar("Tudo bem?");
+    await esperarTudo();
+    await esperarTudo();
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(1);
+  });
+
+  it("atendimento aberto não mostra linha de horário nem de recebido", async () => {
+    await chegarAConversa(sessaoComAtendimento({ estado: "aberto", abre_em: null, aviso: null }));
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
+  });
+
+  it("sem o campo atendimento (servidor antigo) a janela segue como antes", async () => {
+    await chegarAConversa();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
   });
 });
