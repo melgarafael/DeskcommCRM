@@ -103,6 +103,8 @@ Três réguas precisam ser fixadas antes da implementação. Nenhuma tem respost
 
 **5.2 A janela de abandono.** Depende do canal: em WhatsApp, 48h sem resposta significa outra coisa que em e-mail. Proposta: knob por canal, começando em 72h, e a decisão fica em `channel_knobs` — o que satisfaz o invariante 6 (configuração com superfície).
 
+Na consulta por período, a base é o número de conversas com pelo menos um envio no intervalo, mesmo que tenham recebido outro envio, resposta ou encerramento depois. Cada conversa entra uma vez. O abandono considera a última saída dentro do intervalo e, no instante da consulta, a conversa ainda sem resolução ou encerramento, sem resposta posterior e com silêncio acima da régua da organização.
+
 **5.3 O denominador.** A doutrina exige que seja o **desfecho por demanda**, e a demanda ainda não é entidade de primeira classe (cap. 5). `agent_cases` é o embrião mais próximo — tem `opened_at`, `closed_at`, `status` com desfecho e vínculo com conversa e lead.
 
 **Decisão recomendada:** usar `agent_cases` como denominador da Fase 1, **rotulando explicitamente** que o índice cobre demandas que passaram por caso — não o total. Um índice com escopo declarado é honesto; um índice que finge cobrir tudo destrói a comparação quando o escopo mudar.
