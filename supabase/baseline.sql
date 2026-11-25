@@ -90914,8 +90914,8 @@ alter table public.platform_meta_app
   add column if not exists app_id text,
   add column if not exists config_id text;
 
--- ---- responsÃ¡veis da consulta (migration 9479) ----
--- manifest: VÃ¡rios responsÃ¡veis por consulta: o principal (owner_user_id) continua Ãºnico; adicionais ocupam a agenda e ficam em tabela prÃ³pria com FK para o compromisso e para o membro da organizaÃ§Ã£o. Teto de 10 conduzindo (1 principal + atÃ© 9 adicionais). O agente nÃ£o escolhe adicionais; adicional basta ser membro ativo da organizaÃ§Ã£o e estar livre. MÃ³dulo "Reservas de lugar" inalterado.
+-- ---- responsáveis da consulta (migration 9482) ----
+-- manifest: Vários responsáveis por consulta: o principal (owner_user_id) continua único; adicionais ocupam a agenda e ficam em tabela própria com FK para o compromisso e para o membro da organização. Teto de 10 conduzindo (1 principal + até 9 adicionais). O agente não escolhe adicionais; adicional basta ser membro ativo da organização e estar livre. Módulo "Reservas de lugar" inalterado.
 
 create table if not exists public.calendar_appointment_responsibles (
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -90938,8 +90938,8 @@ revoke all on public.calendar_appointment_responsibles from public, anon, authen
 grant select on public.calendar_appointment_responsibles to authenticated;
 grant select, insert, update, delete on public.calendar_appointment_responsibles to service_role;
 
--- Gatilho: recusa o 10Âº adicional (1 principal + atÃ© 9 adicionais = teto 10).
--- O nÃºmero 9 aparece aqui, numa constante legÃ­vel por teste.
+-- Gatilho: recusa o 10º adicional (1 principal + até 9 adicionais = teto 10).
+-- O número 9 aparece aqui, numa constante legível por teste.
 create or replace function public.fn_calendar_appointment_responsibles_teto()
 returns trigger language plpgsql security definer set search_path=public as $$
 declare total integer; limite constant integer := 9; -- adicionais por consulta (10 = principal + 9)
