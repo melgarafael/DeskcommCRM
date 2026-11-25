@@ -67,7 +67,14 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoPorPassosComFaixaLonga, costCents, gravacaoDeUmaHora } from './pricing';
+import {
+  corpoComoObjeto,
+  custoInformadoPeloOpenRouter,
+  custoPorPassosComDegrauDoHaiku,
+  custoPorPassosComFaixaLonga,
+  costCents,
+  gravacaoDeUmaHora,
+} from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { decidirCustoDaChamada, haUsoMedido } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
@@ -1796,8 +1803,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // preço da linha sai do catálogo da INSTALAÇÃO (`ai_models`/`ai_pricing`, as
   // mesmas tabelas que `lib/ai/cost.ts` e `lib/ai/runtime/cost.ts` já consultam).
   // Sem preço em nenhum dos dois o custo continua `null` — mas com aviso no log,
-  // nunca calado, e nunca um 0 inventado. Modelos com faixa longa usam a
-  // mesma tabela por passo, pois a soma do turno não determina o preço.
+  // nunca calado, e nunca um 0 inventado. Modelos com faixa longa e o degrau do
+  // Haiku 5.5 (#5017) usam a mesma tabela por passo, pois a soma do turno não
+  // determina o preço.
   //
   // Na OpenRouter oficial, o número que vale é o que ELA cobrou (`usage.cost` de
   // cada passo, com a regra de BYOK em `custoInformadoPeloOpenRouter`): ela só
@@ -1821,7 +1829,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       : undefined;
   const daTabelaDoMotor =
     informado === undefined
-      ? (custoPorPassosComFaixaLonga(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h'))
+      ? (custoPorPassosComFaixaLonga(model, result) ??
+        custoPorPassosComDegrauDoHaiku(model, result, cfg.cacheTtl ?? '1h') ??
+        costCents(model, usage, cfg.cacheTtl ?? '1h'))
       : null;
   const doCatalogoDaInstalacao =
     daTabelaDoMotor === null && informado === undefined
