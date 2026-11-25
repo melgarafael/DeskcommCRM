@@ -95,8 +95,8 @@ let qc: QueryClient;
 
 beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  lista.data.pages[0].data = [antiga, conversa(vizinha, "Outra conversa")];
-  lista.data.pages[0].consultaIniciadaEm = 0;
+  lista.data.pages[0]!.data = [antiga, conversa(vizinha, "Outra conversa")];
+  lista.data.pages[0]!.consultaIniciadaEm = 0;
   eventos.clear();
   lida.mockClear();
   get.mockReset();
@@ -131,7 +131,7 @@ async function abrirDaLista() {
 describe("Inbox depois de reassinar as participações (#4508)", () => {
   it.each(["lista", "link direto"])("recupera a conversa e a resposta depois de um 503 (%s)", async (entrada) => {
     if (entrada === "link direto") {
-      lista.data.pages[0].data = [];
+      lista.data.pages[0]!.data = [];
       window.history.replaceState(null, "", `/app/inbox?filter=all&id=${id}`);
     }
     montar();
@@ -203,7 +203,7 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     await screen.findByText(semAcesso);
 
     podeVer = true;
-    lista.data = { ...lista.data, pages: [{ ...lista.data.pages[0], consultaIniciadaEm: performance.now() }] };
+    lista.data = { ...lista.data, pages: [{ ...lista.data.pages[0]!, consultaIniciadaEm: performance.now() }] };
     await act(async () => tela.rerender(<QueryClientProvider client={qc}><InboxLayout /></QueryClientProvider>));
     expect(await screen.findByRole("heading", { name: "Nome conferido na API" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Abrir Nome da lista antiga" })).toBeVisible();
