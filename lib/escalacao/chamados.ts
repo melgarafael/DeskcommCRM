@@ -13,6 +13,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
+import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { lerPaginado } from "@/lib/supabase/pagina";
+
 export const ESTADOS_ABERTOS = ["awaiting_human", "awaiting_lead"] as const;
 export const ESTADOS_FECHADOS = ["resolved", "escalated", "cancelled"] as const;
 
@@ -75,36 +79,92 @@ function recorte(visiveisPara: ConversasVisiveis): string[] | null {
  * megabytes. `agent_cases` é legível org-wide pelo papel
  * (`tenant_isolation_agent_cases_select`) e `conversation_id` é uuid opaco —
  * este primeiro passo não mostra nada sobre a pessoa atendida.
+ *
+ * **Mesmo vindo dos casos, o universo cresce com a organização (#5255).** O
+ * PostgREST devolve a query no header `Content-Location`, e acima de 16 KB o
+ * Node recusa a resposta (`UND_ERR_HEADERS_OVERFLOW`): medido na 1.124.0, 405
+ * conversas passavam e 420 derrubavam a tela Casos num 500. Por isso:
+ *
+ * - a pergunta à RLS vai em lotes (`buscaEmLotes`), cada um com o cliente de
+ *   SESSÃO — quem responde continua sendo a policy, lote a lote;
+ * - a leitura do universo é paginada (`lerPaginado`): sem `.range()`, o
+ *   PostgREST a cortava CALADA em `max_rows` (1.000), e casos visíveis sumiam
+ *   da fila sem erro nenhum;
+ * - `estado: "abertos"` restringe o universo aos casos abertos — a aba que a
+ *   equipe deixa aberta e recarrega a cada minuto deixa de carregar o histórico
+ *   inteiro. `"fechados"` não restringe nada: a mesma lista alimenta o contador
+ *   de ABERTOS, que precisa das conversas dos casos abertos também.
  */
 export async function conversasVisiveisDosCasos(
   sessao: SupabaseClient,
   organizationId: string,
-  opts: { caseId?: string } = {},
+  opts: { caseId?: string; estado?: "abertos" | "fechados" } = {},
 ): Promise<string[]> {
-  const base = sessao
-    .from("agent_cases")
-    .select("conversation_id")
-    .eq("organization_id", organizationId);
-  const { data: dosCasos, error: erroDosCasos } = await (opts.caseId
-    ? base.eq("id", opts.caseId)
-    : base);
-  if (erroDosCasos) throw new Error(erroDosCasos.message);
+  const dosCasos = await lerPaginado<{ conversation_id: string }>(
+    (inicio, fim, contar) => {
+      let consulta = sessao
+        .from("agent_cases")
+        .select("conversation_id", contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId);
+      if (opts.caseId) consulta = consulta.eq("id", opts.caseId);
+      if (opts.estado === "abertos") {
+        consulta = consulta.in("status", ESTADOS_ABERTOS as unknown as string[]);
+      }
+      // Ordem total (data, depois id): é ela que torna a página seguinte
+      // determinística — e, se o teto de páginas cortar, quem fica de fora são
+      // os casos mais ANTIGOS.
+      return consulta
+        .order("opened_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(inicio, fim);
+    },
+    PAGINAS_DO_UNIVERSO,
+  );
+  if (dosCasos.erro) throw new Error(dosCasos.erro);
+  if (dosCasos.truncado) {
+    logger.warn("[chamados] universo dos casos passou do teto de páginas — os mais antigos ficaram de fora", {
+      organizationId,
+      lidos: dosCasos.linhas.length,
+    });
+  }
 
-  const candidatas = [
-    ...new Set(
-      ((dosCasos ?? []) as Array<{ conversation_id: string }>).map((l) => l.conversation_id),
-    ),
-  ];
+  const candidatas = [...new Set(dosCasos.linhas.map((l) => l.conversation_id))];
   if (candidatas.length === 0) return [];
 
-  const { data: visiveis, error: erroVisiveis } = await sessao
-    .from("conversations")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .in("id", candidatas);
+  const { data: visiveis, error: erroVisiveis } = await buscaEmLotes<{ id: string }>(
+    candidatas,
+    (lote) =>
+      sessao
+        .from("conversations")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+  );
   if (erroVisiveis) throw new Error(erroVisiveis.message);
 
-  return ((visiveis ?? []) as Array<{ id: string }>).map((c) => c.id);
+  return visiveis.map((c) => c.id);
+}
+
+/**
+ * Quantas páginas de `TAMANHO_DA_PAGINA` (1.000) o universo dos casos lê antes
+ * de desistir: 20 mil casos. Além disso, o que fica de fora são os casos mais
+ * antigos, e o corte é registrado no log — nunca calado.
+ */
+const PAGINAS_DO_UNIVERSO = 20;
+
+/**
+ * O teto da lista quando quem chama não pede `limite`. É o `max_rows` padrão do
+ * PostgREST, o mesmo corte que a consulta única (`"todas"`) já sofre: a tela e o
+ * token veem a mesma fila, e juntar os lotes não devolve mais do que uma
+ * consulta só devolveria.
+ */
+const TETO_DA_LISTA = 1000;
+
+/** A ordem da fila: mais recente primeiro, empate desfeito pelo id (como `order(opened_at).order(id)` no banco). */
+function maisRecentesPrimeiro(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const porData = Date.parse(String(b.opened_at)) - Date.parse(String(a.opened_at));
+  if (porData !== 0) return porData;
+  return String(b.id) < String(a.id) ? -1 : String(b.id) > String(a.id) ? 1 : 0;
 }
 
 export interface ChamadoDaLista {
@@ -206,27 +266,39 @@ async function juntarContatos(
   ];
   const contatoDaConversa = new Map<string, string | null>();
   const contatoPorId = new Map<string, { name: string | null; phone_number: string | null }>();
+  // Em lotes pelo mesmo motivo de `conversasVisiveisDosCasos` (#5255): a lista
+  // tem uma conversa por caso devolvido, até o teto da lista.
   if (idsDasConversas.length > 0) {
-    const { data: conversas, error } = await supabase
-      .from("conversations")
-      .select("id, contact_id")
-      .eq("organization_id", organizationId)
-      .in("id", idsDasConversas);
+    const { data: conversas, error } = await buscaEmLotes<{ id: string; contact_id: string | null }>(
+      idsDasConversas,
+      (lote) =>
+        supabase
+          .from("conversations")
+          .select("id, contact_id")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+    );
     if (error) throw new Error(error.message);
-    for (const c of (conversas ?? []) as Array<{ id: string; contact_id: string | null }>) {
+    for (const c of conversas) {
       contatoDaConversa.set(c.id, c.contact_id);
     }
     const idsDosContatos = [
       ...new Set([...contatoDaConversa.values()].filter((id): id is string => typeof id === "string")),
     ];
     if (idsDosContatos.length > 0) {
-      const { data: contatos, error: erroContatos } = await supabase
-        .from("contacts")
-        .select("id, name, phone_number")
-        .eq("organization_id", organizationId)
-        .in("id", idsDosContatos);
+      const { data: contatos, error: erroContatos } = await buscaEmLotes<{
+        id: string;
+        name: string | null;
+        phone_number: string | null;
+      }>(idsDosContatos, (lote) =>
+        supabase
+          .from("contacts")
+          .select("id, name, phone_number")
+          .eq("organization_id", organizationId)
+          .in("id", lote),
+      );
       if (erroContatos) throw new Error(erroContatos.message);
-      for (const c of (contatos ?? []) as Array<{ id: string; name: string | null; phone_number: string | null }>) {
+      for (const c of contatos) {
         contatoPorId.set(c.id, { name: c.name, phone_number: c.phone_number });
       }
     }
@@ -281,39 +353,72 @@ export async function listarChamados(
   },
 ): Promise<ResultadoDaLista> {
   const estados = opts.estado === "abertos" ? ESTADOS_ABERTOS : ESTADOS_FECHADOS;
-  const conversas = recorte(opts.visiveisPara);
+  const recortado = recorte(opts.visiveisPara);
+  // Sem repetição: cada conversa cai num lote só, e é isso que deixa somar as
+  // contagens dos lotes sem contar um caso duas vezes.
+  const conversas = recortado === null ? null : [...new Set(recortado)];
 
-  const filtrada = supabase
-    .from("agent_cases")
-    .select(opts.contatoSeparado ? COLUNAS_LISTA_SEM_EMBED : COLUNAS_LISTA)
-    .eq("organization_id", organizationId)
-    .in("status", estados as unknown as string[]);
-  const base = (conversas === null ? filtrada : filtrada.in("conversation_id", conversas)).order(
-    "opened_at",
-    { ascending: false },
-  );
-
-  const { data, error } = await (opts.limite === undefined ? base : base.limit(opts.limite));
-  if (error) throw new Error(error.message);
+  const daLista = () =>
+    supabase
+      .from("agent_cases")
+      .select(opts.contatoSeparado ? COLUNAS_LISTA_SEM_EMBED : COLUNAS_LISTA)
+      .eq("organization_id", organizationId)
+      .in("status", estados as unknown as string[]);
 
   // O contador recebe o MESMO recorte: ele é o crachá da navegação, e dizer
   // "2 em aberto" sobre uma lista de um manda a pessoa procurar um caso que ela
   // nunca vai achar.
-  const contagem = supabase
-    .from("agent_cases")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", organizationId)
-    .in("status", ESTADOS_ABERTOS as unknown as string[]);
-  const { count } = await (conversas === null
-    ? contagem
-    : contagem.in("conversation_id", conversas));
+  const daContagem = () =>
+    supabase
+      .from("agent_cases")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .in("status", ESTADOS_ABERTOS as unknown as string[]);
+
+  let data: unknown[];
+  let abertos: number;
+  if (conversas === null) {
+    const base = daLista().order("opened_at", { ascending: false });
+    const resposta = await (opts.limite === undefined ? base : base.limit(opts.limite));
+    if (resposta.error) throw new Error(resposta.error.message);
+    data = resposta.data ?? [];
+    const { count } = await daContagem();
+    abertos = count ?? 0;
+  } else {
+    // Em lotes (#5255): o recorte cresce com a organização, e num `.in()` só ele
+    // passa do teto de header do Node — a fila inteira caía num 500. Cada lote
+    // traz os seus `teto` mais recentes; os `teto` mais recentes da fila estão,
+    // todos, entre eles. Por isso juntar, reordenar e cortar dá a mesma fila
+    // que uma consulta única daria.
+    const teto = opts.limite ?? TETO_DA_LISTA;
+    const lista = await buscaEmLotes<Record<string, unknown>>(conversas, (lote) =>
+      daLista()
+        .in("conversation_id", lote)
+        .order("opened_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(teto) as unknown as PromiseLike<{
+        data: Record<string, unknown>[] | null;
+        error: { message: string } | null;
+      }>,
+    );
+    if (lista.error) throw new Error(lista.error.message);
+    data = lista.data.sort(maisRecentesPrimeiro).slice(0, teto);
+
+    // A contagem de cada lote, somada. O erro segue ignorado como na consulta
+    // única (um lote que falha conta zero): mudar isso é outra decisão.
+    const contagens = await buscaEmLotes<number>(conversas, async (lote) => {
+      const { count } = await daContagem().in("conversation_id", lote);
+      return { data: [count ?? 0], error: null };
+    });
+    abertos = contagens.data.reduce((soma, n) => soma + n, 0);
+  }
 
   const linhas = opts.contatoSeparado
-    ? await juntarContatos(supabase, organizationId, (data ?? []) as unknown as Array<Record<string, unknown>>)
-    : ((data ?? []) as unknown as LinhaComContato[]);
+    ? await juntarContatos(supabase, organizationId, data as Array<Record<string, unknown>>)
+    : (data as unknown as LinhaComContato[]);
   return {
     chamados: linhas.map(achatarContato),
-    abertos: count ?? 0,
+    abertos,
   };
 }
 
