@@ -15,16 +15,19 @@ const fonte = readFileSync(join(process.cwd(), "app/app/settings/conversoes/page
 
 describe("Conversões — barra de abas a 375px", () => {
   it("a <nav> rola sozinha em vez de alargar o painel", () => {
-    const nav = fonte.match(/<nav className="([^"]+)"[^>]*Seções de conversões/);
-    expect(nav).not.toBeNull();
-    expect(nav![1].split(" ")).toContain("overflow-x-auto");
+    const classes = fonte.match(/<nav className="([^"]+)"[^>]*Seções de conversões/)?.[1];
+    expect(classes).toBeDefined();
+    expect(classes?.split(" ")).toContain("overflow-x-auto");
   });
 
   it("cada aba fica numa linha e não encolhe", () => {
     const abas = fonte.match(/aba === chave\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/);
-    expect(abas).not.toBeNull();
-    for (const classes of [abas![1], abas![2]]) {
-      expect(classes.split(" ")).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
+    const variantes = [abas?.[1], abas?.[2]];
+    for (const classes of variantes) {
+      expect(classes).toBeDefined();
+      expect(classes?.split(" ")).toEqual(
+        expect.arrayContaining(["shrink-0", "whitespace-nowrap"]),
+      );
     }
   });
 });
