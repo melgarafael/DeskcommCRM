@@ -203,7 +203,7 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     await screen.findByText(semAcesso);
 
     podeVer = true;
-    lista.data.pages[0].consultaIniciadaEm = performance.now();
+    lista.data = { ...lista.data, pages: [{ ...lista.data.pages[0], consultaIniciadaEm: performance.now() }] };
     await act(async () => tela.rerender(<QueryClientProvider client={qc}><InboxLayout /></QueryClientProvider>));
     expect(await screen.findByRole("heading", { name: "Nome conferido na API" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Abrir Nome da lista antiga" })).toBeVisible();

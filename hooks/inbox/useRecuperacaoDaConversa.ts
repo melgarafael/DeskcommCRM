@@ -17,7 +17,7 @@ export interface AncoraDaConversa {
 type Resultado = "confirmada" | "sem-acesso" | "sessao-expirada";
 
 function recusaDaLeitura(err: unknown): Exclude<Resultado, "confirmada"> | null {
-  if (!(err instanceof ApiError)) return null;
+  if (!(err instanceof ApiError) || err.semEnvelope) return null;
   if (err.status === 404 && err.code === "not_found") return "sem-acesso";
   if (err.status === 401 && err.code === "unauthenticated") return "sessao-expirada";
   return null;
