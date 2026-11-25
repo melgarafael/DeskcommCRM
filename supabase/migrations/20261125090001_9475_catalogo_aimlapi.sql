@@ -1,6 +1,6 @@
 -- manifest: **Catálogo da AI/ML API.** Agregador OpenAI-compatível como a Requesty (0410), pela mesma fábrica `@ai-sdk/openai` com `.chat()` e pelo vocabulário aberto de `provider` da 0127. Cinco modelos com ids, contexto e preço conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas `type = openai/chat-completions`, todas com `tools` e `vision` em `capabilities`), convertidos para centavos por milhão. Não insere em `ai_pricing`: o backfill 0113 do `baseline.sql` deriva a linha de `ai_models` no próximo `update.sh`, como na 0410. Sem `is_default_for_provider`. Idempotente (`on conflict do update`), sem coluna nem função nova.
 -- ============================================================================
--- 9473: CATÁLOGO DA AI/ML API
+-- 9475: CATÁLOGO DA AI/ML API
 --
 -- A AI/ML API é um agregador OpenAI-compatível, como a Requesty: uma chave dá
 -- acesso a modelos de vários fabricantes, com ids `fabricante/modelo`. Entra

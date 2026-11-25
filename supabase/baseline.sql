@@ -86193,14 +86193,14 @@ on conflict (provider, model_id) do update set
   supports_tools = excluded.supports_tools,
   supports_vision = excluded.supports_vision;
 
--- ---- Catálogo da AI/ML API (migration 9473) ----
+-- ---- Catálogo da AI/ML API (migration 9475) ----
 --
--- Espelho de supabase/migrations/20261125090000_9473_catalogo_aimlapi.sql.
+-- Espelho de supabase/migrations/20261125090001_9475_catalogo_aimlapi.sql.
 -- Agregador OpenAI-compatível, como a Requesty logo acima: ids `fabricante/modelo`
 -- conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas
 -- `type = openai/chat-completions`), preço convertido para CENTAVOS por milhão.
--- Fica junto do bloco da Requesty, ANTES da VARREDURA anon, e não cria função.
--- Racional inteiro na migration 9473.
+-- Fica junto do bloco da Requesty; não cria função nem grant, então a VARREDURA anon (acima) não o alcança.
+-- Racional inteiro na migration 9475.
 insert into public.ai_models
   (provider, model_id, display_name, description, context_window,
    input_price_per_million_cents, output_price_per_million_cents,
