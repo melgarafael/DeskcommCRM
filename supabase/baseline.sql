@@ -83970,7 +83970,7 @@ grant execute on function public.fn_conversation_release_if_idle(uuid, uuid, uui
 
 notify pgrst, 'reload schema';
 
--- ---- abandono por período (migration 9474) ----
+-- ---- abandono por período (migration 9478) ----
 create or replace function public.fn_atrito_metrics(
   p_org uuid,
   p_from timestamptz,
