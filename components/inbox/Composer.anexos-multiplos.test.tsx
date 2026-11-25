@@ -184,7 +184,7 @@ describe("o botão + entrega vários anexos na fila do compositor (#4364)", () =
   it("restaura o anexo ainda não enviado com o destino de nota interna", async () => {
     const ref = createRef<ComposerHandle>();
     const view = renderComposer({ ref });
-    await userEvent.click(screen.getByRole("button", { name: "Nota interna", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: "Nota interna" }));
     await escolherPeloMenu(view.container, [arquivo("privado.pdf")]);
     const guardado = ref.current?.guardarRascunho?.();
     expect(guardado).toMatchObject({ modo: "note", modoDosArquivos: "note" });
