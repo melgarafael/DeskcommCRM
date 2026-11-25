@@ -930,4 +930,104 @@ describe("janela no DOM", () => {
       som: true,
     });
   });
+
+  // ---------- F3: horário de atendimento e "Recebemos sua mensagem" ----------
+
+  const RECEBIDA = "Recebemos sua mensagem. Nossa equipe responde por aqui.";
+
+  /** Sessão que devolve o campo `atendimento` (F3). Só os testes deste bloco o usam. */
+  function sessaoComAtendimento(atendimento: unknown) {
+    return () =>
+      Promise.resolve(
+        json(200, { data: { token: "T1", visitante_id: "v1", configuracao: {}, atendimento } }),
+      );
+  }
+
+  /** Linhas do registro cujo texto é exatamente o dado. */
+  function linhasComTexto(texto: string): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".msg-texto")).filter(
+      (p) => p.textContent === texto,
+    );
+  }
+
+  /** Abre a janela com a sessão dada (sem o campo, se omitida) e chega à conversa pelo aceite. */
+  async function chegarAConversa(sessao?: () => Promise<unknown>) {
+    await abrirJanela(roteador(sessao ? { sessao } : {}).fn, SOMENTE_CONVERSA);
+    botao("Aceitar e continuar").click();
+    await esperarTudo();
+  }
+
+  it("atendimento fechado com aviso mostra o aviso do agente ao abrir a conversa", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({
+        estado: "fechado",
+        abre_em: "2026-11-25T11:00:00.000Z",
+        aviso: "Voltamos amanhã.",
+      }),
+    );
+    expect(linhasComTexto("Voltamos amanhã.")).toHaveLength(1);
+  });
+
+  it("atendimento fechado sem aviso mostra o texto padrão com a hora de volta no relógio do aparelho", async () => {
+    const abreEm = "2026-11-25T11:00:00.000Z";
+    await chegarAConversa(sessaoComAtendimento({ estado: "fechado", abre_em: abreEm, aviso: null }));
+    const d = new Date(abreEm);
+    const dois = (n: number) => String(n).padStart(2, "0");
+    const esperado =
+      `Estamos fora do horário de atendimento. Voltamos às ${dois(d.getHours())}:${dois(d.getMinutes())}` +
+      ` de ${dois(d.getDate())}/${dois(d.getMonth() + 1)} (no horário do seu aparelho).`;
+    expect(linhasComTexto(esperado)).toHaveLength(1);
+  });
+
+  it("aviso do agente com marcação entra como texto, sem elemento filho", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({
+        estado: "fechado",
+        abre_em: "2026-11-25T11:00:00.000Z",
+        aviso: "<b>x</b>",
+      }),
+    );
+    expect(linhasComTexto("<b>x</b>")).toHaveLength(1);
+    expect(document.querySelector(".msg-texto b")).toBeNull();
+  });
+
+  it("atendimento fora do formato (abre_em que não é data) é ignorado por inteiro", async () => {
+    await chegarAConversa(
+      sessaoComAtendimento({ estado: "fechado", abre_em: "nao-e-data", aviso: null }),
+    );
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+  });
+
+  it("sem agente: a linha de recebido só aparece depois do primeiro envio aceito, e uma vez só", async () => {
+    await chegarAConversa(sessaoComAtendimento({ estado: "sem_agente", abre_em: null, aviso: null }));
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
+
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(1);
+
+    digitarEEnviar("Tudo bem?");
+    await esperarTudo();
+    await esperarTudo();
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(1);
+  });
+
+  it("atendimento aberto não mostra linha de horário nem de recebido", async () => {
+    await chegarAConversa(sessaoComAtendimento({ estado: "aberto", abre_em: null, aviso: null }));
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
+  });
+
+  it("sem o campo atendimento (servidor antigo) a janela segue como antes", async () => {
+    await chegarAConversa();
+    digitarEEnviar("Oi");
+    await esperarTudo();
+    await esperarTudo();
+    expect(temTexto("Estamos fora do horário")).toBe(false);
+    expect(linhasComTexto(RECEBIDA)).toHaveLength(0);
+  });
 });
