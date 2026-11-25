@@ -272,7 +272,20 @@ export default async function ConversoesPage({
         </p>
       </CabecalhoDaSubTela>
 
-      <nav className="flex gap-1 border-b" aria-label={t("Seções de conversões")}>
+      {/*
+        As quatro abas não cabem numa linha a 375px (somam ~395px em 343px de
+        caixa útil). Em vez de deixar o painel inteiro rolar para o lado — ou de
+        esconder a quarta aba atrás de uma rolagem na própria barra — a barra
+        QUEBRA: `flex-wrap` desce os nomes que não cabem para a linha de baixo,
+        e `whitespace-nowrap` garante que cada nome fique numa linha só (sem
+        quebrar "Histórico de / envios" no meio). A `border-b` continua reta
+        porque é a borda do bloco inteiro, e no desktop, onde os quatro cabem
+        lado a lado, nada muda: uma linha só, como antes.
+      */}
+      <nav
+        className="flex flex-wrap gap-1 border-b"
+        aria-label={t("Seções de conversões")}
+      >
         {(
           [
             ["configuracao", t("Configuração")],
@@ -287,8 +300,8 @@ export default async function ConversoesPage({
             aria-current={aba === chave ? "page" : undefined}
             className={
               aba === chave
-                ? "-mb-px border-b-2 border-primary px-3 py-2 text-sm font-medium"
-                : "px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                ? "-mb-px border-b-2 border-primary px-3 py-2 text-sm font-medium whitespace-nowrap"
+                : "px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
             }
           >
             {rotulo}
