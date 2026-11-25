@@ -1,4 +1,4 @@
--- manifest: **Catálogo da AI/ML API.** Agregador OpenAI-compatível como a Requesty (0410), pela mesma fábrica `@ai-sdk/openai` com `.chat()` e pelo vocabulário aberto de `provider` da 0127. Cinco modelos com ids, contexto e preço conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas `type = openai/chat-completions`, todas com `tools` e `vision` em `capabilities`), convertidos para centavos por milhão. Não insere em `ai_pricing`: o backfill 0113 do `baseline.sql` deriva a linha de `ai_models` no próximo `update.sh`, como na 0410. Sem `is_default_for_provider`. Idempotente (`on conflict do update`), sem coluna nem função nova.
+-- manifest: **Catálogo da AI/ML API.** Agregador OpenAI-compatível como a Requesty (0410), pela mesma fábrica `@ai-sdk/openai` com `.chat()` e pelo vocabulário aberto de `provider` da 0127. Cinco modelos com ids, contexto e preço conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas `type = openai/chat-completions`, todas com `tools` e `vision` em `capabilities`), convertidos para centavos por milhão. Insere em `ai_pricing` os mesmos cinco ids com `on conflict do nothing`: três são também da Requesty, e sem a linha o backfill 0113 da cadeia tenta a mesma chave duas vezes. Sem `is_default_for_provider`. Idempotente (`on conflict do update`), sem coluna nem função nova.
 -- ============================================================================
 -- 9475: CATÁLOGO DA AI/ML API
 --
@@ -32,7 +32,8 @@
 --
 -- Mesmo limite de `ai_pricing` descrito na 0410: o preço resolve só por
 -- `model_id`, sem provider. `openai/gpt-4o-mini`, `openai/gpt-4.1-mini` e
--- `google/gemini-2.5-flash` já têm linha (Requesty, mesmo preço publicado).
+-- `google/gemini-2.5-flash` são também da Requesty, com o mesmo preço publicado;
+-- por isso a linha de `ai_pricing` nasce aqui (ver o fim do arquivo).
 --
 -- Sem `is_default_for_provider`: a escolha recai no mais barato com
 -- ferramentas (`escolherModeloDoProvedor`), como na Requesty e na OpenRouter.
@@ -69,3 +70,18 @@ on conflict (provider, model_id) do update set
   output_price_per_million_cents = excluded.output_price_per_million_cents,
   supports_tools = excluded.supports_tools,
   supports_vision = excluded.supports_vision;
+
+-- O preço nasce aqui, e não no próximo `update.sh`: `ai_pricing.model` é chave
+-- primária, e três destes ids também são da Requesty. Num banco recém-instalado
+-- nenhum dos dois tem linha ainda, e o backfill 0113 da cadeia, que é um INSERT
+-- só sem `distinct on`, tentaria a mesma chave duas vezes. Mesmo preço publicado
+-- nos dois provedores; `do nothing` não pisa na linha que um clone já tem.
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('openai/gpt-4o-mini',          15,   60, 'catálogo 9475 (AI/ML API)'),
+  ('openai/gpt-4.1-mini',         40,  160, 'catálogo 9475 (AI/ML API)'),
+  ('google/gemini-2.5-flash',     30,  250, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-haiku-4.5', 106,  529, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-sonnet-4.5', 317, 1587, 'catálogo 9475 (AI/ML API)')
+on conflict (model) do nothing;
