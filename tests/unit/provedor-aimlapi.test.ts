@@ -8,6 +8,7 @@
  * (Bearer) nunca sai para outro host, nem quando o servidor responde redirect.
  * Por isso há testes que olham o DESTINO de cada request, não só o resultado.
  */
+import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EgressBlockedError } from "@/lib/agent-engine/edge/egress";
@@ -107,6 +108,12 @@ describe("AI/ML API é executável", () => {
   });
 });
 
+/** O registro devolve `LanguageModel`, que inclui `string`; aqui só serve a instância. */
+function gerar(modelo: LanguageModel): PromiseLike<unknown> {
+  if (typeof modelo === "string") throw new Error("o registro devolveu id em vez de instância");
+  return modelo.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "oi" }] }] } as never);
+}
+
 describe("a chave da AI/ML API só vai para api.aimlapi.com", () => {
   it("o endpoint é exatamente https://api.aimlapi.com/v1", () => {
     expect(AIMLAPI_ENDPOINT).toBe("https://api.aimlapi.com/v1");
@@ -120,9 +127,7 @@ describe("a chave da AI/ML API só vai para api.aimlapi.com", () => {
       "openai/gpt-4o-mini",
       "https://gateway.exemplo/v1",
     );
-    await modelo
-      .doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "oi" }] }] } as never)
-      .catch(() => undefined);
+    await Promise.resolve(gerar(modelo)).catch(() => undefined);
     expect(chamadas.length).toBeGreaterThan(0);
     for (const c of chamadas) {
       expect(new URL(c.url).host).toBe("api.aimlapi.com");
@@ -141,9 +146,7 @@ describe("a chave da AI/ML API só vai para api.aimlapi.com", () => {
     const modelo = createDefaultRegistry()["aimlapi"]!("chave-de-teste", "openai/gpt-4o-mini");
     let erro: unknown;
     try {
-      await modelo.doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "oi" }] }],
-      } as never);
+      await gerar(modelo);
     } catch (e) {
       erro = e;
     }
@@ -165,9 +168,7 @@ describe("a chave da AI/ML API só vai para api.aimlapi.com", () => {
     const modelo = buildModel("aimlapi", "chave-de-teste", "openai/gpt-4o-mini");
     let erro: unknown;
     try {
-      await modelo.doGenerate({
-        prompt: [{ role: "user", content: [{ type: "text", text: "oi" }] }],
-      } as never);
+      await gerar(modelo);
     } catch (e) {
       erro = e;
     }
