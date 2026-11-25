@@ -13,6 +13,12 @@ import { enderecoDaPropriaMaquina } from "@/lib/webhooks/url-publica";
 
 export const MAXIMO_DE_ORIGENS = 20;
 
+/** Formato padrão da janela do chat. */
+export const FORMATO_PADRAO = "bolha" as const;
+
+/** Posição padrão da janela do chat. */
+export const POSICAO_PADRAO = "direita" as const;
+
 /** Mesmo padrão de `fn_webchat_origens_validas`: https, host, porta opcional, sem caminho. */
 const ORIGEM_HTTPS =
   /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?$/i;
@@ -53,10 +59,60 @@ export const configuracaoDoChatSchema = z
      * some (`conexaoPor` devolve `null`) e a organização continua vendo a conexão para retomar.
      */
     pausado: z.boolean().optional(),
+    /**
+     * Formato da janela do chat (F2-B). "bolha" (o que já existe), "painel"
+     * (mesma bolha, chat aberto vira painel colado na lateral, altura da tela),
+     * "embutido" (sem bolha: iframe dentro do elemento marcado por
+     * data-webchat-alvo) e "pagina" (bolha, clique abre /chat/<chave> numa
+     * nova aba). Ausente = "bolha".
+     */
+    formato: z.enum(["bolha", "painel", "embutido", "pagina"]).optional(),
+    /**
+     * Posição da janela (F2-B). "direita" ou "esquerda". Vale para "bolha",
+     * "painel" e "pagina". Ausente = "direita".
+     */
+    posicao: z.enum(["direita", "esquerda"]).optional(),
+    /**
+     * URL da imagem do avatar da janela (F2-B, Tarefa 10a). Somente https, no
+     * máximo 300 caracteres. Ausente ou "" = sem avatar.
+     */
+    avatar_url: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => {
+        if (v === "") return true; // "" = tirar o avatar (a aba manda em branco)
+        try {
+          return new URL(v).protocol === "https:";
+        } catch {
+          return false;
+        }
+      })
+      .optional(),
+    /**
+     * Abrir a janela sozinho após N segundos (F2-B, Tarefa 10a). 0 desliga.
+     * Intervalo 0 a 120.
+     */
+    auto_abrir_segundos: z.number().int().min(0).max(120).optional(),
+    /**
+     * Tocar som ao chegar uma resposta (F2-B, Tarefa 10a).
+     */
+    som: z.boolean().optional(),
+    /**
+     * Respostas rápidas do visitante (F2-B, Tarefa 10a). Até 5 strings, cada
+     * uma de 1 a 80 caracteres após trim.
+     */
+    respostas_rapidas: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
   })
   .strict();
 
 export type ConfiguracaoDoChat = z.infer<typeof configuracaoDoChatSchema>;
+
+/** Formato da janela do chat (F2-B). */
+export type FormatoDoChat = z.infer<typeof configuracaoDoChatSchema>["formato"];
+
+/** Posição da janela do chat (F2-B). */
+export type PosicaoDoChat = z.infer<typeof configuracaoDoChatSchema>["posicao"];
 
 /**
  * A lista de domínios que podem abrir o widget. Normaliza para minúsculas e tira duplicatas.
