@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { parametrosDaJanela, type JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
 import type { AtritoRaw, Par } from "@/lib/metrics/atrito";
 
 export interface AtritoMetrics {
@@ -30,10 +31,12 @@ export function useSalvarReguaAbandono() {
 }
 
 /** Spec 17 — o Índice de Atrito. Mede o propósito, não a atividade. */
-export function useAtritoMetrics() {
+export function useAtritoMetrics(janela: JanelaDeMetricas) {
+  const busca = parametrosDaJanela(janela);
   return useQuery({
-    queryKey: ["metrics", "atrito"],
-    queryFn: async () => apiClient.get<{ data: AtritoMetrics }>("/api/v1/metrics/atrito"),
+    queryKey: ["metrics", "atrito", janela],
+    queryFn: async () => apiClient.get<{ data: AtritoMetrics }>(`/api/v1/metrics/atrito${busca.size ? `?${busca}` : ""}`),
     staleTime: 30_000,
+    enabled: janela !== undefined,
   });
 }

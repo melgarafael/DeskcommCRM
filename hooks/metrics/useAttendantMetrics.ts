@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { parametrosDaJanela, type JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
 
 export interface FunnelStage {
   stage_id: string;
@@ -45,11 +46,12 @@ export interface AttendantMetrics {
  * tela desta fatia só pinta o número, e o campo de filtro por etiqueta é de uma
  * fatia seguinte — declarada fora do escopo no PR.
  */
-export function useAttendantMetrics(owner: string | null) {
-  const qs = owner ? `?owner_user_id=${encodeURIComponent(owner)}` : "";
+export function useAttendantMetrics(owner: string | null, janela: JanelaIso | null, reinicio = 0) {
+  const busca = parametrosDaJanela(janela);
+  if (owner) busca.set("owner_user_id", owner);
   return useQuery({
-    queryKey: ["metrics", "attendants", owner ?? "all"],
-    queryFn: async () => apiClient.get<{ data: AttendantMetrics }>(`/api/v1/metrics/attendants${qs}`),
+    queryKey: ["metrics", "attendants", owner ?? "all", janela, janela ? null : reinicio],
+    queryFn: async () => apiClient.get<{ data: AttendantMetrics }>(`/api/v1/metrics/attendants${busca.size ? `?${busca}` : ""}`),
     staleTime: 30_000,
   });
 }
