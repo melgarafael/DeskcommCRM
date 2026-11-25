@@ -26,7 +26,15 @@ const pool = new pg.Pool({
 const A = { org: randomUUID(), manager: randomUUID(), colega: randomUUID(), removido: randomUUID() };
 const B = { org: randomUUID(), manager: randomUUID() };
 const adicionais = Array.from({ length: 10 }, () => randomUUID());
-const [X, Y, Z] = adicionais;
+// Índice de array com `noUncheckedIndexedAccess`: o helper devolve `string` e falha alto se faltar.
+const umAdicional = (lista: readonly string[], i: number): string => {
+  const v = lista[i];
+  if (!v) throw new Error(`falta o adicional ${i}`);
+  return v;
+};
+const X = umAdicional(adicionais, 0);
+const Y = umAdicional(adicionais, 1);
+const Z = umAdicional(adicionais, 2);
 const inativo = randomUUID(); // membro de A com revoked_at
 const deFora = randomUUID(); // membro só de B
 const INICIO = "2026-12-01T14:00:00Z";
@@ -121,7 +129,7 @@ describe("responsáveis — teto de 10 conduzindo (1 principal + 9 adicionais)",
     const id = await compromisso(A.org, A.manager);
     for (const u of adicionais.slice(0, 9)) await porDoAdicional(id, u);
     expect(await adicionaisDe(id)).toHaveLength(9);
-    await expect(porDoAdicional(id, adicionais[9])).rejects.toMatchObject({ code: "22023" });
+    await expect(porDoAdicional(id, umAdicional(adicionais, 9))).rejects.toMatchObject({ code: "22023" });
   });
 });
 

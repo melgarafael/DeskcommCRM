@@ -617,9 +617,11 @@ async function executarCriacaoDeAgendamento(
       }
     }
     // A equipe sai pelo campo `responsaveis`, só quando o pedido a mandou.
-    const semEquipe = <T extends { responsible_user_ids?: string[] }>(r: T) => ({ ...r, responsible_user_ids: undefined });
-    const equipeDaReserva = rows[0].responsible_user_ids ?? [];
-    return { ...semEquipe(rows[0]), ...(input.participants ? { appointments: rows.map(semEquipe) } : {}),
+    const semEquipe = <T extends object>(r: T) => ({ ...r, responsible_user_ids: undefined });
+    const primeira = rows[0];
+    if (!primeira) throw new ApiError(500, "internal_error", undefined, ctx.requestId, "A reserva não devolveu a consulta.");
+    const equipeDaReserva = primeira.responsible_user_ids ?? [];
+    return { ...semEquipe(primeira), ...(input.participants ? { appointments: rows.map(semEquipe) } : {}),
       ...(input.responsible_user_ids !== undefined ? { responsaveis: equipeDaReserva.map((user_id) => ({ user_id })) } : {}) };
   }
 
@@ -976,7 +978,7 @@ export async function alterarAgendamentoHandler(
       supabase,
       ctx,
       input.responsible_user_ids,
-      atual.owner_user_id,
+      typeof atual.owner_user_id === "string" ? atual.owner_user_id : null,
     );
   }
   let transicao: Transicao | null = null;
