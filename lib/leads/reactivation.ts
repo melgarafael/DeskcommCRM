@@ -110,7 +110,18 @@ interface PropostaVencida {
   lead_id: string;
   organization_id: string;
   expires_at: string;
-  crm_leads: { title: string; contact_id: string | null } | null;
+  crm_leads: {
+    title: string;
+    contact_id: string | null;
+    crm_stages?: { name: string } | null;
+  } | null;
+}
+
+function descreveNegocio(p: PropostaVencida): string | null {
+  const nome = p.crm_leads?.title?.trim();
+  if (!nome) return null;
+  const etapa = p.crm_leads?.crm_stages?.name?.trim();
+  return etapa ? `${nome} (${etapa})` : nome;
 }
 
 /**
@@ -133,7 +144,7 @@ export async function venceReativacoes(
 ): Promise<ResultadoDoVencimento> {
   const { data, error } = await admin
     .from("crm_lead_reactivations")
-    .select("id, lead_id, organization_id, expires_at, crm_leads(title, contact_id)")
+    .select("id, lead_id, organization_id, expires_at, crm_leads(title, contact_id, crm_stages(name))")
     .eq("organization_id", organizationId)
     .eq("status", "pending")
     .lt("expires_at", now.toISOString());
@@ -143,6 +154,7 @@ export async function venceReativacoes(
   const r: ResultadoDoVencimento = { vencidas: 0, itensDeCaixa: 0, falhasDeAtividade: 0 };
   if (vencidas.length === 0) return r;
 
+  const expiradas: PropostaVencida[] = [];
   for (const p of vencidas) {
     // `decided_at` preenchido porque o CHECK exige: status não-pendente sem
     // data seria registro que não sabe dizer quando aconteceu. Vencer É uma
@@ -154,6 +166,7 @@ export async function venceReativacoes(
       .eq("status", "pending"); // não atropela quem decidiu no mesmo instante
     if (upErr) continue;
     r.vencidas += 1;
+    expiradas.push(p);
 
     const atividade = await emitLeadActivity(admin, {
       organizationId,
@@ -194,7 +207,25 @@ export async function venceReativacoes(
     if (!jaAberto) {
       // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
       const idioma = await idiomaDoAviso(admin, organizationId);
-      const um = r.vencidas === 1;
+      const um = expiradas.length === 1;
+      const unico = um ? expiradas[0] : undefined;
+      const corpoBase = preencher(
+        um
+          ? traduzir(
+              "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+              idioma,
+            )
+          : traduzir(
+              "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+              idioma,
+            ),
+        { n: r.vencidas },
+      );
+      const descricoes = expiradas
+        .map(descreveNegocio)
+        .filter((d): d is string => d !== null);
+      const body =
+        descricoes.length > 0 ? `${corpoBase} — ${descricoes.join(", ")}.` : corpoBase;
       const { data: item } = await admin
         .from("agent_inbox_items")
         .insert({
@@ -207,20 +238,11 @@ export async function venceReativacoes(
               : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
             { n: r.vencidas },
           ),
-          body: preencher(
-            um
-              ? traduzir(
-                  "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-                  idioma,
-                )
-              : traduzir(
-                  "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-                  idioma,
-                ),
-            { n: r.vencidas },
-          ),
-          ref_kind: "organization",
-          ref_id: organizationId,
+          body,
+          // Um único negócio leva direto a ele ("Abrir negócio"); vários listam
+          // nome e etapa no corpo e mantêm o link para o Radar.
+          ref_kind: unico ? "lead" : "organization",
+          ref_id: unico ? unico.lead_id : organizationId,
         })
         .select("id")
         .maybeSingle();
