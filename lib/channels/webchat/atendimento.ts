@@ -73,7 +73,7 @@ export async function carregarAtendimento(
   try {
     const { data, error } = await admin
       .from("ai_agent_versions")
-      .select("id, trigger_config, ai_agents(published_version_id, paused_at, archived_at, priority, created_at)")
+      .select("id, trigger_config, ai_agents!ai_agent_versions_agent_id_fkey(published_version_id, paused_at, archived_at, priority, created_at)")
       .eq("organization_id", organizationId)
       .eq("channel_session_id", channelSessionId)
       .eq("status", "published");

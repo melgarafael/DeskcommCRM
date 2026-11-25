@@ -129,14 +129,15 @@ describe("carregarAtendimento", () => {
   function supabaseStub(resposta: { data: unknown; error: { message: string } | null }) {
     const chain: Record<string, unknown> = {};
     const eq = vi.fn(() => chain);
+    const select = vi.fn((_colunas: string) => chain);
     Object.assign(chain, {
-      select: vi.fn(() => chain),
+      select,
       eq,
       then: (ok: (v: unknown) => unknown, falha: (e: unknown) => unknown) =>
         Promise.resolve(resposta).then(ok, falha),
     });
     const from = vi.fn(() => chain);
-    return { admin: { from } as never, from, eq };
+    return { admin: { from } as never, from, eq, select };
   }
 
   function linha(
@@ -211,5 +212,13 @@ describe("carregarAtendimento", () => {
     expect(from).toHaveBeenCalledWith("ai_agent_versions");
     expect(eq).toHaveBeenCalledWith("organization_id", ORG);
     expect(eq).toHaveBeenCalledWith("channel_session_id", CONEXAO);
+  });
+
+  it("o embed de ai_agents nomeia a FK (são duas, e sem a dica o PostgREST devolve PGRST201)", async () => {
+    // Medido na prova pela tela do #5234: sem a dica, toda leitura caía na falha aberta e a
+    // janela nunca saía de `aberto`. O dublê não tem o schema, então a guarda é sobre o texto.
+    const { admin, select } = supabaseStub({ data: [], error: null });
+    await carregarAtendimento(admin, ORG, CONEXAO, TERCA_22H);
+    expect(select.mock.calls[0]?.[0]).toContain("ai_agents!ai_agent_versions_agent_id_fkey(");
   });
 });
