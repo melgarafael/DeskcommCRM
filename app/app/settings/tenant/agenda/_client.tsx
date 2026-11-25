@@ -416,7 +416,7 @@ function LembreteDoCompromisso({
       ) : null}
       <p className="text-[11px] text-text-muted">
         {t(
-          "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+          "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
         )}
       </p>
     </div>
