@@ -2,7 +2,10 @@
 -- Sem tabela temporária, sem BEGIN/COMMIT, sem id de tenant, psql puro, idempotente.
 
 create table if not exists public.calendar_appointment_responsibles (
-  organization_id uuid not null references public.organizations(id) on delete cascade,
+  -- Sem FK direta para organizations: a organização vem das FKs compostas (compromisso e membro).
+  -- Uma FK direta faria a PK cobrir FK para organizations E para user_organizations, e o PostgREST
+  -- passaria a ver junção falsa (#3219; o mesmo que a 0717 desfez em calendar_service_professionals).
+  organization_id uuid not null,
   appointment_id uuid not null,
   user_id uuid not null,
   created_at timestamptz not null default now(),
@@ -16,8 +19,10 @@ create index if not exists calendar_appointment_responsibles_user_idx on public.
 
 alter table public.calendar_appointment_responsibles enable row level security;
 drop policy if exists tenant_isolation_calendar_appointment_responsibles_all on public.calendar_appointment_responsibles;
-create policy tenant_isolation_calendar_appointment_responsibles_all on public.calendar_appointment_responsibles
-  for all to authenticated using (organization_id in (select public.fn_user_org_ids()));
+drop policy if exists tenant_isolation_calendar_appointment_responsibles_select on public.calendar_appointment_responsibles;
+-- Só leitura pela sessão: a escrita é das funções (security definer) e o authenticated só tem SELECT.
+create policy tenant_isolation_calendar_appointment_responsibles_select on public.calendar_appointment_responsibles
+  for select to authenticated using (organization_id in (select public.fn_user_org_ids()));
 revoke all on public.calendar_appointment_responsibles from public, anon, authenticated;
 grant select on public.calendar_appointment_responsibles to authenticated;
 grant select, insert, update, delete on public.calendar_appointment_responsibles to service_role;
