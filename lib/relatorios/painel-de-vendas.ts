@@ -58,6 +58,8 @@ export interface NegocioDoPainel {
   tags?: string[] | null;
   contact_id?: string | null;
   title?: string | null;
+  /** O responsável pelo negócio — o vendedor de um card ganho sem venda registrada. */
+  owner_user_id?: string | null;
 }
 
 /** Uma venda REGISTRADA (`vendas_registradas`), como o painel a lê. */
@@ -70,6 +72,8 @@ export interface VendaRegistradaDoPainel {
   /** AAAA-MM-DD — o dia da venda na parede da empresa. */
   data: string;
   tags: string[];
+  /** Quem registrou a venda — o vendedor dela. */
+  created_by?: string | null;
 }
 
 /** O negócio dono de uma venda registrada (funil, tags e título vêm dele). */
@@ -102,6 +106,8 @@ export interface VendaDoPeriodo {
   centavos: number | null;
   /** AAAA-MM-DD. */
   dia: string;
+  /** Quem vendeu: quem registrou a venda, ou o responsável pelo card ganho. */
+  vendedor_user_id: string | null;
 }
 
 export interface LinhaDeRanking {
@@ -233,6 +239,7 @@ export function montarPainelDeVendas(entrada: {
       tags: unirTags(v.tags, negocio?.tags),
       centavos,
       dia: v.data,
+      vendedor_user_id: v.created_by ?? null,
     });
   }
   for (const n of entrada.negocios) {
@@ -253,6 +260,7 @@ export function montarPainelDeVendas(entrada: {
       tags: unirTags(n.tags),
       centavos,
       dia: dataNoFuso(new Date(instante), janela.tz),
+      vendedor_user_id: n.owner_user_id ?? null,
     });
   }
 

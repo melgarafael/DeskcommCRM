@@ -126,8 +126,8 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 
 Algumas hospedagens entregam a VPS com um **Traefik** já ocupando as portas 80/443 — é ele
 que dá HTTPS automático ao que o painel instala. O Caddy do kit quer as mesmas portas e não
-sobe. O instalador **detecta isso sozinho** e grava `REVERSE_PROXY=traefik` no `.env`; a
-partir daí os scripts do kit incluem o override que desliga o Caddy e publica o app pelo
+sobe. O `install.sh` (banco no Supabase Cloud) **detecta isso sozinho** e grava
+`REVERSE_PROXY=traefik` no `.env`; a partir daí os scripts do kit incluem o override que desliga o Caddy e publica o app pelo
 Traefik da hospedagem. Rodando compose na mão nessas instalações, use os dois arquivos:
 
 ```bash
@@ -146,7 +146,21 @@ proxy errado deixa o site no ar sem responder, o instalador mostra o que encontr
 confirmação. Em `bash install.sh --yes` não há a quem perguntar: ele para e pede que você
 declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue sem perguntar.
 
-Atrás do proxy do Coolify (ou outro Traefik em rede Docker própria): veja [docs/saas/coolify.md](../docs/saas/coolify.md) — a porta do banco (API_GW_HTTP_PORT) e a rede do proxy (TRAEFIK_NETWORK) vão no comando.
+**No single-server (`install-single-server.sh`, banco na mesma VPS) a detecção não roda.**
+Ele grava `REVERSE_PROXY=caddy` no `.env` a menos que a variável venha no ambiente, e então
+chama o `install.sh --yes` com a escolha já feita. Sem declarar nada, o Caddy do kit sobe e
+briga pelas portas 80/443 com o Traefik da hospedagem. Declare no próprio comando, antes de
+rodar — escrever só no `.env` não basta, porque o single-server o regrava:
+
+- `REVERSE_PROXY=traefik`: quem publica o site é o Traefik da hospedagem;
+- `TRAEFIK_NETWORK=<rede do proxy>`: com Traefik em rede Docker própria (Coolify, Dokploy),
+  é a rede onde ele alcança as APIs do banco. Confira o nome com `docker network ls`. Com
+  Traefik em `--network host` (Hostinger), deixe de fora.
+
+O exemplo completo, com a porta do banco (`API_GW_HTTP_PORT`) e os nomes das portas do proxy,
+está em [docs/saas/coolify.md](../docs/saas/coolify.md#passo-5--instalar-o-crm-e-o-banco).
+O single-server recusa `REVERSE_PROXY=cloudflared`: as APIs do Supabase dependem do Caddy, e
+o Cloudflare Tunnel só serve com o banco no Supabase Cloud.
 
 ## Scripts do kit
 

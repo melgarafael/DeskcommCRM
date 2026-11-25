@@ -8,6 +8,163 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.125.0] — 2026-11-24
+
+### ⚠️ Requer atenção
+
+- **Atualização recusa antes de encher o disco, retenção de backup obedece BACKUP_KEEP e imagens antigas são podadas sem prune -a** Quem atualiza por uma VPS apertada pode ver o update recusar com "Falta espaço em disco": é a guarda funcionando, nada foi parado nem baixado. Rode bash hostgator-setup-kit/backup.sh --podar e docker image prune -f --filter "until=168h", ou aumente o disco, e repita o update. Não use docker image prune -a nem docker system prune --volumes: o primeiro leva embora a imagem para a qual a volta automática iria, e o segundo apaga o volume com a sessão do WhatsApp e o banco. Quem quiser manter mais ou menos backups escreve BACKUP_KEEP no .env; quem não escrever nada continua com 14, como antes.
+
+### Adicionado
+
+- **Conectar o canal oficial pelo Facebook, com coexistência com o app WhatsApp Business** Opcional, para quem já tem o app da Meta aprovado como Tech Provider: em Admin › API Oficial (Meta) você informa o App ID e o Configuration ID do app, ao lado da chave secreta. Com os três, a tela do canal oficial ganha o botão "Conectar com o Facebook" (Embedded Signup): o cliente autoriza a conta e o número pelo fluxo da Meta, sem copiar token e IDs na mão. O número também pode continuar no app WhatsApp Business do celular, em coexistência com o CRM. Para a coexistência, o app Meta precisa ter os campos de webhook account_update, history, smb_app_state_sync e smb_message_echoes ativos, e o cliente precisa do app WhatsApp Business 2.24.17 ou mais novo. Nada muda para quem não preencher esses campos: colar as credenciais do próprio app continua sendo o caminho padrão. A importação do histórico de conversas não faz parte desta versão. Referente à issue #4074. Contribuição de @taiancarvalho (#5113).
+
+- **Os negócios em andamento de um funil vão para outro funil de uma vez, com a contagem na frente** Arquivar ou excluir um funil passa a perguntar o que fazer com os negócios que estão dentro dele, mostrando quantos são — o número vem do servidor, não é estimativa da tela. Na confirmação, três caminhos: transferir os negócios em andamento para outro funil (a etapa é a primeira etapa de andamento do destino), transferir para uma etapa específica do destino escolhida por você, ou remover os negócios da estrutura dos funis.
+
+  A transferência é uma só operação: os negócios em andamento do funil saem juntos, pelo mesmo caminho que o lote do quadro usa, com o funil de destino gravado junto com a etapa. Cada um continua sendo o mesmo registro: conversas, tarefas, propostas, anexos e linha do tempo vão com ele. Antes, o único jeito era card a card.
+
+  Arquivar sem transferir continua possível, sem escolha nenhuma — é o botão de sempre. A exclusão definitiva segue pedindo confirmação explícita, e passa a funcionar no funil que tinha negócio depois que eles saem dele.
+
+  Os negócios ganhos e perdidos não mudam de funil: ficam no funil arquivado, que abre em modo leitura e guarda o histórico, e continuam contando para ele. Para excluir de vez um funil que tem negócios encerrados, é preciso escolher remover. Os campos obrigatórios do funil de destino valem como no lote do quadro, e cada negócio transferido ganha a sua própria linha de mudança de etapa na linha do tempo, com a etapa e o funil de origem.
+
+  O lote do quadro continua sem trocar negócio de funil: uma etapa de outro funil é recusada com o mesmo aviso do arrasto, que aponta para a cópia.
+
+  Ao remover os negócios, a confirmação nomeia o que é apagado junto — anexos e os arquivos no armazenamento, vínculos, reativações, escores de risco, propostas de campo e conversões de anúncio — e avisa que não tem volta. O histórico do negócio apagado continua legível para a empresa, pelo contato, e a anonimização do contato o alcança.
+
+  Contribuição de @webtecnica, a partir da issue #4802.
+
+- **O agente conta os leads de cada etapa do funil numa chamada só, sem listar nenhum** Quando o agente de IA (ou uma integração por MCP) precisa responder "quantos leads tem em cada etapa do funil?", a ferramenta `crm_count_leads` agora aceita `por_etapa`. Com ela ligada, o agente informa o funil e recebe de volta o total de cada etapa, na ordem do quadro, em uma chamada, em vez de uma chamada por etapa ou de paginar a lista inteira de negócios.
+
+  A resposta traz só o identificador da etapa e o número, nunca nome nem dados de negócio. A contagem segue as mesmas regras da listagem: só a organização do token, sem contatos pessoais e, dentro de uma conversa de atendimento, só o contato da conversa. Sem `por_etapa`, nada muda. Contribuição de @Alyandher (#5192).
+
+- **A empresa escolhe quais tipos de link do contato a ficha e o funil mostram** A ficha do contato e o card do funil mostram nove tipos de link — Instagram, link na bio, site, Google Meu Negócio, Facebook, LinkedIn, TikTok, YouTube e "Outro". O catálogo era fixo no código, e toda operação carregava campo que não usa: clínica não preenche TikTok, escritório não preenche Google Meu Negócio.
+
+  Agora **Configurações → Tipos de link do contato** (admin) marca e desmarca quais tipos aparecem. O formulário do contato no funil e a exibição na ficha e no card passam a mostrar só os tipos marcados.
+
+  O que **não** muda: desmarcar um tipo não apaga nada. O valor já preenchido continua gravado no contato e volta a aparecer se o tipo for marcado de novo — salvar o formulário com um tipo escondido não apaga o que está fora da tela. Quem nunca abriu a tela continua vendo os nove tipos, exatamente como antes: a escolha só existe depois de alguém salvar.
+
+  A escolha é por empresa e fica em `organizations.settings`, sem migration. As ferramentas de administração (Diagnóstico da ficha e Comparação de fichas) continuam mostrando o catálogo inteiro, porque existem justamente para enxergar o que ficou escondido; API, MCP, webhook e prospecção também seguem lendo e gravando todos os tipos.
+
+  Contribuição de @webtecnica (#5128).
+
+- **O agente pode continuar a conversa assim que a equipe devolver ao automático** Até aqui, quando alguém da equipe atendia um cliente, mandava a última mensagem (um orçamento, por exemplo) e clicava em "Devolver ao automático", o agente só voltava a falar quando o cliente escrevesse de novo. Agora há uma opção por agente, na seção "Quando ele entra em ação" do editor: "Continuar a conversa assim que a equipe devolver ao automático". Ligada, o agente continua dali em poucos segundos, lendo o que a equipe enviou e o resumo do atendimento, sem repetir o que já foi dito. Ele não fala se o cliente já respondeu, se a IA já falou depois da equipe, se o contato tem um follow-up em andamento (o follow-up fala, uma voz só), se o contato está marcado para atendimento humano ou bloqueado, ou se o número ainda não foi liberado (go-live). O envio respeita o horário de follow-up do número. Vem desligada: quem não ligar não vê mudança. Crédito: @Lucas-BritoDev.
+
+- **Anotações do cliente na lateral do Inbox** A lateral da conversa no Inbox ganhou o bloco "Anotações do cliente", logo abaixo do contato: um bloco de notas da equipe sobre aquele cliente, como dados da empresa, combinados e preferências de entrega. A anotação é o mesmo campo "Observações da equipe" da aba Diagnóstico da ficha do contato, então o que se escreve num lugar aparece no outro. Atendentes, gestores e administradores escrevem; quem só visualiza lê. O agente de IA não escreve nesse campo. Como os outros blocos da lateral, dá para esconder ou mudar de lugar. Contribuição de @tec7alex (#5112).
+
+- **A Fila do Inbox pode mostrar o contato que acabou de chegar em cima** A aba Fila do Inbox ganhou a escolha de ordem "Mais recentes" ou "Esperando há mais tempo", logo acima da lista. Quem escolhe "Mais recentes" vê a conversa que acabou de chegar no topo; antes, numa Fila com muitas esperas antigas, o contato novo ficava depois das primeiras 50 conversas e o atendente não o via. "Esperando há mais tempo" continua sendo o padrão, a ordem de antes, com a posição de cada um na fila. A escolha fica guardada no aparelho de cada pessoa. Contribuição de @tec7alex (#5119).
+
+- **O teto de CPU de cada contêiner se ajusta pelo .env, e os serviços pequenos ganham teto de memória** Quem roda o CRM ao lado de outras aplicações no mesmo servidor pode limitar quantos núcleos cada contêiner usa, sem editar o `docker-compose.prod.yml`: basta pôr, por exemplo, `APP_CPUS=2` e `WORKER_CPUS=1` no `.env` e recriar os contêineres. Há uma variável por serviço (`APP_CPUS`, `WORKER_CPUS`, `WAHA_CPUS`, `REDIS_CPUS`, `SRH_CPUS`, `SCHEDULER_CPUS`, `CADDY_CPUS`, `WACALLS_CPUS`, `ASTERISK_CPUS`, `VOICE_AGENT_CPUS`), todas documentadas no `.env.hostgator.example`. Sem essas linhas não há limite de CPU, como sempre. O redis, o srh, o scheduler e o Caddy, que eram os únicos sem teto de memória, passam a ter um com folga larga sobre o pico medido (redis 256m, srh 256m, scheduler 128m, Caddy 512m), ajustável por `REDIS_MEM_LIMIT`, `SRH_MEM_LIMIT`, `SCHEDULER_MEM_LIMIT` e `CADDY_MEM_LIMIT`. Não há nada a fazer na VPS. Contribuição de @lzandonadi (#5148).
+
+### Alterado
+
+- **No Inbox, o painel do negócio põe o funil em cima e o valor embaixo, sem a barra de etapas** No painel do negócio, na lateral da conversa do Inbox, tudo que é do funil fica junto em cima: a etapa do funil, "Abrir no funil", "Levar para outro funil" e os campos do funil. O valor do negócio vem embaixo, separado por uma linha. A barra rolável de etapas que ficava no topo desse painel saiu, porque repetia a escolha da caixa "Etapa do funil", que continua no lugar, inclusive para ganho e perda. No negócio aberto pelo quadro do funil, a barra de etapas continua. Contribuição de @tec7alex (#5123).
+
+### Corrigido
+
+- **A cobrança do Asaas adota o cliente que já existe pelo CPF/CNPJ em vez de criar um segundo, mesmo quando ele já tem cobrança ou assinatura na conta** Ligar a cobrança de uma empresa cujo CPF/CNPJ já existe como cliente na conta
+  do Asaas — cadastrado direto no painel, fora do CRM — criava um segundo cliente
+  com o mesmo documento. A assinatura ficava no novo e o antigo continuava lá. A
+  busca do CRM só conhecia o vínculo que ele mesmo grava no cliente
+  (`externalReference` = id da empresa); cliente do painel não tem esse vínculo.
+
+  Agora, quando a busca pelo vínculo não acha nada, a cobrança procura pelo
+  documento e adota o cliente que já existe, gravando o vínculo nele para as
+  próximas vezes. Nome, e-mail, telefone e notificações que o operador cadastrou no
+  Asaas ficam como estão: a adoção grava só o vínculo.
+
+  A versão anterior desta correção deixava de fora o cliente que já tinha cobrança
+  ou assinatura na conta, e era justamente o caso mais comum de quem cadastrou o
+  pagador no painel. Adotar esse cliente agora é seguro porque a releitura passou a
+  considerar só o que é da própria empresa — na CRIAÇÃO e, desde aqui, também na
+  LEITURA: `lerSituacao` recebeu a organização e o Asaas só considera assinaturas
+  com o vínculo dela e as cobranças dessas assinaturas. Antes, a situação da empresa
+  podia ser calculada com o que é de outra integração (assinatura viva a mais,
+  pagamento antigo contando como nosso) e a referência devolvida — gravada em
+  `provedor_assinatura_id` — apontava para a assinatura de fora, de modo que
+  cancelar ou trocar de plano agia sobre ela. A assinatura antiga continua
+  intacta e nada é apagado no Asaas.
+
+  Quando há mais de um cliente com o mesmo documento, a regra é explícita: o mais
+  antigo (o pagador original, não a duplicata) e, no empate, o de menor
+  identificador — sempre com aviso no log e sem criar um terceiro. Cliente que já
+  tem o vínculo de outra empresa continua não sendo adotado.
+
+  Limpeza dos duplicados que já existem em produção fica fora desta mudança: nada
+  é apagado e nenhuma assinatura existente é migrada.
+
+  Contribuição de @webtecnica (#4768).
+
+- **Remover um negócio não leva mais o histórico comercial dele junto** O histórico de um negócio (mudanças de etapa, perdas, ganhos, anotações da linha do tempo) era apagado em cascata quando o negócio era apagado: a chave estrangeira de `crm_lead_activities` para `crm_leads` era `ON DELETE CASCADE`, e a operação não avisava. Agora a referência é anulada, e a linha do histórico sobrevive — com o contato dela, que é por onde o histórico continua legível e por onde a anonimização do contato o alcança. A atualização preenche o contato nas linhas antigas que não o tinham, e a linha que não tem contato nenhum continua sendo apagada junto com o negócio, como antes. Se o contato for apagado depois do negócio, a linha que só ele segurava sai junto com ele — sem negócio e sem contato, ela ficaria fora do alcance da anonimização.
+
+  O contato e as conversas nunca foram apagados por essa operação: `crm_leads.contact_id` já era `ON DELETE SET NULL`. O que sumia era o histórico.
+
+  Contribuição de @webtecnica, a partir da issue #4802.
+
+- **Atualização recusa antes de encher o disco, retenção de backup obedece BACKUP_KEEP e imagens antigas são podadas sem prune -a** Uma instalação self-hosted chegou a 73,62 GB em imagens Docker e 12 GB em backups: o disco encheu no meio de um pull, o app ficou em Created e a volta automática falhou seis vezes seguidas — cada tentativa gravando mais um backup de 1,6 GB no mesmo disco apertado. O kit passou a medir o espaço antes de qualquer escrita: se o livre não cobre o maior entre o tamanho das imagens em uso mais o do último backup (com 20% de folga) e um piso de 1 GB para quando não há como medir, o update recusa com os dois números na tela e o que libera espaço sem apagar dado, e a versão atual continua no ar. O piso é configurável em DESKCOMM_ESPACO_MINIMO_MB.
+
+  A retenção de backup deixou de ser 14 fixo: BACKUP_KEEP no .env define quantos arquivos por tipo (db, waha, storage) ficam, a poda vai do mais antigo para o mais novo e nunca apaga o último, nem quando a instalação tem um arquivo só. backup.sh --podar aplica a retenção na hora, sem gerar outro backup antes.
+
+  Depois de uma atualização saudável, o update poda as imagens: docker image prune -f com os filtros dangling=true e until=168h — nunca prune -a — e, uma a uma, as versões antigas das imagens deste produto, preservando a versão atual, a da volta registrada em .deskcomm-env-antes-do-update, qualquer imagem usada por contêiner e os canais móveis como stable. Falha da poda vira aviso e não aborta a atualização, que já está concluída quando ela roda. DESKCOMM_PODA_IMAGENS=0 desliga a poda. Contribuição de @webtecnica (#4934).
+
+- **A tela Pessoas mostra "E-mail" no idioma escolhido** Com a tela em espanhol, a coluna de e-mail da lista de pessoas e o campo de e-mail da janela "Nova pessoa" aparecem como "Correo", como já acontecia com "Nome" e "Atualizado". Contribuição de @gugamorato-svg, a partir da issue #4991.
+
+- **Duas atualizações não rodam mais ao mesmo tempo — o update.sh do terminal passou a respeitar o cadeado que o botão do painel já usava** Atualizar pelo botão "Atualizar agora" e, ao mesmo tempo, rodar `bash hostgator-setup-kit/update.sh` no terminal deixava as duas execuções aplicarem o `supabase/baseline.sql` no mesmo banco em paralelo. Como o baseline é DDL, uma aplicação derrubava o que a outra acabara de criar, e o banco terminava sem a regra — sem erro na tela. Foi o par `cannot change name of input parameter` do incidente 1.118 → 1.119, medido em duas aplicações defasadas em 2,75–3,5 s.
+
+  O `agent.sh` já segurava o `.update.lock`; o `update.sh` rodado pelo terminal não tomava cadeado nenhum. Agora ele toma: a ordem passou a ser cadeado → backup → código → banco, e quem chega depois **sai sem fazer nada** e diz por quê — "já há uma atualização em andamento pelo painel", com o caminho do log para acompanhar. Nada é parado, nenhum código é baixado, o backup e o banco não são tocados, e a saída é limpa.
+
+  O botão continua funcionando igual: ele chama o `update.sh` já segurando o cadeado, e o `update.sh` reconhece a trava herdada em vez de tentar tomá-la de novo (que faria o botão travar contra si mesmo). Nada a fazer na atualização. (#5052) Contribuição de @webtecnica (#5156).
+
+- **A lista de capacidades do modo avançado cabe na tela do celular** Na tela do agente, em "Escolher uma a uma (modo avançado)", o nome técnico de algumas capacidades (como `crm_propose_lead_fields_from_document`) não quebrava linha e empurrava a ficha para fora da lista num celular de 375px. Agora o nome quebra dentro da ficha. Contribuição de @AyhamJo7, a partir da issue #5067.
+
+- **Regra com gatilho «Negócio ganho» ou «Negócio perdido» volta a iniciar o follow-up de WhatsApp** Uma regra com gatilho «Negócio ganho» (ou «Negócio perdido») que cria um card e inicia um follow-up de WhatsApp terminava pela metade: o card aparecia, mas a ação de mensagem falhava por dentro e a execução ficava marcada como parcial. A inscrição no follow-up nunca nascia, e como o card era criado ninguém percebia que a mensagem não tinha começado. A causa era o resolvedor que liga o evento ao contato da conversa: ele conhecia a criação, a mudança de etapa, a etiqueta e as datas do negócio, mas não o ganho nem a perda.
+
+  Agora o ganho e a perda do negócio também resolvem o contato, e o follow-up de WhatsApp começa como qualquer outra ação de mensagem. Regras que já funcionavam continuam idênticas, e um gatilho que ainda não pode mandar mensagem segue recusado — a reabertura do negócio, por exemplo, continua fora.
+
+  Não há nada a configurar nem a migrar à mão: a atualização aplica a correção sozinha. Contribuição de @webtecnica (#5163).
+
+- **O preço de saída do Gemini 3.5 Flash em Provedores de IA passa a ser o do 3.6 Flash** A tela **Provedores de IA** passa a mostrar a saída do **Gemini 3.5 Flash** a US$ 7,50 por milhão de tokens (antes US$ 9,00), a tarifa do Gemini 3.6 Flash, que é quem atende esse modelo desde que o Google o aposentou. A entrada segue em US$ 1,50. Nenhum modelo, padrão ou agente muda: é só o preço guardado no banco que passa a concordar com a tabela de preço do motor.
+
+  Contribuição de @Yshuro (#5117, issue #5090).
+
+- **A atualização baixa a imagem nova mesmo quando o .env tinha APP_PULL_POLICY=never de uma correção de emergência** Quando a imagem do app tinha sido construída na própria VPS, numa correção de emergência, o `.env` ficava com `APP_PULL_POLICY=never` ("não baixe, use a daqui"). Na atualização seguinte, o `update.sh` gravava no `.env` a versão nova com `missing`, mas o `docker compose` continuava obedecendo o `never` antigo, que tinha ficado na memória do script. O app ficava sem a imagem nova, não subia, e o script concluía que precisava construir a imagem na VPS — o que acabava em falta de memória.
+
+  Agora, logo depois de gravar as imagens da versão nova, o kit relê do `.env` recém-gravado a regra de download das quatro imagens (app, worker, scheduler e voice-agent). Isso só acontece quando há versão nova para instalar: numa execução de "nada a atualizar", o `never` do operador continua valendo. Nada a fazer na atualização. Obrigado a @webtecnica, que mediu o defeito numa VPS real e escreveu o conserto e o teste. (#5116)
+
+- **Quem aceita um convite não cai mais na configuração inicial da empresa** Quem era convidado para uma empresa que ainda estava sendo configurada caía no assistente de configuração dela — a primeira tela que via. Agora quem entra por convite vai direto para o CRM; o assistente continua sendo o destino de quem criou a empresa (e do dono que assume uma empresa aberta pelo painel de plataforma). Contribuição de @yunshu0909, a partir da issue #5127.
+
+- **O horário do atendente cabe na tela do celular e fala o idioma escolhido** Em Equipe › Atendimento › Horário, numa tela estreita, o diálogo rolava para o lado e escondia o campo de fim e a lixeira. Agora a linha de cada janela quebra: o dia fica em cima e os horários embaixo. Os botões "Adicionar janela", "Salvar" e "Cancelar" passam a seguir o idioma escolhido. Contribuição de @ningsiyuan1024, a partir da issue #5014.
+
+- **Os campos da regra por regex nos guardrails aparecem no idioma escolhido** No agente › Guardrails, as regras de bloqueio por regex (de saída e de entrada) mostram os campos "Padrão (regex)" e "Opções da regex" em português e "Patrón (regex)" e "Opciones de la regex" em espanhol, em vez de "Pattern (regex)" e "Flags" em inglês, como já acontecia com o fuso horário. Contribuição de @Yshuro, a partir da issue #5211. O caso da regra de entrada no teste e o texto desta nota vêm de @sniwas (#5220).
+
+- **A resposta em mensagens curtas não parte mais no meio de "Dr.", "Sra." ou "Prof."** Com "Responder em várias mensagens curtas" ligado, o parágrafo que passa do limite de caracteres é dividido por frases. O ponto de uma abreviação de tratamento ("Dr.", "Dra.", "Sr.", "Sra.", "Prof.") contava como fim de frase, e o cliente recebia duas mensagens cortadas no meio, como "Antes, o Dr." e "avalia seu sorriso…". Agora o ponto de abreviação e o ponto seguido de palavra minúscula ("etc. e") não terminam a frase. Contribuição de @AlecsanderAbreu (#5186).
+
+- **A distribuição automática não interrompe mais o atendimento da IA** Com a distribuição em rodízio ou por menor carga, depois de alguém clicar em
+  **Devolver ao automático**, a próxima mensagem do cliente entregava a conversa a um atendente em
+  menos de um minuto, com a IA atendendo. Agora a conversa devolvida ao automático só volta para a distribuição
+  quando a IA passar o atendimento para uma pessoa.
+
+  Ao devolver uma conversa ao automático, o setor que a IA tinha escolhido para aquele atendimento
+  é limpo, para que a próxima necessidade do cliente seja encaminhada ao departamento certo. O
+  setor escolhido por uma pessoa é mantido. Contribuição de @fcostamil-hub.
+
+- **O diagnóstico de saúde para de ficar parado no passo do app quando o app está saudável** Numa instalação em que o app estava saudável, o `healthcheck.sh` ficava parado em "Saúde interna do app (/api/v1/health)" e não terminava — nem para dizer que estava tudo bem, nem para dizer que o app não respondeu. A rota respondia HTTP 200 `healthy` no mesmo instante; o que não voltava era o comando que a consultava por dentro do container.
+
+  Agora o passo termina. O comando que roda sob prazo não lê mais o terminal — era essa leitura que parava o processo e prendia o diagnóstico — e, se o prazo estourar, ele é encerrado à força cinco segundos depois, em vez de esperar por tempo indeterminado. O passo dá o veredito em até 30 segundos: o corpo do `/api/v1/health`, ou o aviso de que o app não respondeu. O resto do diagnóstico não muda. Contribuição de @webtecnica (#5161).
+
+- **A IA não manda mais mensagem depois que uma pessoa assume a conversa** Quando uma pessoa assumia a conversa enquanto a IA ainda estava escrevendo, a IA mandava a
+  mensagem seguinte mesmo assim — inclusive o aviso ao cliente da troca automática de agente.
+  Agora ela confere, logo antes de cada envio, se alguém assumiu nesse meio-tempo, e se assumiu
+  não manda.
+
+  A resposta do responsável pela conversa pela tela também passa a calar a IA até alguém clicar em
+  **Devolver ao automático**, e não só por cinco minutos, exceto quando o modo «IA com o dono» está
+  ligado naquela conversa. A opção «Devolver ao agente sozinho depois de um tempo sem resposta da
+  equipe», em Configurações › Distribuição de atendimento, continua funcionando como antes.
+  Contribuição de @fcostamil-hub.
+
+- **Menu lateral permanece visível ao abrir menus e diálogos** O menu lateral permanece na posição ao abrir o perfil, seletores ou diálogos depois de rolar a página, mantendo a proteção contra rolagem horizontal.
+
+  Crédito: @LukasWyver.
+
 ## [1.124.0] — 2026-11-23
 
 ### Adicionado
@@ -18896,7 +19053,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.125.0...HEAD
+[1.125.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...v1.125.0
 [1.124.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...v1.124.0
 [1.123.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...v1.123.0
 [1.122.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.121.0...v1.122.0

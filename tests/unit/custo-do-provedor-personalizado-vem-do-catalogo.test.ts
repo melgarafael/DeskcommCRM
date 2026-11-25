@@ -277,16 +277,18 @@ describe("controle negativo pelo seam — id sem preço em tabela nenhuma", () =
 });
 
 describe("recíproca — o modelo que o motor JÁ sabe cobrar não passa pelo banco", () => {
-  it("claude-haiku-5-5 grava o mesmo custo de antes, sem uma consulta a mais", async () => {
+  it("claude-haiku-5-5 grava o custo da tabela do motor, sem uma consulta a mais", async () => {
     const { inserts, consultas, resultado } = await rodar({
       modelo: "claude-haiku-5-5",
       // O banco até tem linha para ele: o caminho estático tem de vencer mesmo assim.
       linhasDePreco: [{ ...PRECO_DO_GPT_OSS, id: "claude-haiku-5-5", entrada: 9999, saida: 9999 }],
     });
 
-    // 2 MTok de entrada a 10¢/M (US$ 0,1) mais 1 MTok de saída a 50¢/M = 70 centavos.
-    expect(custoGravado(inserts)).toBeCloseTo(70, 9);
-    expect(resultado.costCents).toBeCloseTo(70, 9);
+    // 2 MTok de entrada a 10¢/M mais 1 MTok de saída a 50¢/M = 70 centavos, e o
+    // dublê é UMA requisição (sem `steps`) com 2 milhões de entrada: passa do
+    // degrau de 100 mil do Haiku 5.5, que cobra 5× (#5017) → 350 centavos.
+    expect(custoGravado(inserts)).toBeCloseTo(350, 9);
+    expect(resultado.costCents).toBeCloseTo(350, 9);
     expect(consultouOpreco(consultas)).toBe(false);
   });
 });
