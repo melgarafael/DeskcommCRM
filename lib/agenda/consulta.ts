@@ -536,20 +536,8 @@ export async function coletaOQueOcupa(
   let agendamentos = supabase
     .from("calendar_appointments")
     .select("starts_at, ends_at, status")
-    .eq("organization_id", organizationId);
-  // O responsável PRINCIPAL ocupa a agenda; o ADICIONAL também (tabela própria,
-  // revalidada pelo banco). Busca os compromissos onde a pessoa é adicional.
-  const { data: responsaveisDe } = await supabase
-    .from("calendar_appointment_responsibles")
-    .select("appointment_id")
     .eq("organization_id", organizationId)
-    .eq("user_id", params.donoId);
-  const idsResponsaveis = (responsaveisDe ?? []).map((r) => r.appointment_id);
-  const donoIdQ = String(params.donoId);
-  const filtro = idsResponsaveis.length
-    ? `owner_user_id.eq.${donoIdQ},id.in.(${idsResponsaveis.map((i) => `'${i}'`).join(",")})`
-    : `owner_user_id.eq.${donoIdQ}`;
-  agendamentos = agendamentos.or(filtro)
+    .eq("owner_user_id", params.donoId)
     .lt("starts_at", params.ate.toISOString())
     .gt("ends_at", params.de.toISOString());
   if (params.ignorarAgendamentoId) agendamentos = agendamentos.neq("id", params.ignorarAgendamentoId);
