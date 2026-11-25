@@ -8,11 +8,7 @@ import { useAttendantMetrics, type AttendantMetric, type AttendantMetrics } from
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatarDuracao } from "@/lib/metrics/canais";
-import {
-  ultimosTrintaDias,
-  type DiasDoPeriodo,
-  type JanelaIso,
-} from "@/lib/metrics/periodo-do-desempenho";
+import type { DiasDoPeriodo, JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
 import { urlDaExportacao } from "@/lib/relatorios/vendas-csv";
 import { DownloadSimple, WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
@@ -74,12 +70,13 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
   const t = useT();
   const [owner, setOwner] = useState<string>(ALL);
   const selectedOwner = owner === ALL ? null : owner;
-  const [periodo, setPeriodo] = useState<{ dias: DiasDoPeriodo | null; janela: JanelaIso }>(
-    () => ({ dias: null, janela: ultimosTrintaDias() }),
-  );
-  const { janela } = periodo;
-  const { data, isLoading, isError, isFetching, refetch } = useAttendantMetrics(selectedOwner, janela);
+  const [periodo, setPeriodo] = useState<{ dias: DiasDoPeriodo; janela: JanelaIso } | null>(null);
+  const [reinicio, setReinicio] = useState(0);
+  const { data, isLoading, isError, isFetching, refetch } =
+    useAttendantMetrics(selectedOwner, periodo?.janela ?? null, reinicio);
   const metrics = isError ? undefined : data?.data;
+  // Sem datas escolhidas, o relógio do servidor define os últimos 30 dias.
+  const janela = periodo?.janela ?? metrics?.window ?? null;
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
 
@@ -113,9 +110,12 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
     <div className="flex flex-col gap-6">
       <PeriodoDoDesempenho
         fuso={fuso}
-        aplicado={periodo.dias}
+        aplicado={periodo?.dias ?? null}
         onApply={(dias, janelaAplicada) => setPeriodo({ dias, janela: janelaAplicada })}
-        onClear={() => setPeriodo({ dias: null, janela: ultimosTrintaDias() })}
+        onClear={() => {
+          setPeriodo(null);
+          setReinicio((anterior) => anterior + 1);
+        }}
       />
       {canCompare ? (
         <div className="flex flex-wrap items-center gap-3">
@@ -153,11 +153,11 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
           inteiro, ao qual as métricas de área se subordinam (doutrina §3.6).
           Não filtra por atendente — atrito é propriedade do sistema, e quebrá-lo
           por pessoa convida a otimização local que degrada o todo. */}
-      <AtritoPanel podeEditarRegua={canCompare} janela={janela} />
+      {janela && <AtritoPanel podeEditarRegua={canCompare} janela={janela} />}
 
       {/* Relatório "Perdas" (#1537): manager+, porque é o funil inteiro — o
           mesmo critério do /metrics para quem compara. */}
-      {canCompare ? <PerdasPanel janela={janela} /> : null}
+      {canCompare && janela && <PerdasPanel janela={janela} />}
 
       {/* Previsão ponderada do funil (issue #1535): por mês × moeda, com os
           baldes "sem data" e "sem probabilidade" à parte. Depois do atrito de
@@ -204,7 +204,7 @@ export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props)
           atendente da página, agora pelo NÚMERO — a unidade de trabalho da
           operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
           escopa: agent vê as próprias conversas, manager+ a organização. */}
-      <CanaisPanel owner={selectedOwner} janela={janela} />
+      {janela && <CanaisPanel owner={selectedOwner} janela={janela} />}
       <SeriePanel funis={funis} janela={janela} />
     </div>
   );

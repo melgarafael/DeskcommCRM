@@ -1,6 +1,5 @@
 import { offsetEmMinutos, partesNoFuso } from "@/lib/agenda/fuso";
 
-export const DIAS_PADRAO = 30;
 export const MAXIMO_DE_DIAS = 90;
 export const MS_POR_DIA = 86_400_000;
 
@@ -89,13 +88,6 @@ export function janelaDoDesempenho({ de, ate }: DiasDoPeriodo, fuso: string): Re
   };
 }
 
-export function ultimosTrintaDias(agora = new Date()): JanelaIso {
-  return {
-    from: new Date(agora.getTime() - DIAS_PADRAO * MS_POR_DIA).toISOString(),
-    to: agora.toISOString(),
-  };
-}
-
-export function parametrosDaJanela(janela?: JanelaIso): URLSearchParams {
+export function parametrosDaJanela(janela?: JanelaIso | null): URLSearchParams {
   return new URLSearchParams(janela ? { from: janela.from, to: janela.to } : {});
 }

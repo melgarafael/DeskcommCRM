@@ -66,7 +66,7 @@ function rotuloDoBalde(balde: string, tagDoIdioma: string): string {
     : d.toLocaleDateString(tagDoIdioma, { day: "2-digit", month: "2-digit" });
 }
 
-export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: JanelaIso }) {
+export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: JanelaIso | null }) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
   const [granularidade, setGranularidade] = useState<Granularidade>("dia");
@@ -77,6 +77,7 @@ export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: J
   const { data, isLoading, isError, isFetching, refetch } = useSerieTemporal(granularidade, funilId, janela);
 
   const serie = isError ? undefined : data?.data;
+  if (!janela) return null;
   const formatar = (n: number) => n.toLocaleString(tagDoIdioma);
 
   return (

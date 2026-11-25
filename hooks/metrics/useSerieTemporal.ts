@@ -43,7 +43,7 @@ export interface SerieTemporal {
  * misturava ticket resolvido com venda. Sem ele, o pedido é o de antes — mesmo
  * número, e a chave do cache diz qual dos dois está em cache.
  */
-export function useSerieTemporal(granularidade: Granularidade, funilId: string | null, janela: JanelaIso) {
+export function useSerieTemporal(granularidade: Granularidade, funilId: string | null, janela: JanelaIso | null) {
   return useQuery({
     queryKey: ["metrics", "serie", granularidade, funilId, janela],
     queryFn: async () => {
@@ -53,5 +53,6 @@ export function useSerieTemporal(granularidade: Granularidade, funilId: string |
       return apiClient.get<{ data: SerieTemporal }>(`/api/v1/metrics/serie?${busca.toString()}`);
     },
     staleTime: 30_000,
+    enabled: janela !== null,
   });
 }

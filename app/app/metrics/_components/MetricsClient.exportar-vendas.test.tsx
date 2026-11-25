@@ -113,23 +113,21 @@ it("deixa escolher o intervalo de datas do Desempenho", () => {
 
 it("mantém a consulta anterior ao editar, e aplica as datas no fuso da organização", () => {
   render(<MetricsClient canCompare={false} currentUserId={ANA} funis={[]} fuso="America/Sao_Paulo" />);
-  const [, inicial] = vi.mocked(useAttendantMetrics).mock.lastCall ?? [];
-  expect(Date.parse(inicial!.to) - Date.parse(inicial!.from)).toBe(30 * 86_400_000);
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 0);
 
   fireEvent.change(screen.getByLabelText("Data inicial"), { target: { value: "2026-09-01" } });
   fireEvent.click(screen.getByRole("button", { name: "Aplicar" }));
   expect(screen.getByRole("alert").textContent).toBe("Preencha a data inicial e a data final.");
-  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, inicial);
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 0);
 
   fireEvent.change(screen.getByLabelText("Data final"), { target: { value: "2026-09-01" } });
   fireEvent.click(screen.getByRole("button", { name: "Aplicar" }));
   expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, {
     from: "2026-09-01T03:00:00.000Z",
     to: "2026-09-02T03:00:00.000Z",
-  });
+  }, 0);
 
   fireEvent.click(screen.getByRole("button", { name: "Limpar" }));
   expect(screen.getByText("Últimos 30 dias", { exact: false })).toBeTruthy();
-  const [, restaurada] = vi.mocked(useAttendantMetrics).mock.lastCall ?? [];
-  expect(Date.parse(restaurada!.to) - Date.parse(restaurada!.from)).toBe(30 * 86_400_000);
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 1);
 });
