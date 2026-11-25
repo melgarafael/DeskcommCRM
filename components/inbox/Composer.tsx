@@ -3,6 +3,7 @@ import { useT } from "@/hooks/i18n/useT";
 import {
   forwardRef,
   useImperativeHandle,
+  useLayoutEffect,
   useEffect,
   useRef,
   useState,
@@ -110,6 +111,8 @@ interface Props {
   initialMode?: "reply" | "note";
   onDraftChange?: (text: string, mode: "reply" | "note") => void;
   active?: boolean;
+  /** Mantém o rascunho local enquanto a Inbox confirma a autorização. */
+  suspenso?: boolean;
   disabled?: boolean;
   /** Set true when contact is blocked / anonymized — explanation shown. */
   blockedReason?: string | null;
@@ -196,6 +199,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     initialDraft = "",
     initialMode = "reply",
     active = true,
+    suspenso = false,
     onDraftChange,
     disabled,
     blockedReason,
@@ -215,6 +219,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 ) {
   const t = useT();
   const [text, setText] = useState(initialDraft);
+  const revisaoDoEnvio = useRef(0);
+  useLayoutEffect(() => () => { revisaoDoEnvio.current++; }, [suspenso, conversationId]);
   // O aviso some no primeiro ENVIO: depois do clique o rascunho foi usado, e
   // deixar a faixa prometendo texto que já saiu seria mentira de tela.
   const [rascunhoUsado, setRascunhoUsado] = useState(false);
@@ -269,6 +275,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [agendaAberta, setAgendaAberta] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
+  useEffect(() => {
+    if (!suspenso) return;
+    setContactPickerOpen(false);
+    setAgendaAberta(false);
+  }, [suspenso]);
   /**
    * Menção de atendente (#2372) — e o motivo de ser quatro estados.
    *
@@ -825,6 +836,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * diálogo fica aberto para o retry — como já ficava no caminho de um arquivo.
    */
   function enviarAnexos(caption: string, indice = 0): void {
+    if (suspenso) return;
+    const revisao = revisaoDoEnvio.current;
     const arquivo = pendingFiles[indice];
     if (!arquivo) {
       setPendingFiles([]);
@@ -840,6 +853,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     void upload
       .mutateAsync({ conversationId, file: arquivo, destino })
       .then((uploaded) => {
+        if (revisao !== revisaoDoEnvio.current) return;
         // Cada arquivo que SAIU deixa a fila: se o próximo falhar, o retry do
         // diálogo recomeça do que falhou, sem reenviar o que já foi nem repetir
         // o texto (#2526, critério "falha no envio da mídia não causa duplicação
@@ -847,7 +861,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         const proximo = () => {
           setPendingFiles((fila) => fila.slice(1));
           setLegendaInicial(destino === "mensagem" && indice < indiceLegenda ? caption : null);
-          enviarAnexos(caption, indice + 1);
+          if (revisao === revisaoDoEnvio.current) enviarAnexos(caption, indice + 1);
         };
         if (destino === "nota") {
           createNote.mutate(
@@ -1034,7 +1048,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     }
   }
 
-  if (blockedReason) {
+  if (blockedReason && !suspenso) {
     return (
       <div className="border-t border-border bg-muted/40 px-4 py-3 text-center text-xs text-muted-foreground">
         {blockedReason}
@@ -1044,7 +1058,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   return (
     <>
-      <div
+      {!suspenso && <div
         data-testid="composer"
         onDragEnter={onDragEnter}
         onDragOver={onDragOver}
@@ -1403,8 +1417,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             active && <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} />
           )}
         </div>
-      </div>
+      </div>}
       <AttachmentPreviewDialog
+        suspenso={suspenso}
         files={pendingFiles}
         legendaInicial={legendaInicial}
         notaInterna={pendingEm === "note"}
@@ -1456,7 +1471,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         }}
       />
       <ContactPickerDialog
-        open={contactPickerOpen}
+        open={!suspenso && contactPickerOpen}
         onOpenChange={setContactPickerOpen}
         excludeContactId={currentContactId}
         sending={send.isPending}

@@ -56,7 +56,7 @@ const estado = {
   admins: 0,
   /** idas a `/auth/v1/token` — a renovação que o auth-js faz dentro da margem. */
   renovacoes: 0,
-  goTrue: "ok" as "ok" | "revogado",
+  goTrue: "ok" as "ok" | "revogado" | "indisponivel",
 };
 
 function json(corpo: unknown, status = 200): Response {
@@ -129,6 +129,7 @@ function dublarSupabase() {
       // o caso de duas sessões prova que cada uma recebeu a própria identidade.
       const sub = subDoBearer(entrada, init) ?? USER_ID;
       estado.identidades.push(sub);
+      if (estado.goTrue === "indisponivel") return json({ msg: "Gateway indisponível" }, 503);
       if (estado.goTrue === "revogado") {
         return json({ code: 401, msg: "invalid JWT: session revoked" }, 401);
       }
@@ -153,11 +154,11 @@ function dublarSupabase() {
   });
 }
 
-async function pedir(caminho: string, cookie: { name: string; value: string } | null = cookieDeSessao()) {
+async function pedir(caminho: string, cookie: { name: string; value: string } | null = cookieDeSessao(), method = "GET") {
   const { proxy } = await import("@/proxy");
   const headers: Record<string, string> = {};
   if (cookie) headers.cookie = `${cookie.name}=${cookie.value}`;
-  return proxy(new NextRequest(`https://crm.exemplo${caminho}`, { headers }));
+  return proxy(new NextRequest(`https://crm.exemplo${caminho}`, { headers, method }));
 }
 
 beforeEach(() => {
@@ -328,5 +329,27 @@ describe("#4326 item 1 — o proxy valida a identidade uma vez por janela", () =
     // Identidade: uma vez. Permissão de plataforma: uma por requisição.
     expect(estado.usuarios).toBe(1);
     expect(estado.admins).toBe(2);
+  });
+});
+
+
+describe("#4508 — falha de identidade durante a revalidação da conversa", () => {
+  const caminho = "/api/v1/conversations/00000000-0000-4000-8000-000000000450";
+
+  it.each([caminho, `${caminho}/messages`])("distingue 503 e sessão revogada em %s", async (rota) => {
+    estado.goTrue = "indisponivel";
+    const falha = await pedir(rota);
+    expect(falha.status).toBe(503);
+    expect(await falha.json()).toMatchObject({ error: { code: "auth_unavailable" } });
+    estado.goTrue = "revogado";
+    const revogada = await pedir(rota);
+    expect(revogada.status).toBe(401);
+    expect(await revogada.json()).toMatchObject({ error: { code: "unauthenticated" } });
+  });
+
+  it("mantém a resposta anterior para escrita e outras rotas", async () => {
+    estado.goTrue = "indisponivel";
+    expect((await pedir(caminho, cookieDeSessao(), "PATCH")).status).toBe(401);
+    expect((await pedir("/api/v1/conversations")).status).toBe(401);
   });
 });

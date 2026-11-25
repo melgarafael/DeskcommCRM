@@ -10,6 +10,7 @@ import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { validarIdentidade } from "@/lib/supabase/identidade-validada";
+import { identidadeIndisponivel } from "@/lib/supabase/falha-de-identidade";
 import { CABECALHO_SEM_CSS, PARAMETRO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
   verifyImpersonateCookieEdge,
@@ -140,21 +141,27 @@ export async function proxy(request: NextRequest) {
   // entra nesse cache.
   const {
     data: { user },
+    error: erroDeIdentidade,
   } = await validarIdentidade(() => supabase.auth.getUser(), request.cookies.getAll());
 
   if (!user) {
     // API routes must respond with JSON envelope (contract: {error:{code,message}})
     // — never redirect HTML to JSON consumers. UI routes redirect to /login as before.
     if (pathname.startsWith("/api/")) {
+      // Só as duas leituras que recuperam a conversa aberta (#4508). O cliente
+      // repete 503, inclusive em escrita, então as demais rotas mantêm sua resposta.
+      const indisponivel = request.method === "GET"
+        && /^\/api\/v1\/conversations\/[^/]+(?:\/messages)?$/.test(pathname)
+        && identidadeIndisponivel(erroDeIdentidade);
       return new NextResponse(
         JSON.stringify({
           error: {
-            code: "unauthenticated",
-            message: "Authentication required",
+            code: indisponivel ? "auth_unavailable" : "unauthenticated",
+            message: indisponivel ? "Authentication is temporarily unavailable" : "Authentication required",
           },
         }),
         {
-          status: 401,
+          status: indisponivel ? 503 : 401,
           headers: {
             "content-type": "application/json",
             "x-request-id": requestId,

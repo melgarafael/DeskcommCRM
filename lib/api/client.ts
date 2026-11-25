@@ -364,8 +364,9 @@ async function executarRequisicao<T>(
       if (res.ok) {
         // A instalação voltou a responder: uma revogação futura nesta mesma aba
         // precisa poder recarregar de novo.
-        limparMarcaDeRecarga();
         const parsed = (await readBodySafe(res)) as T;
+        opts.signal?.throwIfAborted();
+        limparMarcaDeRecarga();
         if (opts.schema) {
           return opts.schema.parse(parsed) as T;
         }
@@ -403,6 +404,7 @@ async function executarRequisicao<T>(
 
       // Non-retry error: parse and throw
       const errBody = await readBodySafe(res);
+      opts.signal?.throwIfAborted();
       if (isApiErrorBody(errBody)) {
         const e = errBody.error;
         // Ver o bloco `MARCA_DE_RECARGA` acima. O `throw` continua acontecendo:

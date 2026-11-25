@@ -70,7 +70,7 @@ export const MARGEM_DE_RENOVACAO_DO_AUTH_JS_MS = 90_000;
 /** O mínimo que o proxy usa da resposta de `auth.getUser()`. */
 export interface RespostaDeIdentidade {
   data: { user: { id: string } | null };
-  error: { name?: string; message?: string } | null;
+  error: { name?: string; message?: string; code?: string; status?: number } | null;
 }
 
 /**

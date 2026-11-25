@@ -12,11 +12,21 @@ const { orgId, id, vizinha, eventos, get, lista, lida } = vi.hoisted(() => ({
   vizinha: "00000000-0000-4000-8000-000000000459",
   eventos: new Map<string, (payload: unknown) => void>(),
   get: vi.fn<(url: string, opts?: { signal?: AbortSignal }) => Promise<unknown>>(),
-  lista: { data: { pages: [{ data: [] as ReturnType<typeof conversa>[] }], pageParams: [undefined] } },
+  lista: { data: { pages: [{ data: [] as LinhaDaLista[], consultaIniciadaEm: 0 }], pageParams: [undefined] } },
   lida: vi.fn(),
 }));
 
-function conversa(conversaId: string, nome: string) {
+type LinhaDaLista = {
+  id: string;
+  organization_id: string;
+  contact_id: string;
+  status: string;
+  tags: string[];
+  unread_count_for_assignee: number;
+  contacts: { id: string; display_name: string; name: string; tags: string[] };
+};
+
+function conversa(conversaId: string, nome: string): LinhaDaLista {
   return {
     id: conversaId,
     organization_id: orgId,
@@ -86,6 +96,7 @@ let qc: QueryClient;
 beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   lista.data.pages[0].data = [antiga, conversa(vizinha, "Outra conversa")];
+  lista.data.pages[0].consultaIniciadaEm = 0;
   eventos.clear();
   lida.mockClear();
   get.mockReset();
@@ -177,4 +188,40 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     expect(screen.getByRole("button", { name: "Abrir Outra conversa" })).toBeVisible();
     expect(window.location.search).toContain(`id=${id}`);
   });
+
+  it("aceita uma nova leitura da lista após a perda de acesso", async () => {
+    const tela = montar();
+    await abrirDaLista();
+    const lerAntes = get.getMockImplementation()!;
+    let podeVer = false;
+    get.mockImplementation(async (url, opts) => {
+      if (url !== detalhe) return lerAntes(url, opts);
+      if (!podeVer) throw new ApiError(404, "not_found", undefined, "teste");
+      return { data: atual };
+    });
+    await reassinar();
+    await screen.findByText(semAcesso);
+
+    podeVer = true;
+    lista.data.pages[0].consultaIniciadaEm = performance.now();
+    await act(async () => tela.rerender(<QueryClientProvider client={qc}><InboxLayout /></QueryClientProvider>));
+    expect(await screen.findByRole("heading", { name: "Nome conferido na API" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Abrir Nome da lista antiga" })).toBeVisible();
+  });
+
+  it("mostra a entrada de login e descarta o rascunho se a sessão foi revogada", async () => {
+    montar();
+    await abrirDaLista();
+    fireEvent.change(screen.getByRole("textbox", { name: "Resposta" }), { target: { value: "Rascunho anterior" } });
+    const lerAntes = get.getMockImplementation()!;
+    get.mockImplementation(async (url, opts) => {
+      if (url === detalhe) throw new ApiError(401, "unauthenticated", undefined, "teste");
+      return lerAntes(url, opts);
+    });
+    await reassinar();
+    expect(await screen.findByRole("link", { name: "Entrar" })).toHaveAttribute("href", expect.stringContaining("/login?next="));
+    expect(screen.queryByRole("textbox", { name: "Resposta" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Abrir/ })).toBeNull();
+  });
+
 });

@@ -25,6 +25,7 @@ interface Props {
    * com a imagem.
    */
   files: File[];
+  suspenso?: boolean;
   /**
    * O texto da resposta rápida, que entra como legenda da PRIMEIRA imagem —
    * o mesmo contrato do envio de mídia que já existe. `null` no caminho do
@@ -51,6 +52,7 @@ interface Props {
 /** Preview antes do envio (padrão WhatsApp): capa, demais imagens e legenda. */
 export function AttachmentPreviewDialog({
   files,
+  suspenso = false,
   legendaInicial = null,
   notaInterna = false,
   sending,
@@ -88,7 +90,7 @@ export function AttachmentPreviewDialog({
   );
 
   const capa = itens.at(0);
-  if (!capa) return null;
+  if (!capa || suspenso) return null;
   const demais = itens.slice(1);
   const isImage = capa.file.type.startsWith("image/");
   const isVideo = capa.file.type.startsWith("video/");
