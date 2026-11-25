@@ -4830,6 +4830,9 @@ export const DICIONARIO: Traducoes = {
   "Este endereço não respondeu em /models. Confira a base URL: ela deve apontar para a raiz de uma API compatível com a OpenAI.": {
     es: "Esta dirección no respondió en /models. Revisa la base URL: debe apuntar a la raíz de una API compatible con OpenAI.",
   },
+  "Uma chave só para centenas de modelos de chat de vários fabricantes (OpenAI, Anthropic, Google, DeepSeek e outros), com cobrança por uso numa conta só. Bom para comparar modelos sem abrir conta em cada provedor.": {
+    es: "Una sola clave para cientos de modelos de chat de varios fabricantes (OpenAI, Anthropic, Google, DeepSeek y otros), con cobro por uso en una sola cuenta. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
+  },
   "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.": {
     es: "Una sola clave para cientos de modelos de varios fabricantes, con la opción de mantener el tráfico en Europa. Útil para comparar modelos sin abrir una cuenta con cada proveedor.",
   },

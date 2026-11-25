@@ -86193,6 +86193,58 @@ on conflict (provider, model_id) do update set
   supports_tools = excluded.supports_tools,
   supports_vision = excluded.supports_vision;
 
+-- ---- Catálogo da AI/ML API (migration 9475) ----
+--
+-- Espelho de supabase/migrations/20261125090001_9475_catalogo_aimlapi.sql.
+-- Agregador OpenAI-compatível, como a Requesty logo acima: ids `fabricante/modelo`
+-- conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas
+-- `type = openai/chat-completions`), preço convertido para CENTAVOS por milhão.
+-- Fica junto do bloco da Requesty; não cria função nem grant, então a VARREDURA anon (acima) não o alcança.
+-- Racional inteiro na migration 9475.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_vision)
+values
+  ('aimlapi', 'openai/gpt-4o-mini', 'GPT-4o mini (AI/ML API)',
+   'Barato e rápido, bom para atendimento de volume. Enxerga imagem.',
+   128000, 15, 60, true, true),
+  ('aimlapi', 'openai/gpt-4.1-mini', 'GPT-4.1 mini (AI/ML API)',
+   'Segue instruções melhor que o 4o mini, com contexto longo. Enxerga imagem.',
+   1000000, 40, 160, true, true),
+  ('aimlapi', 'google/gemini-2.5-flash', 'Gemini 2.5 Flash (AI/ML API)',
+   'Contexto muito longo e custo baixo. Enxerga imagem.',
+   1000000, 30, 250, true, true),
+  ('aimlapi', 'anthropic/claude-haiku-4.5', 'Claude Haiku 4.5 (AI/ML API)',
+   'Rápido, para atendimentos curtos e classificação. Enxerga imagem.',
+   200000, 106, 529, true, true),
+  ('aimlapi', 'anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5 (AI/ML API)',
+   'O que melhor segue instruções longas e usa as ferramentas do CRM. Enxerga imagem.',
+   200000, 317, 1587, true, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  supports_vision = excluded.supports_vision;
+
+-- O preço nasce aqui, e não no próximo `update.sh`: `ai_pricing.model` é chave
+-- primária, e três destes ids também são da Requesty. Num banco recém-instalado
+-- nenhum dos dois tem linha ainda, e o backfill 0113 da cadeia, que é um INSERT
+-- só sem `distinct on`, tentaria a mesma chave duas vezes. Mesmo preço publicado
+-- nos dois provedores; `do nothing` não pisa na linha que um clone já tem.
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('openai/gpt-4o-mini',          15,   60, 'catálogo 9475 (AI/ML API)'),
+  ('openai/gpt-4.1-mini',         40,  160, 'catálogo 9475 (AI/ML API)'),
+  ('google/gemini-2.5-flash',     30,  250, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-haiku-4.5', 106,  529, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-sonnet-4.5', 317, 1587, 'catálogo 9475 (AI/ML API)')
+on conflict (model) do nothing;
+
 -- ---- menu lateral por EMPRESA (migration 0367, issue #1341) ----
 --
 -- `organizations.interface_settings` é a escolha da EMPRESA: o universo de portas

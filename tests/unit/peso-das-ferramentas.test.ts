@@ -107,7 +107,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
-  "crm_save_ai_agent_draft": { tokens: 1015, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens); nunca montada no turno do agente" },
+  "crm_save_ai_agent_draft": { tokens: 1019, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens), +4 com o provedor aimlapi no enum; nunca montada no turno do agente" },
   "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
   "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
   "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
@@ -278,7 +278,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-const TETO_TOTAL = 47941;
+const TETO_TOTAL = 47945;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
