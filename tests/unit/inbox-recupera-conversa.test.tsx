@@ -164,6 +164,15 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
   it("fecha os dados e tira a linha antiga quando a leitura confirma 404", async () => {
     montar();
     await abrirDaLista();
+    const chaveDaLista = ["conversations", { status: "open" }];
+    const listaAntiga = lista.data;
+    qc.setQueryData(chaveDaLista, listaAntiga);
+    let responderLista!: () => void;
+    const aguardandoLista = new Promise<void>((resolve) => { responderLista = resolve; });
+    const listaEmVoo = qc.fetchQuery({ queryKey: chaveDaLista, queryFn: async () => {
+      await aguardandoLista;
+      return listaAntiga;
+    } }).catch(() => undefined);
     const lerAntes = get.getMockImplementation()!;
     let responderHistorico!: () => void;
     const aguardandoHistorico = new Promise<void>((resolve) => { responderHistorico = resolve; });
@@ -187,6 +196,11 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     expect(screen.queryByRole("button", { name: "Abrir Nome da lista antiga" })).toBeNull();
     expect(screen.getByRole("button", { name: "Abrir Outra conversa" })).toBeVisible();
     expect(window.location.search).toContain(`id=${id}`);
+    await act(async () => {
+      responderLista();
+      await listaEmVoo;
+    });
+    expect(qc.getQueryData<typeof listaAntiga>(chaveDaLista)?.pages[0]?.data.map((c) => c.id)).toEqual([vizinha]);
   });
 
   it("aceita uma nova leitura da lista após a perda de acesso", async () => {

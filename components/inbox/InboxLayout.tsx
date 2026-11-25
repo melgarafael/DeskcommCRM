@@ -311,7 +311,7 @@ interface InboxLayoutProps {
 
 export function InboxLayout(props: InboxLayoutProps = {}) {
   const { user, activeOrg } = useAuth();
-  return <InboxNoEscopo key={JSON.stringify([user.id, activeOrg?.orgId, user.support?.access_mode])} {...props} />;
+  return <InboxNoEscopo key={JSON.stringify([user.id, activeOrg?.orgId, user.support?.id, user.support?.access_mode])} {...props} />;
 }
 
 function InboxNoEscopo({

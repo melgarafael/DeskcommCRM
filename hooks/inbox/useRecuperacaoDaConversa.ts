@@ -117,6 +117,9 @@ export function useRecuperacaoDaConversa({
       const negadaEm = performance.now();
       setNegadas((atual) => new Map(atual).set(id, { rodada, negadaEm }));
       limparDadosDaConversa(qc, id);
+      // A lista anterior pode responder depois do 404, inclusive após sair do
+      // Inbox, quando o filtro deste componente já não existe.
+      void qc.cancelQueries({ queryKey: ["conversations"] });
       qc.setQueriesData<ListaEmCache>({ queryKey: ["conversations"] }, (lista) =>
         filtrarListaProtegida(lista, (conversa) => conversa !== id));
     }
