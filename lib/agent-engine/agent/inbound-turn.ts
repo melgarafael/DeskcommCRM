@@ -5658,12 +5658,12 @@ async function executarTurnoDoAgente(
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
-                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 if (agentConfig?.consultaObrigatoriaTool &&
                     (media || !textoAutorizadoPelaFonte(corpo, await consultarDadosAtuais()))) {
                   runLog.warn('envio vetado pela fonte obrigatória após formatação');
                   return { kind: 'unavailable', reason: 'fonte_obrigatoria' } as const;
                 }
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 seq += 1;
                 return liveChannel().send({
                   tenantId,

@@ -445,7 +445,15 @@ export const testRunSchema = z
       .transform((tags) => normalizarTags(tags))
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ contact_id, sample_contact }) => !contact_id || !sample_contact, {
+    path: ["sample_contact"],
+    message: "Escolha um contato cadastrado ou simulado.",
+  })
+  .refine(({ contact_id, required_source_tool }) => !required_source_tool || !!contact_id, {
+    path: ["required_source_tool"],
+    message: "Escolha um contato cadastrado para testar a fonte.",
+  });
 
 export const runsListQuerySchema = z
   .object({
