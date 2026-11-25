@@ -84269,6 +84269,109 @@ revoke execute on function public.fn_atrito_metrics(uuid, timestamptz, timestamp
 grant  execute on function public.fn_atrito_metrics(uuid, timestamptz, timestamptz, int, float8, int)
   to authenticated, service_role;
 
+-- ---- 9477 — o tipo de agendamento segue o fuso da empresa (#5205) ----
+-- Espelho de supabase/migrations/20261125112635_9477_tipo_de_agendamento_segue_o_fuso_da_empresa.sql.
+-- Defeito: calendar_event_types.service_timezone nasce 'America/Sao_Paulo' e nunca acompanha
+-- organizations.timezone. Três peças: backfill idempotente (a), trigger BEFORE INSERT que herda
+-- o fuso da empresa (b), trigger AFTER UPDATE OF timezone que propaga a troca (c), mais revoke
+-- de EXECUTE nas duas definer (d). Idempotente: roda no install e no update sem quebrar.
+
+-- (a) Ajuste dos tipos que já existem — roda UMA vez só.
+do $tipo_segue_ajuste_existentes$
+declare r record;
+begin
+  if to_regprocedure('public.fn_tipo_segue_o_fuso_da_empresa()') is null then
+    for r in
+      select t.id, t.organization_id, o.timezone
+        from public.calendar_event_types t
+        join public.organizations o on o.id = t.organization_id
+       where t.service_timezone = 'America/Sao_Paulo'
+         and o.timezone <> 'America/Sao_Paulo'
+         and exists(select 1 from pg_timezone_names where name = o.timezone)
+    loop
+      begin
+        update public.calendar_event_types
+           set service_timezone = r.timezone
+         where id = r.id
+           and organization_id = r.organization_id;
+      exception when sqlstate '22023' then
+        raise warning 'tipo % não mudou de fuso: serviço ativo sem programação', r.id;
+      end;
+    end loop;
+  end if;
+end $tipo_segue_ajuste_existentes$;
+
+-- (b) O tipo nasce no fuso da empresa.
+create or replace function public.fn_tipo_nasce_no_fuso_da_empresa()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_fuso text;
+begin
+  if new.service_timezone is null or new.service_timezone = 'America/Sao_Paulo' then
+    select o.timezone into v_fuso
+      from public.organizations o
+     where o.id = new.organization_id
+       and exists(select 1 from pg_timezone_names where name = o.timezone);
+    if v_fuso is not null then
+      new.service_timezone := v_fuso;
+    else
+      new.service_timezone := 'America/Sao_Paulo';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_tipo_nasce_no_fuso_da_empresa() from public, anon, authenticated;
+
+drop trigger if exists trg_tipo_nasce_no_fuso_da_empresa on public.calendar_event_types;
+create trigger trg_tipo_nasce_no_fuso_da_empresa
+  before insert on public.calendar_event_types
+  for each row
+  execute function public.fn_tipo_nasce_no_fuso_da_empresa();
+
+-- (c) O tipo acompanha a empresa.
+create or replace function public.fn_tipo_segue_o_fuso_da_empresa()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  r record;
+begin
+  if new.timezone is distinct from old.timezone
+     and exists(select 1 from pg_timezone_names where name = new.timezone) then
+    for r in
+      select id
+        from public.calendar_event_types
+       where organization_id = new.id
+         and service_timezone = old.timezone
+    loop
+      begin
+        update public.calendar_event_types
+           set service_timezone = new.timezone
+         where id = r.id
+           and organization_id = new.id;
+      exception when sqlstate '22023' then
+        raise warning 'tipo % não acompanhou o fuso da empresa: serviço ativo sem programação', r.id;
+      end;
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_tipo_segue_o_fuso_da_empresa() from public, anon, authenticated;
+
+drop trigger if exists trg_tipo_segue_o_fuso_da_empresa on public.organizations;
+create trigger trg_tipo_segue_o_fuso_da_empresa
+  after update of timezone on public.organizations
+  for each row
+  execute function public.fn_tipo_segue_o_fuso_da_empresa();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -86491,6 +86594,58 @@ on conflict (provider, model_id) do update set
   output_price_per_million_cents = excluded.output_price_per_million_cents,
   supports_tools = excluded.supports_tools,
   supports_vision = excluded.supports_vision;
+
+-- ---- Catálogo da AI/ML API (migration 9475) ----
+--
+-- Espelho de supabase/migrations/20261125090001_9475_catalogo_aimlapi.sql.
+-- Agregador OpenAI-compatível, como a Requesty logo acima: ids `fabricante/modelo`
+-- conferidos em `GET https://api.aimlapi.com/v1/models?include=all` (linhas
+-- `type = openai/chat-completions`), preço convertido para CENTAVOS por milhão.
+-- Fica junto do bloco da Requesty; não cria função nem grant, então a VARREDURA anon (acima) não o alcança.
+-- Racional inteiro na migration 9475.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_vision)
+values
+  ('aimlapi', 'openai/gpt-4o-mini', 'GPT-4o mini (AI/ML API)',
+   'Barato e rápido, bom para atendimento de volume. Enxerga imagem.',
+   128000, 15, 60, true, true),
+  ('aimlapi', 'openai/gpt-4.1-mini', 'GPT-4.1 mini (AI/ML API)',
+   'Segue instruções melhor que o 4o mini, com contexto longo. Enxerga imagem.',
+   1000000, 40, 160, true, true),
+  ('aimlapi', 'google/gemini-2.5-flash', 'Gemini 2.5 Flash (AI/ML API)',
+   'Contexto muito longo e custo baixo. Enxerga imagem.',
+   1000000, 30, 250, true, true),
+  ('aimlapi', 'anthropic/claude-haiku-4.5', 'Claude Haiku 4.5 (AI/ML API)',
+   'Rápido, para atendimentos curtos e classificação. Enxerga imagem.',
+   200000, 106, 529, true, true),
+  ('aimlapi', 'anthropic/claude-sonnet-4.5', 'Claude Sonnet 4.5 (AI/ML API)',
+   'O que melhor segue instruções longas e usa as ferramentas do CRM. Enxerga imagem.',
+   200000, 317, 1587, true, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  supports_vision = excluded.supports_vision;
+
+-- O preço nasce aqui, e não no próximo `update.sh`: `ai_pricing.model` é chave
+-- primária, e três destes ids também são da Requesty. Num banco recém-instalado
+-- nenhum dos dois tem linha ainda, e o backfill 0113 da cadeia, que é um INSERT
+-- só sem `distinct on`, tentaria a mesma chave duas vezes. Mesmo preço publicado
+-- nos dois provedores; `do nothing` não pisa na linha que um clone já tem.
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('openai/gpt-4o-mini',          15,   60, 'catálogo 9475 (AI/ML API)'),
+  ('openai/gpt-4.1-mini',         40,  160, 'catálogo 9475 (AI/ML API)'),
+  ('google/gemini-2.5-flash',     30,  250, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-haiku-4.5', 106,  529, 'catálogo 9475 (AI/ML API)'),
+  ('anthropic/claude-sonnet-4.5', 317, 1587, 'catálogo 9475 (AI/ML API)')
+on conflict (model) do nothing;
 
 -- ---- menu lateral por EMPRESA (migration 0367, issue #1341) ----
 --
