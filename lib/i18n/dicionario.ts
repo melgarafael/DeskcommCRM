@@ -11339,7 +11339,6 @@ export const DICIONARIO: Traducoes = {
   "Falha ao enviar a mensagem": { es: "Error al enviar el mensaje" },
   "Apenas parte da mensagem foi enviada": { es: "Solo se envió una parte del mensaje" },
   "Solicitou o envio da mensagem": { es: "Solicitó el envío del mensaje" },
-  "Parte {n}": { es: "Parte {n}" },
   "Mensagem enviada": { es: "Mensaje enviado" },
   "Segurou o fluxo por causa de um retorno agendado": {
     es: "Frenó el flujo por un regreso programado",

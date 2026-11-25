@@ -499,3 +499,16 @@ it("descreve o marco de geração sem confundi-lo com envio", () => {
   );
   expect(resultado.titulo).toBe("Mensagem gerada");
 });
+
+it("descreve o recibo de uma mensagem sem sugerir que ainda há outra parte", () => {
+  expect(descreveEvento(evento({
+    node_id: "action-1",
+    event_type: "followup_message_sent",
+    payload: { seq: 1 },
+  }), nos, "pt-BR")).toEqual({
+    titulo: "Mensagem enviada",
+    onde: nos["action-1"].rotulo,
+    detalhe: null,
+    autor: "motor",
+  });
+});

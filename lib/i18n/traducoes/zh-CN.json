@@ -3495,7 +3495,6 @@
   "Falha ao enviar a mensagem": "消息发送失败",
   "Apenas parte da mensagem foi enviada": "只发出了部分消息",
   "Solicitou o envio da mensagem": "已请求发送消息",
-  "Parte {n}": "第 {n} 段",
   "Mensagem enviada": "消息已发送",
   "O agente interpretou a resposta": "智能体解读了回复",
   "Fluxo concluído": "流程已完成",

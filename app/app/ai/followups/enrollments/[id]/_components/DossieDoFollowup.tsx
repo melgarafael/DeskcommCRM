@@ -153,9 +153,6 @@ function LinhaDoTempo({
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-text">{t(lido.titulo)}</p>
                 {lido.detalhe && <p className="mt-0.5 text-xs text-text-muted">{t(lido.detalhe)}</p>}
-                {lido.parte !== undefined && (
-                  <p className="mt-0.5 text-xs text-text-muted">{t("Parte {n}").replace("{n}", String(lido.parte))}</p>
-                )}
                 <p className="mt-0.5 text-[11px] text-text-muted">
                   {lido.onde}
                   {nome ? ` · ${nome}` : ""} · {absoluta(evento.created_at, localeDaData)}

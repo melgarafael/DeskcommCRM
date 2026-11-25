@@ -500,7 +500,7 @@ async function eventosDoDossiePg(org: string, enrollmentId: string): Promise<Eve
 }
 
 async function prepararEnvioDoDossie(
-  mode: "ai_message" | "text" = "ai_message",
+  mode: "ai_message" | "text" | "template" | "confirm" = "ai_message",
 ) {
   const org = crypto.randomUUID();
   await seedOrg(org);
@@ -509,6 +509,24 @@ async function prepararEnvioDoDossie(
   const action = graph.nodes[0]!;
   if (action.type !== "action") throw new Error("fixture sem ação");
   if (mode === "text") action.config = { mode, body: "Lembrete fixo de teste" };
+  if (mode === "template") {
+    const { rows: [modelo] } = await pool.query(
+      "insert into message_templates (organization_id, title, body) values ($1,'Modelo de teste','Retomando nosso contato.') returning id",
+      [org],
+    );
+    action.config = { mode, template_id: modelo.id };
+  }
+  if (mode === "confirm") {
+    graph.nodes[0] = {
+      ...action, type: "match_reply",
+      config: {
+        branches: [{ id: "sim", label: "Sim", op: "eq", pattern: "sim" }],
+        grace_timeout_ms: 900_000,
+        save_to: { kind: "contact_name" },
+        if_exists: "confirm",
+      },
+    };
+  }
   const { pointerId, versionId } = await seedFlow(org, graph);
   const enrollmentId = await seedEnrollment({
     org, pointerId, versionId, contactId, currentNodeId: "a1",
@@ -727,6 +745,21 @@ it("registra o texto fixo aceito sem inventar geração ou fila do canal", async
   ]);
 });
 
+
+it.each([
+  { mode: "template", node: "e1", status: "active" },
+  { mode: "confirm", node: "a1", status: "waiting_reply" },
+] as const)("o modo $mode registra o recibo sem geração de IA", async ({ mode, node, status }) => {
+  const cenario = await prepararEnvioDoDossie(mode);
+  await rodarTurnoDeEnvio(cenario, "sent");
+  expect((await getEnrollment(cenario.enrollmentId))).toMatchObject({
+    current_node_id: node, status,
+  });
+  const trilha = (await cenario.eventos()).map((e) => e.event_type);
+  expect(trilha.filter((tipo) => tipo.startsWith("followup_"))).toEqual([
+    "followup_job_queued", "followup_message_sent",
+  ]);
+});
 
 it("preserva a falha quando o mesmo job reenvia com nova mensagem física", async () => {
   const cenario = await prepararEnvioDoDossie("text");

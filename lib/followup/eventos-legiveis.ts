@@ -336,8 +336,6 @@ export interface EventoLegivel {
   onde: string;
   /** Quem provocou: o motor, uma pessoa, o cliente. Decide a forma do marcador. */
   autor: "motor" | "pessoa" | "cliente";
-  /** Posição da mensagem física, quando há recibo de envio. */
-  parte?: number;
 }
 
 function texto(v: unknown): string | null {
@@ -381,12 +379,10 @@ export function descreveEvento(
   const cliente = { onde, autor: "cliente" as const };
 
   if (Object.hasOwn(TITULOS_DO_HISTORICO_DE_ENVIO, evento.event_type)) {
-    const parte = typeof p.seq === "number" && Number.isSafeInteger(p.seq) && p.seq > 0 ? p.seq : undefined;
     return {
       titulo: TITULOS_DO_HISTORICO_DE_ENVIO[evento.event_type]!,
       detalhe: null,
       ...motor,
-      ...(parte !== undefined ? { parte } : {}),
     };
   }
 

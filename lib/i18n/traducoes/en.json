@@ -5038,7 +5038,6 @@
   "Falha ao enviar a mensagem": "Message failed to send",
   "Apenas parte da mensagem foi enviada": "Only part of the message was sent",
   "Solicitou o envio da mensagem": "Requested that the message be sent",
-  "Parte {n}": "Part {n}",
   "Mensagem enviada": "Message sent",
   "Segurou o fluxo por causa de um retorno agendado": "Held the flow due to a scheduled follow-up",
   "O agente interpretou a resposta": "The agent interpreted the response",
