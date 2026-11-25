@@ -43,25 +43,20 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { montarLinhas, type LinhaCanalBruta } from "@/lib/metrics/canais";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import {
+  datasDaJanela,
+  janelaDoDesempenho,
+  MAXIMO_DE_DIAS,
+  MS_POR_DIA,
+} from "@/lib/metrics/periodo-do-desempenho";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
-/**
- * Quantos dias a janela pode cobrir. O teto limita o que o relatório AFIRMA,
- * não o custo. Desde a migration 0596 (#2554), esta RPC e a irmã
- * `fn_attendant_metrics` cortam pela janela ANTES do lateral: o custo acompanha
- * as conversas DA janela, não o histórico inteiro da organização. Medido na
- * triagem do #2554 (Postgres do baseline, 10 mil conversas espalhadas em 120
- * dias, sob RLS, limite de 8 s do papel authenticated): janela de 1 dia em
- * ~1,4–1,8 s; 30 dias (~2.500 conversas na janela, a janela que a tela usa) e
- * 90 dias ainda passam de 8 s — nesse volume a tela recebe ERRO em vez de
- * lentidão, aqui e na irmã por atendente (issue #2514).
- */
-const DIAS_MAXIMOS = 90;
-
+// Em organizações grandes, até janelas válidas podem esgotar o tempo da
+// RPC (veja o teste de custo em metricas-cortam-pela-janela.test.ts, #2554).
 const querySchema = z.object({
   from: z.string().datetime({ offset: true }).optional(),
   to: z.string().datetime({ offset: true }).optional(),
@@ -115,13 +110,31 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // O teto é declarado, não aplicado por baixo: a rota recusa a janela que não
   // pode medir em vez de devolver um total que mente sobre o corte.
+  const de = from.toISOString();
+  const ate = to.toISOString();
   const dias = Math.ceil((to.getTime() - from.getTime()) / MS_POR_DIA);
-  if (dias > DIAS_MAXIMOS) {
+  let periodoCivilValido = false;
+
+  // Preserva o limite dos intervalos ISO arbitrários. A única exceção é o
+  // período da tela, alinhado aos dias locais, alongado pelo recuo do relógio.
+  if (dias === MAXIMO_DE_DIAS + 1) {
+    const { data: org, error } = await authz.supabase
+      .from("organizations")
+      .select("timezone")
+      .eq("id", authz.organizationId)
+      .maybeSingle();
+    if (error) return fail("internal_error", error.message, 500, { requestId });
+    const fuso = fusoUtilizavel(org?.timezone);
+    const periodo = janelaDoDesempenho(datasDaJanela({ from, to }, fuso), fuso);
+    periodoCivilValido = "janela" in periodo && periodo.janela.from === de && periodo.janela.to === ate;
+  }
+
+  if (dias > MAXIMO_DE_DIAS && !periodoCivilValido) {
     return fail(
       "validation_failed",
       t("Janela de {dias} dias: o relatório por canal cobre no máximo {maximo} dias.")
         .replace("{dias}", String(dias))
-        .replace("{maximo}", String(DIAS_MAXIMOS)),
+        .replace("{maximo}", String(MAXIMO_DE_DIAS)),
       422,
       { requestId },
     );
@@ -129,8 +142,8 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await authz.supabase.rpc("fn_channel_metrics", {
     p_org: authz.organizationId,
-    p_from: from.toISOString(),
-    p_to: to.toISOString(),
+    p_from: de,
+    p_to: ate,
     p_owner: parsed.data.owner_user_id,
   });
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -139,7 +152,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   return ok(
     {
-      window: { from: from.toISOString(), to: to.toISOString() },
+      window: { from: de, to: ate },
       owner_user_id: parsed.data.owner_user_id ?? null,
       // `montarLinhas` preserva `null` na média (null ≠ 0) e ordena por volume.
       channels: montarLinhas(metrics.channels),
