@@ -566,4 +566,60 @@ describe("POST /api/v1/webchat/mensagens", () => {
     );
     expect(r.status).toBe(201);
   });
+
+  it("contexto válido (página, referrer e UTM) chega à ingestão", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        {
+          mensagem_id: randomUUID(),
+          texto: "oi",
+          contexto: {
+            href: "https://loja.example/produto",
+            referrer: "https://busca.example/",
+            utm: { utm_source: "ig" },
+          },
+        },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(201);
+    expect(h.ingerir.mock.calls[0]![1]).toMatchObject({
+      contexto: {
+        href: "https://loja.example/produto",
+        referrer: "https://busca.example/",
+        utm: { utm_source: "ig" },
+      },
+    });
+  });
+
+  it("contexto com campo fora do schema dá 422 e nada é ingerido", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", contexto: { href: "https://loja.example/", cookie: "x" } },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(422);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("href com 201 caracteres dá 422 e nada é ingerido", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", contexto: { href: `https://x.example/${"a".repeat(201)}` } },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(422);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("sem contexto, a ingestão não recebe o campo e nada muda", async () => {
+    const r = await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante()));
+    expect(r.status).toBe(201);
+    expect(h.ingerir.mock.calls[0]![1]).not.toHaveProperty("contexto");
+  });
 });

@@ -365,10 +365,16 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
 
 ### F5 — Origem e relatório
 
-- A primeira mensagem leva a página, o referrer e as UTMs, e passa por `estamparOrigemDaPagina`,
-  com a mesma guarda de primeiro toque do banco.
-- A Inbox filtra por canal e mostra o selo "Chat no site", e o relatório por canal ganha a linha do
-  canal novo.
+Status: **F5 entregue** (código das tarefas 1 e 2 da fatia; sem migration e sem variável de ambiente nova).
+
+- **Entrou:**
+  - A janela manda, na primeira mensagem, a página (`href`), a origem (`referrer`) e as UTMs, só os campos com valor. A janela corta cada valor em 200 caracteres antes de enviar, e a rota recusa campo que não conhece (422).
+  - A ingestão grava a página em `metadata.webchat_pagina` da primeira mensagem. Com UTM válida, estampa a origem no contato pela mesma função da landing com `wa.me` (`estamparOrigemDaPagina`), com a guarda de primeiro toque do banco. Se a estampa falhar, vira aviso no log e a mensagem entra do mesmo jeito.
+  - Da segunda mensagem em diante o contexto é ignorado.
+  - O selo "Chat no site" na Inbox e o relatório por canal (`fn_channel_metrics`, por conexão) já existiam: a conexão do chat aparece neles sem código novo.
+- **Não entrou:**
+  - Relatório por página de origem. O relatório agrupa por canal; por página fica para quando um pedido for medido.
+  - Não medido: o filtro de canal da Inbox pela conexão do chat, e o rótulo de origem do chat na ficha do contato pela tela.
 
 ## Fora desta spec (de propósito)
 

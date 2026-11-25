@@ -20,6 +20,7 @@ export function channelBrand(
       // intermediada: sem esta linha, conversa dele cairia no genérico e o aviso
       // não teria como dizer de onde veio (#4094).
       if (session.social_platform === "telegram") return "telegram";
+      if (session.social_platform === "tiktok") return "tiktok";
       return "unknown";
     default:
       return "unknown";
