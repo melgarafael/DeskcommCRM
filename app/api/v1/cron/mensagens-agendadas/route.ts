@@ -5,9 +5,20 @@
  *   1. CLAIM: marca `claimed_until` com UPDATE condicional. Só quem marcar a linha
  *      processa; duas rodadas simultâneas não encaminham o mesmo envio.
  *   2. quem agendou perdeu o acesso → `cancelada` (`sem_acesso`).
- *   3. número fora do ar + `esperar` → solta a trava e tenta no próximo minuto.
+ *   3. número fora do ar + `esperar` → solta a trava e tenta no próximo minuto
+ *      (carimbando `updated_at`, para a linha recém-solta ir ao FIM da fila).
  *   4. número fora do ar + `cancelar` → `cancelada` (`numero_desconectado`).
  *   5. número no ar → encaminha; `encaminhada` com o `message_id`, ou `falhou`.
+ *
+ * ── Por que a fila ordena por `updated_at` e não só por `scheduled_at` (#5060)
+ *
+ * Uma linha em `esperar` volta a ser `agendada` a cada rodada. Ordenada apenas
+ * pelo horário, ela mantém a posição mais antiga e ocupa a vaga das 50 de novo,
+ * rodada após rodada: 50 presas numa sessão caída travam o lote e uma mensagem
+ * devida mais nova nunca é lida. `updated_at` é a marca de "última tentativa":
+ * quem acabou de ser solto é o mais recente e cede a vez, então o lote ROTACIONA
+ * e sempre sobra vaga para quem ainda não foi encostado. O lote continua 50, a
+ * política `esperar` continua `esperar` e a linha presa continua `agendada`.
  *
  * Segunda parte da #3118 (repetição): a linha é a SÉRIE. Ao fim de cada ocorrência,
  * a regra de `lib/agendamento-mensagem/serie.ts` decide se a série segue para a

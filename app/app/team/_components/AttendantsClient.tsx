@@ -444,7 +444,7 @@ export function ScheduleDialog({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="max-[400px]:shrink-0"
+                  className="shrink-0"
                   aria-label={t("Remover janela")}
                   onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
                 >

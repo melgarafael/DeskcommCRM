@@ -299,7 +299,7 @@ const countInputShape = {
 export const crmCountLeads: McpToolDefinition<typeof countInputShape> = {
   name: "crm_count_leads",
   description:
-    "Conta leads por pipeline, stage e status e devolve só números (total e, sem filtro de status, o total por status), nunca nomes nem ids. " +
+    "Conta leads por pipeline, stage e status e devolve só números (total e, sem filtro de status, o total por status), nunca nomes de leads (por_etapa traz só stage_id). " +
     "Para 'quantos leads?', use esta em vez de paginar crm_list_leads. Com por_etapa=true (exige pipeline_id) devolve também o total de cada etapa do funil. Em atendimento, conta só os negócios do contato da conversa.",
   inputSchema: countInputShape,
   category: "read",
