@@ -227,6 +227,13 @@ const PROVA_PROPRIA: readonly Excecao[] = [
     razao: "tests/invariants/followup-schema.test.ts — mesmo laço de FOLLOWUP_TABLES.",
   },
   {
+    tabela: "followup_delivery_events",
+    razao:
+      "tests/invariants/followup-turn-bridge.test.ts — " +
+      "«expõe os recibos para a própria organização e reserva as escritas para o sistema» " +
+      "prova isolamento entre duas organizações e veda a escrita pelo usuário autenticado.",
+  },
+  {
     tabela: "user_organizations",
     razao:
       "tests/invariants/gov-1b-team-manager-read.test.ts (\"cross-org: " +
