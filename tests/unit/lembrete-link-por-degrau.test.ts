@@ -73,6 +73,7 @@ function linha(over: {
   extras: number[] | null;
   semLink: number[] | null;
   estadoDoLink?: "ready" | "pending";
+  body?: string | null;
 }): Record<string, unknown> {
   return {
     id: "c-1",
@@ -99,7 +100,7 @@ function linha(over: {
       reminder_minutes_before: 60,
       reminder_extra_offsets_minutes: over.extras,
       reminder_template_name: null,
-      reminder_body: null,
+      reminder_body: over.body ?? null,
       reminder_bodies: null,
       reminder_sem_link_offsets_minutes: over.semLink,
       location_details: null,
@@ -138,6 +139,40 @@ describe("o cron respeita o interruptor de cada degrau (#5154)", () => {
     expect(mocks.corpos).toHaveLength(1);
     expect(mocks.corpos[0]).toContain(`Link da reunião: ${MEET}`);
     expect(mocks.corpos[0]?.match(/https:\/\//g)).toHaveLength(1);
+  });
+
+  it("texto que pede {{link}} por conta própria: a espera continua, mesmo com o interruptor desligado", async () => {
+    // Desligar tira a linha AUTOMÁTICA; não tira o `{{link}}` que a pessoa
+    // escreveu. Mandar antes de o link existir entrega "Entre por aqui: " e
+    // nada — e mensagem no WhatsApp não volta.
+    compromisso = linha({
+      minutosParaComecar: 30,
+      extras: null,
+      semLink: [60],
+      estadoDoLink: "pending",
+      body: "Oi {{nome}}! Entre por aqui: {{link}}",
+    });
+
+    const { data } = await (await GET(pedido())).json();
+
+    expect(data.enviados).toBe(0);
+    expect(data.motivos.link_da_reuniao_pendente).toBe(1);
+    expect(mocks.corpos).toHaveLength(0);
+  });
+
+  it("texto com {{link}} e link pronto: o texto manda, sem linha automática duplicada", async () => {
+    compromisso = linha({
+      minutosParaComecar: 30,
+      extras: null,
+      semLink: [60],
+      body: "Oi {{nome}}! Entre por aqui: {{link}}",
+    });
+
+    const { data } = await (await GET(pedido())).json();
+
+    expect(data.enviados).toBe(1);
+    expect(mocks.corpos[0]).toBe(`Oi Ana! Entre por aqui: ${MEET}`);
+    expect(mocks.corpos[0]).not.toContain("Link da reunião:");
   });
 
   it("todos os degraus desligados e o link a caminho: não segura o aviso até os 15 min", async () => {

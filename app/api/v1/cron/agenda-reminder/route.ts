@@ -756,9 +756,23 @@ async function handle(req: NextRequest): Promise<Response> {
     // da rodada desligados, esperar seguraria o aviso até 15 min do início por
     // um link que ele não vai levar — a espera existe para o cliente receber
     // como entrar, e quem desligou não pediu isso.
+    //
+    // Mas o interruptor desligado só tira a linha AUTOMÁTICA. Se o texto deste
+    // degrau pede `{{link}}` por conta própria, a mensagem precisa do link do
+    // mesmo jeito: mandá-la antes de o link existir entrega "Entre por aqui: "
+    // e nada. Por isso o texto manda na decisão de esperar.
+    const degrauDaVez = Math.min(...pendentes);
+    const moldeDoDegrauDaVez = moldeDoDegrau(tipo, degrauDaVez);
+    // Texto vindo de `message_templates` (por `reminder_template_name`) só se
+    // sabe lendo o banco: sem essa leitura aqui, espera como antes. Esperar a
+    // mais atrasa; esperar de menos manda mensagem quebrada.
+    const textoPedeOLink =
+      moldeDoDegrauDaVez !== null
+        ? /\{\{\s*link\s*\}\}/i.test(moldeDoDegrauDaVez)
+        : Boolean(tipo.reminder_template_name);
     const incluirLink = levaOLinkNoLembrete(tipo, pendentes);
     const link = linkDaReuniao(linha);
-    if (incluirLink && esperaPeloLink(link, new Date(linha.starts_at), agora)) {
+    if ((incluirLink || textoPedeOLink) && esperaPeloLink(link, new Date(linha.starts_at), agora)) {
       pular("link_da_reuniao_pendente");
       continue;
     }
@@ -868,7 +882,7 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    let molde = moldeDoDegrau(tipo, Math.min(...pendentes));
+    let molde = moldeDoDegrauDaVez;
     if (!molde && tipo.reminder_template_name) {
       const { data: modeloDeTexto } = await admin
         .from("message_templates")
