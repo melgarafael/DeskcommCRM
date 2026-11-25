@@ -14,6 +14,7 @@ async function cenario() {
   const destino = randomUUID();
   const etapaDaOrigem = randomUUID();
   const etapaDoDestino = randomUUID();
+  const etapaDePerda = randomUUID();
   const lead = randomUUID();
 
   await banco.query(
@@ -26,16 +27,18 @@ async function cenario() {
     [origem, destino, org],
   );
   await banco.query(
-    `insert into public.crm_stages (id, organization_id, pipeline_id, name, slug)
-     values ($1, $5, $3, 'Aberto', 'aberto'), ($2, $5, $4, 'Entrada', 'entrada')`,
-    [etapaDaOrigem, etapaDoDestino, origem, destino, org],
+    `insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position, is_lost)
+     values ($1, $5, $3, 'Aberto', 'aberto', 1000, false),
+            ($2, $5, $4, 'Entrada', 'entrada', 1000, false),
+            ($6, $5, $3, 'Perda', 'perda', 2000, true)`,
+    [etapaDaOrigem, etapaDoDestino, origem, destino, org, etapaDePerda],
   );
   await banco.query(
     `insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title)
      values ($1, $2, $3, $4, 'Negócio de origem')`,
     [lead, org, origem, etapaDaOrigem],
   );
-  return { org, origem, destino, etapaDoDestino, lead };
+  return { org, origem, destino, etapaDaOrigem, etapaDoDestino, etapaDePerda, lead };
 }
 
 type Cenario = Awaited<ReturnType<typeof cenario>>;
