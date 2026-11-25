@@ -110,7 +110,16 @@ function LinhaDoTempo({
   const localeDaData = useLocaleDeData();
   const porId = useMemo(() => Object.fromEntries(nos.map((n) => [n.id, n])), [nos]);
 
-  if (eventos.length === 0) {
+  // Com recibos por mensagem, o evento genérico que avança o passo não
+  // deve virar uma segunda confirmação nem encobrir o envio parcial.
+  const jobsComRecibo = new Set(
+    eventos.filter((e) => e.event_type === "followup_message_sent").map((e) => e.payload.job_id),
+  );
+  const visiveis = eventos.filter((e) =>
+    e.event_type !== "action_sent" || !e.payload.job_id || !jobsComRecibo.has(e.payload.job_id),
+  );
+
+  if (visiveis.length === 0) {
     return (
       <p className="py-4 text-sm text-text-muted" data-testid="dossie-timeline-vazia">
         {t("Este follow-up ainda não deu nenhum passo.")}
@@ -122,11 +131,11 @@ function LinhaDoTempo({
     <>
       {truncado && (
         <p className="pb-2 text-xs text-warning-fg">
-          {t("Mostrando os primeiros passos — este follow-up tem histórico maior que o desta tela.")}
+          {t("Mostrando os eventos mais recentes deste follow-up.")}
         </p>
       )}
       <ul className="border-l border-border pl-3" data-testid="dossie-timeline">
-        {eventos.map((evento) => {
+        {visiveis.map((evento) => {
           const lido = descreveEvento(evento, porId, tagDoIdioma);
           const autorId = (evento.payload as { actor_user_id?: unknown } | null)?.actor_user_id;
           const nome = typeof autorId === "string" ? autores[autorId] : undefined;
@@ -144,6 +153,9 @@ function LinhaDoTempo({
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-text">{t(lido.titulo)}</p>
                 {lido.detalhe && <p className="mt-0.5 text-xs text-text-muted">{t(lido.detalhe)}</p>}
+                {lido.parte !== undefined && (
+                  <p className="mt-0.5 text-xs text-text-muted">{t("Parte {n}").replace("{n}", String(lido.parte))}</p>
+                )}
                 <p className="mt-0.5 text-[11px] text-text-muted">
                   {lido.onde}
                   {nome ? ` · ${nome}` : ""} · {absoluta(evento.created_at, localeDaData)}

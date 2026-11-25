@@ -198,6 +198,14 @@
       "sublabel": "só active|waiting_reply avançam (lista POSITIVA)"
     },
     {
+      "id": "historico-envio",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "followup_delivery_events",
+      "sublabel": "fila real do job, geração e recibos por mensagem física; leitura por organização"
+    },
+    {
       "id": "agenda-presenca",
       "lane": "humano",
       "col": 6,
@@ -436,6 +444,24 @@
       "from": "agenda-consumer",
       "to": "agenda-recibo",
       "label": "mutex org/contato; decisão e inscrição atômicas"
+    },
+    {
+      "id": "entrega-observada",
+      "from": "bridge",
+      "to": "historico-envio",
+      "label": "origem do passo liga o turno de geração ao ledger e às mudanças de estado da mensagem"
+    },
+    {
+      "id": "entrega-lida",
+      "from": "historico-envio",
+      "to": "get",
+      "label": "mescla a trilha de envio com os eventos do motor, do mais antigo ao mais recente na tela"
+    },
+    {
+      "id": "entrega-atualizada",
+      "from": "historico-envio",
+      "to": "dossie",
+      "label": "insert invalida a leitura mesmo após encerrar; conferência cobre perda do sinal"
     },
     {
       "id": "e34",
