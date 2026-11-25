@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -530,6 +530,7 @@ function InboxNoEscopo({
     }
   }, []);
   const composerRef = useRef<ComposerHandle | null>(null);
+  const respostaComFoco = useRef<string | null>(null);
 
   const filters: ConversationsFilters = useMemo(
     () => ({
@@ -613,11 +614,12 @@ function InboxNoEscopo({
     };
   }, []);
   const fecharAcoes = useCallback(() => {
+    if (composerRef.current?.estaEditando?.()) respostaComFoco.current = selectedId;
     setBusca(null);
     setRespondendo(null);
     setEncaminhando(null);
     setFichaAberta(false);
-  }, []);
+  }, [selectedId]);
   const recuperacao = useRecuperacaoDaConversa({
     id: selectedId, orgId, userId: user.id, lista: listaBruta.data, guardarAncora, fecharAcoes,
   });
@@ -673,6 +675,23 @@ function InboxNoEscopo({
     if (estado === "confirmada" && single.error) registrarFalha(single.error);
   }, [estado, single.error, registrarFalha]);
   const conversaDoComposer = selectedConversation?.id ?? (recuperando ? selectedId : null);
+  const [montagemDoComposer, setMontagemDoComposer] = useState({ id: selectedId, recuperando, versao: 0 });
+  if (montagemDoComposer.id !== selectedId || montagemDoComposer.recuperando !== recuperando) {
+    // Na navegação normal, a caixa segue montada como antes. Um rascunho
+    // recolhido pela revalidação pertence à conversa onde foi escrito.
+    const trocouDuranteRecuperacao = montagemDoComposer.id !== selectedId
+      && (montagemDoComposer.recuperando || recuperando);
+    setMontagemDoComposer({ id: selectedId, recuperando,
+      versao: montagemDoComposer.versao + (trocouDuranteRecuperacao ? 1 : 0) });
+  }
+  useLayoutEffect(() => {
+    if (respostaComFoco.current !== selectedId || acessoEncerrado) {
+      respostaComFoco.current = null;
+    } else if (estado === "confirmada" && selectedConversation) {
+      respostaComFoco.current = null;
+      if (document.activeElement === document.body) composerRef.current?.focus();
+    }
+  }, [estado, selectedConversation, selectedId, acessoEncerrado]);
   const participantes = useParticipantesDaConversa(selectedConversation?.id ?? "");
   const participaDoAtendimento = participantes.data?.some((p) => p.user_id === user.id) === true;
   const selectionNotFound =
@@ -1355,9 +1374,7 @@ function InboxNoEscopo({
         )}
         {conversaDoComposer && (
             <Composer
-              // A pausa mantém o Composer da mesma conversa. Outra conversa ou
-              // a saída de um rascunho sugerido inicia uma caixa nova.
-              key={`${conversaDoComposer}:${rascunhoVivo ? "sugerido" : "normal"}`}
+              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : `composer:${montagemDoComposer.versao}`}
               ref={composerRef}
               conversationId={conversaDoComposer}
               suspenso={recuperando}
@@ -1474,7 +1491,7 @@ function InboxNoEscopo({
         </>
       )}
 
-      <InboxKeyboardShortcuts
+      {!recuperando && estado !== "sessao-expirada" && <InboxKeyboardShortcuts
         visibleIds={visibleIds}
         selectedId={selectedId}
         onSelect={handleSelect}
@@ -1482,7 +1499,7 @@ function InboxNoEscopo({
         onClaim={supportReadonly ? () => {} : handleClaim}
         onClose={supportReadonly ? () => {} : handleClose}
         onToggleHelp={() => setHelpOpen((v) => !v)}
-      />
+      />}
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       <EncaminharDialog
         open={!!selectedConversation && encaminhando !== null}

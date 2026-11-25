@@ -309,8 +309,8 @@ async function executarRequisicao<T>(
   if (MUTATING_METHODS.has(method)) {
     headers["Idempotency-Key"] ??= opts.idempotencyKey ?? randomId();
     // A organização DESTA aba, declarada em toda ESCRITA (#2335, metade 2).
-    // Só em método mutante: leitura não carrega o header, então a recusa do
-    // servidor (`org_divergente`) nunca alcança um GET.
+    // As leituras de detalhe e histórico da Inbox enviam esse header
+    // explicitamente para conferir a mesma organização (#4508).
     const aba = orgDaAba();
     if (aba?.orgId) headers[HEADER_ORG_DA_ABA] = aba.orgId;
   }
@@ -419,7 +419,7 @@ async function executarRequisicao<T>(
         if (res.status === 403 && e.code === CODIGO_SENHA_PROVISORIA) {
           irParaATelaDeTrocaDeSenha();
         }
-        // #2335, metade 2: o servidor recusou a escrita porque a organização
+        // #2335: o servidor recusou a operação porque a organização
         // que ESTA aba declarou diverge do cookie `active_org`. A tela traduz
         // o código no MESMO aviso da metade 1 (leitura) — mesma janela, mesma
         // decisão, venha o aviso de onde vier. O `throw` de baixo continua:

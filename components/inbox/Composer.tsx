@@ -68,6 +68,7 @@ import { MensagensAgendadasBotao } from "./MensagensAgendadas";
 
 export interface ComposerHandle {
   focus: () => void;
+  estaEditando?: () => boolean;
 }
 
 /**
@@ -382,6 +383,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
+    estaEditando: () => taRef.current === document.activeElement,
   }));
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
@@ -389,7 +391,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // `aguardandoAssumir` (#3012) entra AQUI, no mesmo lugar: um termo a mais na
   // trava de sempre, nunca um desabilitar paralelo que pudesse divergir dela.
   const isDisabled =
-    disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
+    suspenso || disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
   // A janela só alcança o que SAI. Em modo nota o composer segue liberado: a
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
@@ -1048,6 +1050,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     }
   }
 
+  const mostrarEnviar = Boolean(text.trim()) || mode === "note" || recusaNotaDeVoz;
   if (blockedReason && !suspenso) {
     return (
       <div className="border-t border-border bg-muted/40 px-4 py-3 text-center text-xs text-muted-foreground">
@@ -1058,8 +1061,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   return (
     <>
-      {!suspenso && <div
+      <div
         data-testid="composer"
+        hidden={suspenso}
+        inert={suspenso}
         onDragEnter={onDragEnter}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -1069,6 +1074,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {!suspenso && <>
         {/* O REALCE DO ARRASTE (#3708) — a única coisa que o operador vê antes
             de soltar o arquivo. Sem ele, o gesto não tem confirmação nenhuma:
             solta, a prévia abre, mas ninguém sabia que aquele espaço aceitava
@@ -1267,11 +1273,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             usuarioId={usuarioId}
           />
         )}
+        </>}
         {/* `@container`: o botão de mensagens agendadas decide pela largura
             DESTA linha, não da janela. A 1280px com o painel do contato aberto
             a coluna é tão estreita quanto no celular, e um breakpoint de tela
             não enxerga isso. */}
         <div className="@container flex items-end gap-2">
+          {!suspenso && <>
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira
@@ -1402,7 +1410,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onAbertoChange={setAgendaAberta}
             />
           ) : null}
-          {text.trim() || mode === "note" || recusaNotaDeVoz ? (
+          {mostrarEnviar && (
             <Button
               type="button"
               size="icon"
@@ -1413,11 +1421,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             >
               <PaperPlaneTilt size={16} weight="fill" aria-hidden />
             </Button>
-          ) : (
-            active && <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} />
+          )}
+          </>}
+          {active && !mostrarEnviar && (
+            <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} suspenso={suspenso} />
           )}
         </div>
-      </div>}
+      </div>
       <AttachmentPreviewDialog
         suspenso={suspenso}
         files={pendingFiles}

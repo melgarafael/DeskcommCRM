@@ -1,16 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import type { ComposerHandle } from "@/components/inbox/Composer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/types";
 import { InboxLayout } from "@/components/inbox/InboxLayout";
 
-const { orgId, id, vizinha, eventos, get, lista, lida } = vi.hoisted(() => ({
+const { orgId, id, vizinha, eventos, get, post, lista, lida } = vi.hoisted(() => ({
   orgId: "00000000-0000-4000-8000-000000000450",
   id: "00000000-0000-4000-8000-000000000458",
   vizinha: "00000000-0000-4000-8000-000000000459",
   eventos: new Map<string, (payload: unknown) => void>(),
+  post: vi.fn(async () => ({ data: {} })),
   get: vi.fn<(url: string, opts?: { signal?: AbortSignal }) => Promise<unknown>>(),
   lista: { data: { pages: [{ data: [] as LinhaDaLista[], consultaIniciadaEm: 0 }], pageParams: [undefined] } },
   lida: vi.fn(),
@@ -44,7 +46,7 @@ const atual = conversa(id, "Nome conferido na API");
 const recuperar = "Tentar novamente";
 const semAcesso = "Conversa não encontrada ou fora do seu acesso.";
 
-vi.mock("@/lib/api/client", () => ({ apiClient: { get } }));
+vi.mock("@/lib/api/client", () => ({ apiClient: { get, post } }));
 vi.mock("@/hooks/realtime/useRealtimeChannel", () => ({
   useRealtimeChannel: ({ name, onChange }: { name: string; onChange: (payload: unknown) => void }) => {
     eventos.set(name, onChange);
@@ -63,12 +65,17 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 vi.mock("@/hooks/inbox/useConversationsRealtime", () => ({ useConversationsRealtime: () => lista }));
 vi.mock("@/hooks/inbox/useMarkAsRead", () => ({ useMarkAsRead: lida }));
 vi.mock("@/components/inbox/ConversationList", () => ({
-  ConversationList: ({ listQuery, onSelect }: {
+  ConversationList: ({ listQuery, onSelect, onVisibleChange }: {
     listQuery: typeof lista;
     onSelect: (id: string) => void;
-  }) => listQuery.data.pages.flatMap((p) => p.data).map((c) => (
-    <button key={c.id} onClick={() => onSelect(c.id)}>Abrir {c.contacts.display_name}</button>
-  )),
+    onVisibleChange: (ids: string[]) => void;
+  }) => {
+    useEffect(() => onVisibleChange(listQuery.data.pages.flatMap((p) => p.data.map((c) => c.id))),
+      [listQuery.data, onVisibleChange]);
+    return listQuery.data.pages.flatMap((p) => p.data).map((c) => (
+      <button key={c.id} onClick={() => onSelect(c.id)}>Abrir {c.contacts.display_name}</button>
+    ));
+  },
 }));
 vi.mock("@/components/inbox/ConversationHeader", () => ({
   ConversationHeader: ({ conversation }: { conversation: ReturnType<typeof conversa> }) => (
@@ -77,10 +84,15 @@ vi.mock("@/components/inbox/ConversationHeader", () => ({
 }));
 vi.mock("@/components/inbox/ChatThread", () => ({ ChatThread: () => <p>Fio da conversa aberta</p> }));
 vi.mock("@/components/inbox/Composer", () => ({
-  Composer: ({ suspenso }: { suspenso?: boolean }) => {
+  Composer: ({ suspenso, ref }: { suspenso?: boolean; ref?: Ref<ComposerHandle> }) => {
     const [texto, setTexto] = useState("");
+    const campo = useRef<HTMLTextAreaElement | null>(null);
+    useImperativeHandle(ref, () => ({
+      focus: () => campo.current?.focus(),
+      estaEditando: () => campo.current === document.activeElement,
+    }));
     return suspenso ? null : (
-      <textarea aria-label="Resposta" value={texto} onChange={(e) => setTexto(e.target.value)} />
+      <textarea ref={campo} aria-label="Resposta" value={texto} onChange={(e) => setTexto(e.target.value)} />
     );
   },
 }));
@@ -100,6 +112,7 @@ beforeEach(() => {
   eventos.clear();
   lida.mockClear();
   get.mockReset();
+  post.mockClear();
   get.mockImplementation(async (url) => {
     if (url === detalhe) return { data: antiga };
     if (url === "/api/v1/ai/automatico-ativo") return { data: { ativo: false } };
@@ -236,6 +249,48 @@ describe("Inbox depois de reassinar as participações (#4508)", () => {
     expect(await screen.findByRole("link", { name: "Entrar" })).toHaveAttribute("href", expect.stringContaining("/login?next="));
     expect(screen.queryByRole("textbox", { name: "Resposta" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Abrir/ })).toBeNull();
+  });
+
+
+  it("preserva o foco da resposta e bloqueia atalhos enquanto confirma o acesso", async () => {
+    montar();
+    await abrirDaLista();
+    const campo = screen.getByRole("textbox", { name: "Resposta" });
+    campo.focus();
+    fireEvent.change(campo, { target: { value: "Resposta pela metade" } });
+    const antes = get.getMockImplementation()!;
+    let responder!: () => void;
+    const leitura = new Promise<void>((resolve) => { responder = resolve; });
+    get.mockImplementation(async (url, opts) => {
+      if (url !== detalhe) return antes(url, opts);
+      await leitura;
+      return { data: atual };
+    });
+    const endereco = window.location.href;
+    await reassinar();
+    fireEvent.keyDown(document.body, { key: "j", code: "KeyJ" });
+    fireEvent.keyDown(document.body, { key: "a", code: "KeyA" });
+    expect(window.location.href).toBe(endereco);
+    expect(post).not.toHaveBeenCalled();
+    await act(async () => responder());
+
+    const restaurado = await screen.findByRole("textbox", { name: "Resposta" });
+    expect(restaurado).toHaveFocus();
+    expect(restaurado).toHaveValue("Resposta pela metade");
+    fireEvent.keyDown(restaurado, { key: "a", code: "KeyA" });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("mantém o editor na navegação normal entre conversas da lista", async () => {
+    montar();
+    await abrirDaLista();
+    const campo = screen.getByRole("textbox", { name: "Resposta" });
+    fireEvent.change(campo, { target: { value: "Rascunho aberto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Abrir Outra conversa" }));
+    expect(await screen.findByRole("heading", { name: "Outra conversa" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Resposta" })).toBe(campo);
+    fireEvent.click(screen.getByRole("button", { name: "Abrir Nome da lista antiga" }));
+    expect(campo).toHaveValue("Rascunho aberto");
   });
 
 });
