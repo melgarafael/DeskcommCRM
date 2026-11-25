@@ -23511,6 +23511,7 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma venda ainda. Use o + ao lado do Valor para registrar.": { es: "Ninguna venta todavía. Usa el + junto al Valor para registrar." },
   "Soma de": { es: "Suma de" },
   "venda(s) registrada(s)": { es: "venta(s) registrada(s)" },
+  "Soma das vendas registradas": { es: "Suma de las ventas registradas" },
   "Apagar venda": { es: "Borrar venta" },
   "Apagar esta venda? Ela sai do painel de vendas.": { es: "¿Borrar esta venta? Sale del panel de ventas." },
   "venda(s)": { es: "venta(s)" },
