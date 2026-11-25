@@ -54,6 +54,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { inboundEhDestaPergunta } from "@/lib/followup/aplicar-inbound";
+import { ehMensagemDeRobo, ehMenuDeOpcoesNumeradas } from "@/lib/agent-engine/agent/human-handoff";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { EnrollmentPatch } from "./engine";
@@ -232,6 +233,19 @@ export type ResultadoDaMudancaDeEtapa =
 export const EVENTO_DE_MUDANCA_AO_RESPONDER = "move_to_stage_on_reply";
 /** A linha de trilha quando ele NÃO andou — recusa ou contato sem card na etapa. */
 export const EVENTO_DE_MUDANCA_FALHOU = "move_to_stage_on_reply_failed";
+/** A linha de trilha quando um inbound de robô não cancelou/despertou `cancel_on_reply`. */
+export const EVENTO_DE_ROBO_IGNORADO = "inbound_de_robo_ignorado";
+
+function textoInboundEhDeRobo(payload: Record<string, unknown>): boolean {
+  const raw =
+    typeof payload.body_preview === "string" && payload.body_preview.trim()
+      ? payload.body_preview.trim()
+      : typeof payload.body === "string" && payload.body.trim()
+        ? payload.body.trim()
+        : "";
+  if (!raw) return false;
+  return ehMenuDeOpcoesNumeradas(raw) || ehMensagemDeRobo(raw);
+}
 
 /**
  * A etapa de destino declarada no gatilho de ETAPA, junto com a etapa de
@@ -430,6 +444,7 @@ async function reactToInbound(
   // no conjunto que reage.
   const waitingReply = live.filter((e) => e.status === "waiting_reply");
   const esperaAtiva = live.filter((e) => e.status === "active");
+  const inboundDeRobo = textoInboundEhDeRobo(row.payload);
   let reacted = 0;
   for (const e of waitingReply) {
     // #3974 — "quando o cliente responder, mover o card para a etapa X": irmã
@@ -446,6 +461,18 @@ async function reactToInbound(
     }
 
     if (parseCancelOnReply(e.trigger_config)) {
+      if (inboundDeRobo) {
+        const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
+        await db.insertEnrollmentEvent({
+          organization_id: row.organization_id,
+          enrollment_id: e.id,
+          node_id: e.current_node_id,
+          event_type: EVENTO_DE_ROBO_IGNORADO,
+          payload: { reason: "bot_reply" },
+          idempotency_key: roboKey,
+        });
+        continue;
+      }
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
@@ -478,6 +505,18 @@ async function reactToInbound(
     }
 
     if (parseCancelOnReply(e.trigger_config)) {
+      if (inboundDeRobo) {
+        const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
+        await db.insertEnrollmentEvent({
+          organization_id: row.organization_id,
+          enrollment_id: e.id,
+          node_id: e.current_node_id,
+          event_type: EVENTO_DE_ROBO_IGNORADO,
+          payload: { reason: "bot_reply" },
+          idempotency_key: roboKey,
+        });
+        continue;
+      }
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
