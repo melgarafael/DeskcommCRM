@@ -627,9 +627,7 @@ function InboxNoEscopo({
   const listQ = { ...listaBruta, data: dadosDaLista };
   const recuperando = estado === "verificando" || estado === "falhou";
   const acessoEncerrado = estado === "sem-acesso" || estado === "sessao-expirada";
-  useEffect(() => {
-    if (acessoEncerrado) setRascunhoVivo(null);
-  }, [acessoEncerrado]);
+  if (acessoEncerrado && rascunhoVivo) setRascunhoVivo(null);
   const inList = useMemo(() => {
     const all = dadosDaLista?.pages.flatMap((p) => p.data) ?? [];
     return all.find((c) => c.id === selectedId) ?? null;

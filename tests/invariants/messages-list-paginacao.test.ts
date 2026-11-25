@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
-import { sql } from "./gov-helpers";
+import { lastLine, sql } from "./gov-helpers";
 
 /**
  * Paginação de `listMessagesHandler` — o contrato de leitura da thread.
@@ -501,8 +501,8 @@ describe("histórico da Inbox com RLS", () => {
     `);
   });
 
-  const lerSobRls = (consulta: string) => sql(`set role authenticated;
-    set request.jwt.claims = '{"sub":"${USER}"}'; ${consulta}`);
+  const lerSobRls = (consulta: string) => lastLine(sql(`set role authenticated;
+    set request.jwt.claims = '{"sub":"${USER}"}'; ${consulta}`));
   const comoSessao = (ler: (consulta: string, tabela: string) => string = lerSobRls) => ({
     from: (tabela: string) => new FakeQuery(tabela, ler),
   }) as unknown as SupabaseClient;

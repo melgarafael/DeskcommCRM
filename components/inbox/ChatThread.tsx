@@ -221,7 +221,7 @@ export function ChatThread({
     pages: q.data?.pages.length ?? 0,
     searching: !!termo,
   }, soNaCaixa);
-  const { scrollerRef, contentRef, bottomRef } = scroll;
+  const { scrollerRef, contentRef, bottomRef, onWheel } = scroll;
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!ancoraDaRecuperacao || !scroller) return;
@@ -230,10 +230,10 @@ export function ChatThread({
     if (mensagem) {
       scroller.scrollTop += mensagem.getBoundingClientRect().top
         - scroller.getBoundingClientRect().top - ancoraDaRecuperacao.deslocamento;
-      scroll.onWheel();
+      onWheel();
     }
     onRestaurarAncora?.();
-  }, [ancoraDaRecuperacao, onRestaurarAncora, scrollerRef, scroll.onWheel]);
+  }, [ancoraDaRecuperacao, onRestaurarAncora, scrollerRef, onWheel]);
 
   /**
    * #4575 — IR ATÉ A MENSAGEM CITADA.

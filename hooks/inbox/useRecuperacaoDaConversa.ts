@@ -95,7 +95,7 @@ export function useRecuperacaoDaConversa({
         } while (cursor && historico.pages.length < limite);
 
         signal.throwIfAborted();
-        limparDadosDaConversa(qc, id);
+        limparDadosDaConversa(qc, id, conversa.contact_id);
         qc.setQueryData<ConversationWithContact>(["conversation", id], conversa);
         qc.setQueryData(["messages", id], historico);
         return "confirmada";
@@ -177,9 +177,10 @@ export function useRecuperacaoDaConversa({
 const chavesDaConversa = ["conversation", "messages", "notes", "passagens", "conversation-reply-address"];
 const chavesProtegidas = ["conversations", ...chavesDaConversa];
 
-function limparDadosDaConversa(qc: ReturnType<typeof useQueryClient>, id: string) {
+function limparDadosDaConversa(qc: ReturnType<typeof useQueryClient>, id: string, contatoId?: string | null) {
   qc.removeQueries({ predicate: ({ queryKey }) =>
-    queryKey[1] === id && chavesDaConversa.includes(String(queryKey[0])) });
+    (queryKey[1] === id && chavesDaConversa.includes(String(queryKey[0])))
+    || (!!contatoId && queryKey.includes(contatoId)) });
 }
 
 type ListaEmCache = InfiniteData<{ data: ConversationWithContact[]; consultaIniciadaEm?: number }>;
