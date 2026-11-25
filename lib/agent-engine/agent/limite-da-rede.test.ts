@@ -22,7 +22,7 @@ import {
   tetosDeEnvioDoTurno,
 } from "./limite-da-rede";
 
-import { limitesDaRede } from "@/lib/channels/social/limites-da-rede";
+import { limitesDaRede, politicaDaRede } from "@/lib/channels/social/limites-da-rede";
 
 const AGORA = new Date("2026-11-25T12:00:00.000Z");
 const HORA = 60 * 60 * 1000;
@@ -33,7 +33,7 @@ function fakeDb(respostas: { sessao: Linhas; conversa?: Linhas; contagem?: Linha
   const query = vi.fn(async (sql: string, _params?: unknown[]) => {
     if (sql.includes("from channel_sessions")) return { rows: respostas.sessao };
     if (sql.includes("from conversations")) return { rows: respostas.conversa ?? [] };
-    if (sql.includes("from messages")) return { rows: respostas.contagem ?? [{ total: 0 }] };
+    if (sql.includes("fn_respostas_na_janela")) return { rows: respostas.contagem ?? [{ total: 0 }] };
     throw new Error(`consulta inesperada: ${sql}`);
   });
   return { query } as unknown as Parameters<typeof carregarLimiteDaRede>[0] & { query: typeof query };
@@ -60,11 +60,8 @@ describe("carregarLimiteDaRede", () => {
     expect(lido?.lastInboundAt?.getTime()).toBe(ultima.getTime());
 
     const sqlDaContagem = String(db.query.mock.calls[2]?.[0]);
-    // saída da empresa, sem as que falharam, na conversa lida e desde a última do cliente
-    expect(sqlDaContagem).toMatch(/direction = 'outbound'/);
-    expect(sqlDaContagem).toMatch(/status <> 'failed'/);
-    expect(sqlDaContagem).toMatch(/conversation_id = \$2/);
-    expect(sqlDaContagem).toMatch(/coalesce\(m\.sent_at, m\.created_at\) >= \$3/);
+    // a conta é a função SQL única: a mesma que o envio da equipe e o trigger chamam
+    expect(sqlDaContagem).toMatch(/fn_respostas_na_janela\(\$1, \$2, \$3\)/);
     expect(db.query.mock.calls[2]?.[1]).toEqual(["org-1", "conv-1", ultima]);
   });
 
@@ -88,7 +85,7 @@ describe("carregarLimiteDaRede", () => {
 function ctxCom(limiteDaRede: GateContext["limiteDaRede"]): GateContext {
   return { now: AGORA, ...(limiteDaRede !== undefined ? { limiteDaRede } : {}) } as unknown as GateContext;
 }
-const limites = { janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2, fotosPorTurnoDaIa: 2 };
+const limites = { janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2 };
 const haHoras = (h: number) => new Date(AGORA.getTime() - h * HORA);
 
 describe("limiteDaRedeGate", () => {
@@ -129,7 +126,8 @@ describe("limiteDaRedeGate", () => {
 });
 
 describe("o turno da IA numa rede com limite próprio", () => {
-  const tiktok = { janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2, fotosPorTurnoDaIa: 2 };
+  const tiktok = { janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2 };
+  const politica = { fotosPorTurnoDaIa: 2 };
 
   it("a IA não divide a resposta em bolhas: splitMessages vira false, o resto da config fica", () => {
     const config = { splitMessages: true, splitMaxChars: 600, nome: "Sofia" };
@@ -145,7 +143,7 @@ describe("o turno da IA numa rede com limite próprio", () => {
   });
 
   it("os tetos: um texto e até 2 fotos (3 no total); fora da rede, o padrão para os dois", () => {
-    expect(tetosDeEnvioDoTurno(tiktok, 5)).toEqual({ maxSendsPerTurn: 3, maxTextosPorTurno: 1 });
+    expect(tetosDeEnvioDoTurno(politica, 5)).toEqual({ maxSendsPerTurn: 3, maxTextosPorTurno: 1 });
     expect(tetosDeEnvioDoTurno(null, 5)).toEqual({ maxSendsPerTurn: 5, maxTextosPorTurno: 5 });
   });
 });
@@ -164,18 +162,19 @@ describe("carregarLimiteDaRede: erro de leitura", () => {
 
 describe("fotosQueCabemNaJanela: o saldo da janela decide quantas fotos saem depois do texto", () => {
   const tiktok = limitesDaRede("tiktok")!;
+  const politica = politicaDaRede("tiktok")!;
   it("janela vazia: as 2 fotos do teto fixo", () => {
-    expect(fotosQueCabemNaJanela(tiktok, 0)).toBe(2);
-    expect(fotosQueCabemNaJanela(tiktok, 5)).toBe(2);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 0)).toBe(2);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 5)).toBe(2);
   });
   it("com 6 usadas: texto = 7ª, 1 foto = 8ª (teto da IA é 8)", () => {
-    expect(fotosQueCabemNaJanela(tiktok, 6)).toBe(1);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 6)).toBe(1);
   });
   it("com 7 usadas: o texto é a 8ª e nenhuma foto cabe", () => {
-    expect(fotosQueCabemNaJanela(tiktok, 7)).toBe(0);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 7)).toBe(0);
   });
   it("janela já no teto da IA ou acima: nunca negativo", () => {
-    expect(fotosQueCabemNaJanela(tiktok, 8)).toBe(0);
-    expect(fotosQueCabemNaJanela(tiktok, 10)).toBe(0);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 8)).toBe(0);
+    expect(fotosQueCabemNaJanela(tiktok, politica, 10)).toBe(0);
   });
 });

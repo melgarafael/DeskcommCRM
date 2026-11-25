@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { decidirLimiteDaRede, limitesDaRede, LIMITES_POR_REDE_SOCIAL } from "./limites-da-rede";
+import { decidirLimiteDaRede, limitesDaRede, LIMITES_POR_REDE_SOCIAL, politicaDaRede } from "./limites-da-rede";
 
 const HORA = 60 * 60 * 1000;
 const AGORA = new Date("2026-11-25T12:00:00.000Z");
@@ -28,8 +28,11 @@ describe("limitesDaRede", () => {
       janelaMs: 48 * HORA,
       maxRespostas: 10,
       reservaParaEquipe: 2,
-      fotosPorTurnoDaIa: 2,
     });
+    // a escolha das 2 fotos é política NOSSA, fora da física da rede
+    expect(politicaDaRede("tiktok")).toEqual({ fotosPorTurnoDaIa: 2 });
+    expect(politicaDaRede("instagram")).toBeNull();
+    expect(politicaDaRede("constructor")).toBeNull();
   });
 
   it("rede sem limite medido, vazia ou fora do mapa responde null — e o protótipo não vaza", () => {

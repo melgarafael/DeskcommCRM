@@ -41,10 +41,18 @@ export interface LimitesDaRede {
   readonly maxRespostas: number;
   /** Quantas dessas ficam só para a equipe: a IA para em `maxRespostas - reservaParaEquipe`. */
   readonly reservaParaEquipe: number;
+}
+
+/**
+ * O que NÓS escolhemos para a IA nesta rede — política de produto, não física da
+ * plataforma. Fica separado de `LimitesDaRede` para ninguém documentar "o TikTok só
+ * deixa 2 fotos": ele deixa 10 mensagens, e a escolha das 2 fotos é nossa.
+ */
+export interface PoliticaDaRede {
   /**
    * Quantas fotos do catálogo a IA anexa por turno, SEM legenda (a rede não aceita imagem
-   * e texto na mesma mensagem). Não é limite da rede e sim escolha de produto: cada foto
-   * gasta uma das mensagens da janela, e três fotos com legenda gastariam seis.
+   * e texto na mesma mensagem). Cada foto gasta uma das mensagens da janela, e três fotos
+   * com legenda gastariam seis.
    */
   readonly fotosPorTurnoDaIa: number;
 }
@@ -55,7 +63,12 @@ export interface LimitesDaRede {
  * 10 messages within 48 hours. A send outside that window fails with TikTok's error."
  */
 export const LIMITES_POR_REDE_SOCIAL: Readonly<Record<string, LimitesDaRede>> = {
-  tiktok: { janelaMs: 48 * HORA_MS, maxRespostas: 10, reservaParaEquipe: 2, fotosPorTurnoDaIa: 2 },
+  tiktok: { janelaMs: 48 * HORA_MS, maxRespostas: 10, reservaParaEquipe: 2 },
+};
+
+/** A política da IA por rede. Mesmas chaves de `LIMITES_POR_REDE_SOCIAL`. */
+export const POLITICA_POR_REDE_SOCIAL: Readonly<Record<string, PoliticaDaRede>> = {
+  tiktok: { fotosPorTurnoDaIa: 2 },
 };
 
 /** Os limites desta rede, ou `null` quando ela não tem limite próprio medido. */
@@ -65,6 +78,13 @@ export function limitesDaRede(rede: string | null | undefined): LimitesDaRede | 
   // "constructor"/"__proto__" alcançariam o protótipo do objeto.
   if (!Object.prototype.hasOwnProperty.call(LIMITES_POR_REDE_SOCIAL, rede)) return null;
   return LIMITES_POR_REDE_SOCIAL[rede] ?? null;
+}
+
+/** A política da IA nesta rede, ou `null` quando ela não tem limite próprio. */
+export function politicaDaRede(rede: string | null | undefined): PoliticaDaRede | null {
+  if (!rede) return null;
+  if (!Object.prototype.hasOwnProperty.call(POLITICA_POR_REDE_SOCIAL, rede)) return null;
+  return POLITICA_POR_REDE_SOCIAL[rede] ?? null;
 }
 
 export type AutorDoEnvio = "ia" | "equipe";

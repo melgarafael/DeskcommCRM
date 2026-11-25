@@ -330,7 +330,7 @@ import {
   fotosQueCabemNaJanela,
   tetosDeEnvioDoTurno,
 } from './limite-da-rede';
-import { limitesDaRede } from '@/lib/channels/social/limites-da-rede';
+import { limitesDaRede, politicaDaRede } from '@/lib/channels/social/limites-da-rede';
 // #4590 — o teto de respostas por CONVERSA e os seus defaults (N/W). Fica em
 // `agent/` porque a conta é do atendimento; a cadeia só sabe aplicá-la.
 import {
@@ -3195,9 +3195,9 @@ async function executarTurnoDoAgente(
   // A21 — rede com limite próprio (TikTok): UMA mensagem de texto por turno, sem dividir em
   // bolhas (cada bolha gastaria uma das 10 respostas da janela) e com as fotos sem legenda.
   // Preview não tem canal: segue como sempre foi.
-  const limitesDoCanal = preview
-    ? null
-    : limitesDaRede(await carregarRedeDoCanal(pool, tenantId, input.channelSessionId));
+  const redeDoCanal = preview ? null : await carregarRedeDoCanal(pool, tenantId, input.channelSessionId);
+  const limitesDoCanal = limitesDaRede(redeDoCanal);
+  const politicaDoCanal = politicaDaRede(redeDoCanal);
   const agentConfig = configDoAgenteNaRede(routed.config, limitesDoCanal);
   // O traço grava o agente que o turno RESOLVEU: follow-up e resposta de caso
   // não passam `resolvedAgent`, e sem isto a linha ficaria sem agente nem fontes.
@@ -4428,10 +4428,10 @@ async function executarTurnoDoAgente(
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
   // barra o modelo sem gastar uma chamada de before-send à toa.
   // A21: na rede com limite próprio o turno manda UM texto e, depois dele, até
-  // `fotosPorTurnoDaIa` fotos sem legenda — o teto físico do turno é a soma, e o do TEXTO
+  // `politicaDoCanal.fotosPorTurnoDaIa` fotos sem legenda — o teto físico do turno é a soma, e o do TEXTO
   // (o que `send_message` confere) é 1, para o modelo não gastar as respostas da janela.
   const { maxSendsPerTurn, maxTextosPorTurno } = tetosDeEnvioDoTurno(
-    limitesDoCanal,
+    politicaDoCanal,
     deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
   );
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
@@ -5799,11 +5799,11 @@ async function executarTurnoDoAgente(
                   corposEnviados.push(finalBody);
                   // A21: as fotos só usam o saldo da janela que sobra depois do texto e da reserva da
                   // equipe. Leitura fora de transação; se falhar, vale o teto fixo e o gate segue barrando.
-                  let maxFotosDaRede = limitesDoCanal?.fotosPorTurnoDaIa ?? 0;
-                  if (limitesDoCanal !== null && input.channelSessionId) {
+                  let maxFotosDaRede = politicaDoCanal?.fotosPorTurnoDaIa ?? 0;
+                  if (limitesDoCanal !== null && politicaDoCanal !== null && input.channelSessionId) {
                     try {
                       const estado = await carregarLimiteDaRede(pool, { organizationId: tenantId, contactId: leadId, channelSessionId: input.channelSessionId });
-                      if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, estado.respostasNaJanela);
+                      if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, politicaDoCanal, estado.respostasNaJanela);
                     } catch (err) {
                       runLog.warn('limite_da_rede: saldo da janela não lido; usando o teto fixo de fotos', { err: String(err) });
                     }

@@ -19,8 +19,10 @@
  * Mesma fonte do `teto-de-respostas.ts`: as linhas que o envio já grava. Aqui a
  * contagem é de TODA mensagem da empresa depois da última do cliente — IA, equipe e
  * automação, porque o TikTok conta todas —, sem as que falharam (`failed` não
- * chegou ao cliente e não gasta o limite da rede). Conta o que VAI sair: `queued` e
- * `sending` ainda não têm `sent_at`, e valem pelo `created_at`.
+ * chegou ao cliente e não gasta o limite da rede). A conta é a
+ * função SQL `fn_respostas_na_janela` — a MESMA que o envio da equipe e o trigger
+ * `trg_limite_da_rede_na_insercao` chamam, e que conta o que VAI sair (`queued`
+ * e `sending` valem pelo `created_at`).
  *
  * ## Só a IA passa por aqui
  *
@@ -42,6 +44,7 @@ import {
   decidirLimiteDaRede,
   limitesDaRede,
   type LimitesDaRede,
+  type PoliticaDaRede,
 } from '@/lib/channels/social/limites-da-rede';
 import { instanteDoBanco } from '@/lib/tempo/agora';
 
@@ -98,13 +101,7 @@ export async function carregarLimiteDaRede(
   }
 
   const contagem = await db.query<{ total: number }>(
-    `select count(*)::int as total
-       from messages m
-      where m.organization_id = $1
-        and m.conversation_id = $2
-        and m.direction = 'outbound'
-        and m.status <> 'failed'
-        and coalesce(m.sent_at, m.created_at) >= $3`,
+    `select public.fn_respostas_na_janela($1, $2, $3) as total`,
     [input.organizationId, linha.id, lastInboundAt],
   );
   return { limites, respostasNaJanela: contagem.rows[0]?.total ?? 0, lastInboundAt };
@@ -245,11 +242,11 @@ export function configDoAgenteNaRede<T extends { splitMessages: boolean }>(
  * sempre.
  */
 export function tetosDeEnvioDoTurno(
-  limites: LimitesDaRede | null,
+  politica: PoliticaDaRede | null,
   padrao: number,
 ): { maxSendsPerTurn: number; maxTextosPorTurno: number } {
-  if (limites === null) return { maxSendsPerTurn: padrao, maxTextosPorTurno: padrao };
-  return { maxSendsPerTurn: 1 + limites.fotosPorTurnoDaIa, maxTextosPorTurno: 1 };
+  if (politica === null) return { maxSendsPerTurn: padrao, maxTextosPorTurno: padrao };
+  return { maxSendsPerTurn: 1 + politica.fotosPorTurnoDaIa, maxTextosPorTurno: 1 };
 }
 
 /**
@@ -257,7 +254,11 @@ export function tetosDeEnvioDoTurno(
  * as fotos só usam o que sobra depois da reserva da equipe. Sem isto, com 7 respostas já
  * usadas o texto saía (a 8ª) e a foto seguinte era recusada no meio do turno.
  */
-export function fotosQueCabemNaJanela(limites: LimitesDaRede, respostasNaJanela: number): number {
+export function fotosQueCabemNaJanela(
+  limites: LimitesDaRede,
+  politica: PoliticaDaRede,
+  respostasNaJanela: number,
+): number {
   const saldo = limites.maxRespostas - limites.reservaParaEquipe - respostasNaJanela - 1;
-  return Math.max(0, Math.min(limites.fotosPorTurnoDaIa, saldo));
+  return Math.max(0, Math.min(politica.fotosPorTurnoDaIa, saldo));
 }

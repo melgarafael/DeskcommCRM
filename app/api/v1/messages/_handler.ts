@@ -1346,6 +1346,18 @@ export async function sendMessageHandler(
     )
       return created as unknown as Message;
   }
+  // O trigger `trg_limite_da_rede_na_insercao` (9480) é a rede de proteção do teto: duas
+  // mensagens no mesmo segundo leem a mesma contagem, e quem perde a corrida volta aqui
+  // com o MESMO 422 que a checagem de cima dá, em vez de nascer `failed` com erro cru.
+  if (insErr?.hint === "limite_da_rede") {
+    throw new ApiError(
+      422,
+      "limite_da_rede",
+      { codigo: "teto_da_rede", rede: "tiktok" },
+      ctx.requestId,
+      "Limite do TikTok: 10 respostas desde a última mensagem do cliente, e elas já foram usadas. Só depois que o cliente escrever de novo dá para responder.",
+    );
+  }
   if (insErr || !created) {
     throw new ApiError(
       500,
