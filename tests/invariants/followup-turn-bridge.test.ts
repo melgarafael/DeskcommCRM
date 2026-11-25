@@ -505,7 +505,7 @@ async function prepararEnvioDoDossie(
   await seedOrg(org);
   const contactId = await seedContact(org);
   const graph = structuredClone(ACTION_GRAPH);
-  const action = graph.nodes[0];
+  const action = graph.nodes[0]!;
   if (action.type !== "action") throw new Error("fixture sem ação");
   if (mode === "text") action.config = { mode, body: "Lembrete fixo de teste" };
   const { pointerId, versionId } = await seedFlow(org, graph);
@@ -639,9 +639,16 @@ async function rodarTurnoDeEnvio(
   }
 }
 
-it("registra geração, fila real e aceitação tardia de uma mensagem escrita no turno", async () => {
-  const cenario = await prepararEnvioDoDossie();
-  const { org, contactId, conversationId, sessionId, enrollmentId, job, eventos } = cenario;
+async function publicarAgente(cenario: CenarioDeEnvio) {
+  const { org, contactId, conversationId, sessionId, enrollmentId } = cenario;
+  await pool.query(`with v as (
+       insert into playbook_versions (organization_id, layer, content)
+       select null, 'platform', 'Assistente de teste.'
+       where not exists (select 1 from playbook_pointers where organization_id is null and layer = 'platform')
+       returning id
+     )
+     insert into playbook_pointers(organization_id, layer, version_id)
+       select null, 'platform', id from v`);
   const { rows: [agent] } = await pool.query(
     `insert into ai_agents (organization_id, name, system_prompt, kind)
      values ($1, 'Agente fictício', 'Escreva um lembrete curto.', 'mcp_agent') returning id`, [org],
@@ -660,6 +667,13 @@ it("registra geração, fila real e aceitação tardia de uma mensagem escrita n
      values ($1,$2,$3,$4,'text','inbound','delivered','Pode me chamar amanhã.','external_device', now() - interval '1 day')`,
     [org, conversationId, sessionId, contactId],
   );
+
+}
+
+it("registra geração, fila real e aceitação tardia de uma mensagem escrita no turno", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  const { org, enrollmentId, job, eventos } = cenario;
+  await publicarAgente(cenario);
 
   const titulos = async () => (await eventos()).map((row) => descreveEvento(row, {}, "pt-BR").titulo);
   const entrada = await titulos();
@@ -698,4 +712,76 @@ it("registra o texto fixo aceito sem inventar geração ou fila do canal", async
   expect(trilha.filter((tipo) => tipo.startsWith("followup_"))).toEqual([
     "followup_job_queued", "followup_message_sent",
   ]);
+});
+
+
+it("preserva a falha quando o mesmo job reenvia com nova mensagem física", async () => {
+  const cenario = await prepararEnvioDoDossie("text");
+  await expect(rodarTurnoDeEnvio(cenario, "failed")).rejects.toThrow("CRM marcou o envio como failed");
+  const falhou = (await cenario.eventos()).find((e) => e.event_type === "followup_message_failed");
+  expect(falhou?.payload.message_id).toBeTruthy();
+  expect((await getEnrollment(cenario.enrollmentId)).current_node_id).toBe("a1");
+
+  await pool.query("update job_queue set status='pending' where organization_id=$1 and id=$2", [
+    cenario.org, cenario.job.id,
+  ]);
+  await rodarTurnoDeEnvio(cenario, "sent");
+  const trilha = await cenario.eventos();
+  expect(trilha.filter((e) => e.event_type === "followup_message_failed")).toHaveLength(1);
+  const saiu = trilha.filter((e) => e.event_type === "followup_message_sent");
+  expect(saiu).toHaveLength(1);
+  expect(saiu[0]?.payload.message_id).not.toBe(falhou?.payload.message_id);
+  expect(saiu[0]?.payload.source_step_key).toBe(falhou?.payload.source_step_key);
+});
+
+it("a mensagem sai e o passo avança quando gravar o histórico falha", async () => {
+  const cenario = await prepararEnvioDoDossie("text");
+  await pool.query(`create function falha_do_historico() returns trigger language plpgsql as $$
+    begin raise exception 'falha injetada no histórico'; end;
+  $$;
+  create trigger falha_do_historico before insert on followup_delivery_events
+    for each row execute function falha_do_historico();`);
+  try {
+    await rodarTurnoDeEnvio(cenario, "sent");
+    const { rows } = await pool.query(
+      "select status from send_ledger where organization_id=$1 and job_id=$2",
+      [cenario.org, cenario.job.id],
+    );
+    expect(rows).toEqual([{ status: "accepted" }]);
+    expect((await getEnrollment(cenario.enrollmentId)).current_node_id).toBe("e1");
+    expect((await cenario.eventos()).some((e) => e.event_type === "followup_message_sent")).toBe(false);
+  } finally {
+    await pool.query(`drop trigger falha_do_historico on followup_delivery_events;
+                      drop function falha_do_historico();`);
+  }
+});
+
+it("expõe os recibos para a própria organização e reserva as escritas para o sistema", async () => {
+  const membro = crypto.randomUUID();
+  const destaOrg = await prepararEnvioDoDossie("text");
+  const outraOrg = await prepararEnvioDoDossie("text");
+  await pool.query("insert into auth.users (id, email) values ($1, $2)", [membro, `${membro}@invariant.test`]);
+  await pool.query("insert into user_organizations(user_id, organization_id, role) values ($1,$2,'manager')", [
+    membro, destaOrg.org,
+  ]);
+
+  const conexao = await pool.connect();
+  try {
+    await conexao.query("begin");
+    await conexao.query("set local role authenticated");
+    await conexao.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: membro })]);
+    const { rows } = await conexao.query(
+      "select enrollment_id from followup_delivery_events where enrollment_id = any($1::uuid[])",
+      [[destaOrg.enrollmentId, outraOrg.enrollmentId]],
+    );
+    expect(rows).toEqual([{ enrollment_id: destaOrg.enrollmentId }]);
+    await expect(conexao.query(
+      `insert into followup_delivery_events (organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+       values ($1,$2,'a1','followup_message_sent','{}','induzido')`,
+      [destaOrg.org, destaOrg.enrollmentId],
+    )).rejects.toMatchObject({ code: "42501" });
+  } finally {
+    await conexao.query("rollback");
+    conexao.release();
+  }
 });

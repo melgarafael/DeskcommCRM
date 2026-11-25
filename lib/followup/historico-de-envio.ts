@@ -8,4 +8,3 @@ export const TITULOS_DO_HISTORICO_DE_ENVIO: Readonly<Record<string, string>> = {
   followup_message_failed: "Falha ao enviar a mensagem",
   followup_send_partial: "Apenas parte da mensagem foi enviada",
 };
-
