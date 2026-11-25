@@ -141,7 +141,7 @@ export function AtritoPanel({ podeEditarRegua, janela }: { podeEditarRegua: bool
   // Falha aberta na informação: dizer que não carregou é melhor que sumir com a
   // seção — seção ausente lê-se como "não há atrito" (doutrina cap. 4.5).
   if (isError || !data) {
-    return <ErroDoPainel mensagem="Erro ao carregar o índice de atrito." tentando={isFetching} onRetry={() => void refetch()} />;
+    return <ErroDoPainel mensagem={t("Erro ao carregar o índice de atrito.")} tentando={isFetching} onRetry={() => void refetch()} />;
   }
 
   const { escopo, pares, regua } = data.data;

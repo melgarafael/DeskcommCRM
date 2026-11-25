@@ -136,7 +136,7 @@ export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: J
           <Skeleton className="h-64 w-full" aria-busy="true" aria-label={t("Carregando…")} />
         ) : !serie ? (
           <ErroDoPainel
-            mensagem="Erro ao carregar a evolução dos ganhos."
+            mensagem={t("Erro ao carregar a evolução dos ganhos.")}
             tentando={isFetching}
             onRetry={() => void refetch()}
           />

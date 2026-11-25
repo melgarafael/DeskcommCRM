@@ -84,7 +84,7 @@ export function PerdasPanel({ janela }: { janela: JanelaIso }) {
   const { data, isLoading, isError, isFetching, refetch } = usePerdasMetrics(janela);
   if (isLoading) return <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>;
   if (isError || !data)
-    return <ErroDoPainel mensagem="Erro ao carregar o relatório de perdas." tentando={isFetching} onRetry={() => void refetch()} />;
+    return <ErroDoPainel mensagem={t("Erro ao carregar o relatório de perdas.")} tentando={isFetching} onRetry={() => void refetch()} />;
 
   const relatorio = data.data;
 
