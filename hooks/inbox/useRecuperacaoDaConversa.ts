@@ -183,7 +183,7 @@ const chavesProtegidas = ["conversations", ...chavesDaConversa];
 function limparDadosDaConversa(qc: ReturnType<typeof useQueryClient>, id: string, contatoId?: string | null) {
   qc.removeQueries({ predicate: ({ queryKey }) =>
     (queryKey[1] === id && chavesDaConversa.includes(String(queryKey[0])))
-    || (!!contatoId && queryKey.includes(contatoId)) });
+    || (!!contatoId && queryKey[1] === contatoId) });
 }
 
 type ListaEmCache = InfiniteData<{ data: ConversationWithContact[]; consultaIniciadaEm?: number }>;
