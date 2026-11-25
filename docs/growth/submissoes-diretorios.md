@@ -133,7 +133,7 @@ Leitura: o README em inglês já ranqueia na busca em inglês sobre agentes. O s
 | Onde | O que diz | Estado | Pedido de correção |
 |---|---|---|---|
 | everydev.ai | "latest GitHub release listed is v1.80.0" | ❌ continua velha (atual: v1.124.0) | Texto (A) da semana passada, com a versão trocada para v1.124.0 (23/11). Rafael, pelo contato do site. |
-| Railway, template de Youssef Siam | `UPSTREAM.md` ainda fixado em v1.27.2; repositório sem push desde 15/09 | ❌ agora **111 releases** atrás | Issue (B) pronta, **não aberta**: falta o OK pedido no Plane. Trocar no texto "v1.113.0 (2026-11-15)" por "v1.124.0 (2026-11-23)" e "99" por "111". |
+| Railway, template de Youssef Siam | `UPSTREAM.md` ainda fixado em v1.27.2; repositório sem push desde 15/09 | ❌ agora **112 releases** atrás (publicadas depois da v1.27.2, de 15/09 17:16Z, até a v1.124.0; a v1.27.3 saiu no mesmo dia e entra na conta) | Issue (B) pronta, **não aberta**: falta o OK pedido no Plane. Trocar no texto "v1.113.0 (2026-11-15)" por "v1.124.0 (2026-11-23)", "99" por "112" e "463" por "528" (arquivos `.sql` novos em `supabase/migrations/` entre v1.27.2 e v1.124.0). |
 | zentor.ai/blog/deskcommcrm | v1.19.0, 1.382 estrelas, "a documentação pública não diz" quais modelos | ❌ sem mudança | Igual: opcional, baixa prioridade, sem contato editorial. |
 | zekaiwork.com | categoria "E-commerce" | ❌ não deu para reconferir (403 para robô em 23/11) | Texto (C), sem mudança. |
 | opentools.ai | 4.156 estrelas, ainda sem licença | ❌ sem mudança | "Claim Tool", com conta: Plane. |
