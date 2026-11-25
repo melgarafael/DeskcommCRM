@@ -546,7 +546,7 @@ function canalDeTeste(cenario: CenarioDeEnvio, status: "queued" | "sent" | "fail
     channel: "captura",
     sessionHealth: async () => ({ healthy: true, status: "WORKING", since: null }),
     capabilities: () => ({ freeformAnytime: true, serviceWindowHours: null }),
-    costPerMessage: () => ({ costPerMessageUsdCents: 0, flatFee: true }),
+    costPerMessage: () => ({ perMessageUsdCents: 0, model: "flat" }),
     async send(input: Parameters<ChannelAdapter["send"]>[0]) {
       const outcome = await sendWithLedger(pgSendLedger(pool), { ...input, leadId: cenario.contactId }, async (_key, messageId) => {
         await pool.query(
