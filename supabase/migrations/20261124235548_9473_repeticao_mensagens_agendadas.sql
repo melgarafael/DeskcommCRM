@@ -1,6 +1,6 @@
 -- manifest: **Repetição das mensagens agendadas (segunda parte da #3118).** A linha de `mensagens_agendadas` passa a guardar a série (recorrência, intervalo, início, término e fuso); a tabela `mensagens_agendadas_envios` guarda o desfecho de cada ocorrência. O cron avança a série para a próxima ocorrência, e a leitura do histórico segue a mesma régua da conversa.
 --
--- 9472 — REPETIÇÃO (segunda parte da #3118, issue #4431).
+-- 9473 — REPETIÇÃO (segunda parte da #3118, issue #4431).
 --
 -- Uma linha de `mensagens_agendadas` continua sendo a SÉRIE: `scheduled_at` é a
 -- próxima ocorrência. Quando o cron encaminha, falha ou cancela uma ocorrência,
@@ -56,8 +56,10 @@ create table if not exists public.mensagens_agendadas_envios (
 
 create index if not exists idx_mensagens_agendadas_envios_conversa
   on public.mensagens_agendadas_envios (conversation_id, prevista_para desc);
-create index if not exists idx_mensagens_agendadas_envios_agendamento
-  on public.mensagens_agendadas_envios (agendamento_id, prevista_para desc);
+-- Uma linha por ocorrência: se um envio passar da trava e duas rodadas fecharem a
+-- mesma ocorrência, a segunda gravação cai aqui (23505) em vez de duplicar o histórico.
+create unique index if not exists uq_mensagens_agendadas_envios_ocorrencia
+  on public.mensagens_agendadas_envios (agendamento_id, prevista_para);
 
 alter table public.mensagens_agendadas_envios enable row level security;
 

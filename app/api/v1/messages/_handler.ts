@@ -50,6 +50,7 @@ import { canalDesativado } from "@/lib/channels/desativado";
 import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
+import { CHAVE_DO_NOME_DA_INTEGRACAO } from "@/lib/messaging/nome-da-integracao";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import {
   CHAVE_DO_NOME_NA_METADATA,
@@ -297,6 +298,38 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
   if (actor.type === "api_token" || actor.type === "module") return actor.id;
   if (actor.type === "ai_agent") return actor.api_token_id;
   return undefined;
+}
+
+/**
+ * O NOME da integração que mandou, lido da LINHA do token (#5160).
+ *
+ * O `Actor` de um token carrega `id`/`api_token_id`, mas não o nome; a linha de
+ * `messages` precisa dele GRAVADO, porque o balão não faz join
+ * (`components/inbox/MessageBubble.tsx`). Quem lê é o client de service role
+ * que a rota entrega ao handler — a mesma fonte que valida o Bearer —, e o
+ * filtro por `organization_id` é o mesmo das outras leituras do arquivo.
+ *
+ * `null` quando não há nome (token antigo sem nome, linha revogada, leitura
+ * falhou): o balão cai para "Integração". Falha de leitura NÃO derruba o envio
+ * — o nome é rótulo de tela, e a coluna `sent_via` continua sendo a verdade
+ * sobre a autoria.
+ */
+async function nomeDoTokenDeApi(
+  supabase: SB,
+  organizationId: string,
+  tokenId: string | undefined,
+): Promise<string | null> {
+  if (!tokenId) return null;
+  const { data } = await supabase
+    .from("api_tokens")
+    .select("name")
+    .eq("id", tokenId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  const nome = (data as { name?: unknown } | null)?.name;
+  if (typeof nome !== "string") return null;
+  const limpo = nome.trim();
+  return limpo || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -869,6 +902,16 @@ export async function sendMessageHandler(
   // (`automation`/`system`) ficam de fora, como o relato pede. Humano ganha o
   // nome do atendente com iniciais em maiúsculo; a IA, o nome configurável.
   const origemDoEmissor = origemDaMensagem(ctx.actor);
+  // O NOME da integração entra na LINHA (#5160): o balão não faz join, e sem
+  // ele o dono lê "Sistema" sem saber qual token falou. Lido da linha do
+  // token (`api_tokens.name`), nunca de `input.metadata`. Módulo conectado NÃO
+  // ganha nome aqui: a identidade dele é o `slug` (`publisher/name`), que não é
+  // o nome da linha do token, e o rótulo genérico "Integração" já diz o que o
+  // `sent_via='system'` garante.
+  const nomeDaIntegracao =
+    origemDoEmissor === "system" && ctx.actor.type === "api_token"
+      ? await nomeDoTokenDeApi(supabase, ctx.organization_id, apiTokenIdDoActor(ctx.actor))
+      : null;
   // O id do agente NÃO é o `id` do ator em todo caminho (#3373). O motor do
   // turno põe o agente no `id` (`lib/agent-engine/edge/crm/send-message.ts`),
   // mas a Prospecção põe o CANDIDATO no `id` e o agente em `agent_id`
@@ -1108,7 +1151,13 @@ export async function sendMessageHandler(
   // mostra o que o cliente recebeu, e não faz join (`lib/messaging/botoes-do-modelo.ts`).
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
-  const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  const {
+    [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente,
+    // O nome da integração é do SERVIDOR (#5160): um valor forjado no corpo não
+    // pode sobreviver numa linha sem nome resolvido e virar assinatura na tela.
+    [CHAVE_DO_NOME_DA_INTEGRACAO]: _nomeDaIntegracaoDoCliente,
+    ...metadataDeEntrada
+  } = input.metadata ?? {};
   // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
   // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
   // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
@@ -1173,6 +1222,10 @@ export async function sendMessageHandler(
       ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
+      // O NOME da integração (#5160), lido da linha do token. Depois de
+      // `input.metadata` de propósito, como `ai_actor_name`: o cliente da API
+      // não escolhe como a própria chamada aparece na conversa.
+      ...(nomeDaIntegracao ? { [CHAVE_DO_NOME_DA_INTEGRACAO]: nomeDaIntegracao } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
       // Os dois nomes viajam GRAVADOS porque o balão não faz join: "Fulano ·
       // via {token}" é desenhado da própria linha. Vêm DEPOIS de

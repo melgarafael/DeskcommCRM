@@ -231,3 +231,10 @@ Controle verde: restaurar cada sabotagem e confirmar que os testes voltam ao ver
 sabotagem tem seu próprio commit de controle (verde) antes da próxima. O controle verde fica
 noutro PR.
 
+
+## Decisões da F2-B (23/11, antes de despachar a Tarefa 9)
+
+- **Como o `webchat.js` sabe o formato:** o script não faz requisição (cerca do teste: sem `fetch(`). O formato e a posição viajam no endereço do script, que o código para colar gera: `webchat.js?k=<chave>&f=<formato>&p=<posicao>`, só com o que difere do padrão (`bolha`, `direita`). O script lê só valores de uma lista fixa; qualquer outro é ignorado e vale o padrão. Mudar o formato na aba muda o código para colar: a pessoa cola de novo.
+- **Os outros ajustes (Tarefa 10: avatar, auto-abrir, som, badge, respostas rápidas) NÃO vão no endereço:** a janela, que já conhece a configuração, os manda à bolha por `postMessage` (origem do CRM e janela conferidas, como o `pronto` e o `nao-lidas`). Assim mudar a configuração não exige colar o código de novo.
+- **Quatro formatos:** `bolha` (padrão, o que existe); `painel` (a mesma bolha, mas o chat aberto vira um painel colado na lateral, altura da tela); `embutido` (sem bolha: o iframe vive dentro do elemento que o site marca com `data-webchat-alvo="#seletor"` no `<script>`; sem alvo achado, o script não cria nada e não quebra a página; o botão × da janela é ignorado); `pagina` (a bolha, mas o clique abre `/chat/<chave>` numa nova aba, com `noopener,noreferrer`; nada de redirecionar a página do cliente sozinho).
+- **Código para colar do `embutido`:** duas linhas (uma `<div id="webchat-aqui"></div>` e o script com `data-webchat-alvo="#webchat-aqui"`).

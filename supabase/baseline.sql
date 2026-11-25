@@ -77651,9 +77651,9 @@ create trigger trg_contacts_anonimizado_mensagens_agendadas
   when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
   execute function public.fn_mensagens_agendadas_contato_anonimizado();
 
--- ---- mensagens agendadas, repetição (migration 9472) ----
+-- ---- mensagens agendadas, repetição (migration 9473) ----
 -- Série na própria linha (recorrência, intervalo, início, término, fuso) e a tabela
--- de ocorrências. Idêntico ao corpo da migration 9472 (apêndice).
+-- de ocorrências. Idêntico ao corpo da migration 9473 (apêndice).
 alter table public.mensagens_agendadas
   add column if not exists recorrencia text not null default 'nenhuma',
   add column if not exists intervalo_dias integer,
@@ -77696,8 +77696,10 @@ create table if not exists public.mensagens_agendadas_envios (
 
 create index if not exists idx_mensagens_agendadas_envios_conversa
   on public.mensagens_agendadas_envios (conversation_id, prevista_para desc);
-create index if not exists idx_mensagens_agendadas_envios_agendamento
-  on public.mensagens_agendadas_envios (agendamento_id, prevista_para desc);
+-- Uma linha por ocorrência: se um envio passar da trava e duas rodadas fecharem a
+-- mesma ocorrência, a segunda gravação cai aqui (23505) em vez de duplicar o histórico.
+create unique index if not exists uq_mensagens_agendadas_envios_ocorrencia
+  on public.mensagens_agendadas_envios (agendamento_id, prevista_para);
 
 alter table public.mensagens_agendadas_envios enable row level security;
 
@@ -83926,6 +83928,47 @@ do $historico9466$ begin
     add constraint crm_lead_activities_lead_id_fkey
     foreign key (lead_id) references public.crm_leads(id) on delete set null;
 end $historico9466$;
+
+-- ---- devolução automática confere o último sinal humano sob o lock (migration 9472) ----
+-- Espelho de supabase/migrations/20261124202758_9472_devolucao_automatica_confere_o_sinal_humano.sql.
+
+create or replace function public.fn_conversation_release_if_idle(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_expected_assignee uuid,
+  p_sem_sinal_humano_desde timestamptz
+) returns boolean
+language plpgsql
+set search_path = public
+as $$
+begin
+  perform 1
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and assigned_to_user_id is not distinct from p_expected_assignee
+     and coalesce(last_handoff_at, '-infinity') <= p_sem_sinal_humano_desde
+     and coalesce(assigned_at, '-infinity') <= p_sem_sinal_humano_desde
+     and coalesce(last_outbound_at, '-infinity') <= p_sem_sinal_humano_desde
+   for no key update;
+  if not found then
+    return false;
+  end if;
+
+  return exists (
+    select 1
+      from public.fn_conversation_assign(
+        p_organization_id, p_conversation_id, null, 'release', p_expected_assignee, true)
+  );
+end;
+$$;
+
+revoke execute on function public.fn_conversation_release_if_idle(uuid, uuid, uuid, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.fn_conversation_release_if_idle(uuid, uuid, uuid, timestamptz)
+  to service_role;
+
+notify pgrst, 'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

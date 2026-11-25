@@ -3200,6 +3200,10 @@ export const DICIONARIO: Traducoes = {
     es: "Modelo del registro; todavía no hay versión publicada.",
   },
   Tipo: { es: "Tipo" },
+  Lugar: { es: "Lugar" },
+  lugar: { es: "lugar" },
+  "Pessoas ao mesmo tempo": { es: "Personas al mismo tiempo" },
+  "Lugar (sala, mesa…)": { es: "Lugar (sala, mesa…)" },
   Prioridade: { es: "Prioridad" },
   Visualizar: { es: "Ver" },
   // ─── Agentes de IA: editor de detalhe (AgentForm) ───
@@ -7177,6 +7181,11 @@ export const DICIONARIO: Traducoes = {
   "Crítico (<24h)": { es: "Crítico (<24h)" },
   "Alerta (>50%)": { es: "Alerta (>50%)" },
   "Limpar filtros": { es: "Limpiar filtros" },
+  "Restaurar filtros": { es: "Restablecer filtros" },
+  "Sem vendedor": { es: "Sin vendedor" },
+  "Escolher o período": { es: "Elegir el período" },
+  "Clique no dia inicial e depois no final.": { es: "Haga clic en el día inicial y luego en el final." },
+  "Agora clique no dia final.": { es: "Ahora haga clic en el día final." },
   "solicitação vencendo em menos de 24h ou já vencida": {
     es: "solicitud que vence en menos de 24h o ya venció",
   },
@@ -9029,6 +9038,13 @@ export const DICIONARIO: Traducoes = {
   },
   "Ler contatos": { es: "Leer contactos" },
   "Criar e editar contatos": { es: "Crear y editar contactos" },
+  // #5160 — escopo `conversations:write` da tela de Tokens de API: existia na
+  // lista `SCOPES` (ApiTokensClient.tsx) sem esta linha, e em espanhol o rótulo
+  // caía no português. A cerca só passou a cobrá-lo quando a varredura aprendeu
+  // a abrir o array iterado por `.map` (tests/unit/helpers/chave-dinamica.ts).
+  "Pausar e retomar a IA, encerrar e reabrir conversas": {
+    es: "Pausar y reanudar la IA, cerrar y reabrir conversaciones",
+  },
   "Ler leads": { es: "Leer leads" },
   "Criar e editar leads": { es: "Crear y editar leads" },
   "Ler mensagens": { es: "Leer mensajes" },
@@ -11396,6 +11412,9 @@ export const DICIONARIO: Traducoes = {
   "Atividade registrada": { es: "Actividad registrada" },
   "Você/time": { es: "Tú/equipo" },
   "Sistema": { es: "Sistema" },
+  // #5160 — rótulo do balão para `sent_via='system'` (envio por token de API ou
+  // por módulo). O NOME do token entra depois, como dado do operador.
+  "Integração": { es: "Integración" },
   // #1613 — autoria "em nome de" no balão e os recusos da rota.
   "via": { es: "vía" },
   "Envio em nome de outro usuário exige o escopo messages:on_behalf.": {
@@ -12987,16 +13006,17 @@ export const DICIONARIO: Traducoes = {
   "Oi {{nome}}! Passando pra lembrar: {{titulo}}, {{dia}} às {{hora}}.": {
     es: "¡Hola {{nome}}! Te recuerdo: {{titulo}}, {{dia}} a las {{hora}}.",
   },
-  "Deixe em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.": {
-    es: "Déjalo en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+  "Deixe em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
+    es: "Déjalo en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   },
   "Quanto antes": { es: "Cuánto antes" },
+  "Lugar reservado": { es: "Lugar reservado" },
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },
   "Adicionar lembrete": { es: "Agregar recordatorio" },
-  "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.": {
-    es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+  "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
+    es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
   },
   "texto próprio": { es: "texto propio" },
   "A mensagem do lembrete cabe em 1000 caracteres.": {
@@ -17961,11 +17981,17 @@ export const DICIONARIO: Traducoes = {
   "Endereço inválido.": { es: "Dirección inválida." },
   "Salvar links": { es: "Guardar enlaces" },
   // Rótulos dos tipos de link (`lib/leads/links-de-contato.ts`) — lidos por
-  // lookup dinâmico, que o teste de cobertura não enxerga. As marcas
-  // (Instagram, Facebook…) não mudam de idioma e ficam de fora.
+  // lookup dinâmico. Até o #5160 a varredura não abria o array iterado por
+  // `.map` e estas marcas ficavam fora por isso; agora ela cobra cada
+  // `rotulo`, e as que não mudam de idioma entram com o espanhol igual ao
+  // português (mesma decisão de `Sistema`/`Telegram`).
   Site: { es: "Sitio web" },
   "Google Meu Negócio": { es: "Google Mi Negocio" },
   "Link na bio": { es: "Enlace en la bio" },
+  Facebook: { es: "Facebook" },
+  LinkedIn: { es: "LinkedIn" },
+  TikTok: { es: "TikTok" },
+  YouTube: { es: "YouTube" },
   // ─── Aba Diagnóstico da ficha (components/contacts/DiagnosticoDoContato.tsx) ───
   "Diagnóstico da empresa": { es: "Diagnóstico de la empresa" },
   "Escrito pela IA": { es: "Escrito por la IA" },
@@ -22009,7 +22035,7 @@ export const DICIONARIO: Traducoes = {
   "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
   // O módulo opcional das reservas de lugar (#4029, doc 283) em /admin/sistema e em Recursos opcionais.
   "Reservas de lugar": { es: "Reserva de lugares" },
-  "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
+  "A agenda reserva um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva escolhe qual lugar.": { es: "La agenda reserva un lugar, como sala, mesa, palco o cancha, con capacidad en personas, y la reserva elige cuál lugar." },
   "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
   // O módulo opcional da campanha por e-mail (#4289, doc 305) em /admin/sistema, em Recursos opcionais e na recusa da API.
   "Campanha por e-mail (em construção)": { es: "Campaña por correo electrónico (en construcción)" },
@@ -22966,6 +22992,34 @@ export const DICIONARIO: Traducoes = {
   "Sim, pausar o chat": { es: "Sí, pausar el chat" },
   "Chat pausado. A janela não abre até você retomar.": { es: "Chat pausado. La ventana no se abre hasta que lo reanude." },
   "Chat retomado. A janela volta a abrir no seu site.": { es: "Chat reanudado. La ventana vuelve a abrirse en su sitio." },
+  "Formato da janela": { es: "Formato de la ventana" },
+  "Como a janela aparece para quem visita o seu site.": { es: "Cómo aparece la ventana para quien visita su sitio." },
+  "Formato": { es: "Formato" },
+  "Bolha no canto": { es: "Burbuja en la esquina" },
+  "Painel na lateral": { es: "Panel en el lateral" },
+  "Embutido numa área do site": { es: "Insertado en un área del sitio" },
+  "Página inteira": { es: "Página entera" },
+  "Mudou o formato? Cole o código novo no seu site (abaixo). Embutido não mostra a bolha: o iframe fica dentro de um elemento da sua página.": { es: "¿Cambió el formato? Pegue el código nuevo en su sitio (abajo). Insertado no muestra la burbuja: el iframe queda dentro de un elemento de su página." },
+  "Salvar formato": { es: "Guardar formato" },
+  "Lado da tela onde a janela fica aberta.": { es: "Lado de la pantalla donde se abre la ventana." },
+  "Direita": { es: "Derecha" },
+  "Esquerda": { es: "Izquierda" },
+  "Vale para bolha, painel e página inteira.": { es: "Vale para burbuja, panel y página entera." },
+  "Salvar posição": { es: "Guardar posición" },
+  // F2-B Tarefa 10a — ajustes da janela do chat no site.
+  "Ajustes da janela": { es: "Ajustes de la ventana" },
+  "Como a janela se comporta para quem visita o seu site.": { es: "Cómo se comporta la ventana para quien visita su sitio." },
+  "Avatar": { es: "Avatar" },
+  "URL da imagem do avatar (somente https).": { es: "URL de la imagen del avatar (solo https)." },
+  "Use https:// na URL do avatar.": { es: "Usa https:// en la URL del avatar." },
+  "Abrir sozinho após (segundos)": { es: "Abrir solo después de (segundos)" },
+  "Vazio ou 0 desliga a abertura automática.": { es: "Vacío o 0 desactiva la apertura automática." },
+  "Use um número inteiro de 0 a 120 segundos.": { es: "Usa un número entero de 0 a 120 segundos." },
+  "Tocar som ao chegar resposta": { es: "Reproducir sonido al llegar una respuesta" },
+  "Respostas rápidas do chat": { es: "Respuestas rápidas del chat" },
+  "Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.": { es: "Una respuesta rápida por línea, hasta 5, de 1 a 80 caracteres." },
+  "Use até 5 respostas rápidas, de 1 a 80 caracteres cada.": { es: "Usa hasta 5 respuestas rápidas, de 1 a 80 caracteres cada una." },
+  "Salvar ajustes": { es: "Guardar ajustes" },
   "Robô de mensagens (@BotFather)": { es: "Bot de mensajes (@BotFather)" },
   "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.": { es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un bot creado en @BotFather, pegando su token. Las conversaciones privadas con el bot llegan al Inbox y la respuesta sale por el mismo bot; los grupos y las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un bot nuevo; un bot ya conectado sigue atendiendo, y para desconectarlo basta con activar el módulo de nuevo." },
   "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.": { es: "Cada empresa conecta en Conexiones un bot creado en @BotFather, y las conversaciones privadas con él llegan al Inbox." },
@@ -23378,8 +23432,11 @@ export const DICIONARIO: Traducoes = {
   "Outro funil…": { es: "Otro embudo…" },
   "Levar selecionados para outro funil": { es: "Llevar seleccionados a otro embudo" },
   'Cada negócio é recriado no funil escolhido e encerra aqui como perdido, com o motivo "Levado para outro funil" — o mesmo que acontece ao levar um card só.': {
-    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Llevado a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
+    es: 'Cada negocio se recrea en el embudo elegido y se cierra aquí como perdido, con el motivo "Movido a otro embudo" — lo mismo que ocurre al llevar una sola tarjeta.',
   },
+  // #5024: o singular do diálogo em lote reaproveita o molde da barra
+  // ("1 negócio selecionado"): a chave `negócio` já existe no dicionário
+  // (linha ~9745); o plural continua na chave abaixo.
   "negócios selecionados.": { es: "negocios seleccionados." },
   "Só os 50 primeiros serão levados nesta vez.": { es: "Solo los 50 primeros se llevarán esta vez." },
   "Levar": { es: "Llevar" },

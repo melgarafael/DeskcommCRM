@@ -219,6 +219,8 @@ interface CompromissoAVencer {
   location_details: string | null;
   /** Onde acontece — `google_meet` é o que tem link a esperar (`lib/agenda/degraus-do-lembrete.ts`). */
   location_kind?: string | null;
+  service_space_id?: string | null;
+  calendar_resources?: { name: string } | { name: string }[] | null;
   meeting_state?: string | null;
   meeting_url?: string | null;
   reminder_sent_offsets_minutes: number[] | null;
@@ -273,6 +275,8 @@ export function pecasDoLembrete(input: {
   quando: Date;
   timezone: string;
   local: string | null;
+  /** O lugar (sala, mesa) do compromisso, quando houver. */
+  lugar?: string | null;
   idioma?: Idioma;
   tipoNome?: string | null;
   /** O link da reunião, só quando PRONTO (`linkDaReuniao`). */
@@ -308,6 +312,7 @@ export function pecasDoLembrete(input: {
     dia,
     hora,
     endereco: input.local?.trim() ?? "",
+    lugar: input.lugar?.trim() ?? "",
     quando: input.horarioLivre ? `${dia}, ${hora}` : `${dia} ${t("às")} ${hora}`,
     link: input.link?.trim() ?? "",
   };
@@ -326,6 +331,8 @@ export function montarLembrete(input: {
   quando: Date;
   timezone: string;
   local: string | null;
+  /** O lugar (sala, mesa) do compromisso, quando houver. */
+  lugar?: string | null;
   /**
    * O idioma da ORGANIZAÇÃO (`organizations.locale`), e não um literal.
    *
@@ -381,9 +388,10 @@ export function montarLembrete(input: {
   // i18n existe para impedir.
   const saudacao = nome ? `${t("Oi,")} ${nome}!` : t("Oi!");
   const onde = pecas.endereco ? ` ${t("Endereço")}: ${pecas.endereco}.` : "";
+  const lugar = pecas.lugar ? ` ${t("Lugar")}: ${pecas.lugar}.` : "";
   const frase =
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia}${input.horarioLivre ? "," : ` ${t("às")}`} ${hora}.${onde}`;
+    `${input.titulo}, ${dia}${input.horarioLivre ? "," : ` ${t("às")}`} ${hora}.${onde}${lugar}`;
   return linhaDoLink ? `${frase}\n${linhaDoLink}` : frase;
 }
 
@@ -624,8 +632,8 @@ async function handle(req: NextRequest): Promise<Response> {
     admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
-        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
+      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, service_space_id, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
+        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), calendar_resources!calendar_appointments_service_space_fk(name), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed"),
     // Compromisso de um sistema externo (9392) só recebe lembrete quando o
@@ -793,6 +801,12 @@ async function handle(req: NextRequest): Promise<Response> {
       quando: new Date(linha.starts_at),
       timezone: organizacao?.timezone ?? "America/Sao_Paulo",
       local: linha.location_details ?? tipo.location_details ?? null,
+      lugar: (() => {
+        const cr = linha.calendar_resources;
+        if (!cr) return null;
+        const arr = Array.isArray(cr) ? cr : [cr];
+        return arr[0]?.name ?? null;
+      })(),
       idioma: normalizarIdioma(organizacao?.locale),
       tipoNome: tipo.name,
       horarioLivre: linha.amigo_arrival_window,

@@ -131,6 +131,27 @@ async function verificarHorarioA375px(page: Page, editar: Locator, idioma: "pt-B
   }
 }
 
+// #5203: no computador a lixeira tem 36 px, e os campos de hora não podem espremê-la.
+async function verificarLixeiraA1280px(page: Page, editar: Locator) {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await editar.click();
+  const dialogo = page.getByRole("dialog");
+  await expect(dialogo).toBeVisible();
+  try {
+    const janelas = dialogo.getByTestId("janela");
+    const quantidade = await janelas.count();
+    await dialogo.getByRole("button", { name: "Adicionar janela", exact: true }).click();
+    await expect(janelas).toHaveCount(quantidade + 1);
+    const lixeira = await medir(janelas.last().getByRole("button"));
+    expect.soft(lixeira.width, "1280px: a lixeira é espremida pelos campos de hora").toBeGreaterThanOrEqual(
+      lixeira.height,
+    );
+  } finally {
+    await dialogo.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(dialogo).toBeHidden();
+  }
+}
+
 test.describe("cuidar da equipe pelo celular", () => {
   test.describe.configure({ timeout: 180_000 });
 
@@ -265,7 +286,7 @@ test.describe("cuidar da equipe pelo celular", () => {
     // #5014: o seletor de idioma fica ao alcance no desktop. O diálogo é
     // aberto e medido no celular, com a mesma sessão e sem publicar janelas.
     await verificarHorarioA375px(page, editar, "pt-BR");
-    await page.setViewportSize({ width: 1280, height: 844 });
+    await verificarLixeiraA1280px(page, editar);
     try {
       await trocarIdiomaPelaTela(page, "es");
       await page.getByRole("tab", { name: "Atención", exact: true }).click();

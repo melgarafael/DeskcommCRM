@@ -9,9 +9,20 @@
  *      Se a conexão da conversa caiu e o número foi lido de novo, o envio sai pela
  *      nova, e o agendamento passa a apontar para ela.
  *   4. sem conversa conectada: série e envio com `esperar` → solta a trava e tenta no
- *      próximo minuto; envio único com `cancelar` → `cancelada` (`numero_desconectado`).
+ *      próximo minuto (carimbando `updated_at`, para a linha recém-solta ir ao FIM da
+ *      fila); envio único com `cancelar` → `cancelada` (`numero_desconectado`).
  *      Série nunca cancela por desconexão.
  *   5. encaminha; `encaminhada` com o `message_id`, ou `falhou`.
+ *
+ * ── Por que a fila ordena por `updated_at` e não só por `scheduled_at` (#5060)
+ *
+ * Uma linha em `esperar` volta a ser `agendada` a cada rodada. Ordenada apenas
+ * pelo horário, ela mantém a posição mais antiga e ocupa a vaga das 50 de novo,
+ * rodada após rodada: 50 presas numa sessão caída travam o lote e uma mensagem
+ * devida mais nova nunca é lida. `updated_at` é a marca de "última tentativa":
+ * quem acabou de ser solto é o mais recente e cede a vez, então o lote ROTACIONA
+ * e sempre sobra vaga para quem ainda não foi encostado. O lote continua 50, a
+ * política `esperar` continua `esperar` e a linha presa continua `agendada`.
  *
  * Segunda parte da #3118 (repetição): a linha é a SÉRIE. Ao fim de cada ocorrência,
  * a regra de `lib/agendamento-mensagem/serie.ts` decide se a série segue para a
@@ -83,13 +94,23 @@ async function handle(req: NextRequest): Promise<Response> {
     // Exclude paused organizations before applying the batch limit.
     .eq("organizations.status", STATUS_OPERANTE)
     .lte("scheduled_at", agora.toISOString())
+    // Menos recentemente tentada primeiro: a linha que acabou de ser solta
+    // (updated_at = agora) vai para o fim e cede a vaga a quem ainda não foi
+    // encostado. `scheduled_at` desempata as nunca tentadas na ordem devida.
+    .order("updated_at", { ascending: true })
     .order("scheduled_at", { ascending: true })
     .limit(LOTE);
   if (error) return fail("internal_error", "Erro ao ler as mensagens devidas.", 500, { requestId });
 
   const resumo = { processadas: 0, encaminhadas: 0, falhas: 0, canceladas: 0, esperando: 0 };
 
-  const soltar = (id: string) => admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", id);
+  // Soltar = devolver ao lote E registrar a tentativa: sem o carimbo, a linha
+  // reordenada continuaria sendo a mais antiga e voltaria a travar as 50 vagas.
+  const soltar = (id: string) =>
+    admin
+      .from("mensagens_agendadas")
+      .update({ claimed_until: null, updated_at: new Date().toISOString() })
+      .eq("id", id);
 
   for (const candidata of candidatas ?? []) {
     if (!ehOperante(statusDaOrgEmbutida(candidata.organizations))) continue;
@@ -200,7 +221,8 @@ async function handle(req: NextRequest): Promise<Response> {
         motivo: motivoDaOcorrencia,
         message_id: final.status === "encaminhada" ? final.message_id : null,
       });
-      if (histErr) logger.error("[mensagens-agendadas] ocorrência não gravada no histórico", { agendamento: ag.id, erro: histErr.message });
+      // 23505: outra rodada já registrou esta ocorrência (envio que passou da trava). Nada a fazer.
+      if (histErr && histErr.code !== "23505") logger.error("[mensagens-agendadas] ocorrência não gravada no histórico", { agendamento: ag.id, erro: histErr.message });
     }
 
     // Auditoria só quando o desfecho foi gravado (regra do cron: sem efeito, sem linha).
