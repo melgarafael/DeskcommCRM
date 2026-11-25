@@ -358,10 +358,11 @@ describe("o custo gravado lê a divisão da gravação de cache que a Anthropic 
     // A coluna entra no MESMO insert do total; sem ela o banco não guarda a
     // parcela de 1 h e a auditoria continua sem prova (issue #5020).
     expect(sql).toContain("cache_write_1h_tokens");
-    // params: input_tokens=7, output=8, cache_read=9, cache_write=10, cost=11.
+    // params: input_tokens=7, output=8, cache_read=9, cache_write=10, cost=11;
+    // a coluna nova entra antes de `preview_run_id`, que segue a última.
     expect(params[10]).toBe(3_500);
     expect(params[11]).toBeCloseTo(1.325, 9); // 3000×4,00 + 500×2,50, por milhão, em centavos.
-    expect(params.at(-1)).toBe(3_000);
+    expect(params[22]).toBe(3_000);
 
     // A mesma fórmula de duas tarifas, com os dois números que o banco agora guarda.
     const recontagem = costCents("claude-sonnet-5-5", {
@@ -377,12 +378,39 @@ describe("o custo gravado lê a divisão da gravação de cache que a Anthropic 
 
   it("sem a divisão, a coluna nova fica NULA — não medido não é 0", async () => {
     const { inserts } = await rodarPelaAnthropic([null], 1_000);
-    expect(inserts[0]!.params.at(-1)).toBeNull();
+    expect(inserts[0]!.params[22]).toBeNull();
   });
 
   it("com a divisão explícita em zero, a coluna nova é 0 — aí foi medido", async () => {
     const { inserts } = await rodarPelaAnthropic([{ cincoMin: 0, umaHora: 0 }], 0);
-    expect(inserts[0]!.params.at(-1)).toBe(0);
+    expect(inserts[0]!.params[22]).toBe(0);
+  });
+
+  it("só o campo de 5 min: a parcela de 1 h é 0, e é 0 que vai para a coluna", async () => {
+    // `gravacaoDeUmaHora` trata campo ausente como 0 quando ALGUM passo trouxe
+    // `cache_creation`; o custo usa esse mesmo 0, então a coluna grava 0 (não
+    // nulo). Nulo fica só para quando nenhum passo trouxe a divisão.
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: 500,
+        outputTokens: 0,
+        inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 500 },
+      },
+      response: { id: "cache-so-5m", modelId: "claude-sonnet-5-5" },
+      steps: [{ usage: { raw: { cache_creation: { ephemeral_5m_input_tokens: 500 } } } }],
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", "claude-sonnet-5-5");
+    await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+    expect(inserts[0]!.params[22]).toBe(0);
   });
 });
 

@@ -10861,6 +10861,7 @@ export type Database = {
         Row: {
           agent_id: string | null;
           cache_read_tokens: number;
+          cache_write_1h_tokens: number | null;
           cache_write_tokens: number;
           chars_ferramentas: number | null;
           chars_mensagens: number | null;
@@ -10894,6 +10895,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -10926,6 +10928,7 @@ export type Database = {
         Update: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
