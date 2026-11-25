@@ -17,27 +17,29 @@ import {
 describe("empacotarLembretes", () => {
   it("o mais antecipado vira principal; o resto, extra com texto próprio", () => {
     const r = empacotarLembretes([
-      { minutes: 180, body: "Falta pouco" },
-      { minutes: 1440, body: "Amanhã tem" },
+      { minutes: 180, body: "Falta pouco", comLink: true },
+      { minutes: 1440, body: "Amanhã tem", comLink: true },
     ]);
     expect(r.principal).toBe(1440);
     expect(r.corpoPrincipal).toBe("Amanhã tem");
     expect(r.extras).toEqual([180]);
     expect(r.corposExtras).toEqual({ "180": "Falta pouco" });
+    expect(r.degrausSemLink).toEqual([]);
   });
 
   it("extra sem texto não entra no mapa — cai na frase de fábrica, não na do principal", () => {
     const r = empacotarLembretes([
-      { minutes: 1440, body: "Amanhã tem" },
-      { minutes: 180, body: "   " },
+      { minutes: 1440, body: "Amanhã tem", comLink: true },
+      { minutes: 180, body: "   ", comLink: true },
     ]);
     expect(r.corposExtras).toEqual({});
+    expect(r.degrausSemLink).toEqual([]);
   });
 
   it("duplicata no mesmo minuto não vira aviso em dobro", () => {
     const r = empacotarLembretes([
-      { minutes: 180, body: "a" },
-      { minutes: 180, body: "b" },
+      { minutes: 180, body: "a", comLink: true },
+      { minutes: 180, body: "b", comLink: true },
     ]);
     expect(r.principal).toBe(180);
     expect(r.extras).toEqual([]);
@@ -46,12 +48,22 @@ describe("empacotarLembretes", () => {
 
   it("fora da faixa some, e lista vazia cai no default do banco", () => {
     const r = empacotarLembretes([
-      { minutes: 5, body: "cedo demais" },
-      { minutes: 20_000, body: "convite" },
+      { minutes: 5, body: "cedo demais", comLink: true },
+      { minutes: 20_000, body: "convite", comLink: true },
     ]);
     expect(r.principal).toBe(1440);
     expect(r.extras).toEqual([]);
     expect(r.corpoPrincipal).toBe("");
+  });
+
+  it("o degrau com o link desligado entra na lista de degraus sem link", () => {
+    const r = empacotarLembretes([
+      { minutes: 1440, body: "Amanhã tem", comLink: true },
+      { minutes: 180, body: "Falta pouco", comLink: false },
+      { minutes: 60, body: "Tô chegando", comLink: true },
+    ]);
+    expect(r.degrausSemLink).toEqual([180]);
+    expect(r.corposExtras).toEqual({ "180": "Falta pouco", "60": "Tô chegando" });
   });
 });
 
@@ -65,10 +77,32 @@ describe("desempacotarLembretes", () => {
         reminder_bodies: { "180": "Falta pouco" },
       }),
     ).toEqual([
-      { minutes: 1440, body: "Amanhã" },
-      { minutes: 180, body: "Falta pouco" },
-      { minutes: 60, body: "" },
+      { minutes: 1440, body: "Amanhã", comLink: true },
+      { minutes: 180, body: "Falta pouco", comLink: true },
+      { minutes: 60, body: "", comLink: true },
     ]);
+  });
+
+  it("o degrau marcado sem link volta desmarcado; os outros voltam ligados", () => {
+    expect(
+      desempacotarLembretes({
+        reminder_minutes_before: 1440,
+        reminder_extra_offsets_minutes: [180, 60],
+        reminder_body: "Amanhã",
+        reminder_bodies: { "180": "Falta pouco" },
+        reminder_sem_link_offsets_minutes: [180],
+      }).map((p) => p.comLink),
+    ).toEqual([true, false, true]);
+  });
+
+  it("coluna ausente ou vazia = todas as faixas levam o link", () => {
+    const semAColuna = desempacotarLembretes({
+      reminder_minutes_before: 60,
+      reminder_extra_offsets_minutes: [15],
+      reminder_body: null,
+      reminder_bodies: null,
+    });
+    expect(semAColuna.map((p) => p.comLink)).toEqual([true, true]);
   });
 });
 
@@ -111,8 +145,11 @@ describe("minutosLivres", () => {
 describe("lerPassosDoFormulario", () => {
   it("JSON da tela vira passos; lixo vira vazio", () => {
     expect(lerPassosDoFormulario('[{"minutes":60,"body":"oi"}]')).toEqual([
-      { minutes: 60, body: "oi" },
+      { minutes: 60, body: "oi", comLink: true },
     ]);
+    expect(
+      lerPassosDoFormulario('[{"minutes":60,"body":"oi","comLink":false}]'),
+    ).toEqual([{ minutes: 60, body: "oi", comLink: false }]);
     expect(lerPassosDoFormulario("não é json")).toEqual([]);
     expect(lerPassosDoFormulario(null)).toEqual([]);
   });
