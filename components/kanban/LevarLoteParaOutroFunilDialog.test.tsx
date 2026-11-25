@@ -108,6 +108,110 @@ describe("LevarLoteParaOutroFunilDialog", () => {
     expect(screen.getByText("2 negócios selecionados.")).toBeTruthy();
   });
 
+  // #5232: o RESULTADO do lote dizia "1 de 1 negócios levados." — plural com um
+  // só. O topo da janela já tratava o singular (#5024); a linha do resultado,
+  // que é o que a pessoa lê DEPOIS de levar, continuava no plural.
+  it("resultado com um só: '1 de 1 negócio levado.'", async () => {
+    destinos([
+      {
+        id: "p2",
+        name: "Pós-venda",
+        stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+      },
+    ]);
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} } as never);
+    const user = userEvent.setup();
+    render(
+      comCliente(
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a"]}
+        />,
+      ),
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Levar" }));
+
+      const resultado = within(await screen.findByTestId("resultado-do-lote"));
+      expect(resultado.getByText("1 de 1 negócio levado.")).toBeInTheDocument();
+      expect(resultado.queryByText(/negócios levados/)).not.toBeInTheDocument();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("resultado com três: o plural de hoje continua", async () => {
+    destinos([
+      {
+        id: "p2",
+        name: "Pós-venda",
+        stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+      },
+    ]);
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} } as never);
+    const user = userEvent.setup();
+    render(
+      comCliente(
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a", "b", "c"]}
+        />,
+      ),
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Levar" }));
+
+      const resultado = within(await screen.findByTestId("resultado-do-lote"));
+      expect(resultado.getByText("3 de 3 negócios levados.")).toBeInTheDocument();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("em espanhol, o resultado com um só fala no singular", async () => {
+    idioma.atual = "es";
+    destinos([
+      {
+        id: "p2",
+        name: "Pós-venda",
+        stages: [{ id: "s1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+      },
+    ]);
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: {} } as never);
+    const user = userEvent.setup();
+    render(
+      comCliente(
+        <LevarLoteParaOutroFunilDialog
+          open
+          onOpenChange={vi.fn()}
+          pipelineId="p1"
+          leadIds={["a"]}
+        />,
+      ),
+    );
+
+    try {
+      await user.click(screen.getByRole("combobox", { name: "Embudo de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(screen.getByRole("button", { name: "Llevar" }));
+
+      const resultado = within(await screen.findByTestId("resultado-do-lote"));
+      expect(resultado.getByText("1 de 1 negocio llevado.")).toBeInTheDocument();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
   it("em espanhol: singular tratado e o motivo é o rótulo canônico \"Movido a otro embudo\"", () => {
     idioma.atual = "es";
     destinos([{ id: "p2", name: "Pós-venda" }]);
