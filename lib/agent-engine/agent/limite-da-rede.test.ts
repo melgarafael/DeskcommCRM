@@ -8,7 +8,7 @@
  *     `skipped: 'not_applicable'` (invariante 4 da doutrina) — nenhum outro canal
  *     muda de destino;
  *  2. a contagem sai de `messages` filtrando saída e `failed`, na conversa certa;
- *  3. leitura quebrada nunca derruba o turno (`undefined` + aviso no log);
+ *  3. leitura quebrada PROPAGA o erro (dentro do `begin` do before-send engolir aborta a transação);
  *  4. o gate traduz o veredito da regra pura em veto com a SAÍDA no texto.
  */
 import { describe, expect, it, vi } from "vitest";
