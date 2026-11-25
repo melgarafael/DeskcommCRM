@@ -221,25 +221,23 @@ export function textoDoGoLive(idioma: Idioma, rede?: string | null): { title: st
 }
 
 /**
- * A plataforma da sessão (`metadata.social_platform`), ou `null` para quem não é rede social.
- * Nunca lança: sem ela o item sai com o texto de número, que é o de antes — a trava não pode
- * deixar de abrir por causa de um texto.
+ * A plataforma da sessão (`metadata.social_platform`), ou `null` para quem não é rede social
+ * (o número de WhatsApp, sem a chave) e para a sessão que não existe.
+ * Roda no client e na transação do tick: um erro aqui aborta a transação (Postgres 25P02),
+ * então capturá-lo não deixaria o item ser gravado. Ele propaga como o de `idiomaDaOrg`; o
+ * tick é desfeito e o seguinte tenta de novo.
  */
 export async function redeDaSessaoDoGoLive(
   db: Pick<pg.PoolClient, 'query'>,
   organizationId: string,
   channelSessionId: string,
 ): Promise<string | null> {
-  try {
-    const { rows } = await db.query<{ rede: string | null }>(
-      `select metadata->>'social_platform' as rede
-         from channel_sessions where organization_id = $1 and id = $2`,
-      [organizationId, channelSessionId],
-    );
-    return rows[0]?.rede ?? null;
-  } catch {
-    return null;
-  }
+  const { rows } = await db.query<{ rede: string | null }>(
+    `select metadata->>'social_platform' as rede
+       from channel_sessions where organization_id = $1 and id = $2`,
+    [organizationId, channelSessionId],
+  );
+  return rows[0]?.rede ?? null;
 }
 
 /**

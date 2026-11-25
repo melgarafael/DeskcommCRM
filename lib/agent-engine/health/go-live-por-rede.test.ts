@@ -9,7 +9,8 @@
  *  2. sem rede (o número de WhatsApp) — ou com uma que o catálogo não conhece — o texto
  *     é EXATAMENTE o de sempre: é o que o invariante `go-live-solta-numero-formado` e o
  *     `session-watchdog.test.ts` já travam;
- *  3. a leitura da rede nunca derruba a trava: banco fora = texto de número.
+ *  3. a leitura da rede roda na transação do tick: com o banco fora o erro PROPAGA, porque
+ *     um comando que falha aborta a transação e engoli-lo não deixaria o item ser gravado.
  */
 import { readFileSync } from "node:fs";
 
@@ -73,8 +74,8 @@ describe("redeDaSessaoDoGoLive", () => {
     expect(await redeDaSessaoDoGoLive({ query: async () => ({ rows: [] }) } as never, "o", "s")).toBeNull();
   });
 
-  it("banco fora: nunca lança — a trava abre com o texto de número", async () => {
+  it("banco fora: o erro propaga (dentro da transação do tick, engolir não abriria a trava)", async () => {
     const quebrado = { query: async () => Promise.reject(new Error("conexão caiu")) };
-    await expect(redeDaSessaoDoGoLive(quebrado as never, "o", "s")).resolves.toBeNull();
+    await expect(redeDaSessaoDoGoLive(quebrado as never, "o", "s")).rejects.toThrow("conexão caiu");
   });
 });
