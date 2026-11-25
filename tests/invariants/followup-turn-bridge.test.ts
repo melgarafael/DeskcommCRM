@@ -1,7 +1,10 @@
 import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
-import { descreveEvento } from "@/lib/followup/eventos-legiveis";
+import { descreveEvento, type EventoDeEnrollment } from "@/lib/followup/eventos-legiveis";
+import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
+import { createFakeRegistry } from "@/lib/agent-engine/edge/llm/providers";
+import { claimJobs, completeJob, enqueueJob, type JobRow } from "@/lib/agent-engine/queue/queue";
 import { pgSendLedger, sendWithLedger } from "@/lib/agent-engine/edge/crm/send-ledger";
 
 import { runFollowupTick, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
@@ -10,7 +13,7 @@ import { flowGraphSchema, type FlowGraph } from "@/lib/followup/graph-schema";
 // O schema do OUTRO lado da fila. Importado só aqui, e só no teste: agent-engine
 // nunca importa followup/* (a dependência é numa direção só) — mas provar que as
 // duas metades do contrato casam exige ver as duas no mesmo lugar.
-import { followupTurnPayloadSchema } from "@/lib/agent-engine/agent/followup-turn";
+import { createFollowupTurnHandler, followupTurnPayloadSchema } from "@/lib/agent-engine/agent/followup-turn";
 
 import { isolarFixtureDeFollowup } from "./followup-isolamento";
 import { relogioAncoradoNoBanco } from "./followup-relogio";
@@ -481,4 +484,205 @@ it("o dossiê distingue uma mensagem aguardando o canal de um pedido para o agen
   const titulos = rows.map((row) => descreveEvento(row, {}, "pt-BR").titulo);
   expect(titulos).not.toContain("Mensagem enviada");
   expect(titulos).toContain("Mensagem aguardando o canal");
+});
+
+async function prepararEnvioDoDossie(
+  mode: "ai_message" | "text" = "ai_message",
+) {
+  const org = crypto.randomUUID();
+  await seedOrg(org);
+  const contactId = await seedContact(org);
+  const graph = structuredClone(ACTION_GRAPH);
+  const action = graph.nodes[0];
+  if (action.type !== "action") throw new Error("fixture sem ação");
+  if (mode === "text") action.config = { mode, body: "Lembrete fixo de teste" };
+  const { pointerId, versionId } = await seedFlow(org, graph);
+  const enrollmentId = await seedEnrollment({
+    org, pointerId, versionId, contactId, currentNodeId: "a1",
+  });
+  const { rows: [origem] } = await pool.query<{
+    conversation_id: string; channel_session_id: string;
+  }>(`select e.conversation_id, c.channel_session_id
+       from followup_enrollments e join conversations c on c.id = e.conversation_id
+       where e.id = $1`, [enrollmentId]);
+  const { conversation_id: conversationId, channel_session_id: sessionId } = origem!;
+  await pool.query(`update contacts set name = 'Contato fictício', phone_number = '+5511999999999'
+                     where organization_id = $1 and id = $2`, [org, contactId]);
+  const jobs: JobRow[] = [];
+  const { failed } = await runFollowupTick({
+    ...makeTickDeps([]),
+    enqueueJob: async (request) => {
+      const { job } = await enqueueJob(pool, org, {
+        kind: "followup_turn",
+        leadId: contactId,
+        payload: request.payload,
+      });
+      jobs.push(job);
+    },
+  }, { limit: 5 });
+  expect(failed).toBe(0);
+  expect(jobs).toHaveLength(1);
+  const eventos = async () => (await pool.query<EventoDeEnrollment>(
+    "select * from followup_enrollment_events where organization_id=$1 and enrollment_id=$2 order by created_at, id",
+    [org, enrollmentId],
+  )).rows;
+  return { org, contactId, conversationId, sessionId, enrollmentId, job: jobs[0]!, eventos };
+}
+
+type CenarioDeEnvio = Awaited<ReturnType<typeof prepararEnvioDoDossie>>;
+
+function canalDeTeste(cenario: CenarioDeEnvio, status: "queued" | "sent" | "failed"): ChannelAdapter {
+  return {
+    channel: "captura",
+    sessionHealth: async () => ({ healthy: true, status: "WORKING", since: null }),
+    capabilities: () => ({ freeformAnytime: true, serviceWindowHours: null }),
+    costPerMessage: () => ({ costPerMessageUsdCents: 0, flatFee: true }),
+    async send(input: Parameters<ChannelAdapter["send"]>[0]) {
+      const outcome = await sendWithLedger(pgSendLedger(pool), { ...input, leadId: cenario.contactId }, async (_key, messageId) => {
+        await pool.query(
+          `insert into messages
+            (id, organization_id, conversation_id, channel_session_id, contact_id, type, direction, status, body, sent_via)
+            values ($1,$2,$3,$4,$5,'text','outbound','queued',$6,'ai')
+            on conflict (id) do nothing`,
+          [messageId, cenario.org, cenario.conversationId, cenario.sessionId, cenario.contactId, input.body],
+        );
+        if (status !== "queued") {
+          await pool.query("update messages set status=$3 where id=$1 and organization_id=$2", [
+            messageId, cenario.org, status,
+          ]);
+        }
+        return { id: messageId, status };
+      });
+      if (outcome.kind === "blocked") return outcome;
+      if (outcome.kind === "sent") {
+        return { ...outcome, messageId: outcome.crmMessageId! };
+      }
+      return { ...outcome, messageId: outcome.crmMessageId };
+    },
+  };
+}
+
+function turnoDeTeste(canal: ChannelAdapter, corpo?: string) {
+  let chamado = false;
+  const uso = {
+    inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+    outputTokens: { total: 1, text: 1, reasoning: 0 },
+  };
+  const registry = createFakeRegistry(async () => {
+    if (corpo !== undefined && !chamado) {
+      chamado = true;
+      return {
+        content: [{
+          type: "tool-call", toolCallId: "c1", toolName: "send_message",
+          input: JSON.stringify({ body: corpo }),
+        }],
+        finishReason: { unified: "tool-calls", raw: undefined },
+        usage: uso, warnings: [],
+      };
+    }
+    return {
+      content: [], finishReason: { unified: "stop", raw: undefined }, usage: uso, warnings: [],
+    };
+  });
+  return createFollowupTurnHandler({
+    crmCfg: { supabase: {} as never } as never,
+    llmCfg: { anthropicApiKey: "fake" } as never,
+    knobs: {
+      historyLimit: 20,
+      maxContextTokens: 4000,
+      notesIndexMaxTokens: 500,
+      maxSteps: 6,
+      queuedRetryDelayMs: 1000,
+      breaker: {
+        exactFailureWarn: 2, exactFailureBlock: 5, sameToolFailureWarn: 3,
+        sameToolFailureHalt: 8, noProgressWarn: 3, noProgressBlock: 5,
+      },
+    },
+    log: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    registry,
+    channel: () => canal,
+    clock: () => new Date("2026-11-24T15:00:00Z"),
+    sleep: async () => {},
+    completeFollowupTurn: async (p, { organizationId, enrollmentId, nodeId, jobId, jobClaim, result }) => {
+      await completeTurnForEnrollment(createPgAdminClient(p), organizationId, enrollmentId, nodeId,
+        result, undefined, jobId, jobClaim);
+    },
+  });
+}
+
+async function rodarTurnoDeEnvio(
+  cenario: CenarioDeEnvio,
+  status: "queued" | "sent" | "failed",
+  corpo?: string,
+) {
+  const workerId = "historico-de-envio";
+  const [job] = await claimJobs(pool, { workerId, maxConcurrency: 1, batchSize: 1 });
+  expect(job?.id).toBe(cenario.job.id);
+  const handler = turnoDeTeste(canalDeTeste(cenario, status), corpo);
+  try {
+    await handler(job!, pool, { workerId });
+  } finally {
+    await completeJob(pool, job!.id, workerId);
+  }
+}
+
+it("registra geração, fila real e aceitação tardia de uma mensagem escrita no turno", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  const { org, contactId, conversationId, sessionId, enrollmentId, job, eventos } = cenario;
+  const { rows: [agent] } = await pool.query(
+    `insert into ai_agents (organization_id, name, system_prompt, kind)
+     values ($1, 'Agente fictício', 'Escreva um lembrete curto.', 'mcp_agent') returning id`, [org],
+  );
+  const { rows: [version] } = await pool.query(
+    `insert into ai_agent_versions (organization_id, agent_id, version_number, system_prompt,
+                                    provider, model, channel_session_id, status, published_at)
+     values ($1, $2, 1, 'Escreva um lembrete curto.', 'anthropic', 'claude-do-teste', $3, 'published', now())
+     returning id`, [org, agent.id, sessionId],
+  );
+  await pool.query("update ai_agents set published_version_id=$2 where id=$1", [agent.id, version.id]);
+  await pool.query("update followup_enrollments set agent_id=$2 where id=$1", [enrollmentId, agent.id]);
+  await pool.query(
+    `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
+       type, direction, status, body, sent_via, sent_at)
+     values ($1,$2,$3,$4,'text','inbound','delivered','Pode me chamar amanhã.','external_device', now() - interval '1 day')`,
+    [org, conversationId, sessionId, contactId],
+  );
+
+  const titulos = async () => (await eventos()).map((row) => descreveEvento(row, {}, "pt-BR").titulo);
+  const entrada = await titulos();
+  await expect(rodarTurnoDeEnvio(cenario, "queued", "Olá! Podemos conversar amanhã?")).rejects.toThrow("followup_message_not_sent");
+  const fila = await titulos();
+  const { rows: [ledger] } = await pool.query(
+    "select status, crm_message_id from send_ledger where organization_id=$1 and job_id=$2", [org, job.id],
+  );
+  expect(ledger?.status).toBe("queued");
+
+  await pool.query(
+    "update followup_enrollments set status='cancelled', next_eval_at=null where organization_id=$1 and id=$2",
+    [org, enrollmentId],
+  );
+  // Simula o expurgo do job e a atualização do recibo no mesmo id físico.
+  await pool.query("delete from job_queue where organization_id=$1 and id=$2", [org, job.id]);
+  for (const status of ["sent", "delivered", "read"]) {
+    await pool.query("update messages set status=$3 where organization_id=$1 and id=$2", [
+      org, ledger.crm_message_id, status,
+    ]);
+  }
+  expect((await getEnrollment(enrollmentId)).status).toBe("cancelled");
+  expect(entrada).toContain("Tarefa de envio enfileirada");
+  expect(fila.slice(-2)).toEqual(["Mensagem gerada", "Mensagem aguardando o canal"]);
+  expect((await titulos()).slice(-3)).toEqual([
+    "Mensagem gerada", "Mensagem aguardando o canal", "Mensagem enviada",
+  ]);
+  expect(JSON.stringify(await eventos())).not.toContain("Podemos conversar");
+});
+
+it("registra o texto fixo aceito sem inventar geração ou fila do canal", async () => {
+  const cenario = await prepararEnvioDoDossie("text");
+  await rodarTurnoDeEnvio(cenario, "sent");
+  expect((await getEnrollment(cenario.enrollmentId)).current_node_id).toBe("e1");
+  const trilha = (await cenario.eventos()).map((e) => e.event_type);
+  expect(trilha.filter((tipo) => tipo.startsWith("followup_"))).toEqual([
+    "followup_job_queued", "followup_message_sent",
+  ]);
 });
