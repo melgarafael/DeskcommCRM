@@ -409,6 +409,20 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     return { inseridos, comVinculo };
   }
 
+  it("devolve a mesma cópia da primeira transferência, mesmo com a origem já fechada", async () => {
+    const { POST } = await import("./route");
+
+    const primeira = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const segunda = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const criado = await primeira.json();
+    const reutilizado = await segunda.json();
+
+    expect(primeira.status).toBe(201);
+    expect(segunda.status).toBe(200);
+    expect(reutilizado.data.lead.id).toBe(criado.data.lead.id);
+    expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+  });
+
   it("o INSERT do clone vai pela SESSÃO, sem o vínculo; `clonado_de` e `movido_para` entram pelo serviço (migration 9389)", async () => {
     const espiao = sessaoEspiada();
     const { POST } = await import("./route");
