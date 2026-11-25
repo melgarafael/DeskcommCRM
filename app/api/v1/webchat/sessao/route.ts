@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { carregarAtendimento, type EstadoDoAtendimento } from "@/lib/channels/webchat/atendimento";
 import { conexaoPelaChave, tokenDoBearer } from "@/lib/channels/webchat/conexao-pela-chave";
 import { descreverErro, lerCorpoJson } from "@/lib/channels/webchat/entrada-publica";
 import { assinarTokenDeVisitante, lerTokenDeVisitante } from "@/lib/channels/webchat/token";
@@ -65,6 +66,18 @@ export async function POST(req: Request) {
     if (!conexao) return fail("not_found", "Not found.", 404);
 
     const agora = new Date();
+    // Horário do atendimento (F3). Falha ao ler = `aberto` (falha aberta): a sessão segue igual.
+    let atendimento: EstadoDoAtendimento = { estado: "aberto", abreEm: null, aviso: null };
+    try {
+      atendimento = await carregarAtendimento(admin, conexao.organizationId, conexao.id, agora);
+    } catch (erro) {
+      logger.warn("webchat: horário do atendimento indisponível; segue como aberto", {
+        rota: "sessao",
+        organization_id: conexao.organizationId,
+        channel_session_id: conexao.id,
+        ...descreverErro(erro),
+      });
+    }
     const token = tokenDoBearer(req.headers);
     const anterior = token ? lerTokenDeVisitante(token, agora) : null;
     // Visitante só é reaproveitado com token VÁLIDO desta conexão. Outra conexão, token
@@ -78,6 +91,11 @@ export async function POST(req: Request) {
       token: assinarTokenDeVisitante({ channelSessionId: conexao.id, visitanteId, agora }),
       visitante_id: visitanteId,
       configuracao: conexao.config,
+      atendimento: {
+        estado: atendimento.estado,
+        abre_em: atendimento.abreEm,
+        aviso: atendimento.aviso,
+      },
     });
   } catch (erro) {
     logger.error("webchat: erro na rota pública de sessão", { rota: "sessao", ...descreverErro(erro) });

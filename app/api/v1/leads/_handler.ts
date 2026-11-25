@@ -1219,7 +1219,16 @@ export async function updateLeadHandler(
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
   if (input.contact_id !== undefined) patch.contact_id = input.contact_id;
-  if (input.value_cents !== undefined) patch.value_cents = input.value_cents;
+  // Com venda registrada (`valor_pelas_vendas = true`), `value_cents` é derivado
+  // pelo gatilho das vendas (migration 9450) e não pode ser sobrescrito por
+  // PATCH/MCP/API. Ignorar preserva o restante da edição (ex.: ficha aberta
+  // antes da venda ser registrada).
+  if (
+    input.value_cents !== undefined &&
+    !(existing as { valor_pelas_vendas?: boolean }).valor_pelas_vendas
+  ) {
+    patch.value_cents = input.value_cents;
+  }
   // O RECORRENTE SÓ É TOCADO quando a requisição o menciona (fatia 1 da #3602):
   // um PATCH de título que carimbasse `null` nas três apagaria a mensalidade do
   // negócio em silêncio. E, tocado, vai o TRIO coerente — mandar só

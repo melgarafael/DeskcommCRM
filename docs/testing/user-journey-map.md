@@ -288,6 +288,7 @@ pela tela fica para o CI do PR ao mantenedor.
 | J74.7 | Girar a chave | Páginas com o código antigo recebem "chat indisponível" ao abrir conversa nova; quem já está conversando segue até a sessão expirar |
 | J74.8 | Pausar o chat | PATCH `config.pausado: true` pela rota de administração; as três rotas públicas (`/sessao`, `/mensagens`, `/eventos`) dão o mesmo 404; a janela mostra "chat indisponível" |
 | J74.9 | Retomar o chat | PATCH `config.pausado: false` volta a funcionar: sessão, mensagens e eventos respondem normalmente |
+| J74.11 | Horário do atendimento e conexão sem agente | Fora do horário do agente da conexão, a conversa mostra o aviso do agente ou o texto padrão com a hora da volta. Sem agente publicado, depois da primeira mensagem aceita aparece "Recebemos sua mensagem. Nossa equipe responde por aqui." O chat segue funcionando nos dois casos. Roteiro: `docs/testing/chat-no-site.md`, caso C9 |
 
 ## J5 — Time: convites e atuação de atendentes `[P0]` (convite) / `[P1]` (rotina)
 

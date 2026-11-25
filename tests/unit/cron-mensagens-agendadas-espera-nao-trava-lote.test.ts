@@ -178,12 +178,17 @@ vi.mock("@/lib/supabase/admin", () => {
 
 vi.mock("@/lib/agendamento-mensagem/envio", () => ({
   autorAindaTemAcesso: async () => true,
-  sessaoEstaConectada: async (_admin: unknown, _org: string, sessao: string) =>
-    banco.conectadas.has(sessao),
   encaminharAgendamento: async (_admin: unknown, ag: { id: string }) => {
     banco.encaminhadas.push(ag.id);
     return { desfecho: "encaminhada", message_id: `msg-${ag.id}` };
   },
+}));
+
+// A rota escolhe a conversa de envio por `resolverConversaConectada` (#5185): aqui, a
+// sessão original está no ar ou não está, sem outra conexão com o mesmo número.
+vi.mock("@/lib/agendamento-mensagem/sessao-do-contato", () => ({
+  resolverConversaConectada: async (_admin: unknown, _org: string, _contato: string, sessao: string) =>
+    banco.conectadas.has(sessao) ? { conversation_id: `conversa-${sessao}`, channel_session_id: sessao } : null,
 }));
 
 function semear(linhas: Array<Partial<LinhaAgendada> & Pick<LinhaAgendada, "id">>): void {
