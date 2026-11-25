@@ -8,6 +8,7 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
+import { AIMLAPI_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
 import { caminhoDaProva, ORIGEM_PADRAO, type OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
@@ -288,6 +289,55 @@ export async function validateRequestyKey(apiKey: string): Promise<ValidationRes
   }
 }
 
+/** O `type` das linhas do catálogo da AI/ML API que falam Chat Completions. */
+export const AIMLAPI_TIPO_DE_CHAT = "openai/chat-completions";
+
+/**
+ * A AI/ML API prova a chave pelo `GET /v1/key`, que EXIGE a credencial (medido:
+ * 401 com chave falsa, 200 com a real) e não gasta token. O `GET /v1/models`
+ * NÃO serve de prova: é o catálogo público e responde 200 até com chave falsa
+ * (medido), por isso ele vem depois, SEM o header, só para listar os modelos.
+ *
+ * O catálogo traz todo tipo de modelo (imagem, vídeo, voz...) e o mesmo id em
+ * mais de um formato de API; ficam só as linhas `type = openai/chat-completions`,
+ * que é o que a fábrica `.chat()` fala. `redirect: "error"` nas duas: a chave
+ * nunca segue um redirect para fora de `api.aimlapi.com`.
+ */
+export async function validateAimlapiKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(`${AIMLAPI_ENDPOINT}/key`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      redirect: "error",
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const lista = await timedFetch(`${AIMLAPI_ENDPOINT}/models`, {
+      method: "GET",
+      redirect: "error",
+    });
+    if (!lista.ok) {
+      return { ok: false, error: `provider_status_${lista.status}` };
+    }
+    const json = (await lista.json()) as { data?: { id?: string; type?: string }[] };
+    const models = [
+      ...new Set(
+        (json.data ?? [])
+          .filter((m) => m.type === AIMLAPI_TIPO_DE_CHAT)
+          .map((m) => m.id ?? "")
+          .filter(Boolean),
+      ),
+    ];
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 /**
  * O Jev (TypeSafe AI) prova a chave pelo `GET /v1/models`, que EXIGE a
  * credencial (medido: 401 com chave falsa, 403 sem chave, 200 com a real) e não
@@ -448,6 +498,8 @@ export function validateProviderKey(
       return validateElevenLabsKey(apiKey);
     case "requesty":
       return validateRequestyKey(apiKey);
+    case "aimlapi":
+      return validateAimlapiKey(apiKey);
     case "custom":
       return validateCustomKey(apiKey, baseUrl);
     case "typesafe":
