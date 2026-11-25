@@ -180,7 +180,9 @@ export function LevarLoteParaOutroFunilDialog({
         ) : (
           <>
             <p className="text-sm">
-              {leadIds.length} {t("negócios selecionados.")}
+              {leadIds.length === 1
+                ? `1 ${t("negócio")} ${t("selecionado")}.`
+                : `${leadIds.length} ${t("negócios selecionados.")}`}
               {acimaDoTeto
                 ? ` ${t("Só os 50 primeiros serão levados nesta vez.")}`
                 : null}

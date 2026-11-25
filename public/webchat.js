@@ -43,6 +43,37 @@
     }
   }
 
+  /** Formato do `?f=`, se bater na lista fixa. Senão, null. */
+  function formatoDoScript(src) {
+    try {
+      var f = new URL(src).searchParams.get("f");
+      return f !== null && ["bolha", "painel", "embutido", "pagina"].indexOf(f) !== -1 ? f : null;
+    } catch (erro) {
+      return null;
+    }
+  }
+
+  /** Função pura: devolve { autoAbrirSegundos, som } quando o dado é um `ajustes` válido. */
+  function ajustesDaMensagem(dado) {
+    if (!dado || typeof dado !== "object") return null;
+    if (dado.tipo !== "ajustes") return null;
+    var segundos = dado.autoAbrirSegundos;
+    var som = dado.som;
+    if (typeof segundos !== "number" || segundos % 1 !== 0 || segundos < 0 || segundos > 120) return null;
+    if (typeof som !== "boolean") return null;
+    return { autoAbrirSegundos: segundos, som: som };
+  }
+
+  /** Posição do `?p=`, se bater na lista fixa. Senão, null. */
+  function posicaoDoScript(src) {
+    try {
+      var p = new URL(src).searchParams.get("p");
+      return p !== null && ["direita", "esquerda"].indexOf(p) !== -1 ? p : null;
+    } catch (erro) {
+      return null;
+    }
+  }
+
   /**
    * Referrer reduzido a origem + caminho: sem query e sem fragmento, cortado em 200 caracteres.
    * Não é URL http(s) válida: string vazia.
@@ -112,6 +143,22 @@
     return achado;
   }
 
+  /** Seletor do elemento alvo do formato `embutido`, lido de `data-webchat-alvo` no próprio script. */
+  function alvoDoScript(src) {
+    try {
+      var scripts = document.querySelectorAll("script[src]");
+      for (var i = 0; i < scripts.length; i++) {
+        if (/\/webchat\.js(\?|$)/.test(scripts[i].src)) {
+          var alvo = scripts[i].getAttribute("data-webchat-alvo");
+          if (typeof alvo === "string" && alvo !== "") return alvo;
+        }
+      }
+    } catch (erro) {
+      // ignora
+    }
+    return null;
+  }
+
   function montar() {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     if (window.__webchatMontado) return;
@@ -125,12 +172,20 @@
     if (!src) return;
     var origem = origemDoScript(src);
     var chave = chaveDoScript(src);
+    var formato = formatoDoScript(src);
+    var posicao = posicaoDoScript(src);
+    var alvo = alvoDoScript(src);
     if (!origem || !chave) return;
 
     window.__webchatMontado = true;
 
     var aberto = false;
     var naoLidas = 0;
+    var ajustesAgendado = false; // auto-abrir agendado no máximo uma vez
+    var visitanteMexeu = false; // o visitante abriu ou fechou a bolha manualmente
+    var visitanteInteragiu = false; // o visitante interagiu com a página (pointerdown/keydown)
+    var contextoDoBip = null; // um AudioContext só por janela: o navegador limita quantos podem existir
+    var somAtual = false; // valor de `som` do último `ajustes` válido
 
     // Iframe: a janela do chat. Começa escondido e só ganha tamanho ao abrir.
     var iframe = document.createElement("iframe");
@@ -161,7 +216,7 @@
     bolha.textContent = "Chat";
     estilo(bolha, {
       position: "fixed",
-      right: "20px",
+      [posicao === "esquerda" ? "left" : "right"]: "20px",
       bottom: "20px",
       zIndex: "2147483000",
       height: "48px",
@@ -205,8 +260,49 @@
 
     // Só o tamanho e a visibilidade do iframe mudam ao abrir e fechar.
     function aplicarTamanho() {
+      // No formato embutido o iframe fica dentro do elemento alvo: nunca fixo, sem sombra.
+      if (formato === "embutido") {
+        estilo(iframe, {
+          position: "static",
+          top: "auto",
+          left: "auto",
+          right: "auto",
+          bottom: "auto",
+          width: "100%",
+          height: "600px",
+          maxHeight: "none",
+          borderRadius: "12px",
+          boxShadow: "none",
+        });
+        return;
+      }
+
       var telaCheia = window.innerWidth <= LARGURA_TELA_CHEIA;
-      if (telaCheia) {
+      if (formato === "painel" && aberto) {
+        if (telaCheia) {
+          estilo(iframe, {
+            top: "0",
+            left: "0",
+            right: "0",
+            bottom: "0",
+            width: "100%",
+            height: "100%",
+            maxHeight: "none",
+            borderRadius: "0",
+          });
+        } else {
+          estilo(iframe, {
+            top: "0",
+            bottom: "0",
+            height: "100vh",
+            width: "380px",
+            maxHeight: "none",
+            borderRadius: "0",
+            left: posicao === "esquerda" ? "0" : "auto",
+            right: posicao === "esquerda" ? "auto" : "0",
+          });
+        }
+      } else if (telaCheia) {
         estilo(iframe, {
           top: "0",
           left: "0",
@@ -220,8 +316,8 @@
       } else {
         estilo(iframe, {
           top: "auto",
-          left: "auto",
-          right: "20px",
+          left: posicao === "esquerda" ? "20px" : "auto",
+          right: posicao === "esquerda" ? "auto" : "20px",
           bottom: "88px",
           width: "380px",
           height: "600px",
@@ -232,11 +328,11 @@
     }
 
     function atualizar() {
-      iframe.style.display = aberto ? "block" : "none";
+      iframe.style.display = aberto || formato === "embutido" ? "block" : "none";
       bolha.setAttribute("aria-expanded", aberto ? "true" : "false");
       bolha.setAttribute("aria-label", aberto ? "Fechar chat" : "Abrir chat");
       badge.textContent = String(naoLidas);
-      badge.style.display = !aberto && naoLidas > 0 ? "block" : "none";
+      badge.style.display = !aberto && formato !== "embutido" && naoLidas > 0 ? "block" : "none";
       aplicarTamanho();
     }
 
@@ -254,18 +350,32 @@
     // Abrir leva o foco ao iframe; fechar devolve o foco à bolha.
     function abrirOuFechar(abrir) {
       aberto = abrir;
+      visitanteMexeu = true;
+      if (abrir) naoLidas = 0;
       atualizar();
       if (aberto) iframe.focus();
       else bolha.focus();
     }
 
     bolha.addEventListener("click", function () {
+      if (formato === "pagina") {
+        window.open(origem + "/chat/" + chave, "_blank", "noopener,noreferrer");
+        return;
+      }
       abrirOuFechar(!aberto);
     });
 
-    // Esc no documento do site fecha o painel quando ele está aberto.
+    // Esc no documento do site fecha o painel quando ele está aberto (não no embutido, que é sempre visível).
     document.addEventListener("keydown", function (evento) {
-      if (evento.key === "Escape" && aberto) abrirOuFechar(false);
+      if (evento.key === "Escape" && aberto && formato !== "embutido") abrirOuFechar(false);
+    });
+
+    // O visitante interagiu com a página: necessário para o som tocar.
+    document.addEventListener("pointerdown", function () {
+      visitanteInteragiu = true;
+    });
+    document.addEventListener("keydown", function () {
+      visitanteInteragiu = true;
     });
 
     iframe.addEventListener("load", enviarContexto);
@@ -278,6 +388,8 @@
       if (dado.tipo === "pronto") {
         enviarContexto();
       } else if (dado.tipo === "fechar") {
+        // Em `embutido` o botão × / a mensagem `fechar` da janela é ignorada.
+        if (formato === "embutido") return;
         if (aberto) abrirOuFechar(false);
       } else if (
         dado.tipo === "nao-lidas" &&
@@ -288,10 +400,49 @@
       ) {
         naoLidas = dado.n;
         atualizar();
+      } else if (dado.tipo === "ajustes") {
+        var a = ajustesDaMensagem(dado);
+        if (!a || ajustesAgendado) return;
+        somAtual = a.som;
+        ajustesAgendado = true;
+        if (a.autoAbrirSegundos > 0 && (formato === "bolha" || formato === "painel")) {
+          setTimeout(function () {
+            if (!aberto && !visitanteMexeu) {
+              aberto = true;
+              naoLidas = 0;
+              atualizar();
+            }
+          }, a.autoAbrirSegundos * 1000);
+        }
+      } else if (dado.tipo === "resposta") {
+        var visivel = aberto || formato === "embutido";
+        if (!visivel) {
+          naoLidas = Math.min(naoLidas + 1, LIMITE_DO_BADGE);
+          atualizar();
+        }
+        if (formato !== "embutido" && somAtual && visitanteInteragiu) {
+          contextoDoBip = tocarBip(contextoDoBip);
+        }
       }
     });
 
     window.addEventListener("resize", aplicarTamanho);
+
+    // Embutido: o iframe vive dentro do elemento alvo marcado no próprio script.
+    // Sem alvo achado, seletor inválido ou elemento ausente: não cria nada e não lança.
+    if (formato === "embutido") {
+      var elementoAlvo = null;
+      try {
+        elementoAlvo = document.querySelector(alvo);
+      } catch (erro) {
+        // seletor inválido (ex: "[", "#[", etc.): não cria nada, sem erro
+        return;
+      }
+      if (!elementoAlvo) return;
+      elementoAlvo.appendChild(iframe);
+      atualizar();
+      return;
+    }
 
     var raiz = document.body || document.documentElement;
     raiz.appendChild(iframe);
@@ -299,13 +450,41 @@
     atualizar();
   }
 
+  // Toca um bip curto (~0,15 s, 880 Hz) com Web Audio, sem arquivo de áudio nem rede.
+  // Reaproveita o contexto recebido e devolve o que usou: criar um por resposta esgota o limite do navegador.
+  function tocarBip(existente) {
+    var contexto = existente || null;
+    try {
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return contexto;
+      if (!contexto) contexto = new AudioContext();
+      if (contexto.state === "suspended" && typeof contexto.resume === "function") contexto.resume();
+      var oscilador = contexto.createOscillator();
+      var ganho = contexto.createGain();
+      oscilador.type = "sine";
+      oscilador.frequency.setValueAtTime(880, contexto.currentTime);
+      oscilador.connect(ganho);
+      ganho.connect(contexto.destination);
+      ganho.gain.setValueAtTime(0.1, contexto.currentTime);
+      oscilador.start(contexto.currentTime);
+      oscilador.stop(contexto.currentTime + 0.15);
+    } catch (erro) {
+      // sem áudio: não faz nada e não lança
+    }
+    return contexto;
+  }
+
   // Exposição para o teste (Node/Vitest). Num navegador, `module` não existe e nada muda.
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       origemDoScript: origemDoScript,
       chaveDoScript: chaveDoScript,
+      formatoDoScript: formatoDoScript,
+      posicaoDoScript: posicaoDoScript,
+      alvoDoScript: alvoDoScript,
       montarContexto: montarContexto,
       aceitarMensagem: aceitarMensagem,
+      ajustesDaMensagem: ajustesDaMensagem,
     };
   }
 
