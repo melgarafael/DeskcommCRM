@@ -157,6 +157,29 @@ describe("montarLembrete", () => {
     });
     expect(comMolde).toBe(semMolde);
   });
+
+  it("frase padrão cita o lugar quando houver", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala B",
+    });
+    expect(texto).toContain("Lugar: Sala B");
+  });
+
+  it("frase padrão não cita o lugar quando não houver", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+    });
+    expect(texto).not.toContain("Lugar:");
+  });
 });
 
 describe("montarLembrete — o link da reunião (Google Meet)", () => {

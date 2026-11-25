@@ -70,6 +70,12 @@ export interface OpcoesDoDubleDoHandler {
    * agente entre uma bolha e outra.
    */
   agente?: LinhaDoDuble | null | (() => LinhaDoDuble | null);
+  /**
+   * O `name` da linha de `api_tokens` que o handler lê para gravar o nome da
+   * integração no balão (#5160). Padrão `null` = linha sem nome (token antigo,
+   * revogado, leitura caída): o rótulo cai para "Integração".
+   */
+  tokenName?: string | null;
 }
 
 export interface RetornoDoDubleDoHandler {
@@ -165,6 +171,7 @@ export function criarDubleDoHandler(
       channel_sessions: [],
       organizations: [],
       calendar_appointments: [],
+      api_tokens: [],
     },
     inserts: { messages: [] },
     selects: {
@@ -174,6 +181,7 @@ export function criarDubleDoHandler(
       channel_sessions: [],
       organizations: [],
       ai_agents: [],
+      api_tokens: [],
     },
     rpcs: [],
   };
@@ -608,6 +616,28 @@ export function criarDubleDoHandler(
             return cadeia;
           },
         };
+      }
+
+      if (tabela === "api_tokens") {
+        // O NOME da integração (#5160): o handler lê `name` da LINHA do token
+        // que autenticou o Bearer, nunca do `metadata` do cliente. Cadeia
+        // encadeável como as outras — um `eq` novo na consulta não deve quebrar
+        // o teste com um erro que não fala do comportamento sob teste.
+        const cadeia = {
+          select: (colunas = "") => {
+            capturas.selects.api_tokens!.push(colunas);
+            return cadeia;
+          },
+          eq: (coluna: string, valor: unknown) => {
+            capturas.filtros.api_tokens!.push({ coluna, valor });
+            return cadeia;
+          },
+          maybeSingle: async () => ({
+            data: opcoes.tokenName ? { name: opcoes.tokenName } : null,
+            error: null,
+          }),
+        };
+        return cadeia;
       }
 
       if (

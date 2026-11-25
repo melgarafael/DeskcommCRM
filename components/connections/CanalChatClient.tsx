@@ -44,6 +44,8 @@ const MAXIMO_DE_DOMINIOS = 20;
 type ModoDeColeta = "oculto" | "opcional" | "obrigatorio";
 type Campo = "nome" | "telefone" | "email";
 const CAMPOS: Campo[] = ["nome", "telefone", "email"];
+type FormatoDoChat = "bolha" | "painel" | "embutido" | "pagina";
+type PosicaoDoChat = "direita" | "esquerda";
 
 interface Config {
   titulo?: string;
@@ -52,6 +54,15 @@ interface Config {
   coleta?: Partial<Record<Campo, ModoDeColeta>>;
   /** Chat pausado pela organização (`metadata.webchat.pausado`). */
   pausado?: boolean;
+  /** Formato da janela do chat (`metadata.webchat.formato`). */
+  formato?: FormatoDoChat;
+  /** Posição da janela do chat (`metadata.webchat.posicao`). */
+  posicao?: PosicaoDoChat;
+  /** Ajustes da janela (Tarefa 10a). */
+  avatar_url?: string;
+  auto_abrir_segundos?: number;
+  som?: boolean;
+  respostas_rapidas?: string[];
 }
 
 interface Estado {
@@ -196,6 +207,28 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   const [girarAberto, setGirarAberto] = useState(false);
   const [pausaAberta, setPausaAberta] = useState(false);
   const pausado = estado.config.pausado === true;
+  const formatoInicial: FormatoDoChat = estado.config.formato ?? "bolha";
+  const posicaoInicial: PosicaoDoChat = estado.config.posicao ?? "direita";
+  const [formato, setFormato] = useState<FormatoDoChat>(formatoInicial);
+  const [posicao, setPosicao] = useState<PosicaoDoChat>(posicaoInicial);
+
+  // Ajustes da janela (Tarefa 10a): estado inicial vem da configuracao; vazio = "não mudar".
+  const avatarInicial = estado.config.avatar_url ?? "";
+  const autoAbrirInicial = estado.config.auto_abrir_segundos ?? 0;
+  const somInicial = estado.config.som ?? false;
+  const respostasInicial = (estado.config.respostas_rapidas ?? []).join("\n");
+  const [avatarUrl, setAvatarUrl] = useState(avatarInicial);
+  const [autoAbrirSegundos, setAutoAbrirSegundos] = useState(String(autoAbrirInicial));
+  const [som, setSom] = useState(somInicial);
+  const [respostasRapidas, setRespostasRapidas] = useState(respostasInicial);
+
+  // Uma resposta rápida por linha, aparadas e sem linha vazia. A validação de verdade é do servidor.
+  function linhasDeResposta(texto: string): string[] {
+    return texto
+      .split(/\r?\n/)
+      .map((linha) => linha.trim())
+      .filter((linha) => linha !== "");
+  }
 
   // Aparência: campo em branco é "não mudar". Só vai o que foi preenchido.
   const corPreenchida = cor.trim() !== "";
@@ -208,6 +241,47 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
 
   // Coleta: o servidor troca o objeto `coleta` inteiro, então vai sempre com os três campos.
   const coletaMudou = CAMPOS.some((campo) => coleta[campo] !== coletaAtual(estado.config)[campo]);
+
+  // Formato e posição: campo em branco não acontece (são selects), então vai sempre com o valor atual.
+  const formatoValido = ["bolha", "painel", "embutido", "pagina"].includes(formato);
+  const posicaoValida = ["direita", "esquerda"].includes(posicao);
+  const formatoMudou = formato !== formatoInicial;
+  const posicaoMudou = posicao !== posicaoInicial;
+
+  // Ajustes da janela: validação no cliente, mesmas regras do schema. Campo em branco não muda.
+  const avatarPreenchido = avatarUrl.trim() !== "";
+  const avatarValida = !avatarPreenchido || avatarUrl.trim().startsWith("https://");
+
+  const autoAbrirPreenchido = autoAbrirSegundos.trim() !== "";
+  const autoAbrirAtual = autoAbrirPreenchido ? autoAbrirSegundos.trim() : "0";
+  let autoAbrirValido = true;
+  let autoAbrirParaEnviar: number = 0;
+  if (autoAbrirPreenchido) {
+    const n = Number(autoAbrirSegundos);
+    autoAbrirValido = Number.isInteger(n) && n >= 0 && n <= 120;
+    autoAbrirParaEnviar = n;
+  }
+
+  const respostasLinhas = linhasDeResposta(respostasRapidas);
+  const respostasValidas =
+    respostasLinhas.length <= 5 && respostasLinhas.every((linha) => linha.length >= 1 && linha.length <= 80);
+
+  const ajustes: Record<string, unknown> = {};
+  // Em branco com avatar salvo = tirar o avatar: vai "" (o schema aceita e a janela trata como sem avatar).
+  if (avatarUrl.trim() !== avatarInicial) ajustes.avatar_url = avatarUrl.trim();
+  if (autoAbrirAtual !== String(autoAbrirInicial)) {
+    ajustes.auto_abrir_segundos = autoAbrirParaEnviar;
+  }
+  if (som !== somInicial) ajustes.som = som;
+  if (respostasRapidas.trim() !== respostasInicial) ajustes.respostas_rapidas = respostasLinhas;
+
+  const ajustesMudou =
+    avatarUrl.trim() !== avatarInicial ||
+    autoAbrirAtual !== String(autoAbrirInicial) ||
+    som !== somInicial ||
+    respostasRapidas.trim() !== respostasInicial;
+
+  const ajustesValidos = avatarValida && autoAbrirValido && respostasValidas;
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -280,7 +354,10 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
   let link = "";
   let codigoMontado = true;
   try {
-    codigo = codigoParaColar(origem, estado.public_key ?? "");
+    codigo = codigoParaColar(origem, estado.public_key ?? "", {
+      formato,
+      posicao,
+    });
     link = linkDireto(origem, estado.public_key ?? "");
   } catch {
     codigoMontado = false;
@@ -395,6 +472,165 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
         <div>
           <Button onClick={() => salvar({ config: { coleta } })} disabled={ocupado || !coletaMudou}>
             {t("Salvar coleta")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Formato da janela")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Como a janela aparece para quem visita o seu site.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-formato">{t("Formato")}</Label>
+          <select
+            id="canal-chat-formato"
+            value={formato}
+            onChange={(e) => setFormato(e.target.value as FormatoDoChat)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="bolha">{t("Bolha no canto")}</option>
+            <option value="painel">{t("Painel na lateral")}</option>
+            <option value="embutido">{t("Embutido numa área do site")}</option>
+            <option value="pagina">{t("Página inteira")}</option>
+          </select>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Mudou o formato? Cole o código novo no seu site (abaixo). Embutido não mostra a bolha: o iframe fica dentro de um elemento da sua página.",
+          )}
+        </p>
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: { formato } })
+            }
+            disabled={ocupado || !formatoMudou || !formatoValido}
+          >
+            {t("Salvar formato")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Posição")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Lado da tela onde a janela fica aberta.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-posicao">{t("Posição")}</Label>
+          <select
+            id="canal-chat-posicao"
+            value={posicao}
+            onChange={(e) => setPosicao(e.target.value as PosicaoDoChat)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="direita">{t("Direita")}</option>
+            <option value="esquerda">{t("Esquerda")}</option>
+          </select>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("Vale para bolha, painel e página inteira.")}
+        </p>
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: { posicao } })
+            }
+            disabled={ocupado || !posicaoMudou || !posicaoValida}
+          >
+            {t("Salvar posição")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Ajustes da janela")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t("Como a janela se comporta para quem visita o seu site.")}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-avatar">{t("Avatar")}</Label>
+          <Input
+            id="canal-chat-avatar"
+            value={avatarUrl}
+            maxLength={300}
+            placeholder="https://example.com/avatar.png"
+            onChange={(e) => setAvatarUrl(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("URL da imagem do avatar (somente https).")}
+          </p>
+          {!avatarValida && avatarPreenchido && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use https:// na URL do avatar.")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-auto-abrir">{t("Abrir sozinho após (segundos)")}</Label>
+          <Input
+            id="canal-chat-auto-abrir"
+            type="number"
+            value={autoAbrirSegundos}
+            maxLength={3}
+            onChange={(e) => setAutoAbrirSegundos(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Vazio ou 0 desliga a abertura automática.")}
+          </p>
+          {!autoAbrirValido && autoAbrirPreenchido && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use um número inteiro de 0 a 120 segundos.")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-som">{t("Tocar som ao chegar resposta")}</Label>
+          <input
+            id="canal-chat-som"
+            type="checkbox"
+            checked={som}
+            onChange={(e) => setSom(e.target.checked)}
+            className="h-4 w-4 rounded-sm border-input"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-respostas-rapidas">{t("Respostas rápidas do chat")}</Label>
+          <Textarea
+            id="canal-chat-respostas-rapidas"
+            rows={4}
+            value={respostasRapidas}
+            placeholder="Ex.: Sim"
+            onChange={(e) => setRespostasRapidas(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.")}
+          </p>
+          {!respostasValidas && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use até 5 respostas rápidas, de 1 a 80 caracteres cada.")}
+            </p>
+          )}
+        </div>
+        <div>
+          <Button
+            onClick={() =>
+              // Volta com o que o servidor guardou (como "Salvar domínios"): os *Inicial deste render são os de antes.
+              salvar({ config: ajustes }, (atualizado) => {
+                setAvatarUrl(atualizado.config.avatar_url ?? "");
+                setAutoAbrirSegundos(String(atualizado.config.auto_abrir_segundos ?? 0));
+                setSom(atualizado.config.som ?? false);
+                setRespostasRapidas((atualizado.config.respostas_rapidas ?? []).join("\n"));
+              })
+            }
+            disabled={
+              ocupado ||
+              !ajustesMudou ||
+              !ajustesValidos
+            }
+          >
+            {t("Salvar ajustes")}
           </Button>
         </div>
       </section>

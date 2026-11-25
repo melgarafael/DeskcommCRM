@@ -139,8 +139,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_available_attendants": { tokens: 179, motivo: BASE },
   "crm_list_human_cases": { tokens: 149, motivo: BASE },
   "crm_get_human_case": { tokens: 208, motivo: BASE },
-  "crm_find_and_book_appointment": { tokens: 1028, motivo: BASE },
-  "crm_book_appointment": { tokens: 1203, motivo: BASE },
+  "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
+  "crm_book_appointment": { tokens: 1330, motivo: BASE },
   "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
@@ -291,7 +291,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main. MEDIDO na árvore
 // mesclada com a main de 2026-11-24 (`4375600d37`, que já tinha 47687), não somado
 // à mão: 48118 = 47687 + 431 (o teste imprime a tabela com a soma medida).
-const TETO_TOTAL = 48118;
+// +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
+// MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
+// não somado à mão.
+// 2026-11-24 (72f05b5297, que tinha 47941): 48372 = 47941 + 431, não somado à mão.
+const TETO_TOTAL = 48372;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
