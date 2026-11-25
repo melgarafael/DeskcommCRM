@@ -164,6 +164,33 @@ describe("consulta por lugar", () => {
     expect(r).toEqual({ livre: null, motivo: "space_capacity_reached" });
   });
 
+  it("primeiroLugarLivre com grupo maior que a sala recusa com party_exceeds_space_capacity quando nenhuma sala comporta", async () => {
+    vi.mocked(googleRpc).mockResolvedValue([{ available: false, starts_at, reason: "party_exceeds_space_capacity" }]);
+
+    const r = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, starts_at, "owner-1", 12);
+    expect(r).toEqual({ livre: null, motivo: "party_exceeds_space_capacity" });
+    for (const chamada of vi.mocked(googleRpc).mock.calls) {
+      expect(chamada[2].p_party).toBe(12);
+    }
+  });
+
+  it("primeiroLugarLivre escolhe a sala que comporta o grupo quando há outra", async () => {
+    // lugaresDoServico ordena: Sala A (SALA_B), Sala B (SALA_A), Sala C (SALA_C)
+    vi.mocked(googleRpc).mockImplementation(async (_db: unknown, _nome: string, params: Record<string, unknown>) => {
+      const pSpace = params.p_space as string | undefined;
+      const pParty = params.p_party as number | undefined;
+      if (pSpace === SALA_B) return [{ available: false, starts_at, reason: "party_exceeds_space_capacity" }];
+      if (pSpace === SALA_A && pParty === 4) return [{ available: true, starts_at, space_id: SALA_A, reason: null }];
+      if (pSpace === SALA_A && pParty === 12) return [{ available: false, starts_at, reason: "party_exceeds_space_capacity" }];
+      if (pSpace === SALA_C && pParty === 4) return [{ available: true, starts_at, space_id: SALA_C, reason: null }];
+      return [];
+    });
+
+    const lugar = await primeiroLugarLivre({} as SupabaseClient, ORG, servicoComSalas, starts_at, "owner-1", 4);
+    expect(lugar).toEqual({ livre: { id: SALA_A, name: "Sala B" }, motivo: null });
+    expect(googleRpc).toHaveBeenCalledTimes(3);
+  });
+
   it("lugaresDoServico ordena por nome pt-BR", () => {
     expect(lugaresDoServico(servicoComSalas)).toEqual([
       { id: SALA_B, name: "Sala A", sector: null },
