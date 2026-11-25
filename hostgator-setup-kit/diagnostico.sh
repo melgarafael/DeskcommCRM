@@ -95,8 +95,8 @@ IMG_APP="$(imagem_do_servico app)"
 
 # (c) A imagem do worker veio do NOSSO CI, ou foi construída nesta máquina?
 #
-#     O sinal é `org.opencontainers.image.revision`, e a escolha dele não é
-#     arbitrária: ele é o ÚNICO label que só o CI produz. Medido nas duas
+#     O sinal é `org.opencontainers.image.version`, junto com o `revision`, e a
+#     escolha não é arbitrária: é o label que só o CI produz. Medido nas duas
 #     imagens lado a lado —
 #
 #       publicada pelo CI : created, description, licenses, revision, source,
@@ -104,8 +104,16 @@ IMG_APP="$(imagem_do_servico app)"
 #       construída aqui   : licenses, source, title
 #
 #     `source`, `licenses` e `title` vêm do `LABEL` do Dockerfile, então uma
-#     imagem local os carrega também; `revision` (e `version`) vêm do
-#     docker/metadata-action, que só roda no CI.
+#     imagem local os carrega também; `version` vem do docker/metadata-action,
+#     que só roda no CI.
+#
+#     Até o #5196 o `revision` sozinho bastava, porque nada além do CI o punha.
+#     Desde então o build que o `up -d` faz nesta máquina quando o download
+#     falha TAMBÉM carimba o `revision` (o commit do disco, com a árvore limpa),
+#     para a tela de versão conseguir confirmar o que roda. Decidir só por ele
+#     passaria a chamar de "imagem publicada" justamente a imagem construída
+#     aqui. O `version` continua só do CI: o build local passa a versão como
+#     ARGUMENTO (vira `APP_VERSION` no ambiente da imagem), nunca como label.
 #
 #     A primeira versão deste detector decidia pelo NOME da imagem ("tem host,
 #     logo veio de registro") e só consultava os labels quando o nome não tinha
@@ -116,6 +124,7 @@ IMG_APP="$(imagem_do_servico app)"
 #     proteção que o código não implementava.
 LABEL_SOURCE=""
 LABEL_REVISION=""
+LABEL_VERSION=""
 CRIADA_WORKER=""
 CRIADA_APP=""
 if [ -n "$IMG_WORKER" ]; then
@@ -125,6 +134,9 @@ if [ -n "$IMG_WORKER" ]; then
   LABEL_REVISION="$(docker image inspect "$IMG_WORKER" \
                     --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null)"
   [ "$LABEL_REVISION" = "<no value>" ] && LABEL_REVISION=""
+  LABEL_VERSION="$(docker image inspect "$IMG_WORKER" \
+                   --format '{{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null)"
+  [ "$LABEL_VERSION" = "<no value>" ] && LABEL_VERSION=""
   # ATENÇÃO ao usar `docker image inspect`, e não `docker inspect <contêiner>`:
   # o `.Created` do CONTÊINER é a hora em que ele foi recriado, e um `up -d`
   # recria todos juntos — na produção os dois batiam no mesmo segundo enquanto
@@ -134,15 +146,16 @@ if [ -n "$IMG_WORKER" ]; then
 fi
 [ -n "$IMG_APP" ] && CRIADA_APP="$(docker image inspect "$IMG_APP" --format '{{.Created}}' 2>/dev/null | cut -c1-10)"
 
-# A decisão é do `revision`, sozinho. O nome da imagem entra depois, só na
-# explicação — ele é sugestivo e falsificável, o label não.
+# A decisão é dos labels do CI: `version` E `revision` (ver (c) acima). O nome
+# da imagem entra depois, só na explicação — ele é sugestivo e falsificável.
 WORKER_DO_CI=nao
-[ -n "$LABEL_REVISION" ] && WORKER_DO_CI=sim
+[ -n "$LABEL_VERSION" ] && [ -n "$LABEL_REVISION" ] && WORKER_DO_CI=sim
 
 # Dois sabores de "construída aqui", com consequências diferentes para o texto:
 #   legado      → sem label nenhum: Dockerfile.worker antigo, anterior à correção
-#   build local → tem `source` mas não `revision`: Dockerfile atual, compilado
-#                 nesta máquina (docker-compose.build.yml). Pode ser deliberado.
+#   build local → tem `source` mas não o `version` do CI: Dockerfile atual,
+#                 compilado nesta máquina (docker-compose.build.yml, ou o build
+#                 que o `up -d` faz quando o download falha). Pode ser deliberado.
 SABOR_LOCAL=legado
 [ -n "$LABEL_SOURCE" ] && SABOR_LOCAL=build_local
 
@@ -200,8 +213,8 @@ item "O worker — o processo que faz o agente de IA atender — está rodando u
 item "imagem ${B}construída dentro deste servidor${Z}, não a publicada pelo projeto."
 printf '\n'
 item "${B}Como sabemos:${Z}"
-item "  • a imagem '${IMG_WORKER}' não tem a marca de revisão que o nosso CI"
-item "    carimba em toda imagem publicada (org.opencontainers.image.revision)"
+item "  • a imagem '${IMG_WORKER}' não tem a marca de versão que o nosso CI"
+item "    carimba em toda imagem publicada (org.opencontainers.image.version)"
 if [ "$SABOR_LOCAL" = "build_local" ]; then
   item "  • ela tem as demais etiquetas do projeto, então foi construída a partir"
   item "    do código atual — pode ter sido uma escolha sua (build local)"

@@ -886,11 +886,15 @@ export VOICE_AGENT_IMAGE="${IMG_VOICE_AGENT}:${VERSAO_ALVO}"
 #
 # `APP_VERSION` é a versão ALVO: o código no disco É ela (o `git checkout` da
 # tag aconteceu lá em cima). `APP_REVISION` é o commit que o `checkout` deixou
-# — a revisão de onde a imagem é construída de verdade. Se o git não responder,
-# vai vazia: label vazio é aceito pelo Compose e o `_runtime.sh` já o trata como
-# não-medido (igual a hoje). Carimbar um palpite seria pior que não carimbar.
+# — a revisão de onde a imagem é construída de verdade —, mas SÓ com a árvore
+# limpa: o `git checkout` mantém mudança local que não diverge da versão nova,
+# e o `COPY . .` a levaria para dentro de uma imagem carimbada como oficial.
+# Árvore suja, ou git que não responde, vai vazia: label vazio é aceito pelo
+# Compose e o `_runtime.sh` já o trata como não-medido (igual a hoje). A regra
+# mora em `revisao_da_arvore_limpa` (_common.sh). Nada de herdar `APP_REVISION`
+# do ambiente: o valor é medido aqui, nunca aceito de fora.
 export APP_VERSION="$VERSAO_ALVO"
-export APP_REVISION="${APP_REVISION:-$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)}"
+export APP_REVISION="$(revisao_da_arvore_limpa "$PROJECT_DIR")"
 # `gravar_imagens` também cria, só na lacuna, o par VAPID dos avisos com o app
 # fechado (`completar_par_vapid`), e nunca troca um par que já existe. Mora lá
 # dentro, e não numa linha daqui, porque é ela que o update.sh ANTIGO chama

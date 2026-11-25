@@ -1046,6 +1046,23 @@ restaurar_servicos() {
   diagnostico_de_atualizacao "$rc_da_execucao"
 }
 
+# ── A revisão que um build feito AQUI pode carimbar (#5196) ──────────────────
+# O commit do disco, e só quando a árvore É exatamente ele. Os Dockerfiles do
+# worker, do scheduler e da voz copiam a pasta inteira (`COPY . .`): um remendo
+# feito à mão, ou um arquivo novo deixado aqui, entra na imagem e não está no
+# commit — carimbar a revisão oficial nessa imagem a faria passar por
+# verificada na tela de versão. Árvore suja sai VAZIA, e a imagem segue "não
+# verificada", como antes do #5196. Git que não responde (sem `.git`, dono
+# diferente) também sai vazio: carimbar um palpite seria pior que não carimbar.
+# As marcas do próprio kit (`.update-de-onde-vim`, `.update.lock`, os `.log`)
+# moram no `.gitignore`, que o `git status` respeita.
+revisao_da_arvore_limpa() {  # revisao_da_arvore_limpa <pasta> → sha ou nada
+  local sujo
+  sujo="$(git -C "$1" status --porcelain --untracked-files=normal 2>/dev/null)" || return 0
+  [ -z "$sujo" ] || return 0
+  git -C "$1" rev-parse HEAD 2>/dev/null || true
+}
+
 # ── Imagem pronta que não serve para esta VPS: constrói a versão aqui ────────
 # Uma VPS cuja arquitetura não é a das imagens publicadas (Oracle Ampere, por
 # exemplo) recebe "no matching manifest for linux/arm64/v8" ao puxá-las. O
