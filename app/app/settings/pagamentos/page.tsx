@@ -18,9 +18,9 @@ export const dynamic = "force-dynamic";
  * passa por esta revisão.
  *
  * A linha daqui NÃO é o gateway em vigor — é só a configuração PRÓPRIA desta
- * organização, e pode nem existir (herança) ou estar desligada. Quem resolve a
- * herança é a rota (`GET /api/v1/pagamentos/gateway`), que é a única que sabe
- * qual é o provedor da instalação; esta página usa a linha apenas para o
+ * organização, e pode nem existir ou estar desligada (nos dois casos a
+ * organização não cobra). Quem resolve o estado é a rota
+ * (`GET /api/v1/pagamentos/gateway`); esta página usa a linha apenas para o
  * formulário já abrir com o provedor e o `last4` certos, sem um piscar de campo
  * vazio.
  */

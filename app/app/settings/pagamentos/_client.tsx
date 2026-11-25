@@ -25,7 +25,7 @@ import {
  *
  * Escolher o provedor, digitar a chave, salvar e desligar. É isso. O MODO
  * (teste/produção) não é um campo: ele é derivado do prefixo da chave no
- * servidor (`modoDaChave`), e aqui só aparece o que VOLTOU da rota. Um campo de
+ * servidor (o `testarChave` do adaptador), e aqui só aparece o que VOLTOU da rota. Um campo de
  * modo livre deixaria gravar "produção" com chave de teste e mandar o cliente
  * pagar num link que não cobra — o mesmo defeito que a tela do trunk SIP evita
  * não pedindo o endpoint.
@@ -39,13 +39,12 @@ import {
  * chave. Quem recarrega a página não recebe a chave de volta: ela não existe em
  * claro em lugar nenhum, só o envelope AES-256-GCM no banco.
  *
- * ─── Herdar é um estado NOMEADO, não um vazio ───────────────────────────────
+ * ─── Sem gateway próprio, a organização não cobra ───────────────────────────
  *
- * Organização sem linha própria — ou com a linha desligada — usa o gateway da
- * instalação. A tela diz isso com todas as letras e NÃO mostra `last4`: a chave
- * herdada não é desta organização, e exibir os últimos dígitos dela aqui seria
- * vazar um pedaço de credencial de outra conta. Quem resolve a herança é o
- * servidor; esta tela só desenha o que ele respondeu.
+ * Organização sem linha própria — ou com a linha desligada — NÃO usa o gateway
+ * da instalação (doc 280: numa VPS de revendedor, a venda do cliente cairia na
+ * conta do revendedor). A tela diz isso com todas as letras. Quem resolve o
+ * estado é o servidor; esta tela só desenha o que ele respondeu.
  */
 export interface GatewaySettingsRow {
   organization_id: string;
@@ -110,34 +109,17 @@ export function GatewayDaOrganizacaoClient({
 
   /**
    * O provedor no seletor: o que a pessoa escolheu vence; senão o que o servidor
-   * disse estar em vigor (inclusive herdado — é a sugestão mais útil para quem
-   * vai configurar o próprio); senão a linha da view, que já veio pronta no
-   * primeiro render e evita o campo piscar vazio.
-   *
-   * A herança passa pelo MESMO guard da linha: o seletor só oferece
-   * `PROVEDORES_DE_PAGAMENTO` (stripe|asaas), e o gateway em vigor pode ser
-   * `efi` quando a instalação cobra com ele (#4944) — sugerir um provedor que a
-   * organização não pode gravar (CHECK da 9409) faria o PUT voltar
-   * `provedor_fora`.
+   * disse estar em vigor; senão a linha da view, que já veio pronta no primeiro
+   * render e evita o campo piscar vazio (inclusive quando ela está desligada).
    */
   const provedorNaTela: ProvedorDePagamento | "" =
     provedorEscolhido ??
     (ehProvedorDePagamento(estado?.provider) ? estado.provider : null) ??
     (ehProvedorDePagamento(initialRow?.provider) ? initialRow.provider : "");
 
-  /**
-   * O nome do provedor EM VIGOR para a linha de resumo. `Efi Bank` é nome
-   * próprio, igual ao seletor da Cobrança do revendedor — e só aparece na
-   * herança, porque a organização não pode gravar `efi` (CHECK da 9409).
-   */
+  /** O nome do provedor EM VIGOR para a linha de resumo. */
   const nomeDoProvedor: string =
-    estado?.provider === "stripe"
-      ? t("Stripe")
-      : estado?.provider === "asaas"
-        ? t("Asaas")
-        : estado?.provider === "efi"
-          ? "Efi Bank"
-          : "—";
+    estado?.provider === "stripe" ? t("Stripe") : estado?.provider === "asaas" ? t("Asaas") : "—";
 
   const salvar = useMutation({
     mutationFn: async () => {
@@ -193,16 +175,21 @@ export function GatewayDaOrganizacaoClient({
           {estado === undefined ? (
             <p className="text-muted-foreground">{t("Consultando o gateway em vigor…")}</p>
           ) : estado === null || estado.origem === "nenhuma" ? (
-            <p className="text-muted-foreground">
-              {t("Nenhum gateway configurado — nem nesta organização, nem na instalação.")}
-            </p>
+            <>
+              <p className="text-muted-foreground">
+                {t("Nenhum gateway ligado nesta organização. Sem ele, esta organização não cobra.")}
+              </p>
+              {estado?.configurada && !estado.isActive && (
+                <p className="text-muted-foreground">
+                  {t(
+                    "A configuração própria desta organização está desligada; enquanto isso, ela não cobra.",
+                  )}
+                </p>
+              )}
+            </>
           ) : (
             <>
-              <p className="font-medium">
-                {estado.origem === "organizacao"
-                  ? t("Configurado por esta organização.")
-                  : t("Herdado da instalação — nenhuma chave desta organização é usada.")}
-              </p>
+              <p className="font-medium">{t("Configurado por esta organização.")}</p>
               <p>
                 {t("Provedor")}:{" "}
                 {nomeDoProvedor}
@@ -210,22 +197,11 @@ export function GatewayDaOrganizacaoClient({
                 {t("Modo")}:{" "}
                 {estado.modo === "teste" ? t("Teste") : estado.modo === "producao" ? t("Produção") : "—"}
               </p>
-              {estado.origem === "organizacao" && estado.apiKeyLast4 ? (
+              {estado.apiKeyLast4 ? (
                 <p className="text-muted-foreground">
                   {t("Chave")} {t("configurada, termina em")} <code>{estado.apiKeyLast4}</code>
                 </p>
-              ) : (
-                <p className="text-muted-foreground">
-                  {t("A configuração herdada não expõe nem os últimos dígitos da chave.")}
-                </p>
-              )}
-              {estado.configurada && !estado.isActive && (
-                <p className="text-muted-foreground">
-                  {t(
-                    "A configuração própria desta organização está desligada; a cobrança volta a usar a da instalação.",
-                  )}
-                </p>
-              )}
+              ) : null}
             </>
           )}
         </CardContent>

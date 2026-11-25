@@ -13,21 +13,16 @@
  * também com `efi` (#4944 / migration 9418), e esta lista continua
  * `stripe|asaas` porque o CHECK de `organization_payment_gateways` (migration
  * 9409) é o que ela espelha. Valor novo aqui entra no CHECK no MESMO commit.
- *
- * ⚠️ O que NÃO se conclui daí: que a organização em vigor nunca cobre com Efi.
- * Ela herda o gateway da instalação quando não tem linha própria, e a herança
- * pode ser `efi` — por isso o tipo do gateway em vigor
- * (`lib/pagamentos/gateway-da-organizacao`) é o LARGO, `ProvedorDeCobranca`.
- * Quem garante que o adaptador EXISTE para cada valor é o `switch` exaustivo de
- * `adaptador()`.
+ * A organização não herda o gateway da instalação (doc 280), então esta lista é
+ * também a de todo provedor com que uma organização pode cobrar.
  */
 export const PROVEDORES_DE_PAGAMENTO = ["stripe", "asaas"] as const;
 export type ProvedorDePagamento = (typeof PROVEDORES_DE_PAGAMENTO)[number];
 
 /**
  * `teste` | `producao` — o MESMO vocabulário do resto da cobrança
- * (`lib/cobranca/vocabulario`), e derivado do prefixo da chave, nunca digitado:
- * ver `modoDaChave` em `./modo-da-chave`.
+ * (`lib/cobranca/vocabulario`), e derivado da chave, nunca digitado: quem o
+ * devolve é o `testarChave` do adaptador, na gravação.
  */
 export const MODOS_DE_PAGAMENTO = ["teste", "producao"] as const;
 export type ModoDePagamento = (typeof MODOS_DE_PAGAMENTO)[number];

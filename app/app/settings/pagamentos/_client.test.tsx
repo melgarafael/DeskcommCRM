@@ -7,13 +7,13 @@
  *    assim que o salvamento dá certo. Depois disso a tela mostra o `last4` que o
  *    SERVIDOR mandou — não a chave. Se alguém "melhorar" a tela guardando a
  *    chave para reexibir, é aqui que fica vermelho.
- * 2. **Herdar é um estado nomeado.** Organização sem configuração própria vê
- *    "Herdado da instalação" e NÃO vê `last4`: a chave herdada não é dela, e os
- *    quatro últimos dígitos da conta de outra pessoa não são para aparecer.
+ * 2. **Sem gateway próprio, a tela diz que a organização não cobra.** A conta
+ *    da instalação não é herdada (doc 280), e a tela não sugere que seja:
+ *    nada de provedor, modo ou `last4` de outra conta.
  * 3. **Sem `admin`, não se altera nada.** Os botões não existem (escolha
  *    declarada aqui: escondidos, não desabilitados — botão cinza numa tela que
  *    não é sua só ensina a clicar e receber "não").
- * 4. **Desligar volta a herdar**, e a tela redesenha o que a rota devolveu.
+ * 4. **Desligar para a cobrança**, e a tela redesenha o que a rota devolveu.
  * 5. **O erro chega COM O CÓDIGO.** `invalid_provider_key` e
  *    `provider_key_mode_mismatch` pedem coisas diferentes de quem está
  *    configurando; um "erro ao salvar" genérico esconde as duas.
@@ -35,16 +35,21 @@ vi.mock("@/lib/api/client", () => ({ apiClient: api }));
 // O toque sonoro do erro não é o assunto aqui: o que interessa é o aviso EM TELA.
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 
-/** O que a rota devolve quando a organização não tem (ou desligou) a própria conta. */
-const HERDADO: EstadoDoGatewayParaTela = {
-  origem: "instalacao",
-  provider: "stripe",
-  modo: "teste",
+/** O que a rota devolve quando a organização não tem a própria conta. */
+const SEM_GATEWAY: EstadoDoGatewayParaTela = {
+  origem: "nenhuma",
+  provider: null,
+  modo: null,
   apiKeyLast4: null,
   webhookSecretLast4: null,
   configurada: false,
   isActive: false,
 };
+
+/** O que a rota devolve depois de desligar: a linha continua, a cobrança para. */
+const DESLIGADO: EstadoDoGatewayParaTela = { ...SEM_GATEWAY, configurada: true };
+
+const TEXTO_SEM_GATEWAY = "Nenhum gateway ligado nesta organização. Sem ele, esta organização não cobra.";
 
 /** O que a rota devolve com a conta da PRÓPRIA organização em vigor. */
 const PROPRIO: EstadoDoGatewayParaTela = {
@@ -70,9 +75,9 @@ const LINHA_PROPRIA: GatewaySettingsRow = {
 const CHAVE_DIGITADA = "sk_test_51H8xQ2abcXYZ";
 
 beforeEach(() => {
-  api.get.mockReset().mockResolvedValue({ data: HERDADO });
+  api.get.mockReset().mockResolvedValue({ data: SEM_GATEWAY });
   api.put.mockReset().mockResolvedValue({ data: PROPRIO });
-  api.delete.mockReset().mockResolvedValue({ data: HERDADO });
+  api.delete.mockReset().mockResolvedValue({ data: DESLIGADO });
 });
 
 function montar({
@@ -96,9 +101,10 @@ describe("Gateway de pagamento — a chave vai no PUT e não volta", () => {
     const user = userEvent.setup();
     montar();
 
-    // Espera o estado em vigor chegar: é ele que preenche o provedor.
-    await screen.findByText("Herdado da instalação — nenhuma chave desta organização é usada.");
-    expect(screen.getByLabelText("Provedor")).toHaveValue("stripe");
+    await screen.findByText(TEXTO_SEM_GATEWAY);
+    // Sem conta própria, nada vem preenchido: o provedor é escolha de quem configura.
+    expect(screen.getByLabelText("Provedor")).toHaveValue("");
+    await user.selectOptions(screen.getByLabelText("Provedor"), "stripe");
 
     await user.type(campoDaChave(), CHAVE_DIGITADA);
     await user.click(screen.getByRole("button", { name: "Salvar" }));
@@ -132,7 +138,7 @@ describe("Gateway de pagamento — a chave vai no PUT e não volta", () => {
     const user = userEvent.setup();
     montar();
 
-    await screen.findByText("Herdado da instalação — nenhuma chave desta organização é usada.");
+    await screen.findByText(TEXTO_SEM_GATEWAY);
     const salvar = screen.getByRole("button", { name: "Salvar" });
     expect(salvar).toBeDisabled();
 
@@ -151,15 +157,14 @@ describe("Gateway de pagamento — a chave vai no PUT e não volta", () => {
   });
 });
 
-describe("Gateway de pagamento — o estado herdado aparece nomeado e sem last4", () => {
-  it("sem configuração própria, a tela diz que herda e não mostra os 4 últimos", async () => {
+describe("Gateway de pagamento — sem conta própria, a organização não cobra", () => {
+  it("sem configuração própria, a tela diz que não cobra e não mostra provedor nem last4", async () => {
     montar();
 
-    await screen.findByText("Herdado da instalação — nenhuma chave desta organização é usada.");
+    await screen.findByText(TEXTO_SEM_GATEWAY);
     expect(screen.queryByText(/termina em/)).toBeNull();
-    expect(
-      screen.getByText("A configuração herdada não expõe nem os últimos dígitos da chave."),
-    ).toBeTruthy();
+    expect(screen.queryByText(/instalação/)).toBeNull();
+    expect(screen.queryByText(/^Provedor:/)).toBeNull();
     // Sem conta própria, não há o que desligar.
     expect(screen.queryByRole("button", { name: "Desligar" })).toBeNull();
   });
@@ -180,7 +185,7 @@ describe("Gateway de pagamento — quem não é admin não altera", () => {
   });
 });
 
-describe("Gateway de pagamento — desligar volta a herdar", () => {
+describe("Gateway de pagamento — desligar para a cobrança", () => {
   it("desligar chama DELETE e redesenha o estado que a rota devolveu", async () => {
     api.get.mockResolvedValue({ data: PROPRIO });
     const user = userEvent.setup();
@@ -191,7 +196,10 @@ describe("Gateway de pagamento — desligar volta a herdar", () => {
 
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith("/api/v1/pagamentos/gateway"));
     expect(api.put).not.toHaveBeenCalled();
-    await screen.findByText("Herdado da instalação — nenhuma chave desta organização é usada.");
+    await screen.findByText(TEXTO_SEM_GATEWAY);
+    expect(
+      screen.getByText("A configuração própria desta organização está desligada; enquanto isso, ela não cobra."),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Desligar" })).toBeNull();
   });
 });
@@ -205,7 +213,8 @@ describe("Gateway de pagamento — o erro do provedor chega com o código", () =
     const user = userEvent.setup();
     montar();
 
-    await screen.findByText("Herdado da instalação — nenhuma chave desta organização é usada.");
+    await screen.findByText(TEXTO_SEM_GATEWAY);
+    await user.selectOptions(screen.getByLabelText("Provedor"), "stripe");
     await user.type(campoDaChave(), CHAVE_DIGITADA);
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
@@ -214,7 +223,7 @@ describe("Gateway de pagamento — o erro do provedor chega com o código", () =
     // A frase da rota (que sabe o contexto) também passa: só o código não
     // ensina o que fazer, e só a frase esconde QUAL recusa foi.
     expect(alerta.textContent).toContain(mensagem);
-    // Nada foi salvo: o estado em vigor continua o herdado.
-    expect(screen.getByText("Herdado da instalação — nenhuma chave desta organização é usada.")).toBeTruthy();
+    // Nada foi salvo: o estado em vigor continua sem gateway.
+    expect(screen.getByText(TEXTO_SEM_GATEWAY)).toBeTruthy();
   });
 });

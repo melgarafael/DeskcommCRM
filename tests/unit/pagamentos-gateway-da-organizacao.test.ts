@@ -6,14 +6,15 @@
  *  1. organização com configuração própria usa a DELA (hoje isso não existe: o
  *     provedor é lido da instalação, sem dimensão de organização);
  *  2. organização sem configuração — e organização com a configuração
- *     DESLIGADA — herda a da instalação;
+ *     DESLIGADA — é `sem_gateway`, mesmo com a instalação configurada: a conta
+ *     da instalação NÃO é herdada (doc 280 — numa VPS de revendedor, a venda
+ *     cairia na conta dele);
  *  3. credencial de OUTRA organização nunca é usada: a linha relida é
  *     conferida, e a recusa é nomeada;
- *  4. credencial ilegível NÃO herda a da instalação (a venda do cliente cairia
- *     na conta de outra pessoa);
+ *  4. credencial ilegível é recusa nomeada, distinta de `sem_gateway`;
  *  5. desligar não apaga a linha (a cobrança já emitida referencia ela);
- *  6. o estado para a tela nunca carrega a chave — nem a da organização, nem a
- *     herdada.
+ *  6. o estado para a tela nunca carrega a chave, e erro de leitura nele é
+ *     recusa nomeada — não "nenhum gateway" para quem tem um.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -66,13 +67,9 @@ import {
 
 const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const ORG_B = "bbbbbbbb-0000-4000-8000-000000000002";
-// Chave com o formato REAL do Asaas (`$aact_hmlg_` + 16+): a instalação herda
-// Asaas nesta bancada, e uma chave com formato de outro provedor faria o
-// resolvedor recusar por modo desconhecido — defeito do fixture, não do código.
+// A instalação está CONFIGURADA nesta bancada (Asaas, chave de formato real) de
+// propósito: é o que prova que a organização sem linha própria não a herda.
 const CHAVE_DA_INSTALACAO = "$aact_hmlg_instalacao000000";
-// Chave com o formato REAL do Efi (`modo:clientId:clientSecret`, migration 9418):
-// a instalação que cobra com Efi é herdada — ver o caso dedicado abaixo.
-const CHAVE_DA_INSTALACAO_EFI = "teste:cliente-do-efi-0001:segredo-do-efi-00000001";
 const CHAVE_DA_ORG_A = "sk_test_organizacao_a_1111";
 const CHAVE_DA_ORG_B = "sk_test_organizacao_b_2222";
 
@@ -182,53 +179,26 @@ describe("gatewayDaOrganizacao", () => {
     expect(deps.provedorDaInstalacao).not.toHaveBeenCalled();
   });
 
-  it("organização sem configuração herda a instalação (org nova não quebra)", async () => {
-    const { client } = banco([]);
-
-    const r = await gatewayDaOrganizacao(client as never, ORG_A);
-
-    expect(r.ok).toBe(true);
-    if (!r.ok) throw new Error("esperava herança");
-    expect(r.gateway.origem).toBe("instalacao");
-    expect(r.gateway.provider).toBe("asaas");
-    expect(r.gateway.apiKey).toBe(CHAVE_DA_INSTALACAO);
-    expect(r.gateway.webhookSecret).toBe("segredo-da-instalacao");
-  });
-
-  it("instalação que cobra com Efi é herdada — a lista da ORGANIZAÇÃO não estreita a herança", async () => {
-    // #4944 pôs `efi` na instalação; `PROVEDORES_DE_PAGAMENTO` continua
-    // stripe|asaas (CHECK da migration 9409) e isso é do eixo da ORGANIZAÇÃO, não
-    // da herança. Recusar aqui seria `sem_gateway` para uma chave que o adaptador
-    // sabe cobrar (o `switch` de `adaptador()` cobre os três).
-    deps.provedorDaInstalacao.mockResolvedValue("efi");
-    deps.chaveDoProvedor.mockResolvedValue(CHAVE_DA_INSTALACAO_EFI);
-    const { client } = banco([]);
-
-    const r = await gatewayDaOrganizacao(client as never, ORG_A);
-
-    expect(r.ok).toBe(true);
-    if (!r.ok) throw new Error("esperava herança");
-    expect(r.gateway).toMatchObject({ provider: "efi", modo: "teste", origem: "instalacao" });
-    expect(r.gateway.apiKey).toBe(CHAVE_DA_INSTALACAO_EFI);
-  });
-
-  it("configuração DESLIGADA herda a instalação e a linha continua no banco", async () => {
-    const { client, estado } = banco([linhaDaOrg({ is_active: false })]);
-
-    const r = await gatewayDaOrganizacao(client as never, ORG_A);
-
-    expect(r.ok && r.gateway.origem).toBe("instalacao");
-    expect(estado.linhas).toHaveLength(1);
-    expect(estado.apagou).toBe(false);
-  });
-
-  it("herança sem NADA configurado na instalação é `sem_gateway`, não uma chave vazia", async () => {
-    deps.provedorDaInstalacao.mockResolvedValue(null);
+  it("organização sem configuração é `sem_gateway` — a conta da instalação NÃO é herdada", async () => {
     const { client } = banco([]);
 
     const r = await gatewayDaOrganizacao(client as never, ORG_A);
 
     expect(r).toEqual({ ok: false, erro: "sem_gateway" });
+    expect(deps.provedorDaInstalacao).not.toHaveBeenCalled();
+    expect(deps.chaveDoProvedor).not.toHaveBeenCalled();
+    expect(JSON.stringify(r)).not.toContain(CHAVE_DA_INSTALACAO);
+  });
+
+  it("configuração DESLIGADA é `sem_gateway` e a linha continua no banco", async () => {
+    const { client, estado } = banco([linhaDaOrg({ is_active: false })]);
+
+    const r = await gatewayDaOrganizacao(client as never, ORG_A);
+
+    expect(r).toEqual({ ok: false, erro: "sem_gateway" });
+    expect(deps.chaveDoProvedor).not.toHaveBeenCalled();
+    expect(estado.linhas).toHaveLength(1);
+    expect(estado.apagou).toBe(false);
   });
 
   it("⭐ credencial de OUTRA organização é recusada, mesmo que a consulta a devolva", async () => {
@@ -251,7 +221,7 @@ describe("gatewayDaOrganizacao", () => {
     expect(deps.chaveDoProvedor).not.toHaveBeenCalled();
   });
 
-  it("credencial ilegível NÃO herda a da instalação (recusa nomeada)", async () => {
+  it("credencial ilegível é recusa nomeada, nunca a chave da instalação", async () => {
     // Envelope corrompido: `decryptKey` do dublê lança.
     const { client } = banco([linhaDaOrg({ api_key_encrypted: "corrompido" })]);
 
@@ -261,7 +231,7 @@ describe("gatewayDaOrganizacao", () => {
     expect(deps.chaveDoProvedor).not.toHaveBeenCalled();
   });
 
-  it("erro de leitura não vira herança silenciosa", async () => {
+  it("erro de leitura é `leitura_falhou`, não `sem_gateway`", async () => {
     const client = {
       from: () => ({
         select: () => ({
@@ -277,11 +247,18 @@ describe("gatewayDaOrganizacao", () => {
   });
 });
 
+/** O estado de uma leitura que deu certo — os casos abaixo não testam a falha. */
+async function estadoLido(client: unknown, org: string) {
+  const r = await estadoParaTela(client as never, org);
+  if (!r.ok) throw new Error(`esperava estado, veio ${r.erro}`);
+  return r.estado;
+}
+
 describe("estadoParaTela — o segredo não sai daqui", () => {
   it("configuração própria: devolve provedor, modo e last4, nunca a chave", async () => {
     const { client } = banco([linhaDaOrg()]);
 
-    const estado = await estadoParaTela(client as never, ORG_A);
+    const estado = await estadoLido(client, ORG_A);
 
     expect(estado).toEqual({
       origem: "organizacao",
@@ -295,30 +272,48 @@ describe("estadoParaTela — o segredo não sai daqui", () => {
     expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_ORG_A);
   });
 
-  it("herdando a instalação: nem os 4 últimos da chave da instalação aparecem", async () => {
+  it("sem configuração própria: `nenhuma`, mesmo com a instalação configurada", async () => {
     const { client } = banco([]);
 
-    const estado = await estadoParaTela(client as never, ORG_A);
+    const estado = await estadoLido(client, ORG_A);
 
-    expect(estado.origem).toBe("instalacao");
-    expect(estado.provider).toBe("asaas");
-    expect(estado.apiKeyLast4).toBeNull();
+    expect(estado).toEqual({
+      origem: "nenhuma",
+      provider: null,
+      modo: null,
+      apiKeyLast4: null,
+      webhookSecretLast4: null,
+      configurada: false,
+      isActive: false,
+    });
+    expect(deps.provedorDaInstalacao).not.toHaveBeenCalled();
     expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO.slice(-4));
-    expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO);
   });
 
-  it("herdando Efi: a tela recebe o provedor herdado, sem last4 nenhum", async () => {
-    deps.provedorDaInstalacao.mockResolvedValue("efi");
-    deps.chaveDoProvedor.mockResolvedValue(CHAVE_DA_INSTALACAO_EFI);
-    const { client } = banco([]);
+  it("configuração desligada: `nenhuma`, e a tela sabe que existe linha para religar", async () => {
+    const { client } = banco([linhaDaOrg({ is_active: false })]);
 
-    const estado = await estadoParaTela(client as never, ORG_A);
+    const estado = await estadoLido(client, ORG_A);
 
-    expect(estado).toMatchObject({ origem: "instalacao", provider: "efi", apiKeyLast4: null });
-    expect(JSON.stringify(estado)).not.toContain(CHAVE_DA_INSTALACAO_EFI);
+    expect(estado).toMatchObject({ origem: "nenhuma", provider: null, configurada: true, isActive: false });
   });
 
-  it("linha de OUTRA organização não vaza nem o last4 (cai para a herança)", async () => {
+  it("erro de leitura é recusa nomeada, nunca um \"nenhum gateway\" para quem tem um", async () => {
+    const client = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: null, error: { code: "42501", message: "sem permissão" } }) }),
+        }),
+      }),
+    };
+
+    const r = await estadoParaTela(client as never, ORG_A);
+
+    expect(r).toEqual({ ok: false, erro: "leitura_falhou" });
+    expect(deps.provedorDaInstalacao).not.toHaveBeenCalled();
+  });
+
+  it("linha de OUTRA organização não vaza nem o last4", async () => {
     const { client } = banco([linhaDaOrg({ organization_id: ORG_B, api_key_last4: "2222" })]);
     const espiao = vi.spyOn(client, "from");
     espiao.mockReturnValue({
@@ -332,8 +327,9 @@ describe("estadoParaTela — o segredo não sai daqui", () => {
       }),
     } as never);
 
-    const estado = await estadoParaTela(client as never, ORG_A);
+    const estado = await estadoLido(client, ORG_A);
 
+    expect(estado.origem).toBe("nenhuma");
     expect(estado.apiKeyLast4).toBeNull();
     expect(estado.configurada).toBe(false);
   });
@@ -359,7 +355,7 @@ describe("guardarGatewayDaOrganizacao", () => {
     });
 
     expect(r).toEqual({ ok: true });
-    // A chave conferida é a da ORGANIZAÇÃO, não a da instalação.
+    // A chave conferida é a da ORGANIZAÇÃO, nunca a da instalação.
     const opcoes = deps.adaptador.mock.calls.at(0)?.[1] as { chave: () => Promise<string | null> };
     await expect(opcoes.chave()).resolves.toBe(CHAVE_DA_ORG_A);
     expect(deps.chaveDoProvedor).not.toHaveBeenCalled();
@@ -456,7 +452,7 @@ describe("desligarGatewayDaOrganizacao", () => {
     );
   });
 
-  it("desligar quem já herda é idempotente (nenhum audit de fantasia)", async () => {
+  it("desligar quem não tem linha é idempotente (nenhum audit de fantasia)", async () => {
     const { client } = banco([]);
 
     const r = await desligarGatewayDaOrganizacao(client as never, ORG_A, "u-1");

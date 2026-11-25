@@ -4,7 +4,10 @@
  * O que se prova aqui, e não no teste do resolvedor:
  *
  *  - o GET devolve o ESTADO (provedor, modo, last4) e o corpo serializado NÃO
- *    contém a chave — nem a da organização, nem a da instalação herdada;
+ *    contém a chave; sem configuração própria o estado é `nenhuma`, mesmo com
+ *    a instalação configurada (a conta dela não é herdada — doc 280);
+ *  - leitura que falha sai como 500 nomeado (`gateway_read_failed`), nunca
+ *    como "nenhum gateway";
  *  - papel sem permissão recebe a recusa NOMEADA que o `requireRole` devolve
  *    (`forbidden_role`), não um 500;
  *  - a guarda de acompanhamento (`requireSupportWrite`) roda ANTES do RBAC:
@@ -122,7 +125,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/v1/pagamentos/gateway", () => {
-  it("org sem configuração: devolve a herança e o corpo NÃO traz a chave da instalação", async () => {
+  it("org sem configuração: `nenhuma`, e o corpo NÃO traz nada da instalação", async () => {
     const { client } = banco([]);
     deps.admin.mockReturnValue(client);
 
@@ -130,12 +133,30 @@ describe("GET /api/v1/pagamentos/gateway", () => {
     const corpo = await json(res);
 
     expect(res.status).toBe(200);
-    expect(corpo.data).toMatchObject({ origem: "instalacao", provider: "asaas", apiKeyLast4: null });
+    expect(corpo.data).toMatchObject({ origem: "nenhuma", provider: null, apiKeyLast4: null });
+    expect(deps.provedorDaInstalacao).not.toHaveBeenCalled();
     const serializado = JSON.stringify(corpo);
     expect(serializado).not.toContain(CHAVE_DA_INSTALACAO);
     expect(serializado).not.toContain("segredo-da-instalacao-1234");
     // O role pedido é o de LEITURA da tela, não o de escrita.
     expect(deps.role).toHaveBeenCalledWith("manager", expect.objectContaining({ resource: "organization_payment_gateways" }));
+  });
+
+  it("leitura que falha = 500 `gateway_read_failed`, não um estado vazio", async () => {
+    deps.admin.mockReturnValue({
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: null, error: { code: "42501", message: "sem permissão" } }) }),
+        }),
+      }),
+    });
+
+    const res = await GET();
+    const corpo = await json(res);
+
+    expect(res.status).toBe(500);
+    expect((corpo.error as { code: string }).code).toBe("gateway_read_failed");
+    expect(corpo.data).toBeUndefined();
   });
 
   it("papel insuficiente: a recusa nomeada do requireRole é repassada (não vira 500)", async () => {
@@ -255,7 +276,7 @@ describe("PUT /api/v1/pagamentos/gateway", () => {
 });
 
 describe("DELETE /api/v1/pagamentos/gateway", () => {
-  it("desliga sem apagar a credencial e volta a herdar", async () => {
+  it("desliga sem apagar a credencial, e a organização para de cobrar", async () => {
     const { client, estado } = banco([
       {
         organization_id: ORG,
@@ -280,6 +301,6 @@ describe("DELETE /api/v1/pagamentos/gateway", () => {
     expect(res.status).toBe(200);
     expect(estado.apagou).toBe(false);
     expect(estado.linhas[0]).toMatchObject({ is_active: false, api_key_encrypted: CHAVE_NOVA });
-    expect(corpo.data).toMatchObject({ origem: "instalacao", isActive: false, configurada: true });
+    expect(corpo.data).toMatchObject({ origem: "nenhuma", provider: null, isActive: false, configurada: true });
   });
 });

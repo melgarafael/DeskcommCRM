@@ -1,20 +1,20 @@
 /**
  * GET    /api/v1/pagamentos/gateway — o gateway em vigor da org ativa (manager+).
  * PUT    /api/v1/pagamentos/gateway — grava/atualiza a configuração própria (admin).
- * DELETE /api/v1/pagamentos/gateway — desliga a configuração própria; volta a
- *                                     herdar a da instalação, sem apagar nada.
+ * DELETE /api/v1/pagamentos/gateway — desliga a configuração própria; a
+ *                                     organização para de cobrar, sem apagar nada.
  *
  * Issue #4058, fatia 1. O provedor de pagamento era da INSTALAÇÃO
  * (`lib/cobranca/configuracao.ts`, `platform_config`); a empresa não tinha como
  * cobrar o cliente dela na própria conta. Aqui a organização escolhe provedor e
- * credencial, e a ausência de configuração herda a instalação.
+ * credencial. Sem configuração própria ela não cobra: a conta da instalação não
+ * é herdada (doc 280).
  *
  * ─── O segredo não sai daqui ────────────────────────────────────────────────
  *
  * O GET devolve `EstadoDoGatewayParaTela` — provedor, modo, `last4`, origem. Não
  * existe campo com a chave no tipo, então não há como a resposta levá-la por
- * descuido de quem monta o payload. E a chave da INSTALAÇÃO herdada não expõe
- * nem os 4 últimos: ela não é da organização.
+ * descuido de quem monta o payload.
  *
  * ─── Erro nomeado, nunca 500 mudo ───────────────────────────────────────────
  *
@@ -23,9 +23,11 @@
  * (`provider_key_without_permission`), chave de produção contra a base de teste
  * (`provider_key_mode_mismatch`), provedor fora (`provider_unavailable`), cifra
  * indisponível (`credential_encryption_unavailable`), e a gravação recusada pelo
- * banco (`gateway_save_failed`, com o detalhe).
+ * banco (`gateway_save_failed`, com o detalhe). A leitura do estado que falha
+ * é `gateway_read_failed` — nunca um "nenhum gateway" para quem tem um.
  */
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -90,13 +92,30 @@ const RESPOSTA_POR_ERRO: Record<ErroDeEscrita, { code: string; message: string; 
   },
 };
 
+/** O estado para a tela, ou a recusa nomeada quando a leitura falha. */
+async function responderComEstado(
+  admin: SupabaseClient,
+  orgId: string,
+  requestId: string,
+): Promise<Response> {
+  const lido = await estadoParaTela(admin, orgId);
+  if (!lido.ok) {
+    return fail(
+      "gateway_read_failed",
+      "Não foi possível ler a configuração do gateway agora. Recarregue a página.",
+      500,
+      { requestId },
+    );
+  }
+  return ok(lido.estado, { requestId });
+}
+
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "organization_payment_gateways" });
   if (!authz.ok) return authz.response;
 
-  const estado = await estadoParaTela(createAdminClient(), authz.org.orgId);
-  return ok(estado, { requestId });
+  return responderComEstado(createAdminClient(), authz.org.orgId, requestId);
 }
 
 export async function PUT(req: NextRequest): Promise<Response> {
@@ -141,7 +160,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail(resposta.code, resposta.message, resposta.status, { requestId });
   }
 
-  return ok(await estadoParaTela(createAdminClient(), org.orgId), { requestId });
+  return responderComEstado(createAdminClient(), org.orgId, requestId);
 }
 
 export async function DELETE(): Promise<Response> {
@@ -162,5 +181,5 @@ export async function DELETE(): Promise<Response> {
     return fail(resposta.code, resposta.message, resposta.status, { requestId });
   }
 
-  return ok(await estadoParaTela(createAdminClient(), authz.org.orgId), { requestId });
+  return responderComEstado(createAdminClient(), authz.org.orgId, requestId);
 }

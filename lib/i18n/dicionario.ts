@@ -16347,20 +16347,16 @@ export const DICIONARIO: Traducoes = {
   },
   "Gateway em vigor": { es: "Pasarela vigente" },
   "Consultando o gateway em vigor…": { es: "Consultando la pasarela vigente…" },
-  "Nenhum gateway configurado — nem nesta organização, nem na instalação.": {
-    es: "Ninguna pasarela configurada: ni en esta organización ni en la instalación.",
+  "Nenhum gateway ligado nesta organização. Sem ele, esta organização não cobra.": {
+    es: "Ninguna pasarela activa en esta organización. Sin ella, esta organización no cobra.",
   },
   "Configurado por esta organização.": { es: "Configurado por esta organización." },
-  "Herdado da instalação — nenhuma chave desta organização é usada.": {
-    es: "Heredado de la instalación: no se usa ninguna clave de esta organización.",
+  "A configuração própria desta organização está desligada; enquanto isso, ela não cobra.": {
+    es: "La configuración propia de esta organización está desactivada; mientras tanto, no cobra.",
   },
-  "A configuração herdada não expõe nem os últimos dígitos da chave.": {
-    es: "La configuración heredada no muestra ni los últimos dígitos de la clave.",
+  "Não foi possível ler a configuração do gateway agora. Recarregue a página.": {
+    es: "No fue posible leer la configuración de la pasarela ahora. Recarga la página.",
   },
-  "A configuração própria desta organização está desligada; a cobrança volta a usar a da instalação.":
-    {
-      es: "La configuración propia de esta organización está desactivada; el cobro vuelve a usar la de la instalación.",
-    },
   "Configuração desta organização": { es: "Configuración de esta organización" },
   "Escolha o provedor": { es: "Elige el proveedor" },
   "Chave do provedor": { es: "Clave del proveedor" },

@@ -77601,7 +77601,7 @@ create table if not exists public.organization_payment_gateways (
 );
 
 comment on table public.organization_payment_gateways is
-  'Gateway de pagamento PRÓPRIO da organização (issue #4058, fatia 1): com qual provedor ela cobra o cliente dela. Ausência de linha ou is_active = false herda a configuração da instalação. Credencial e segredo de webhook são cifrados com AES-256-GCM (AI_CRED_AES_KEY) e nunca saem do servidor: a tela lê organization_payment_gateways_safe.';
+  'Gateway de pagamento PRÓPRIO da organização (issue #4058, fatia 1): com qual provedor ela cobra o cliente dela. Ausência de linha ou is_active = false: a organização não cobra (a configuração da instalação NÃO é herdada). Credencial e segredo de webhook são cifrados com AES-256-GCM (AI_CRED_AES_KEY) e nunca saem do servidor: a tela lê organization_payment_gateways_safe.';
 comment on column public.organization_payment_gateways.provider is
   'Provedor da organização: stripe | asaas. Par do CHECK e de PROVEDORES_DE_PAGAMENTO em lib/pagamentos/vocabulario.ts (tests/invariants/vocabulario-banco-x-typescript.test.ts).';
 comment on column public.organization_payment_gateways.mode is
@@ -77609,7 +77609,7 @@ comment on column public.organization_payment_gateways.mode is
 comment on column public.organization_payment_gateways.api_key_last4 is
   'Últimos 4 caracteres da credencial, em claro, para a tela identificar qual chave está configurada sem receber a chave.';
 comment on column public.organization_payment_gateways.is_active is
-  'Desligar sem apagar: a configuracao volta a herdar a da instalacao e a credencial continua na linha, porque cobranca ja emitida aponta para ela.';
+  'Desligar sem apagar: a organizacao para de cobrar e a credencial continua na linha, porque cobranca ja emitida aponta para ela.';
 
 alter table public.organization_payment_gateways enable row level security;
 

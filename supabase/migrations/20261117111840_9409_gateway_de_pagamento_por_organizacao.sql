@@ -1,4 +1,4 @@
--- manifest: **A organização passa a escolher o gateway de pagamento dela (#4058, fatia 1).** Hoje o provedor de cobrança é da INSTALAÇÃO (`platform_config` + `lib/cobranca/configuracao.ts`) e serve para o revendedor cobrar as empresas; não existe nada que deixe a empresa cobrar o cliente dela. Esta fatia cria `organization_payment_gateways` (uma linha por organização, chave primária `organization_id`): provedor (`stripe`/`asaas`), modo derivado da chave, credencial e segredo de webhook cifrados com AES-256-GCM (`AI_CRED_AES_KEY`, mesmo envelope de `voip_trunk_settings`/`external_db_connections`, só `last4` exposto) e `is_active` para desligar sem apagar. A ausência de linha — ou `is_active = false` — HERDA a configuração da instalação; a herança mora no resolvedor (`lib/pagamentos/gateway-da-organizacao.ts`), não no banco. Catálogo de produtos, envio da cobrança na conversa e comprovante são fatias seguintes desta issue.
+-- manifest: **A organização passa a escolher o gateway de pagamento dela (#4058, fatia 1).** Hoje o provedor de cobrança é da INSTALAÇÃO (`platform_config` + `lib/cobranca/configuracao.ts`) e serve para o revendedor cobrar as empresas; não existe nada que deixe a empresa cobrar o cliente dela. Esta fatia cria `organization_payment_gateways` (uma linha por organização, chave primária `organization_id`): provedor (`stripe`/`asaas`), modo derivado da chave, credencial e segredo de webhook cifrados com AES-256-GCM (`AI_CRED_AES_KEY`, mesmo envelope de `voip_trunk_settings`/`external_db_connections`, só `last4` exposto) e `is_active` para desligar sem apagar. A ausência de linha — ou `is_active = false` — faz a organização NÃO cobrar: a configuração da instalação não é herdada (doc 280; numa VPS de revendedor a venda cairia na conta dele), e a regra mora no resolvedor (`lib/pagamentos/gateway-da-organizacao.ts`). Catálogo de produtos, envio da cobrança na conversa e comprovante são fatias seguintes desta issue.
 -- ---- gateway de pagamento por organização (migration 9409) ----
 --
 -- Issue #4058, FATIA 1 — a CONFIGURAÇÃO do gateway, por organização.
@@ -104,7 +104,7 @@ create table if not exists public.organization_payment_gateways (
 );
 
 comment on table public.organization_payment_gateways is
-  'Gateway de pagamento PRÓPRIO da organização (issue #4058, fatia 1): com qual provedor ela cobra o cliente dela. Ausência de linha ou is_active = false herda a configuração da instalação. Credencial e segredo de webhook são cifrados com AES-256-GCM (AI_CRED_AES_KEY) e nunca saem do servidor: a tela lê organization_payment_gateways_safe.';
+  'Gateway de pagamento PRÓPRIO da organização (issue #4058, fatia 1): com qual provedor ela cobra o cliente dela. Ausência de linha ou is_active = false: a organização não cobra (a configuração da instalação NÃO é herdada). Credencial e segredo de webhook são cifrados com AES-256-GCM (AI_CRED_AES_KEY) e nunca saem do servidor: a tela lê organization_payment_gateways_safe.';
 comment on column public.organization_payment_gateways.provider is
   'Provedor da organização: stripe | asaas. Par do CHECK e de PROVEDORES_DE_PAGAMENTO em lib/pagamentos/vocabulario.ts (tests/invariants/vocabulario-banco-x-typescript.test.ts).';
 comment on column public.organization_payment_gateways.mode is
@@ -112,7 +112,7 @@ comment on column public.organization_payment_gateways.mode is
 comment on column public.organization_payment_gateways.api_key_last4 is
   'Últimos 4 caracteres da credencial, em claro, para a tela identificar qual chave está configurada sem receber a chave.';
 comment on column public.organization_payment_gateways.is_active is
-  'Desligar sem apagar: a configuracao volta a herdar a da instalacao e a credencial continua na linha, porque cobranca ja emitida aponta para ela.';
+  'Desligar sem apagar: a organizacao para de cobrar e a credencial continua na linha, porque cobranca ja emitida aponta para ela.';
 
 alter table public.organization_payment_gateways enable row level security;
 

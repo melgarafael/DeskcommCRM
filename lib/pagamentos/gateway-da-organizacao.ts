@@ -9,10 +9,14 @@
  * cliente dela: `git grep -n "organization_id" lib/cobranca` só devolve a
  * organização COBRADA, nunca a conta de gateway que cobra.
  *
- * Aqui a ordem é: **linha da organização vence → ausência herda a instalação**.
- * Quem chama (a fatia que emite a cobrança) não escolhe provedor nem lê chave:
- * pede o gateway em vigor para UMA organização e recebe provider + modo +
- * credenciais já decifradas.
+ * Aqui a regra é: **só a linha da própria organização vale.** Sem linha, ou
+ * com a linha desligada, o resultado é `sem_gateway` — a organização não
+ * cobra, e a tela diz isso. A conta da instalação NÃO é herdada: numa VPS de
+ * revendedor ela é a do revendedor, e a venda do cliente de uma empresa
+ * hospedada cairia lá sem ninguém ter configurado nada (decisão do mantenedor
+ * de 05/11, doc 280). Quem chama (a fatia que emite a cobrança) não escolhe
+ * provedor nem lê chave: pede o gateway em vigor para UMA organização e recebe
+ * provider + modo + credenciais já decifradas.
  *
  * ─── As três recusas que valem dinheiro ─────────────────────────────────────
  *
@@ -22,34 +26,28 @@
  *    `error` descartado, e o `null` mandava as duas organizações para a
  *    credencial do `.env`. Então a linha RELIDA passa por conferência explícita
  *    (`organization_id !== pedido` → `credencial_de_outra_organizacao`) e todo
- *    erro de leitura é erro NOMEADO — nunca "não configurado", que herdaria a
- *    chave da instalação em silêncio.
- * 2. **Credencial ilegível não herda.** Se a linha existe e o envelope não abre
- *    (`AI_CRED_AES_KEY` ausente/trocada, ciphertext corrompido), o resultado é
- *    `credencial_ilegivel`. Cair para a chave da instalação aqui seria pior que
- *    falhar: a venda do cliente passaria a cair na conta de outra pessoa, sem
- *    ninguém perceber.
- * 3. **Desligar não apaga.** `is_active = false` volta a herdar a instalação e
- *    MANTÉM a credencial na linha — a cobrança já emitida referencia esta
- *    configuração, e apagar deixaria a história sem a conta que recebeu.
+ *    erro de leitura é erro NOMEADO — nunca "não configurado".
+ * 2. **Credencial ilegível é recusa nomeada.** Se a linha existe e o envelope
+ *    não abre (`AI_CRED_AES_KEY` ausente/trocada, ciphertext corrompido), o
+ *    resultado é `credencial_ilegivel`, distinto de `sem_gateway`: quem
+ *    configurou precisa saber que a chave dele existe e não abre.
+ * 3. **Desligar não apaga.** `is_active = false` faz a organização parar de
+ *    cobrar e MANTÉM a credencial na linha — a cobrança já emitida referencia
+ *    esta configuração, e apagar deixaria a história sem a conta que recebeu.
  *
  * ─── O que nunca sai daqui para a tela ──────────────────────────────────────
  *
- * `estadoParaTela()` devolve provedor, modo, `last4` e origem — nunca a chave,
- * nem a da organização nem a da instalação. A view
- * `organization_payment_gateways_safe` já omite as colunas cifradas; esta
- * função é a segunda barreira, para o payload da rota não depender de alguém
- * lembrar de não selecionar a coluna.
+ * `estadoParaTela()` devolve provedor, modo, `last4` e origem — nunca a chave.
+ * A view `organization_payment_gateways_safe` já omite as colunas cifradas;
+ * esta função é a segunda barreira, para o payload da rota não depender de
+ * alguém lembrar de não selecionar a coluna.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import { adaptador } from "@/lib/cobranca/provedores";
-import { chaveDoProvedor, provedorDaInstalacao, segredoDoWebhook } from "@/lib/cobranca/configuracao";
-import type { ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 import { byteaToBuffer, bufToBytea, decryptKey, encryptKey } from "@/lib/crypto/aes_gcm";
 
-import { modoDaChave } from "./modo-da-chave";
 import {
   ehProvedorDePagamento,
   MODOS_DE_PAGAMENTO,
@@ -57,23 +55,15 @@ import {
   type ProvedorDePagamento,
 } from "./vocabulario";
 
-/**
- * O gateway em vigor. `apiKey` é plaintext: só para o servidor que chama o provedor.
- *
- * `provider` é o vocabulário LARGO (`ProvedorDeCobranca`) de propósito: a linha
- * da ORGANIZAÇÃO só aceita `PROVEDORES_DE_PAGAMENTO` (CHECK da migration 9409),
- * mas a herança vem da instalação, que desde a #4944 também cobra com `efi`.
- * Declarar o estreito aqui faria a herança de um Efi ser recusada por TIPO, não
- * por regra — e o adaptador (`lib/cobranca/provedores`) sabe cobrar os três.
- */
+/** O gateway em vigor. `apiKey` é plaintext: só para o servidor que chama o provedor. */
 export interface GatewayEfetivo {
-  readonly provider: ProvedorDeCobranca;
+  readonly provider: ProvedorDePagamento;
   readonly modo: ModoDePagamento;
   readonly apiKey: string;
-  /** Só do MESMO escopo de `apiKey` — nunca o segredo da instalação para uma conta da organização. */
+  /** Só do MESMO escopo de `apiKey` — o da própria organização. */
   readonly webhookSecret: string | null;
   /** De onde veio. Vai para log/auditoria, nunca para o corpo da resposta. */
-  readonly origem: "organizacao" | "instalacao";
+  readonly origem: "organizacao";
 }
 
 export const ERROS_DO_GATEWAY = [
@@ -90,18 +80,26 @@ export type ResultadoDoGateway =
 
 /** O que a TELA vê. Não há `apiKey` neste tipo — e é de propósito. */
 export interface EstadoDoGatewayParaTela {
-  /** `organizacao` = linha própria ligada; `instalacao` = herdando; `nenhuma` = ninguém configurou. */
-  readonly origem: "organizacao" | "instalacao" | "nenhuma";
-  /** Largo pelo mesmo motivo de `GatewayEfetivo.provider`: a herança pode ser `efi`. */
-  readonly provider: ProvedorDeCobranca | null;
+  /** `organizacao` = linha própria ligada; `nenhuma` = sem linha, ou desligada: a organização não cobra. */
+  readonly origem: "organizacao" | "nenhuma";
+  readonly provider: ProvedorDePagamento | null;
   readonly modo: ModoDePagamento | null;
-  /** Só da chave da PRÓPRIA organização; herdada não expõe nem os 4 últimos. */
+  /** Só da chave da PRÓPRIA organização. */
   readonly apiKeyLast4: string | null;
   readonly webhookSecretLast4: string | null;
   /** Existe linha própria (ligada ou desligada)? A tela usa para oferecer "desligar". */
   readonly configurada: boolean;
   readonly isActive: boolean;
 }
+
+/**
+ * A leitura do estado falhou. É resultado nomeado, e não um `origem: "nenhuma"`:
+ * sem herança, um erro de leitura tratado como "ninguém configurou" mostraria a
+ * quem TEM chave que não tem — inclusive na resposta do PUT que acabou de gravar.
+ */
+export type ResultadoDoEstado =
+  | { ok: true; estado: EstadoDoGatewayParaTela }
+  | { ok: false; erro: "leitura_falhou" };
 
 interface LinhaDoGateway {
   organization_id: string;
@@ -126,29 +124,6 @@ function modoConhecido(valor: string): ModoDePagamento | null {
   return MODOS_DE_PAGAMENTO.find((m) => m === valor) ?? null;
 }
 
-/** O gateway da INSTALAÇÃO — a herança. `sem_gateway` quando ninguém configurou. */
-async function gatewayDaInstalacao(): Promise<ResultadoDoGateway> {
-  const provider = await provedorDaInstalacao();
-  if (provider === null) return { ok: false, erro: "sem_gateway" };
-
-  const apiKey = await chaveDoProvedor(provider);
-  if (apiKey === null) return { ok: false, erro: "sem_gateway" };
-
-  const modo = modoDaChave(provider, apiKey);
-  if (modo === null) return { ok: false, erro: "sem_gateway" };
-
-  return {
-    ok: true,
-    gateway: {
-      provider,
-      modo,
-      apiKey,
-      webhookSecret: await segredoDoWebhook(provider),
-      origem: "instalacao",
-    },
-  };
-}
-
 /**
  * O gateway em vigor para a organização pedida.
  *
@@ -168,12 +143,12 @@ export async function gatewayDaOrganizacao(
     .eq("organization_id", organizationId)
     .maybeSingle();
 
-  // Erro de leitura NÃO é "não configurado": herdar aqui usaria a chave da
-  // instalação para a venda de um cliente que talvez tenha a própria.
+  // Erro de leitura NÃO é "não configurado": a organização talvez tenha a
+  // própria chave, e quem chama precisa saber que não foi possível ler.
   if (error) return { ok: false, erro: "leitura_falhou" };
 
   const linha = (data as LinhaDoGateway | null) ?? null;
-  if (linha === null) return gatewayDaInstalacao();
+  if (linha === null) return { ok: false, erro: "sem_gateway" };
 
   // Barreira explícita, além do filtro: uma linha de OUTRA organização nunca é
   // usada, nem que um dia a consulta mude.
@@ -181,7 +156,7 @@ export async function gatewayDaOrganizacao(
     return { ok: false, erro: "credencial_de_outra_organizacao" };
   }
 
-  if (!linha.is_active) return gatewayDaInstalacao();
+  if (!linha.is_active) return { ok: false, erro: "sem_gateway" };
 
   if (!ehProvedorDePagamento(linha.provider)) return { ok: false, erro: "leitura_falhou" };
   const provider = linha.provider;
@@ -224,24 +199,29 @@ export async function gatewayDaOrganizacao(
 export async function estadoParaTela(
   admin: SupabaseClient,
   organizationId: string,
-): Promise<EstadoDoGatewayParaTela> {
-  const { data } = await admin
+): Promise<ResultadoDoEstado> {
+  const { data, error } = await admin
     .from("organization_payment_gateways")
     .select("organization_id, provider, mode, api_key_last4, webhook_secret_last4, is_active")
     .eq("organization_id", organizationId)
     .maybeSingle();
 
-  const linha = (data as Pick<
+  // Mesma regra de `gatewayDaOrganizacao`: erro de leitura é erro nomeado.
+  if (error) return { ok: false, erro: "leitura_falhou" };
+
+  const bruta = (data as Pick<
     LinhaDoGateway,
     "organization_id" | "provider" | "mode" | "api_key_last4" | "webhook_secret_last4" | "is_active"
   > | null) ?? null;
-
   // Linha de outra organização é ignorada aqui (não vaza nem o `last4`): o
-  // estado cai para a herança, e a rota que USA a credencial recusa em
+  // estado é "nenhuma", e a rota que USA a credencial recusa em
   // `gatewayDaOrganizacao`.
-  if (linha !== null && linha.organization_id === organizationId && linha.is_active) {
-    if (ehProvedorDePagamento(linha.provider)) {
-      return {
+  const linha = bruta !== null && bruta.organization_id === organizationId ? bruta : null;
+
+  if (linha !== null && linha.is_active && ehProvedorDePagamento(linha.provider)) {
+    return {
+      ok: true,
+      estado: {
         origem: "organizacao",
         provider: linha.provider,
         modo: modoConhecido(linha.mode),
@@ -249,19 +229,21 @@ export async function estadoParaTela(
         webhookSecretLast4: linha.webhook_secret_last4,
         configurada: true,
         isActive: true,
-      };
-    }
+      },
+    };
   }
 
-  const herdado = await gatewayDaInstalacao();
   return {
-    origem: herdado.ok ? "instalacao" : "nenhuma",
-    provider: herdado.ok ? herdado.gateway.provider : null,
-    modo: herdado.ok ? herdado.gateway.modo : null,
-    apiKeyLast4: null,
-    webhookSecretLast4: null,
-    configurada: linha !== null && linha.organization_id === organizationId,
-    isActive: linha !== null && linha.organization_id === organizationId ? linha.is_active : false,
+    ok: true,
+    estado: {
+      origem: "nenhuma",
+      provider: null,
+      modo: null,
+      apiKeyLast4: null,
+      webhookSecretLast4: null,
+      configurada: linha !== null,
+      isActive: linha?.is_active ?? false,
+    },
   };
 }
 
@@ -440,8 +422,8 @@ export async function guardarGatewayDaOrganizacao(
 }
 
 /**
- * Desliga a configuração própria: volta a herdar a instalação e NÃO apaga a
- * linha. Apagar custaria a credencial que a cobrança já emitida referencia (e o
+ * Desliga a configuração própria: a organização para de cobrar e a linha NÃO
+ * é apagada. Apagar custaria a credencial que a cobrança já emitida referencia (e o
  * `last4` que a tela mostra), e uma chave rejeitada pelo provedor voltaria a
  * valer no dia seguinte sem ninguém saber.
  */
@@ -456,8 +438,8 @@ export async function desligarGatewayDaOrganizacao(
     .eq("organization_id", organizationId)
     .select("organization_id");
   if (error) return { ok: false, erro: "banco_recusou" };
-  // Sem linha não há o que desligar — a organização já herda, e a resposta é a
-  // mesma (desligar é idempotente).
+  // Sem linha não há o que desligar — a organização já não cobra, e a resposta
+  // é a mesma (desligar é idempotente).
   if (!data || (data as unknown[]).length === 0) return { ok: true };
 
   await audit({
@@ -466,7 +448,6 @@ export async function desligarGatewayDaOrganizacao(
     organizationId,
     resourceType: "organization_payment_gateways",
     resourceId: organizationId,
-    metadata: { herdando: "instalacao" },
   });
   return { ok: true };
 }

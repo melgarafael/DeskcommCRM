@@ -1003,8 +1003,8 @@ export const AUDIT_ACTIONS = [
 
   // Gateway de pagamento PRÓPRIO da organização (#4058, fatia 1): trocar a
   // chave aqui muda para onde o dinheiro da empresa vai. As duas ações são o
-  // par ligar/desligar — desligar volta a herdar a instalação e NÃO apaga a
-  // credencial, então sem o registro de "desligado" não haveria como saber
+  // par ligar/desligar — desligar faz a organização parar de cobrar e NÃO apaga
+  // a credencial, então sem o registro de "desligado" não haveria como saber
   // quando a conta que recebeu a cobrança deixou de ser a da organização.
   "pagamento.gateway_configurado",
   "pagamento.gateway_desligado",
