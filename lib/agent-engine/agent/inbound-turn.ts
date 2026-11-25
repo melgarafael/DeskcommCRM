@@ -325,6 +325,8 @@ import {
   CODIGOS_DO_LIMITE_DA_REDE,
   avisarEquipeDoLimiteDaRede,
   carregarRedeDoCanal,
+  configDoAgenteNaRede,
+  tetosDeEnvioDoTurno,
 } from './limite-da-rede';
 import { limitesDaRede } from '@/lib/channels/social/limites-da-rede';
 // #4590 — o teto de respostas por CONVERSA e os seus defaults (N/W). Fica em
@@ -3194,10 +3196,7 @@ async function executarTurnoDoAgente(
   const limitesDoCanal = preview
     ? null
     : limitesDaRede(await carregarRedeDoCanal(pool, tenantId, input.channelSessionId));
-  const agentConfig =
-    limitesDoCanal !== null && routed.config
-      ? { ...routed.config, splitMessages: false }
-      : routed.config;
+  const agentConfig = configDoAgenteNaRede(routed.config, limitesDoCanal);
   // O traço grava o agente que o turno RESOLVEU: follow-up e resposta de caso
   // não passam `resolvedAgent`, e sem isto a linha ficaria sem agente nem fontes.
   if (input.tracoDoTurno !== undefined) input.tracoDoTurno.desfecho.config = agentConfig;
@@ -4429,11 +4428,10 @@ async function executarTurnoDoAgente(
   // A21: na rede com limite próprio o turno manda UM texto e, depois dele, até
   // `fotosPorTurnoDaIa` fotos sem legenda — o teto físico do turno é a soma, e o do TEXTO
   // (o que `send_message` confere) é 1, para o modelo não gastar as respostas da janela.
-  const maxSendsPerTurn =
-    limitesDoCanal !== null
-      ? 1 + limitesDoCanal.fotosPorTurnoDaIa
-      : (deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN);
-  const maxTextosPorTurno = limitesDoCanal !== null ? 1 : maxSendsPerTurn;
+  const { maxSendsPerTurn, maxTextosPorTurno } = tetosDeEnvioDoTurno(
+    limitesDoCanal,
+    deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
+  );
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;

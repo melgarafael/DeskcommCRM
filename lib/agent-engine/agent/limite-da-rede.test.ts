@@ -14,7 +14,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { GateContext } from "../guardrails/before-send";
-import { carregarLimiteDaRede, limiteDaRedeGate } from "./limite-da-rede";
+import {
+  carregarLimiteDaRede,
+  configDoAgenteNaRede,
+  limiteDaRedeGate,
+  tetosDeEnvioDoTurno,
+} from "./limite-da-rede";
 
 const AGORA = new Date("2026-11-25T12:00:00.000Z");
 const HORA = 60 * 60 * 1000;
@@ -127,3 +132,26 @@ describe("limiteDaRedeGate", () => {
     expect(veto).toMatchObject({ pass: false, code: "janela_da_rede_fechada" });
   });
 });
+
+describe("o turno da IA numa rede com limite próprio", () => {
+  const tiktok = { janelaMs: 48 * HORA, maxRespostas: 10, reservaParaEquipe: 2, fotosPorTurnoDaIa: 2 };
+
+  it("a IA não divide a resposta em bolhas: splitMessages vira false, o resto da config fica", () => {
+    const config = { splitMessages: true, splitMaxChars: 600, nome: "Sofia" };
+    expect(configDoAgenteNaRede(config, tiktok)).toEqual({ splitMessages: false, splitMaxChars: 600, nome: "Sofia" });
+    // não muda o objeto original (a config é do agente, vale para os outros canais)
+    expect(config.splitMessages).toBe(true);
+  });
+
+  it("canal sem limite próprio devolve a MESMA config, e config ausente segue ausente", () => {
+    const config = { splitMessages: true };
+    expect(configDoAgenteNaRede(config, null)).toBe(config);
+    expect(configDoAgenteNaRede(null, tiktok)).toBeNull();
+  });
+
+  it("os tetos: um texto e até 2 fotos (3 no total); fora da rede, o padrão para os dois", () => {
+    expect(tetosDeEnvioDoTurno(tiktok, 5)).toEqual({ maxSendsPerTurn: 3, maxTextosPorTurno: 1 });
+    expect(tetosDeEnvioDoTurno(null, 5)).toEqual({ maxSendsPerTurn: 5, maxTextosPorTurno: 5 });
+  });
+});
+

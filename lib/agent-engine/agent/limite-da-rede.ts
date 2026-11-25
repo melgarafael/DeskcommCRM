@@ -230,3 +230,30 @@ export async function avisarEquipeDoLimiteDaRede(
     });
   }
 }
+
+/**
+ * A config do agente NESTE canal: na rede com limite próprio a IA não divide a
+ * resposta em bolhas — cada bolha gastaria uma das mensagens da janela, e o TikTok
+ * aceita até 6.000 caracteres numa só. Rede sem limite devolve a MESMA config.
+ */
+export function configDoAgenteNaRede<T extends { splitMessages: boolean }>(
+  config: T | null,
+  limites: LimitesDaRede | null,
+): T | null {
+  if (config === null || limites === null) return config;
+  return { ...config, splitMessages: false };
+}
+
+/**
+ * Os tetos de mensagens de UM turno da IA. Na rede com limite próprio o turno manda
+ * UM texto (o que `send_message` confere) e, depois dele, até `fotosPorTurnoDaIa`
+ * fotos sem legenda: o teto físico é a soma. Fora dela, os dois são o `padrao` de
+ * sempre.
+ */
+export function tetosDeEnvioDoTurno(
+  limites: LimitesDaRede | null,
+  padrao: number,
+): { maxSendsPerTurn: number; maxTextosPorTurno: number } {
+  if (limites === null) return { maxSendsPerTurn: padrao, maxTextosPorTurno: padrao };
+  return { maxSendsPerTurn: 1 + limites.fotosPorTurnoDaIa, maxTextosPorTurno: 1 };
+}
