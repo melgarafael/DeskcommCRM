@@ -193,7 +193,8 @@ async function handle(req: NextRequest): Promise<Response> {
         motivo: motivoDaOcorrencia,
         message_id: final.status === "encaminhada" ? final.message_id : null,
       });
-      if (histErr) logger.error("[mensagens-agendadas] ocorrência não gravada no histórico", { agendamento: ag.id, erro: histErr.message });
+      // 23505: outra rodada já registrou esta ocorrência (envio que passou da trava). Nada a fazer.
+      if (histErr && histErr.code !== "23505") logger.error("[mensagens-agendadas] ocorrência não gravada no histórico", { agendamento: ag.id, erro: histErr.message });
     }
 
     // Auditoria só quando o desfecho foi gravado (regra do cron: sem efeito, sem linha).

@@ -77696,8 +77696,10 @@ create table if not exists public.mensagens_agendadas_envios (
 
 create index if not exists idx_mensagens_agendadas_envios_conversa
   on public.mensagens_agendadas_envios (conversation_id, prevista_para desc);
-create index if not exists idx_mensagens_agendadas_envios_agendamento
-  on public.mensagens_agendadas_envios (agendamento_id, prevista_para desc);
+-- Uma linha por ocorrência: se um envio passar da trava e duas rodadas fecharem a
+-- mesma ocorrência, a segunda gravação cai aqui (23505) em vez de duplicar o histórico.
+create unique index if not exists uq_mensagens_agendadas_envios_ocorrencia
+  on public.mensagens_agendadas_envios (agendamento_id, prevista_para);
 
 alter table public.mensagens_agendadas_envios enable row level security;
 
