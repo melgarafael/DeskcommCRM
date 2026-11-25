@@ -81,7 +81,7 @@ afterEach(() => {
 });
 
 describe("o interruptor de link por degrau (#5154)", () => {
-  it("só aparece em tipo Google Meet, e chega marcado conforme o banco", async () => {
+  it("aparece nos tipos com link da reunião, e chega marcado conforme o banco", async () => {
     renderizar(COM_MEET);
     await userEvent.click(screen.getByTestId(`editar-${ID}`));
 
@@ -97,6 +97,16 @@ describe("o interruptor de link por degrau (#5154)", () => {
     await userEvent.click(screen.getByTestId(`editar-${ID}`));
 
     expect(screen.queryByTestId(`editar-lembrete-link-${ID}`)).toBeNull();
+  });
+
+  it("Link de vídeo também tem a linha do link, então também tem o interruptor", async () => {
+    // `linkDaReuniao` trata `video_link` com `meeting_url` https como link
+    // pronto — o mesmo texto de "Link da reunião". Esconder o interruptor só
+    // aqui deixaria uma lista gravada que ninguém vê nem consegue desfazer.
+    renderizar({ ...COM_MEET, location_kind: "video_link" });
+    await userEvent.click(screen.getByTestId(`editar-${ID}`));
+
+    expect(screen.getByTestId(`editar-lembrete-link-${ID}`)).toBeChecked();
   });
 
   it("desmarcar e salvar grava o degrau na lista que vai ao PATCH", async () => {

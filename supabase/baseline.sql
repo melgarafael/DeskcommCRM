@@ -90614,3 +90614,12 @@ end $followup_daily_cap$;
 alter table public.platform_meta_app
   add column if not exists app_id text,
   add column if not exists config_id text;
+-- ---- lembrete de cada degrau pode sair sem o link da reunião (migration 9479) ----
+-- Espelho de supabase/migrations/20261126012000_9479_lembrete_sem_link_por_degrau.sql.
+-- O porquê inteiro está no cabeçalho da migration. Coluna só, default '{}' =
+-- todos os degraus levam o link (o comportamento de sempre), sem backfill.
+alter table public.calendar_event_types
+  add column if not exists reminder_sem_link_offsets_minutes integer[] not null default '{}';
+
+comment on column public.calendar_event_types.reminder_sem_link_offsets_minutes is
+  'Degraus (minutos antes) cujo lembrete sai SEM a linha automática do link da reunião (#5154). Vazio = todos levam, o comportamento de sempre: é o default e o valor de toda linha que já existe, então atualizar não muda nenhum envio. A tela grava a lista inteira a cada salvamento; degrau fora da lista leva o link.';

@@ -3660,6 +3660,7 @@ export type Database = {
           reminder_channel_session_id: string | null;
           reminder_enabled: boolean;
           reminder_extra_offsets_minutes: number[];
+          reminder_sem_link_offsets_minutes: number[];
           reminder_meta_template_id: string | null;
           reminder_minutes_before: number;
           reminder_template_name: string | null;
@@ -3703,6 +3704,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
@@ -3745,6 +3747,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;

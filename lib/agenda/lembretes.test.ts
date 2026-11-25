@@ -8,7 +8,9 @@ import {
   deMinutos,
   desempacotarLembretes,
   empacotarLembretes,
+  lerDegrausSemLink,
   lerPassosDoFormulario,
+  levaOLinkNoLembrete,
   minutosLivres,
   moldeDoDegrau,
   paraMinutos,
@@ -103,6 +105,29 @@ describe("desempacotarLembretes", () => {
       reminder_bodies: null,
     });
     expect(semAColuna.map((p) => p.comLink)).toEqual([true, true]);
+  });
+});
+
+describe("levaOLinkNoLembrete", () => {
+  it("mensagem que cobre dois degraus leva o link se ALGUM deles levar", () => {
+    // Marcação em cima da hora: principal e extra vencem juntos e viram UMA
+    // mensagem. O degrau desligado não pode tirar o link do degrau ligado.
+    expect(levaOLinkNoLembrete({ reminder_sem_link_offsets_minutes: [1440] }, [1440, 180])).toBe(true);
+    expect(levaOLinkNoLembrete({ reminder_sem_link_offsets_minutes: [180] }, [1440, 180])).toBe(true);
+    expect(levaOLinkNoLembrete({ reminder_sem_link_offsets_minutes: [1440, 180] }, [1440, 180])).toBe(false);
+  });
+
+  it("sem a coluna (ou vazia) todos levam — é o comportamento de sempre", () => {
+    expect(levaOLinkNoLembrete({}, [1440])).toBe(true);
+    expect(levaOLinkNoLembrete({ reminder_sem_link_offsets_minutes: [] }, [60])).toBe(true);
+  });
+});
+
+describe("lerDegrausSemLink", () => {
+  it("descarta lixo em vez de calar o envio: o modo de falha é mandar o link a mais", () => {
+    expect(lerDegrausSemLink(["60", null, 5, 20_000, 60.5, 60, 60])).toEqual([60]);
+    expect(lerDegrausSemLink(null)).toEqual([]);
+    expect(lerDegrausSemLink({ "60": true })).toEqual([]);
   });
 });
 
