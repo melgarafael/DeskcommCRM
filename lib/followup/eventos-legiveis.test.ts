@@ -507,7 +507,7 @@ it("descreve o recibo de uma mensagem sem sugerir que ainda há outra parte", ()
     payload: { seq: 1 },
   }), nos, "pt-BR")).toEqual({
     titulo: "Mensagem enviada",
-    onde: nos["action-1"].rotulo,
+    onde: "Primeira cutucada",
     detalhe: null,
     autor: "motor",
   });
