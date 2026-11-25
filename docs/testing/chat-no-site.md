@@ -27,9 +27,10 @@ para criar a conexão. Quando o módulo sair da lista, o C2 passa a ligar pela t
 | C5 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela  | 
 | C6 | Girar a chave | Página com o código antigo mostra "Chat indisponível" ao abrir conversa nova  | 
 | C7 | Pausar o chat | `/chat/<chave>` passa a dar 404/indisponível; retomar volta a abrir  | 
+| C9 | Fora do horário e sem agente. (a) Na conexão de C2, sem agente publicado (ou com o único agente pausado): abrir a página de teste, aceitar, enviar uma mensagem. (b) Publicar um agente com horário de atendimento já fechado e um aviso configurado; abrir a janela e aceitar. | (a) Depois do envio aceito, a janela mostra "Recebemos sua mensagem. Nossa equipe responde por aqui.", uma vez só. (b) Aparece o aviso configurado no agente. Sem aviso, aparece "Estamos fora do horário de atendimento. Voltamos às HH:MM de DD/MM (no horário do seu aparelho)." e a conversa segue aberta | Prova o que o visitante lê na tela, não o código. A hora da volta confere com o horário do agente, no fuso do aparelho de teste |
 
 ## O que não está neste roteiro
 
 - Formatos da janela (painel, embutido, página inteira) — F2-B (Tarefa 9)
-- Horário de atendimento (janela por dia, feriado, fora do expediente) — F3 da issue #1333
+- Feriado nacional e horário próprio do canal — F3 da issue #1333 usa o horário do agente da conexão e deixa ambos de fora (o caso C9 cobre o horário do agente)
 - Teto do visitante anônimo — F4 da issue #1333
