@@ -8,6 +8,138 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.126.0] — 2026-11-25
+
+### ⚠️ Requer atenção
+
+- **Conversões de etapa do Google Ads usam o clique do próprio negócio** Se a sua organização envia conversões de etapa e tem **mais de uma conta do Google Ads cadastrada**, inclua `google_customer_id` no modelo de rastreamento ou no sufixo de URL de cada conta. Use os dez dígitos da conta que veicula o anúncio. Se o anúncio leva ao seu site, o botão deve repassar esse parâmetro junto com o identificador do clique ao link de rastreamento do CRM. O ajuste vale para cliques futuros. Com várias contas, negócios já abertos cujo clique não traz o ID da conta continuam sem enviar a conversão de etapa.
+
+### Adicionado
+
+- **A sala (ou mesa) de cada consulta é escolhida pela tela e pelo agente** Com o módulo Reservas de lugar ligado, a operadora cadastra as salas (ou mesas, camarotes, quadras) em Agenda › Configuração do serviço › Gerenciar recursos e as vincula ao serviço. Na consulta de horários, a tela e o agente mostram quais lugares estão livres em cada horário. Ao marcar, a sala escolhida aparece no compromisso e no lembrete (`{{lugar}}`). Quem não usa lugar não vê diferença.
+
+  Crédito: @paulolimajr77.
+
+- **O agente conta as conversas por situação sem abrir nenhuma delas** Quando o agente de IA (ou uma integração por MCP) precisa responder "quantas conversas abertas, pendentes ou com a IA temos?", a nova ferramenta `crm_count_conversations` devolve só números: o total e, sem filtro, o total de cada situação (aberta, pendente, assumida, com a IA, encerrada, arquivada). Antes, a única saída era paginar a lista de conversas, 50 por vez, levando a prévia de cada mensagem ao modelo.
+
+  A contagem segue as regras da listagem: só a organização do token, sem contatos pessoais, sem canais desativados e, dentro de uma conversa de atendimento, só o contato da conversa. A ferramenta é só de leitura e vem no pacote "escalar" do modo guiado; no modo avançado qualquer token com permissão de leitura a usa. Nada muda para quem não a usar. Referente à issue #4996, item 2.
+
+- **Chat no site: o canal, a janela do chat e a aba de conexão entram, ainda travados** Entrou o canal "Chat no site": a conversa que um visitante começa numa janela dentro do site da empresa chega à Caixa de entrada com o selo do canal, como as dos outros canais. Vêm junto a janela do chat, o código que se cola no site e a aba "Chat no site" em Conexões, onde se cadastram os domínios que podem abrir a janela, a cor, os textos, a pausa e a coleta de nome, telefone e e-mail do visitante com o aviso de privacidade.
+
+  O módulo nasce desligado e, nesta versão, ainda não pode ser ligado — nem em Administração › Sistema nem para uma empresa. A opção será liberada quando entrar o limite de respostas da IA para visitante anônimo, junto com os últimos pré-requisitos de abrir o canal ao público. Até lá, nada muda para quem opera uma instalação: a janela e a aba não aparecem, e as rotas do visitante não atendem.
+
+  Contribuição de @paulolimajr77.
+
+- **Mensagens agendadas podem se repetir, com data de término** Ao agendar uma mensagem de texto para um contato, quem agenda pode escolher a repetição: diária, semanal, quinzenal, mensal, trimestral, semestral, anual ou a cada N dias. Há data de início e, se quiser, data de término. Cada envio fica registrado no histórico da mensagem, com o desfecho de cada ocorrência, e a lista "Exibir todos" mostra a série inteira. Mensagens de envio único continuam como antes.
+
+- **O kit ganha um comando para trocar o e-mail de login pelo terminal da VPS** O instalador cria o dono como `admin@<domínio>`, um endereço que quase nunca é uma caixa de verdade, e até aqui não havia como trocar esse login. Agora, na pasta do projeto:
+
+  ```
+  bash hostgator-setup-kit/change-email.sh <e-mail atual> <e-mail novo>
+  ```
+
+  A troca vale na hora, sem precisar de e-mail configurado na instalação, e a senha continua a mesma. O endereço antigo deixa de entrar. O `.env` e o `.runtime/admin-credentials` acompanham a troca quando guardavam o endereço antigo, para que uma reinstalação não recrie o `admin@`. Serve para qualquer login da instalação, como o `reset-password.sh`. Quem não rodar o comando não vê diferença.
+
+  Crédito: @webtecnica (issue #5073).
+
+- **Chat no site: formatos da janela e ajustes de aparência, ainda travados** A aba "Chat no site" em Conexões ganha a escolha de como a janela aparece no site: bolha no canto, painel na lateral, embutida numa área da página ou página inteira, do lado direito ou esquerdo. Também dá para pôr ou tirar um avatar, abrir a janela sozinha depois de alguns segundos, tocar um som quando chega resposta, mostrar o número de mensagens não lidas e oferecer até cinco respostas rápidas para o visitante tocar. Quem muda o formato precisa colar de novo o código no site.
+
+  O módulo do chat no site segue desligado e, nesta versão, ainda não pode ser ligado. Até ele ser liberado, nada muda para quem opera uma instalação: a aba e a janela não aparecem.
+
+  Contribuição de @paulolimajr77.
+
+- **Chat no site passa a respeitar o horário de atendimento do agente** Quando a conexão do chat no site está fora do horário de atendimento do agente, o visitante vê o aviso que você configurou no agente, ou uma mensagem padrão com a hora em que a equipe volta. Se a conexão não tem agente, o visitante recebe a confirmação de que a mensagem chegou e que a equipe responde por ali. Contribuição de @paulolimajr77.
+
+- **Chat no site passa a registrar de qual página e de qual campanha o visitante veio** Quando o visitante manda a primeira mensagem pelo chat no site, o CRM guarda a página em que ele estava e de onde ele veio. Se o link tiver campanha (UTM), a ficha do contato ganha essa origem, pela mesma regra da página que leva ao WhatsApp. Se o visitante voltar depois por outra página, a origem continua sendo a da primeira mensagem. Contribuição de @paulolimajr77.
+
+- **O negócio criado pelo funil passa a receber um contato existente pela tela de edição** Quem abre o negócio pelo funil não passa pela tela de Contatos: o negócio nascia sem ninguém, e as telas só sabiam dizer que faltava contato. O campo já existia na API — o `PATCH /api/v1/leads/{id}` aceita `contact_id` desde sempre —, mas nenhuma tela mandava, então o negócio "oco" continuava oco.
+
+  Agora o "Editar negócio" do card tem o campo **Contato do negócio**: ele mostra quem está vinculado e permite escolher outro entre os contatos que já existem, pela busca da própria lista de contatos (a mesma que casa variações de telefone). Este fluxo não cria contato — a régua de telefone do cadastro continua num lugar só —, então nenhum contato duplicado nasce por aqui.
+
+  O que não mudou: o cadastro de contato e a criação de negócio seguem idênticos, salvar o negócio sem mexer no contato não reenvia o vínculo, e trocar o contato de um negócio com venda registrada não reabre o Valor.
+
+  Contribuição de @webtecnica (#852).
+
+- **A AI/ML API entra como empresa de inteligência artificial do atendente** A AI/ML API agora aparece na lista de empresas de IA, junto de Anthropic, OpenAI, Google, OpenRouter, DeepSeek e Requesty. Dá para cadastrar a chave em "IA › Credenciais" e escolher os modelos dela para o atendente e para as outras funções da IA.
+
+  Ela é uma agregadora: uma chave só dá acesso a centenas de modelos de chat de vários fabricantes, com cobrança por uso numa conta só. A chave é conferida na hora de salvar, a lista de modelos vem do catálogo público dela (só os que falam o formato de chat) e o endereço é fixo, então a chave só é enviada para `api.aimlapi.com`.
+
+  Para quem já usa outra empresa de IA, nada muda: o atendente continua no mesmo provedor e modelo, e a AI/ML API só passa a valer quando alguém a escolhe.
+
+  Contribuição de @Lookoff-AIMLAPI.
+
+### Alterado
+
+- **Painel de vendas com o período num campo só, e o vendedor de cada venda** O topo do painel de vendas ficou numa linha só: o Período aparece num campo como "01/11/2026 - 19/11/2026", e clicar nele abre um calendário com os atalhos (Hoje, 7 dias, 30 dias, Este mês, Mês passado) ao lado. No calendário, um clique marca o dia inicial e outro o final. Ao lado do período ficam os filtros de Funil e Tag, e "Restaurar filtros" volta ao mês atual sem recorte. Na lista de vendas, a nova coluna Vendedor mostra quem registrou a venda; para o negócio ganho sem venda registrada, aparece o responsável pelo negócio.
+
+### Corrigido
+
+- **O custo do Claude Haiku 5.5 passa a contar o preço acima de 100 mil tokens em cada passo do agente** Quando uma requisição ao **Claude Haiku 5.5** passa de 100 mil tokens de entrada (contando leitura e escrita de cache), a Anthropic cobra aquela requisição a 5× a tarifa. O custo gravado em **Uso e orçamento** ignorava essa faixa e ficava abaixo da fatura. Agora cada passo do laço de ferramentas do agente é cobrado pela sua própria entrada: só o passo que passou de 100 mil sai a 5×, e um turno de vários passos curtos continua a 1×, mesmo que a soma passe de 100 mil. Os outros modelos não mudam.
+
+  Relatado em #5017 por @hudson-souza-mkt.
+
+- **Os acabamentos de "levar vários negócios para outro funil" — permissão, singular e rótulo em espanhol** Quem é **viewer** na organização não vê mais a opção **Outro funil…** no menu "Mover para…" da
+  barra de seleção do quadro. A rota em lote sempre recusou essa ação para quem não é agent ou
+  acima, então a opção só levava a um 403; agora ela some, como já acontecia em funil arquivado.
+
+  A janela de levar em lote passou a tratar o singular: com um negócio selecionado ela diz
+  **1 negócio selecionado**, e não mais "1 negócios selecionados". Do plural em diante a contagem
+  continua como estava.
+
+  A descrição em espanhol do negócio levado passou a citar o rótulo canônico do produto,
+  **Movido a otro embudo** — o mesmo texto que o diálogo de um card só já usava — em vez do
+  rótulo antigo.
+
+- **A documentação do módulo conectado não promete mais o papel `agent` sem a chave da pessoa** O `.env.example`, o comentário da variável em `lib/env.ts` e as declarações da F3 diziam que, sem `MODULE_JWT_PRIVATE_KEY`, o módulo conectado ficava com teto `agent`. O comportamento real é outro: o token da F2 nasce como `viewer`, então sem a chave o papel efetivo é `viewer` — o módulo lê o que um visitante lê, e rotas que cobram `agent` respondem 403 `forbidden_role`. A chave só acrescenta a identificação da pessoa, com teto `manager`.
+
+  A doc passou a dizer isso, e um teste novo trava o 403 e o 200 com a área consentida. Nada muda para quem instala: a variável continua opcional e nenhum acesso foi ampliado.
+
+- **Um segundo "Levar para outro funil" não duplica o negócio que já foi criado no destino** Quando a transferência de vários negócios para outro funil falha no meio, o negócio cuja cópia já foi criada no destino aparece no resultado com o link para conferi-lo. Ao fechar a janela, a seleção é limpa sempre que algum negócio foi levado ou já tinha cópia criada no destino, então um segundo "Levar" não cria outra cópia dele. Contribuição de @yunshu0909, a partir da issue #5102.
+
+- **A leitura da agenda não trava mais quando um evento cancelado do produto ficou sem compromisso** Quando o compromisso que publicou um evento no Google é excluído, o Google continua devolvendo esse evento como cancelado, só que sem par no banco. A leitura da agenda tratava isso como erro e derrubava a página inteira: a conexão ficava com "A leitura não terminou" para sempre, inclusive na leitura completa e depois de reconectar. Agora esse evento cancelado é descartado e a leitura segue normalmente; evento do produto que ainda ocupa horário e ficou sem compromisso continua sendo recusado, mas a tela diz o dia e a hora do evento e pede para corrigir ou remover no Google Agenda, em vez da frase genérica. O log da leitura também passa a levar essa frase.
+  Contribuição de @yunshu0909, a partir da issue #5109.
+
+- **A mensagem enviada por token de API diz qual integração falou, e o escopo de conversas aparece em espanhol** Mensagem enviada por token de API aparecia na conversa como "Sistema": o dono
+  lia o fio sem saber qual integração havia respondido. A linha agora guarda o
+  nome do token, lido de `api_tokens.name` no servidor, e o balão mostra
+  "Integração · <nome do token>". Linha antiga ou token sem nome cai em
+  "Integração" — o `sent_via` continua o mesmo, e o nome vindo do corpo da
+  requisição é descartado.
+
+  Na tela de Tokens de API em espanhol, o escopo `conversations:write` saía em
+  português. O rótulo foi traduzido e a cerca que cobra espanhol passou a abrir as
+  listas iteradas por `.map`, que era o caminho pelo qual esse texto escapava.
+
+- **Mensagens agendadas esperando um número desconectado não travam mais as outras** Quando um número ficava fora do ar com a opção "esperar", as mensagens agendadas dele ocupavam todas as vagas de cada rodada de envio, e uma mensagem agendada para outro número, conectado, podia nunca sair. Agora quem está esperando cede a vez a cada rodada: as mensagens dos números conectados saem no horário, e as que esperam continuam agendadas, com o texto, e são enviadas quando o número voltar. Contribuição de @webtecnica, a partir da issue #5060 relatada por @samirhvbr.
+
+- **Mensagem agendada sai pelo número reconectado, e a série pula só a vez cancelada** Quando o WhatsApp é desconectado e o mesmo número é lido de novo por QR, a mensagem agendada passa a sair pela conversa da conexão nova, em vez de ficar parada na antiga. O envio só usa conexão com o **mesmo número** da original: se só houver outro número da empresa no ar, a mensagem não sai por ele — espera ou é cancelada, conforme a escolha de quem agendou.
+
+  Numa série, a desconexão **nunca cancela a série**. Com "Esperar reconectar e enviar", a ocorrência espera. Com "Cancelar", a tela diz "Pular este envio" e só aquela data é pulada; a série segue para a próxima.
+
+  Contribuição de @DIOGRO83 (#5185), que mediu o agendamento que ficava órfão e propôs as regras.
+
+- **A imagem construída pelo fallback da atualização passa a levar a versão e a revisão, e o pull é tentado de novo antes de construir** Se o `docker compose pull` de uma atualização falhasse por uma queda transitória de rede no meio do download (por exemplo `read: connection reset by peer` na CDN do GHCR), o `update.sh` caía direto na construção local de `worker`, `scheduler` e `voice-agent`. Essa imagem era gravada sob a mesma tag oficial da versão — e saía com `APP_VERSION=dev` e sem a revisão da release, porque o bloco `build:` do parque de produção não passava nenhuma das duas. Com `*_PULL_POLICY=missing` no `.env`, o Docker nunca mais puxava a imagem oficial daquela versão, e a confirmação de versão do parque ficava travada mesmo com a atualização terminando em sucesso.
+
+  Agora o pull é tentado uma segunda vez antes de qualquer construção: queda transitória deixa de virar build local, e a mensagem diz que houve retentativa. Se ainda assim a construção acontecer, as três imagens saem com `APP_VERSION` da versão alvo e com o label `org.opencontainers.image.revision` do commit que está no disco, igual ao que o CI carimba no fluxo oficial — mas só quando a pasta é exatamente esse commit. Com mudança local ou arquivo novo na pasta (que a construção copia para dentro da imagem), ou com o commit desconhecido, o label vai vazio — não-medido, como antes, nunca um palpite. O `diagnostico.sh` continua reconhecendo essa imagem como construída na VPS: ele passa a decidir pelo label de versão, que só o CI põe.
+
+  A tela de versão não faz parte desta mudança: ela lê o que o host mede, e é o host que passou a ter o que medir. Referente à issue #5196.
+
+- **No computador, a lixeira do horário do atendente não fica mais espremida pelos campos de hora** Em Equipe › Atendimento › Horário, a 1280 px o botão "Remover janela" ficava com 16 px de largura, porque os dois campos de hora ocupavam o resto da linha e encolhiam o botão. Agora a lixeira mantém o tamanho em todas as larguras, não só abaixo de 400 px.
+
+  Contribuição de @mateuscmtropical (#5203).
+
+- **O tipo de agendamento passa a usar o fuso da empresa** Antes, todo tipo de agendamento nascia no fuso de São Paulo e não mudava quando a empresa escolhia outro fuso; os horários do serviço eram contados nesse fuso errado. Agora o tipo nasce no fuso da empresa e acompanha quando ela troca de fuso; quem colocou outro fuso à mão num tipo continua com ele. Na atualização, uma vez só, os tipos que ainda estavam em São Paulo numa empresa de outro fuso passam para o fuso da empresa: a partir daí, os horários desses serviços (por exemplo "das 09:00 às 18:00") contam no fuso da empresa, e não mais no de São Paulo. Se a sua empresa fica fora do fuso de São Paulo, confira a grade de horários dos serviços depois de atualizar, principalmente se você tinha digitado os horários já convertidos para São Paulo para compensar o defeito. Quem quiser São Paulo num tipo de empresa de outro fuso troca na tela do serviço. Contribuição de @paulolimajr77, a partir da issue #5205.
+
+- **O "Editar" do card não grava mais o Valor por cima da soma das vendas** Num negócio com venda registrada, o Valor é a soma das vendas. Antes, salvar pelo "Editar" do card, pelo `crm_update_lead` do MCP ou pela API gravava um número digitado por cima dessa soma, e o card passava a mostrar outro valor que o painel de vendas. Agora o "Editar" mostra a soma só para leitura, e o servidor ignora `value_cents` enquanto o negócio tiver venda registrada. Os outros campos da edição seguem gravando normalmente.
+
+  Contribuição de @Yshuro (#5231). Referente à issue #5228.
+
+- **Conversões de etapa do Google Ads usam o clique do próprio negócio** Quando um contato volta por outro anúncio, cada negócio usa seu próprio clique para enviar conversões de etapa ao Google Ads. Com uma única conta cadastrada, o CRM mantém o envio para ela mesmo que o clique não informe a conta ou identifique outra. Com várias contas, o clique precisa identificar a conta de envio. Se faltar a correspondência, o motivo aparece no histórico. Contribuição de @SerusoNakamoto.
+
+- **A devolução automática ao agente não toma mais a conversa que um atendente acabou de assumir ou responder** Com o prazo de devolução ligado (Configurações › Distribuição de atendimento), a rotina automática lê as conversas paradas e, logo em seguida, devolve cada uma ao agente de IA. Se nesse intervalo um atendente assumisse a conversa ou respondesse o cliente, a rotina não via a mudança e devolvia a conversa à IA mesmo assim, logo depois de a pessoa entrar nela.
+
+  Agora a devolução confere, no momento da escrita, que a conversa continua com o mesmo responsável lido na varredura e que ninguém da equipe assumiu ou respondeu depois do prazo vencer. Se mudou, a conversa fica com a pessoa e a rodada segue para a próxima, sem contar como falha. O banco ganha uma função de apoio (migration 9472), aplicada pela atualização normal. Nada a fazer.
+
 ## [1.125.0] — 2026-11-24
 
 ### ⚠️ Requer atenção
@@ -19053,7 +19185,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.125.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.126.0...HEAD
+[1.126.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.125.0...v1.126.0
 [1.125.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...v1.125.0
 [1.124.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...v1.124.0
 [1.123.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.122.0...v1.123.0
