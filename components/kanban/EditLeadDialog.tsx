@@ -168,7 +168,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
       expected_close_date: values.expected_close_date || null,
     };
     // Só quando MUDOU: reenviar o contato de sempre faria o PATCH parecer uma
-    // troca a cada salvamento (e o servidor revalidar a organização à toa).
+    // troca a cada salvamento.
     if (contactId !== (lead.contact_id ?? null)) patch.contact_id = contactId;
 
     const parsed = updateLeadSchema.safeParse(patch);
