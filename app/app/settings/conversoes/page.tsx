@@ -286,8 +286,9 @@ export default async function ConversoesPage({
             href={chave === "configuracao" ? "?" : `?aba=${chave}`}
             aria-current={aba === chave ? "page" : undefined}
             className={
+              // Sem -mb-px: overflow-x-auto força overflow-y auto, e o -mb-px transbordava 1px na vertical.
               aba === chave
-                ? "-mb-px shrink-0 border-b-2 border-primary px-3 py-2 text-sm font-medium whitespace-nowrap"
+                ? "shrink-0 border-b-2 border-primary px-3 py-2 text-sm font-medium whitespace-nowrap"
                 : "shrink-0 px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
             }
           >
