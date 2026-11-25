@@ -246,6 +246,7 @@ Passo a passo em linguagem simples: [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md)
 | `restore.sh` | Restaura um backup |
 | `reset-password.sh` | Redefine a senha de um usuário |
 | `reset-mfa.sh` | Remove o MFA de quem perdeu o celular |
+| `change-email.sh` | Troca o e-mail de login (o dono criado como `admin@<domínio>`) |
 | `healthcheck.sh` | Diagnóstico de todos os serviços — sai 1 quando o app não está saudável |
 
 > **Backup importa:** o plano grátis do Supabase **não faz backup sozinho**. Vale agendar
