@@ -246,6 +246,7 @@ Passo a passo em linguagem simples: [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md)
 | `restore.sh` | Restaura um backup |
 | `reset-password.sh` | Redefine a senha de um usuário |
 | `reset-mfa.sh` | Remove o MFA de quem perdeu o celular |
+| `change-email.sh` | Troca o e-mail de login (o dono criado como `admin@<domínio>`) |
 | `healthcheck.sh` | Diagnóstico de todos os serviços — sai 1 quando o app não está saudável |
 
 > **Backup importa:** o plano grátis do Supabase **não faz backup sozinho**. Vale agendar
@@ -331,7 +332,7 @@ Toda tela tem porta na navegação — o CI reprova tela que existe mas em que s
 | **WhatsApp** | WAHA Plus (engine NOWEB) + Meta Cloud API | QR pra começar rápido; canal oficial pra escala |
 | **Filas** | `event_log` table + workers (cron) | Trigger de banco nunca faz HTTP |
 | **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier suficiente |
-| **AI** | Vercel AI SDK v7 — OpenRouter, Requesty, Anthropic, OpenAI e Google | Instalador pergunta qual; troca depois pela tela |
+| **AI** | Vercel AI SDK v7 — OpenRouter, Requesty, AI/ML API, Anthropic, OpenAI e Google | Instalador pergunta qual; troca depois pela tela |
 | **Validação** | Zod | Input externo, env, payloads |
 | **Observability** | Sentry (scrub em erro, transação, span e breadcrumb) | Telemetria opt-in no install |
 | **Hospedagem** | VPS com Docker (HostGator/SP na parceria) | App + WhatsApp + workers na sua máquina |

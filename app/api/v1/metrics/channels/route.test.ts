@@ -152,6 +152,29 @@ describe("GET /api/v1/metrics/channels", () => {
     expect(chamadas).toHaveLength(0);
   });
 
+  it("aceita o 90º dia civil com recuo de relógio, mas mantém o teto do ISO avulso", async () => {
+    permitido();
+    const { chamadas, client } = fakeSupabase({ data: { channels: [] }, error: null });
+    const eq = vi.fn(() => ({
+      maybeSingle: async () => ({ data: { timezone: "America/New_York" }, error: null }),
+    }));
+    const from = vi.fn(() => ({ select: () => ({ eq }) }));
+    vi.mocked(createClient).mockResolvedValue({ ...client, from } as never);
+
+    const rota = "http://localhost/api/v1/metrics/channels";
+    const valido = await chamar(`${rota}?from=2026-09-01T04:00:00Z&to=2026-11-30T05:00:00Z`);
+    expect(valido.status).toBe(200);
+    expect(eq).toHaveBeenCalledWith("id", ORG_ID);
+    expect(chamadas[0]?.args).toMatchObject({
+      p_from: "2026-09-01T04:00:00.000Z",
+      p_to: "2026-11-30T05:00:00.000Z",
+    });
+
+    const avulso = await chamar(`${rota}?from=2026-09-01T04:00:00Z&to=2026-11-30T05:01:00Z`);
+    expect(avulso.status).toBe(422);
+    expect(chamadas).toHaveLength(1);
+  });
+
   it("`from` depois de `to` é 422, e a leitura não acontece", async () => {
     permitido();
     const rpc = vi.fn();

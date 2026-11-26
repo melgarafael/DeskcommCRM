@@ -240,6 +240,8 @@ describe("Issue #4915: eventos de duração zero na sincronização do Google", 
         class: "23",
         code: "23514",
         constraint: "calendar_external_events_periodo_valido",
+        // #5109: a frase da tela também vai para o log — sanitizada, nunca `e.message`.
+        message: "A leitura não terminou. Tente sincronizar novamente nas configurações.",
       },
     );
 

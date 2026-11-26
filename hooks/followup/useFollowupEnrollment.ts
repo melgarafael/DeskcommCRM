@@ -1,10 +1,13 @@
 "use client";
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
 import { useT } from "@/hooks/i18n/useT";
+import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import type { EventoDeEnrollment, NoDoDossie } from "@/lib/followup/eventos-legiveis";
 import type { TimingPlan } from "@/lib/followup/plano-de-tempo";
 
@@ -50,8 +53,25 @@ export interface FollowupEnrollmentDossie {
 export const dossieQueryKey = (id: string) => ["followup", "enrollment", id] as const;
 
 export function useFollowupEnrollment(id: string) {
+  const qc = useQueryClient();
+  const queryKey = useMemo(() => dossieQueryKey(id), [id]);
+  const { ultimaEntrega } = useRealtimeChannel({
+    name: `followup-dossie-${id}`,
+    postgresChanges: {
+      event: "INSERT",
+      table: "followup_delivery_events",
+      filter: `enrollment_id=eq.${id}`,
+    },
+    onChange: () => { void qc.invalidateQueries({ queryKey, exact: true }); },
+  });
+  useRefetchDeSeguranca<FollowupEnrollmentDossie>({
+    queryKey,
+    ultimaEntrega,
+    assinatura: (d) => `${d?.updated_at}:${d?.eventos?.at(-1)?.id}`,
+  });
+
   return useQuery({
-    queryKey: dossieQueryKey(id),
+    queryKey,
     queryFn: async () => {
       const res = await apiClient.get<{ data: FollowupEnrollmentDossie }>(
         `/api/v1/ai/followups/enrollments/${id}`,

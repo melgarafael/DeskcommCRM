@@ -729,6 +729,17 @@ beforeAll(() => {
             (organization_id, conversation_id, contact_id, channel_session_id, body, scheduled_at)
           values (v_org, v_conv, v_contact, v_sess, 'rls invariant probe', now() + interval '1 day');
         end if;
+
+        -- migration 9473 (#4431, repetição) -- o desfecho de uma ocorrência da série.
+        -- Sem linha semeada o controle positivo ficaria sem prova: 0 >= 1 nunca passaria.
+        if not exists (select 1 from public.mensagens_agendadas_envios where organization_id = v_org) then
+          insert into public.mensagens_agendadas_envios
+            (organization_id, agendamento_id, conversation_id, prevista_para, status, motivo)
+          select v_org, a.id, v_conv, now(), 'cancelada', 'numero_desconectado'
+            from public.mensagens_agendadas a
+           where a.organization_id = v_org
+           limit 1;
+        end if;
       end loop;
     end
     $seed$;
@@ -752,6 +763,9 @@ export const TABLES = [
   // leitura exige a conversa visível pela sessão; a semente usa v_conv, sem dono,
   // que o agent semeado enxerga (visibility_mode padrão).
   "mensagens_agendadas",
+  // migration 9473 (#4431) — o histórico por ocorrência da série. A leitura segue a
+  // conversa pela RLS da sessão (policy com fn_user_org_ids e conversa visível).
+  "mensagens_agendadas_envios",
   "conversations",
   "messages",
   "contacts",

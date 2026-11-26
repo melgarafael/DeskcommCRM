@@ -52,13 +52,15 @@ import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { DIAS_DA_JANELA, janelaDoRelatorio, lerRelatorioDeVendas } from "@/lib/relatorios/vendas";
+import { janelaDoRelatorio, lerRelatorioDeVendas } from "@/lib/relatorios/vendas";
 import {
   csvDoRelatorioDeVendas,
   nomeDoArquivoDoRelatorio,
   type LinhaDoRelatorio,
 } from "@/lib/relatorios/vendas-csv";
 import { createClient } from "@/lib/supabase/server";
+import { datasDaJanela, diasDoPeriodo } from "@/lib/metrics/periodo-do-desempenho";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
@@ -140,6 +142,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     };
   });
 
+  const diasLocais = datasDaJanela(janela, fusoUtilizavel(authz.org.timezone));
+
   await audit({
     action: "reports.sales_exported",
     actorUserId: authz.user.id,
@@ -155,7 +159,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       janela: {
         de: janela.from.toISOString(),
         ate: janela.to.toISOString(),
-        dias: DIAS_DA_JANELA,
+        dias: diasDoPeriodo(diasLocais),
       },
       filtros: { atendente: parsed.data.owner_user_id ?? null },
       excluded_tag: lido.relatorio.excluded_tag,
@@ -167,7 +171,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${nomeDoArquivoDoRelatorio(janela)}"`,
+        "Content-Disposition": `attachment; filename="${nomeDoArquivoDoRelatorio(diasLocais)}"`,
         "Cache-Control": "no-store",
         "X-Request-Id": requestId,
       },

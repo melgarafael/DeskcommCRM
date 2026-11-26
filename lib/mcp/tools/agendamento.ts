@@ -29,6 +29,8 @@ import {
 } from "@/lib/agenda/consulta";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import { diaLocalISO } from "@/lib/agenda/fuso";
+import { lerServico, primeiroLugarLivre, lugaresDoServico, type DadosDoServico } from "@/lib/agenda/servicos/consulta";
+import { MOTIVOS_DO_SERVICO } from "@/lib/agenda/servicos/motivos";
 import { rotuloLocal } from "@/lib/tempo/agora";
 import {
   alterarAgendamentoHandler,
@@ -287,10 +289,26 @@ function payloadDeHorarios(
      * segunda decisão do modelo: virou escrita na mesma chamada.
      */
     agenda_externa_nunca_lida: consulta.agendaExternaNuncaLida,
-    ...(consulta.servico ? { servico: { modo: consulta.servico.booking_mode, revisao: consulta.servico.revision,
-      horarios: consulta.servico.availability.map((a) => ({ inicio: a.starts_at, fim: a.ends_at, disponivel: a.available,
-        motivo: a.reason, capacidade: a.capacity_limit, vagas: a.remaining_capacity, duracao_minutos: a.duration_minutes,
-        cobertura_verificada: a.coverage_verified })), reserva: "nao_executada" } } : {}),
+    ...(consulta.servico ? {
+      servico: {
+        modo: consulta.servico.booking_mode,
+        revisao: consulta.servico.revision,
+        horarios: consulta.servico.availability.map((a) => ({
+          inicio: a.starts_at,
+          fim: a.ends_at,
+          disponivel: a.available,
+          motivo: a.reason,
+          capacidade: a.capacity_limit,
+          vagas: a.remaining_capacity,
+          duracao_minutos: a.duration_minutes,
+          cobertura_verificada: a.coverage_verified,
+          ...(a.free_spaces && a.free_spaces.length > 0
+            ? { lugares_livres: a.free_spaces.map((fs) => ({ id: fs.id, nome: fs.name })) }
+            : {}),
+        })),
+        reserva: "nao_executada",
+      },
+    } : {}),
   };
 }
 
@@ -761,6 +779,13 @@ const marcarShape = {
     .max(320)
     .optional()
     .describe(DESCRICAO_DO_CONVIDADO),
+  space_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "sala/mesa de lugares_livres; omita para escolher uma livre",
+    ),
 };
 
 export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
@@ -805,6 +830,31 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
             "equipe inclui no convite.",
         };
       }
+      // Sem space_id e o serviço tem lugar (e está habilitado): escolhe uma sala livre.
+      // Não grava se nenhuma estiver livre. Só lê `lerServico` quando o tipo é
+      // service_enabled — um tipo comum não passa pelo `parse` estrito de
+      // `lerServico` e não deve derrubar a marcação de consultas sem sala.
+      let spaceId = input.space_id;
+      let serviceComLugar: DadosDoServico | null = null;
+      if (tipo.servicoLigado && !spaceId) {
+        serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
+        if (serviceComLugar && lugaresDoServico(serviceComLugar).length > 0) {
+          const { livre, motivo: motivoSemLugar } = await primeiroLugarLivre(
+            ctx.supabase, ctx.organizationId, serviceComLugar, input.starts_at, input.owner_user_id ?? null,
+            input.participants?.length ?? undefined,
+          );
+          if (!livre) {
+            // O motivo real do horário (fora da programação, bloqueio...), não "lugar ocupado" fixo.
+            const motivo = motivoSemLugar ?? "space_capacity_reached";
+            return {
+              marcado: false,
+              motivo,
+              mensagem: `${MOTIVOS_DO_SERVICO[motivo] ?? "Horário indisponível."} Consulte os horários de novo.`,
+            };
+          }
+          spaceId = livre.id;
+        }
+      }
       const r = await marcarAgendamentoHandler(
         ctx.supabase,
         {
@@ -835,6 +885,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ...(input.participant_name !== undefined ? { participant_name: input.participant_name } : {}),
           ...(input.participants !== undefined ? { participants: input.participants } : {}),
           ...(input.expected_service_revision !== undefined ? { expected_service_revision: input.expected_service_revision } : {}),
+          ...(spaceId !== undefined ? { space_id: spaceId } : {}),
         },
       );
       /**
@@ -870,12 +921,25 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       ].filter(Boolean);
       if (r.service_occurrence_id) avisos.push("A reserva CRM e a publicação Google são estados separados. Use o estado google_publication do recibo; não afirme publicação ou comunicação que ainda não foi comprovada.");
 
+      // O nome do lugar vem do service_space_id do recibo, resolvido contra
+      // lugaresDoServico(service). O recibo não tem space_name.
+      let lugarNome: string | null = null;
+      if (r.service_space_id) {
+        if (!serviceComLugar && tipo.servicoLigado) {
+          serviceComLugar = await lerServico(ctx.supabase, ctx.organizationId, tipo.id);
+        }
+        lugarNome =
+          serviceComLugar && lugaresDoServico(serviceComLugar).some((l) => l.id === r.service_space_id)
+            ? lugaresDoServico(serviceComLugar).find((l) => l.id === r.service_space_id)!.name
+            : null;
+      }
       return {
         marcado: r.service_occurrence_id ? r.status === "pending" || r.status === "confirmed" : true,
         compromisso: compromissoComHorarioLocal(r),
         // Campo próprio, além da mensagem: um booleano no topo é o que o modelo
         // enxerga sem precisar interpretar prosa.
         aguarda_confirmacao: aguardaConfirmacao,
+        ...(lugarNome ? { lugar: lugarNome } : {}),
         ...(avisos.length > 0 ? { mensagem: avisos.join(" ") } : {}),
       };
     }),
@@ -905,6 +969,7 @@ async function marcarHorario(
     participants?: string[];
     participantName?: string;
     serviceRevision?: number;
+    spaceId?: string;
   },
 ): Promise<unknown> {
   return crmBookAppointment.handler(
@@ -919,6 +984,7 @@ async function marcarHorario(
       ...(args.participants !== undefined ? { participants: args.participants } : {}),
       ...(args.participantName !== undefined ? { participant_name: args.participantName } : {}),
       ...(args.serviceRevision !== undefined ? { expected_service_revision: args.serviceRevision } : {}),
+      ...(args.spaceId !== undefined ? { space_id: args.spaceId } : {}),
     },
     ctx,
   );
@@ -952,6 +1018,13 @@ const consultarEMarcarShape = {
     .max(320)
     .optional()
     .describe(DESCRICAO_DO_CONVIDADO),
+  space_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "sala/mesa de lugares_livres; omita para escolher uma livre",
+    ),
 };
 
 /**
@@ -1062,6 +1135,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.guest_email !== undefined ? { guestEmail: input.guest_email } : {}),
+      ...(input.space_id !== undefined ? { spaceId: input.space_id } : {}),
     });
 
     const recusado =

@@ -256,6 +256,93 @@ interface ValoresResolvidos {
 const METODOS_DE_ITERACAO = new Set(["map", "flatMap", "forEach"]);
 
 /**
+ * `s` e `s.label` dentro de `TABELA.map((s) => …)`, com `TABELA` uma const de
+ * topo (própria ou importada) cujo literal é um ARRAY.
+ *
+ * ─── O furo que isto fecha (#5160) ────────────────────────────────────────
+ *
+ * `ApiTokensClient.tsx` declara `const SCOPES = [{ id, label }, …]` e renderiza
+ * `t(s.label)` dentro de `SCOPES.map((s) => …)`. A varredura cobria
+ * `Object.entries/values(TABELA).map((r) => t(r))`, mas NÃO o array iterado
+ * pelo próprio `.map`: o argumento `s.label` não era literal, `s` não era
+ * const de topo e o sítio caía em `naoResolvidos` — indistinguível, no
+ * relatório, de "dado de runtime". Foi assim que `conversations:write` chegou
+ * à tela em espanhol com o rótulo em português.
+ *
+ * O recorte é ESTREITO de propósito:
+ *
+ *   - o array tem de estar ESCRITO no módulo (literal), e cada elemento tem de
+ *     ser string (para `t(s)`) ou objeto literal com o campo acessado (para
+ *     `t(s.label)`); qualquer outra forma devolve `null` e o sítio continua
+ *     contado como não resolvido;
+ *   - o parâmetro tem de ser o PRIMEIRO da callback e a callback o argumento
+ *     direto de `.map/.flatMap/.forEach` sobre a const — callback anônimo com
+ *     outro dono (índice, acumulador) fica fora;
+ *   - campo indexado por variável (`s[campo]`) continua fora: aí o conjunto de
+ *     valores não é decidível sem fluxo de dado.
+ */
+function resolverElementoDeArray(
+  no: ts.Expression,
+  dono: FonteAnalisada,
+  cache: CacheDeFontes,
+): ValoresResolvidos | null {
+  let campo: string | null = null;
+  let alvo: ts.Expression = no;
+  if (ts.isPropertyAccessExpression(no)) {
+    campo = no.name.text;
+    alvo = no.expression;
+  }
+  if (!ts.isIdentifier(alvo)) return null;
+  const nome = alvo.text;
+
+  for (let n: ts.Node | undefined = no.parent; n; n = n.parent) {
+    if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) continue;
+    const parametro = n.parameters[0];
+    if (!parametro || !ts.isIdentifier(parametro.name) || parametro.name.text !== nome) continue;
+    const chamada = n.parent;
+    if (!ts.isCallExpression(chamada) || chamada.arguments[0] !== n) return null;
+    const metodo = chamada.expression;
+    if (!ts.isPropertyAccessExpression(metodo) || !METODOS_DE_ITERACAO.has(metodo.name.text)) {
+      return null;
+    }
+    const base = baseDeExpressao(desembrulhar(metodo.expression), dono, cache);
+    if (!base) return null;
+    const tabela = desembrulhar(base.inicializador);
+    if (!ts.isArrayLiteralExpression(tabela)) return null;
+    const valores: string[] = [];
+    for (const el of tabela.elements) {
+      const folha = desembrulhar(el);
+      if (campo === null) {
+        // `t(s)` sobre array de objetos: o valor não é texto, e chutar as folhas
+        // do objeto cobraria `id`/chaves técnicas como se fossem frase de tela.
+        if (!ts.isStringLiteral(folha) && !ts.isNoSubstitutionTemplateLiteral(folha)) return null;
+        valores.push(folha.text);
+        continue;
+      }
+      if (!ts.isObjectLiteralExpression(folha)) return null;
+      const prop = folha.properties.find(
+        (p): p is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(p) &&
+          (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) &&
+          p.name.text === campo,
+      );
+      if (!prop) return null;
+      const doCampo = valoresDe(prop.initializer);
+      if (!doCampo) return null;
+      valores.push(...doCampo);
+    }
+    if (valores.length === 0) return null;
+    return {
+      valores: [...new Set(valores)],
+      procedencia: `${base.procedencia} (elemento de .${metodo.name.text}()${
+        campo === null ? "" : `, campo "${campo}"`
+      })`,
+    };
+  }
+  return null;
+}
+
+/**
  * `r` em `Object.entries(TABELA).map(([k, r]) => t(r))` (segundo elemento) ou em
  * `Object.values(TABELA).map((r) => t(r))` (o próprio parâmetro): os únicos
  * valores possíveis são os da tabela. Qualquer outra forma devolve `null` — a
@@ -351,6 +438,9 @@ function resolver(
   if (ts.isIdentifier(no)) {
     const viaTabela = resolverParametroDeIteracao(no, dono, cache);
     if (viaTabela) return viaTabela;
+    // `t(s)` com `s` iterando `ARRAY.map(...)`: o array é literal do módulo.
+    const viaElemento = resolverElementoDeArray(no, dono, cache);
+    if (viaElemento) return viaElemento;
   }
 
   // `ROTULOS.tipo` / `ns.TABELA.tipo` — valor exato da propriedade quando o
@@ -358,6 +448,9 @@ function resolver(
   if (ts.isPropertyAccessExpression(no) || ts.isElementAccessExpression(no)) {
     const exato = acessoEstatico(no, dono, cache);
     if (exato) return exato;
+    // `t(s.label)` com `s` iterando `ARRAY.map(...)` (#5160).
+    const viaElemento = resolverElementoDeArray(no, dono, cache);
+    if (viaElemento) return viaElemento;
   }
 
   if (ts.isPropertyAccessExpression(no) || ts.isElementAccessExpression(no)) {
