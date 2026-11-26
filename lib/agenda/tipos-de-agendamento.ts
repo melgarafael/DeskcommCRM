@@ -237,6 +237,29 @@ export const alterarSchema = z.object(camposDoTipo).partial().extend({
       }
       return out;
     }),
+  /**
+   * Os degraus que saem SEM o link da reunião (#5154). Lista de minutos; vazio
+   * = todos levam, o padrão de sempre. Mora só no PATCH pelo mesmo motivo dos
+   * textos: o tipo nasce com um degrau, e ele nasce levando o link.
+   *
+   * A tela grava a lista INTEIRA a cada salvamento (como `reminder_bodies`),
+   * então degrau que muda de minutos ou some não deixa entrada velha para trás.
+   * O teto é o de degraus: 1 principal + os extras.
+   */
+  reminder_sem_link_offsets_minutes: z
+    .array(
+      z
+        .number()
+        .int()
+        .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
+        .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." }),
+    )
+    .max(TETO_DE_LEMBRETES_EXTRAS + 1, {
+      message: `No máximo ${TETO_DE_LEMBRETES_EXTRAS + 1} lembretes por tipo.`,
+    })
+    // Ordem e repetição são ruído de formulário, não escolha: some aqui uma vez.
+    .transform((v) => [...new Set(v)].sort((a, b) => b - a))
+    .optional(),
 });
 
 export const desativarSchema = z.object({ id: z.string().uuid() });

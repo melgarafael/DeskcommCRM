@@ -186,17 +186,11 @@ describe("fiação — a espera humana é paga UMA vez por turno", () => {
     expect(doSendMessage).toBeGreaterThan(-1);
     const i = FONTE_INBOUND.indexOf("send: (finalBody: string) =>", doSendMessage);
     expect(i).toBeGreaterThan(-1);
-    // #4129 — a cadeia deste callback ganhou o ramo do material da empresa
-    // (`enviarComFotos` com `anexoDoMaterial`), e o call site das bolhas andou
-    // ~500 caracteres para baixo: a janela fixa de 2400 passou a cortar antes
-    // dele. O teto novo mantém a janela em volta do MESMO callback, e a
-    // asserção `: tool({` abaixo reprova se ela atravessar para outra tool.
-    // A main tinha subido para 2500 pelo `foto_enviada` (foto por URL, R4), que
-    // também alongou este callback; o merge soma os dois e 3600 cobre os dois
-    // (o próximo `: tool({` só aparece ~19.500 caracteres adiante).
-    // IA calada: a guarda `pessoaAssumiuDuranteOTurno` entrou no
-    // `enviar` deste callback e empurrou a âncora ~90 caracteres; 3700 cobre os três.
-    const janela = FONTE_INBOUND.slice(i, i + 3700);
+    // A cadeia é executada depois do callback de envio. Delimitar pelo
+    // call site mantém a bolha dentro da prova quando o callback cresce.
+    const fim = FONTE_INBOUND.indexOf("let chain = await runBeforeSend(beforeSendArgs);", i);
+    expect(fim).toBeGreaterThan(i);
+    const janela = FONTE_INBOUND.slice(i, fim);
     expect(janela).not.toContain(": tool({");
     // Os dois convivem: o jitter é throttle anti-ban entre mensagens físicas, o
     // atraso humano é a pausa do turno. Perder o primeiro é afrouxar o anti-ban.

@@ -1217,6 +1217,22 @@ async function runFlowDrivenTurn(
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
+      historicoDoFollowup: {
+        jobId: job.id,
+        async registrar(fase, candidata) {
+          try {
+            await pool.query("select public.fn_followup_registrar_envio($1,$2,$3,$4,$5)", [
+              job.organization_id,
+              job.id,
+              fase === "gerada" ? "followup_message_generated" : "followup_send_partial",
+              `${job.id}:${job.attempts}:${candidata}`,
+              { candidata },
+            ]);
+          } catch {
+            runLog.warn("falha ao registrar a etapa de envio no dossiê", { fase });
+          }
+        },
+      },
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
         const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
         return buildFlowStepOpeningMessage(
