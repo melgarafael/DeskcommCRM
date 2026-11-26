@@ -134,6 +134,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "limite_da_rede",
+    rotulo: "Respeitar o limite de resposta da rede social",
+    oQueProtege:
+      "Rede social que limita a resposta (como o TikTok): só sai o que ela aceita, dentro do prazo e do número de mensagens permitidos.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Quem impõe é a rede social, não nós. Desligar aqui não libera nada: a mensagem seria recusada lá.",
+     camada: null,
+  },
+  {
     nome: "spinning",
     rotulo: "Variar o texto das mensagens iguais",
     oQueProtege:
