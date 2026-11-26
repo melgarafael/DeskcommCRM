@@ -42,12 +42,15 @@ siga a especificação funciona, sem integração escrita para ele.
    **Testar conexão**: a volta de um servidor nunca é aceita no endereço de outro.
 7. **Manter o acesso depois que a conversa encerra**: `0` (padrão) revoga assim que a conversa é
    encerrada. Até 720 horas.
-8. **Permitir ações (escrita) durante a conversa**: desligado por padrão. Leia o risco na tela
+8. **Prazo para abrir o link de autorização (minutos)**: `10` (padrão). De 10 a 1440 (24 horas).
+   Aumente se o cliente costuma ler a mensagem horas depois. O link segue de uso único; o prazo
+   maior só aumenta o tempo em que um link encaminhado ou esquecido pode ser aberto.
+9. **Permitir ações (escrita) durante a conversa**: desligado por padrão. Leia o risco na tela
    antes de ligar.
-9. **Salvar servidor**. Depois, em **Ferramentas**, marque o que o agente pode usar. Um servidor
-   OAuth só lista as ferramentas com o acesso de um cliente: a lista mostra o que já apareceu em
-   conversas, e você pode escrever o nome de uma ferramenta à mão.
-10. **Salve o rascunho e publique** o agente: a escolha das ferramentas fica na versão.
+10. **Salvar servidor**. Depois, em **Ferramentas**, marque o que o agente pode usar. Um servidor
+    OAuth só lista as ferramentas com o acesso de um cliente: a lista mostra o que já apareceu em
+    conversas, e você pode escrever o nome de uma ferramenta à mão.
+11. **Salve o rascunho e publique** o agente: a escolha das ferramentas fica na versão.
 
 O limite é de 5 servidores por agente.
 
@@ -55,8 +58,8 @@ O limite é de 5 servidores por agente.
 
 - **Cliente ainda sem acesso**: as ferramentas daquele servidor não aparecem para o agente. No
   lugar delas aparece uma só, `solicitar_acesso_<servidor>`. O agente a usa, recebe o link
-  (`https://<sua-instalação>/api/v1/mcp-oauth/iniciar/…`, válido por 10 minutos e de uso único) e o
-  envia ao cliente pelo fluxo normal de resposta.
+  (`https://<sua-instalação>/api/v1/mcp-oauth/iniciar/…`, de uso único e válido pelo prazo do
+  passo 8 — 10 minutos se ninguém mudou) e o envia ao cliente pelo fluxo normal de resposta.
 - **Cliente autorizou**: a página "Acesso autorizado, pode voltar à conversa" aparece. **A conversa
   não continua sozinha nesta versão**: a próxima mensagem do cliente já encontra o acesso. (O
   próximo passo é o callback reabrir o turno por `event_log`.)
