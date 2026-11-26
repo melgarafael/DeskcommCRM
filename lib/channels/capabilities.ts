@@ -606,3 +606,15 @@ export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {
   if (!caps) throw new Error(`unknown_channel_provider: ${provider}`);
   return caps;
 }
+
+/**
+ * A INGESTÃO desta conexão repassa a citação ("Responder" no WhatsApp) à
+ * resposta do aviso de caso (#5257)? Não é capability do canal — a API oficial
+ * também manda o contexto da resposta. Quem ainda não o lê é o NOSSO ingestor:
+ * só `lib/waha/ingest.ts` passa `citacao` a `consumirRespostaDoSuporteNoWhatsApp`.
+ * Ensinar a citar onde ela é ignorada deixaria a equipe sem resposta nenhuma.
+ * Quando outro ingestor passar a citação, ele entra aqui.
+ */
+export function ingestaoLeCitacaoDoAviso(provider: string | null | undefined): boolean {
+  return provider === "waha";
+}
