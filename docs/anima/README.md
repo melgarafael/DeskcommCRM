@@ -268,7 +268,15 @@ Se o intervalo trouxer mudança estrutural (Tailwind, Next, React ou reestrutura
 A marca mora **no banco**, não na imagem. O `.env` é só a semente:
 
 - **Instalação:** `/admin/marca` (nome "Ânima Hub" e logo). Grava em `platform_branding`.
-  O campo de cor fica escondido: o tema é fixo (abaixo).
+  O campo de cor fica escondido: o tema é fixo (abaixo). Arquivos usados (entregáveis de marca,
+  pasta `[Ânima] Logo/PNG`; a tela só aceita PNG ou JPG de até 512 KB):
+
+  | Campo em `/admin/marca` | Arquivo |
+  |---|---|
+  | Nome do sistema | `Ânima Hub` |
+  | Logo | `Logotipo Inline Preto@240.png` |
+  | Logo para o tema escuro | `Logotipo Inline Branco@240.png` |
+  | Ícone do aplicativo e do navegador | `Simbolo Preto@512.png` |
 - **Organização:** Configurações › Marca (`/app/settings/marca`). Grava em
   `organizations.settings.branding`.
 - **Semente no `.env`:** `APP_NAME`, `APP_LOGO_URL` e `APP_ACCENT_HEX`. Valem só até alguém salvar
