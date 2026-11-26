@@ -104,6 +104,7 @@ upstream:
 | `tests/unit/branding-saida.test.ts` | O e-mail ignora a cor de marca com o tema fixo | `vi.mock("@/lib/anima/tema-fixo", () => import("@/tests/fixtures/anima/tema-livre"))` |
 | `tests/unit/interface-por-empresa.test.ts` | Aparência sai do menu com o tema fixo | idem, e `vi` no import |
 | `tests/unit/interface-por-vinculo.test.ts` | idem | idem, e `vi` no import |
+| `tests/e2e/aparencia-templates.spec.ts` | A tela Aparência é escondida e redireciona com o tema fixo | `test.skip(TEMA_FIXO, …)` no `describe` e o import de `TEMA_FIXO` |
 | `tests/unit/grupos-sem-grupo-e-a-lista-de-hoje.test.tsx` | A fixture HTML traz o desenho dos ícones em peso regular, e o patch do Phosphor muda para bold | `vi.mock("@/lib/ui/icons", …)` que liga `__ANIMA_PHOSPHOR_PESO_UPSTREAM__` e põe `weight: "regular"` como padrão, e `vi` no import |
 
 ### Falhas conhecidas que não são do fork

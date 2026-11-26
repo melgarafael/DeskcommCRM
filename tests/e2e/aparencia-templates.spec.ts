@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { TEMA_FIXO } from "@/lib/anima/tema-fixo"; // Fork Ânima
 import { TEMPLATES } from "@/lib/aparencia/catalogo";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
@@ -63,6 +64,7 @@ async function voltarAoPadrao(page: Page): Promise<void> {
 }
 
 test.describe("Configurações › Aparência", () => {
+  test.skip(TEMA_FIXO, "Fork Ânima: tema fixo esconde a tela Aparência (lib/anima/tema-fixo.ts)");
   // Cada caso entra com MFA, volta a empresa ao padrão e troca de modo: só a
   // preparação passa dos 30s de padrão numa máquina comum.
   test.describe.configure({ timeout: 90_000 });
