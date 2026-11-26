@@ -115,6 +115,13 @@ export interface EstadoDeElegibilidade {
   /** O allowlist representa o período de teste deste canal. */
   preGoLiveAtivo: boolean;
   /**
+   * Teto de respostas da IA para visitante anônimo (F4, Task 1). `null` = não se
+   * aplica (canal sem teto ou contato não anônimo). Quando presente, `limite` é o
+   * teto configurado no canal e `respostasDaIa` é a contagem já gravada em
+   * `messages` (ou `null` se a leitura falhou — o gate passa, com registro em log).
+   */
+  tetoDoAnonimo?: { limite: number; respostasDaIa: number | null } | null;
+  /**
    * O contato da conversa está numa das listas duráveis de testadores do canal:
    * o telefone em `ai_test_phone_numbers` OU a `contacts.social_identity` em
    * `ai_test_social_identities`. O nome ficou o de quando só havia telefone.
@@ -135,6 +142,7 @@ export type MotivoDeElegibilidade =
   | "conversa_silenciada"
   | "conversa_de_humano"
   | "contato_interno"
+  | "teto_do_visitante_anonimo"
   | "fora_da_lista_de_teste"
   | "numero_de_teste"
   | "sem_autorizacao"
@@ -204,6 +212,22 @@ export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibi
   // robô no número não quer que ele responda a equipe, sócio ou família.
   if (e.contatoInterno) {
     return { permite: false, motivo: "contato_interno", bloqueioPorAllowlist: false };
+  }
+
+  // F4, Task 1: teto de respostas da IA para visitante anônimo. Só se aplica a
+  // canais com teto declarado pelo seam de canais e a contatos que não deixaram
+  // telefone nem e-mail — quem deixou um dos dois sai do teto do anônimo. A
+  // contagem vem dos loaders (`respostasDaIa`); leitura falhada (`null`) passa,
+  // com registro em log do lado que leu o banco.
+  if (e.tetoDoAnonimo != null && e.tetoDoAnonimo.respostasDaIa !== null) {
+    const { limite, respostasDaIa } = e.tetoDoAnonimo;
+    if (respostasDaIa >= limite) {
+      return {
+        permite: false,
+        motivo: "teto_do_visitante_anonimo",
+        bloqueioPorAllowlist: false,
+      };
+    }
   }
 
   if (e.modo === "open") {
@@ -303,6 +327,8 @@ export function montarEstadoDeElegibilidade(raw: {
   aiAuthorizedAt: Date | string | null | undefined;
   agora: Date;
   ttlMs: number;
+  /** Teto do anônimo já lido pelos loaders (F4). Ausente = não se aplica. */
+  tetoDoAnonimo?: EstadoDeElegibilidade["tetoDoAnonimo"];
 }): EstadoDeElegibilidade {
   const autorizadoEm = normalizarInstante(raw.aiAuthorizedAt);
   const modo = lerModoDoGate(raw.aiGate);
@@ -332,5 +358,8 @@ export function montarEstadoDeElegibilidade(raw: {
       ),
     agora: raw.agora,
     ttlMs: raw.ttlMs,
+    // F4, Task 1: o montador não faz a contagem (ela é dos loaders, sob o lock do
+    // número): o chamador a passa pronta; ausente = não se aplica.
+    tetoDoAnonimo: raw.tetoDoAnonimo ?? null,
   };
 }

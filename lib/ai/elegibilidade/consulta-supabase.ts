@@ -23,6 +23,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { tetoDoAnonimoDoCanal } from "@/lib/channels/teto-do-anonimo";
+import { logger } from "@/lib/logger";
+import type { Logger } from "../../agent-engine/obs/logger";
+
 import {
   decidirElegibilidade,
   montarEstadoDeElegibilidade,
@@ -40,12 +44,17 @@ interface ConversaEmbed {
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
+    email: string | null;
     /** `contacts.social_identity` — o testador de Instagram/Facebook casa por aqui. */
     social_identity: string | null;
     /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
     tags: string[] | null;
   } | null;
-  channel_sessions: { metadata: Record<string, unknown> | null } | null;
+  channel_sessions: {
+    metadata: Record<string, unknown> | null;
+    /** `channel_sessions.provider` — o seam de canais decide o teto do anônimo. */
+    provider: string | null;
+  } | null;
   organizations: { status: string | null; settings?: unknown } | null;
 }
 
@@ -55,12 +64,19 @@ interface ConversaEmbed {
  */
 export async function decidirElegibilidadeDaConversaViaSupabase(
   admin: Pick<SupabaseClient, "from">,
-  input: { organizationId: string; conversationId: string; agora: Date; ttlMs: number },
+  input: {
+    organizationId: string;
+    conversationId: string;
+    agora: Date;
+    ttlMs: number;
+    /** Opcional: chamada existente não passa. */
+    log?: Logger;
+  },
 ): Promise<DecisaoDaConversa | null> {
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, metadata, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, social_identity, tags), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, metadata, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, email, social_identity, tags), channel_sessions:channel_session_id(metadata, provider)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -72,6 +88,33 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   if (data == null) return null;
 
   const row = data as unknown as ConversaEmbed;
+  const teto = tetoDoAnonimoDoCanal(row.channel_sessions?.provider ?? "", row.channel_sessions?.metadata);
+  let respostasDaIa: number | null = null;
+  // Só conta quando o canal declara teto E o contato é anônimo (sem telefone
+  // nem e-mail). Quem deixou um dos dois sai do teto do anônimo.
+  if (teto !== null && !row.contacts?.phone_number && !row.contacts?.email) {
+    const { count, error: contagemErro } = await admin
+      .from("messages")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", input.organizationId)
+      .eq("conversation_id", input.conversationId)
+      .eq("direction", "outbound")
+      .eq("sent_via", "ai")
+      .neq("status", "failed");
+    if (contagemErro) {
+      // Nenhum chamador passa `log`: o logger do projeto é a reserva, senão a
+      // falha da contagem abriria a guarda sem deixar linha nenhuma.
+      (input.log ?? logger).warn("teto do visitante anônimo: contagem não lida — gate passa", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        erro: contagemErro.message,
+      });
+      respostasDaIa = null;
+    } else {
+      respostasDaIa = count ?? 0;
+    }
+  }
+
   const estado = montarEstadoDeElegibilidade({
     orgStatus: row.organizations?.status ?? null,
     canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
@@ -91,6 +134,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
     aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
     agora: input.agora,
     ttlMs: input.ttlMs,
+    tetoDoAnonimo: teto === null ? null : { limite: teto, respostasDaIa },
   });
   // #3534: `contatoDaEquipe` viaja com a decisão. `contacts.tags` e
   // `organizations.settings` já vêm no embed desta query, então a régua da

@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { env } from "@/lib/env";
+import { TETO_ANONIMO_MAXIMO } from "../teto-do-anonimo";
 import { enderecoDaPropriaMaquina } from "@/lib/webhooks/url-publica";
 
 export const MAXIMO_DE_ORIGENS = 20;
@@ -103,6 +104,18 @@ export const configuracaoDoChatSchema = z
      * uma de 1 a 80 caracteres após trim.
      */
     respostas_rapidas: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
+    /**
+     * Teto de respostas da IA para visitante anônimo (F4). Inteiro de 1 a 200; a entrada fora
+     * disso é recusada (422). Ausente = padrão 20, aplicado por `tetoDoAnonimoDoCanal`, que também
+     * trata um valor já gravado e inválido como 20: nunca "sem teto". Quem deixa telefone ou
+     * e-mail sai deste teto.
+     */
+    teto_anonimo: z
+      .number()
+      .int()
+      .min(1)
+      .max(TETO_ANONIMO_MAXIMO)
+      .optional(),
   })
   .strict();
 
