@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { getLeadHandler } from "@/app/api/v1/leads/_handler";
+import { copiarAnexosDoClone } from "@/lib/leads/anexos-do-clone";
 import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
@@ -176,8 +177,9 @@ interface GravacaoDoClone {
   fechou: boolean;
 }
 
-// O caminho comum de criação não deve emitir evento, auditar ou copiar anexos
-// para quem apenas recebeu um card já existente da transação.
+// O caminho comum de criação não deve emitir evento nem auditar para quem
+// apenas recebeu um card já existente da transação. Os anexos, sim, são
+// completados nesse caso (ver `completaAnexos` no POST).
 class CloneReutilizado extends Error {
   constructor(readonly gravacao: GravacaoDoClone) {
     super("clone_reutilizado");
@@ -225,6 +227,16 @@ export async function POST(
     requestId,
     idioma,
   };
+
+  // A cópia reaproveitada completa os anexos que a primeira gravação não levou
+  // (Storage que falhou, pedido que caiu entre a transação e a cópia). A cópia é
+  // idempotente por anexo de origem, então repeti-la não duplica nada.
+  const completaAnexos = async (gravacao: GravacaoDoClone) =>
+    (await copiarAnexosDoClone(supabase, {
+      organizationId,
+      origemLeadId: leadId,
+      destinoLeadId: String(gravacao.clone.id),
+    })).copiados;
 
   try {
     const input = await validateRequest(cloneLeadSchema, req);
@@ -311,7 +323,7 @@ export async function POST(
     if (consulta.error) return fail("internal_error", consulta.error.message, 500, { requestId });
     const existente = consulta.gravacao;
     if (existente && existente.origem.status !== "open") {
-      return respostaDoClone(existente, requestId);
+      return respostaDoClone(existente, requestId, await completaAnexos(existente));
     }
     if (!existente && recusa) {
       return fail(recusa.code, t(recusa.texto), recusa.status, { requestId });
@@ -430,10 +442,11 @@ export async function POST(
       const atual = await gravar(null, null, null);
       if (atual.error) return fail("internal_error", atual.error.message, 500, { requestId });
       if (!atual.gravacao) return fail("state_conflict", t("O negócio mudou enquanto era encerrado."), 409, { requestId });
-      return respostaDoClone(atual.gravacao, requestId);
+      return respostaDoClone(atual.gravacao, requestId, await completaAnexos(atual.gravacao));
     }
 
-    if (!gravacao.criou && !gravacao.fechou) return respostaDoClone(gravacao, requestId);
+    if (!gravacao.criou) anexosCopiados = await completaAnexos(gravacao);
+    if (!gravacao.criou && !gravacao.fechou) return respostaDoClone(gravacao, requestId, anexosCopiados);
     const destination = registroDoDestino(gravacao.clone);
 
     if (gravacao.criou) {

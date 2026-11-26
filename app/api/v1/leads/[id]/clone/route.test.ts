@@ -16,6 +16,11 @@ vi.mock("@/lib/supabase/admin", () => ({
       ? gravaClone(args)
       : { error: null },
     from: (tabela: string) => db.from(tabela),
+    storage: {
+      from: () => ({
+        copy: async (de: string) => (storageRecusa.has(de) ? { error: { message: "storage fora" } } : { error: null }),
+      }),
+    },
   }),
 }));
 vi.mock("@/lib/atendimento/origem", () => ({
@@ -205,6 +210,7 @@ function seed() {
 let db: ReturnType<typeof fakeDb>;
 let recusaNaGravacao: { message: string; code?: string } | null;
 let sessaoDoInsert: unknown;
+let storageRecusa = new Set<string>();
 
 async function gravaClone(args: Row) {
   const leads = db.tables.crm_leads!;
@@ -248,6 +254,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   recusaNaGravacao = null;
   sessaoDoInsert = undefined;
+  storageRecusa = new Set<string>();
   db = fakeDb(seed());
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
@@ -407,6 +414,29 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     expect(segunda.status).toBe(200);
     expect(reutilizado.data.lead.id).toBe(criado.data.lead.id);
     expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+  });
+
+  it("a cópia reaproveitada completa os anexos que a primeira transferência não levou", async () => {
+    const caminho = (id: string) => `${ORG_ID}/leads/${LEAD_ID}/voucher/${id}.pdf`;
+    const anexo = (id: string) => ({
+      id, organization_id: ORG_ID, lead_id: LEAD_ID, field_key: "voucher", file_name: `${id}.pdf`,
+      file_size: 10, mime_type: "application/pdf", storage_path: caminho(id), created_by: USER_ID,
+    });
+    db.tables.crm_lead_attachments = [anexo("anexo-a"), anexo("anexo-b")];
+    storageRecusa.add(caminho("anexo-b"));
+    const { POST } = await import("./route");
+
+    const primeira = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    storageRecusa.clear();
+    const segunda = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const criado = await primeira.json();
+    const reutilizado = await segunda.json();
+
+    expect(criado.data.anexos).toBe(1);
+    expect(segunda.status).toBe(200);
+    expect(reutilizado.data.anexos).toBe(1);
+    const noClone = (db.tables.crm_lead_attachments ?? []).filter((linha) => linha.lead_id === criado.data.lead.id);
+    expect(noClone.map((linha) => linha.clonado_do_attachment_id).sort()).toEqual(["anexo-a", "anexo-b"]);
   });
 
   it("entrega o contexto de sessão verificado ao escritor e devolve ambos os vínculos", async () => {
