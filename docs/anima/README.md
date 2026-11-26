@@ -197,14 +197,28 @@ Se o intervalo trouxer mudança estrutural (Tailwind, Next, React ou reestrutura
 
 ## 7. Design system
 
-- **Pacote:** `@anima-solutions/design-system`, versão em uso: **2026.11.2** (🚧 ainda não é
-  dependência do projeto).
-- **Atualizar:** `make ds-update` (🚧), que instala a última versão e roda `make check`. Uma versão
-  major pede aprovação antes.
-- **Mapeamento de tokens:** em `app/globals.css`, os blocos `:root`, `[data-theme="light"]` e
-  `[data-theme="dark"]` passam a apontar para as variáveis do pacote (`--color-bg: var(<token do DS>)`).
-  Os valores não são copiados, então uma versão nova do DS repinta o app sozinha. Um hex copiado só
-  é aceito quando o pacote não exporta a variável, e cada caso fica registrado no `PATCHES.md`.
+- **Pacote:** `@anima-solutions/design-system`, versão em uso: **2026.11.2** (✅ dependência do
+  projeto). O pacote pede Node ≥ 24 (`engines`); o projeto usa 22, e o pnpm só avisa.
+- **Atualizar:** `make ds-update` (🚧), que instala a última versão, roda o gerador e depois
+  `make check`. Uma versão major pede aprovação antes.
+- **Mapeamento de tokens (✅):** `scripts/anima/gerar-tokens-ds.ts` lê os `tokens/*.json` do pacote e
+  reescreve **só os valores** das propriedades que já existem nos blocos `:root`,
+  `[data-theme="light"]` e `[data-theme="dark"]` do `app/globals.css`. Depois regenera
+  `lib/branding/regua-do-produto.ts`. Os valores entram como hex literal, e não como `var()`; o
+  motivo e a tabela de derivações estão no [`PATCHES.md`](PATCHES.md).
+  ```bash
+  pnpm exec tsx scripts/anima/gerar-tokens-ds.ts            # aplica
+  pnpm exec prettier --write lib/branding/regua-do-produto.ts
+  pnpm exec tsx scripts/anima/gerar-tokens-ds.ts --conferir # exit 1 se o CSS divergir do pacote
+  ```
+- **Cor de destaque:** no escuro é o limão do DS (`#c5fe59`, texto preto). No claro, o limão sólido
+  não passa 4,5:1, então o destaque é o verde `#506f00` (texto branco). Ele é derivado do limão
+  com a escada de luminosidade do upstream, e é o primeiro grau que passa em todos os pisos que o
+  upstream mede.
+- **Raios:** botões e campos 12px (`--radius-sm`), cards e diálogos 28px (`--radius-lg`).
+- **Fonte:** Inter variável, servida do próprio pacote (`dist/fonts`) por `next/font/local`.
+- **Ícones:** Phosphor em `bold` por padrão, via `patches/@phosphor-icons__react@2.1.10.patch`.
+- **Tema padrão:** escuro, quando o usuário nunca escolheu. "Sistema" continua seguindo o SO.
 - **Contraste:** os testes `lib/branding/contraste.ts`, `lib/channels/marca-do-canal.test.ts` e
   `lib/aparencia/aparencia.test.ts` medem os tokens contra a WCAG. Se falharem, o token está
   errado; o teste não se altera.
@@ -218,8 +232,8 @@ Se o intervalo trouxer mudança estrutural (Tailwind, Next, React ou reestrutura
 
 A marca mora **no banco**, não na imagem. O `.env` é só a semente:
 
-- **Instalação:** `/admin/marca` (nome "Ânima Hub", logo e cor de destaque). Grava em
-  `platform_branding`.
+- **Instalação:** `/admin/marca` (nome "Ânima Hub" e logo). Grava em `platform_branding`.
+  O campo de cor fica escondido: o tema é fixo (abaixo).
 - **Organização:** Configurações › Marca (`/app/settings/marca`). Grava em
   `organizations.settings.branding`.
 - **Semente no `.env`:** `APP_NAME`, `APP_LOGO_URL` e `APP_ACCENT_HEX`. Valem só até alguém salvar
@@ -227,9 +241,11 @@ A marca mora **no banco**, não na imagem. O `.env` é só a semente:
 - **E-mails de acesso** (criar conta e recuperar senha) são renderizados pelo Supabase Auth, fora
   do app. Para aplicar a marca a eles: `make brand-emails` (🚧), que chama
   `hostgator-setup-kit/marca-emails.sh` e lê o `.env`.
-- ⚠️ A tela **Aparência** (`/app/settings/aparencia`, `lib/aparencia`) permite que cada
-  organização troque a fonte e o template. Ela pode sobrepor os tokens Ânima. O alcance disso será
-  mapeado antes do mapeamento de tokens.
+- **Tema fixo** (`lib/anima/tema-fixo.ts`, `TEMA_FIXO = true`): nenhuma organização nem a
+  instalação troca a cor ou a aparência. A cor gravada no banco ou em `APP_ACCENT_HEX` é ignorada
+  na tela, nos e-mails e no ícone. A tela **Aparência** sai do menu e redireciona para Marca, e o
+  tema de extensão por organização não se aplica. Nome e logo continuam livres. Nada do banco é
+  apagado; com `TEMA_FIXO = false` volta o comportamento do upstream.
 
 ## 9. Solução de problemas
 
