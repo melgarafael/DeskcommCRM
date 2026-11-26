@@ -252,8 +252,8 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
   "voice_call.missed": CONTACT_FIELDS,
   // #4900 — o caso: desfecho (`event.status`) e os campos do contato.
-  case_opened: CASO_FIELDS,
-  case_closed: CASO_FIELDS,
+  "ai.case_opened": CASO_FIELDS,
+  "ai.case_closed": CASO_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
