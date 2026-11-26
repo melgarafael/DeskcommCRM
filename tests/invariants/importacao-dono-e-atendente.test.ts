@@ -115,6 +115,50 @@ describe("importação: o Atendente importa e é dono do que importa (9431)", ()
       ).toBe("");
     });
 
+    it("o Atendente muda o andamento do PRÓPRIO lote, mas não a identidade dele (trigger)", () => {
+      const id = "ffffffff-9999-4000-8000-000000000001";
+      expect(recusa(ATENDENTE, `update public.import_batches set status = 'completed', successful_rows = 3 where id = '${id}'`)).toBe("");
+      for (const [coluna, valor] of [
+        ["filename", "'outro.csv'"],
+        ["created_by", `'${COLEGA}'`],
+        ["kind", "'contacts'"],
+        ["created_at", "now() - interval '1 year'"],
+      ]) {
+        expect(recusa(ATENDENTE, `update public.import_batches set ${coluna} = ${valor} where id = '${id}'`)).toMatch(
+          /colunas_do_lote_sao_do_sistema/,
+        );
+      }
+    });
+
+    it("o Atendente NÃO atualiza o lote do colega (o gerente atualiza)", () => {
+      const doColega = "ffffffff-9999-4000-8000-000000000003";
+      sql(
+        `insert into public.import_batches (id, organization_id, filename, created_by) values ('${doColega}', '${ORG}', 'colega.csv', '${COLEGA}') on conflict (id) do nothing;`,
+      );
+      sql(`
+        set role authenticated;
+        select set_config('request.jwt.claims', '{"sub":"${ATENDENTE}"}', false);
+        update public.import_batches set status = 'failed' where id = '${doColega}';
+      `);
+      // A policy não deixa a linha visível para o UPDATE: zero linhas mudam, sem erro.
+      expect(lastLine(sql(`select status from public.import_batches where id = '${doColega}';`))).toBe("pending");
+      expect(recusa(GESTOR, `update public.import_batches set status = 'completed' where id = '${doColega}'`)).toBe("");
+      expect(lastLine(sql(`select status from public.import_batches where id = '${doColega}';`))).toBe("completed");
+    });
+
+    it("o Atendente NÃO atualiza as linhas do lote do colega", () => {
+      const doColega = "ffffffff-9999-4000-8000-000000000003";
+      sql(
+        `insert into public.import_rows (organization_id, batch_id, row_number) values ('${ORG}', '${doColega}', 1) on conflict do nothing;`,
+      );
+      sql(`
+        set role authenticated;
+        select set_config('request.jwt.claims', '{"sub":"${ATENDENTE}"}', false);
+        update public.import_rows set status = 'failed' where batch_id = '${doColega}';
+      `);
+      expect(lastLine(sql(`select status from public.import_rows where batch_id = '${doColega}' and row_number = 1;`))).toBe("pending");
+    });
+
     it("o leitor (viewer) continua recusado", () => {
       expect(recusa(LEITOR, lote("ffffffff-9999-4000-8000-000000000002"))).toMatch(/row-level security/i);
     });

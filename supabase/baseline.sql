@@ -80041,9 +80041,13 @@ drop policy if exists import_batches_update on public.import_batches;
 create policy import_batches_update on public.import_batches
   for update
   using (organization_id in (select public.fn_user_org_ids())
-         and public.fn_role_at_least(organization_id, 'agent'))
+         and (public.fn_role_at_least(organization_id, 'manager')
+              or (public.fn_role_at_least(organization_id, 'agent')
+                  and created_by = (select auth.uid()))))
   with check (organization_id in (select public.fn_user_org_ids())
-              and public.fn_role_at_least(organization_id, 'agent'));
+              and (public.fn_role_at_least(organization_id, 'manager')
+                   or (public.fn_role_at_least(organization_id, 'agent')
+                       and created_by = (select auth.uid()))));
 
 drop policy if exists import_rows_insert on public.import_rows;
 create policy import_rows_insert on public.import_rows
@@ -80053,9 +80057,53 @@ drop policy if exists import_rows_update on public.import_rows;
 create policy import_rows_update on public.import_rows
   for update
   using (organization_id in (select public.fn_user_org_ids())
-         and public.fn_role_at_least(organization_id, 'agent'))
+         and exists (
+           select 1 from public.import_batches b
+            where b.id = import_rows.batch_id
+              and b.organization_id = import_rows.organization_id
+              and (public.fn_role_at_least(b.organization_id, 'manager')
+                   or (public.fn_role_at_least(b.organization_id, 'agent')
+                       and b.created_by = (select auth.uid())))))
   with check (organization_id in (select public.fn_user_org_ids())
-              and public.fn_role_at_least(organization_id, 'agent'));
+              and exists (
+                select 1 from public.import_batches b
+                 where b.id = import_rows.batch_id
+                   and b.organization_id = import_rows.organization_id
+                   and (public.fn_role_at_least(b.organization_id, 'manager')
+                        or (public.fn_role_at_least(b.organization_id, 'agent')
+                            and b.created_by = (select auth.uid())))));
+
+-- O Atendente atualiza só o lote que ELE criou (o gerente, qualquer um), e nenhuma
+-- sessão reescreve a identidade do lote. Trigger e não `revoke update`/`grant update
+-- (colunas)`, pela razão que a 0262 registra: com grant por coluna, toda coluna criada
+-- depois nasceria não-gravável em silêncio. O processador do lote escreve `status`, os
+-- contadores, `total_rows` e `column_mapping` com a sessão de quem importa, então essas
+-- ficam livres (no lote próprio). `auth.uid() is null` passa: é o service role (token de
+-- API, LGPD, migrations).
+create or replace function public.fn_colunas_do_lote_sao_do_sistema()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is not null
+     and (old.organization_id is distinct from new.organization_id
+       or old.created_by is distinct from new.created_by
+       or old.filename is distinct from new.filename
+       or old.kind is distinct from new.kind
+       or old.created_at is distinct from new.created_at) then
+    raise exception 'colunas_do_lote_sao_do_sistema' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+comment on function public.fn_colunas_do_lote_sao_do_sistema() is
+  'BEFORE UPDATE em import_batches: a sessão não muda organization_id, created_by, filename, kind nem created_at do lote (9431).';
+
+drop trigger if exists trg_import_batches_colunas_do_sistema on public.import_batches;
+create trigger trg_import_batches_colunas_do_sistema
+  before update on public.import_batches
+  for each row execute function public.fn_colunas_do_lote_sao_do_sistema();
 
 create or replace function public.fn_definir_carteira_do_cliente(
   p_org uuid,
