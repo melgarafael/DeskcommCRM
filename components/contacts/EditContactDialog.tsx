@@ -47,6 +47,7 @@ import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { ehIdentificadorTecnico } from "@/lib/contacts/rotulo-do-contato";
 
 interface FormShape {
   name?: string;
@@ -169,6 +170,21 @@ export function EditContactDialog({
   // e o botão desabilitado são o mesmo erro dito duas vezes.
   const cpfError = form.formState.errors.cpf;
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
+  // Sem nome no cadastro, a ficha chama a pessoa pelo nome da agenda ou do
+  // perfil do WhatsApp e o campo abre vazio: parecia formulário que não carregou.
+  // Os nomes são OFERECIDOS, nunca preenchidos sozinhos — o da agenda é só da
+  // equipe (PR #2439), e gravá-lo em `name` o levaria às mensagens.
+  const nomeDigitado = useWatch({ control: form.control, name: "name" }) ?? "";
+  const nomesDoCanal =
+    contact.name?.trim() || nomeDigitado.trim()
+      ? []
+      : [
+          { origem: "agenda", rotulo: t("Nome na agenda do celular"), valor: contact.address_book_name },
+          { origem: "whatsapp", rotulo: `${t("Nome")} · WhatsApp`, valor: contact.display_name },
+        ].flatMap(({ valor, ...resto }) => {
+          const nome = valor?.trim() ?? "";
+          return nome && !ehIdentificadorTecnico(nome) ? [{ ...resto, nome }] : [];
+        });
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
   const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
@@ -340,6 +356,32 @@ export function EditContactDialog({
           <div className="space-y-2">
             <Label htmlFor="ec-name">{t("Nome")}</Label>
             <Input id="ec-name" {...form.register("name")} />
+            {nomesDoCanal.length > 0 && (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>{t("Este contato ainda não tem nome no cadastro.")}</p>
+                {nomesDoCanal.map(({ origem, rotulo, nome }) => (
+                  <div key={origem} className="flex flex-wrap items-center gap-x-2">
+                    <span className="break-all">
+                      {rotulo}: {nome}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
+                      aria-label={`${t("Usar este nome")}: ${nome}`}
+                      disabled={update.isPending}
+                      onClick={() => form.setValue("name", nome, { shouldDirty: true })}
+                    >
+                      {t("Usar este nome")}
+                    </Button>
+                  </div>
+                ))}
+                {nomesDoCanal.some((n) => n.origem === "agenda") && (
+                  <p>{t("Só a equipe vê o nome da agenda. Ao salvá-lo como nome, ele pode aparecer em mensagens.")}</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="ec-email">{t("Email")}</Label>

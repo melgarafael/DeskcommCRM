@@ -11644,6 +11644,14 @@ export const DICIONARIO: Traducoes = {
   "Já cadastrado. Preencha só para trocar.": {
     es: "Ya registrado. Complétalo solo para cambiarlo.",
   },
+  // Nome do canal oferecido no "Editar contato" quando o cadastro não tem nome.
+  "Este contato ainda não tem nome no cadastro.": {
+    es: "Este contacto todavía no tiene nombre en su registro.",
+  },
+  "Usar este nome": { es: "Usar este nombre" },
+  "Só a equipe vê o nome da agenda. Ao salvá-lo como nome, ele pode aparecer em mensagens.": {
+    es: "Solo el equipo ve el nombre de la agenda. Al guardarlo como nombre, puede aparecer en mensajes.",
+  },
   "Opcional.": { es: "Opcional." },
   // Autocompletar de etiquetas na ficha do contato (issue #2732).
   "Nenhuma etiqueta neste contato.": { es: "Ninguna etiqueta en este contacto." },
