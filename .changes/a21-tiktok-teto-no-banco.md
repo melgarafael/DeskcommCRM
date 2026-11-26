@@ -1,5 +1,5 @@
 ---
-impacto: melhoria
+impacto: nada_mudou
 secao: corrigido
 titulo: O limite de 10 respostas do TikTok vale mesmo quando dois envios saem ao mesmo tempo
 ---
