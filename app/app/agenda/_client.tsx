@@ -24,7 +24,6 @@ import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
-import { ApiError } from "@/lib/api/types";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import {
   MAXIMO_DE_CONVIDADOS_DA_EQUIPE,
@@ -32,6 +31,7 @@ import {
   estaNaAgendaDe,
 } from "@/lib/agenda/convidados-da-equipe";
 import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
+import { erroComNomeDoResponsavel } from "@/lib/agenda/erro-de-responsavel";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
@@ -1443,19 +1443,11 @@ export function AgendaClient({
                     })
                     .catch((err: unknown) => {
                       // O banco diz QUEM está ocupado; a frase na tela diz o nome.
-                      if (err instanceof ApiError && err.code === "responsavel_indisponivel") {
-                        const nome = pessoas.find((p) => p.id === err.details?.user_id)?.nome;
-                        if (nome) {
-                          throw new ApiError(
-                            err.status,
-                            err.code,
-                            err.details,
-                            err.requestId,
-                            t("{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.").replace("{nome}", nome),
-                          );
-                        }
-                      }
-                      throw err;
+                      throw erroComNomeDoResponsavel(
+                        err,
+                        pessoas,
+                        t("{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
+                      );
                     });
                 }}
                 // "VER NA AGENDA" — o botão que não fazia nada.

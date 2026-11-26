@@ -85,6 +85,6 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const conflict = conflictSchema.safeParse(google_conflict);
   const canResolve = await googleRpc(db, "fn_calendar_service_can_resolve", { p_org: org, p_id: id }).catch(() => false);
   const configured = !(data.service_occurrence_id || data.service_block) || data.service_publication_mode !== "none";
-  return ok({ ...detail, responsaveis: (equipe ?? []).map((r) => r.user_id), meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
+  return ok({ ...detail, principal_user_id: _ownerUserId, responsaveis: (equipe ?? []).map((r) => r.user_id), meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
     configured, pending: configured && BigInt(google_local_revision) > BigInt(google_synced_local_revision), conflict: conflict.success ? conflict.data : null, can_resolve: canResolve === true }, recovery: recovery.data ? {...recovery.data,enrollment_status:enrollment.data?.status??null,cancel_reason:enrollment.data?.cancel_reason??null} : null, evidence_messages: messages.data }, { requestId });
 }

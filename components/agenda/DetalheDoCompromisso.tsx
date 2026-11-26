@@ -10,7 +10,10 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { erroComNomeDoResponsavel } from "@/lib/agenda/erro-de-responsavel";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { ResponsaveisDoCompromisso } from "./ResponsaveisDoCompromisso";
+import type { Pessoa } from "./tipos";
 
 type Detalhe = {
   meeting?: MeetingDetail | null;
@@ -36,6 +39,9 @@ type Detalhe = {
   revision: number;
   contact_id: string | null;
   conversation_id: string | null;
+  /** Quem conduz (#3067): o principal e os adicionais, por id. */
+  principal_user_id?: string | null;
+  responsaveis?: string[];
   outcome_source_kind: string | null;
   outcome_recorded_at: string | null;
   recovery: {
@@ -71,6 +77,7 @@ export function DetalheDoCompromisso({
   const [reason, setReason] = useState("");
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [equipe, setEquipe] = useState<string[] | null>(null);
   const query = useQuery({
     queryKey: ["agenda", "detalhe", id],
     enabled: !!id,
@@ -96,9 +103,16 @@ export function DetalheDoCompromisso({
     setReason("");
     setDraftRevision(null);
     setConflict(false);
+    setEquipe(null);
   }
   function mutationFailed(error: unknown) {
-    showApiError(error);
+    showApiError(
+      erroComNomeDoResponsavel(
+        error,
+        qc.getQueryData<Pessoa[]>(["agenda", "pessoas"]) ?? [],
+        t("{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
+      ),
+    );
     setConflict(true);
     void query.refetch();
   }
@@ -211,6 +225,20 @@ export function DetalheDoCompromisso({
                 )[a.status] ?? a.status,
               )}
             </p>
+            {a.principal_user_id ? (
+              <ResponsaveisDoCompromisso
+                principalId={a.principal_user_id}
+                gravados={a.responsaveis ?? []}
+                rascunho={equipe}
+                podeEditar={podeEditar && ["pending", "confirmed"].includes(a.status)}
+                desabilitado={mutation.isPending || staleDraft}
+                onChange={(ids) => {
+                  beginDraft();
+                  setEquipe(ids);
+                }}
+                onSalvar={(ids) => decide({ responsible_user_ids: ids })}
+              />
+            ) : null}
             {a.contact_id ? (
               <Link href={`/app/contacts/${a.contact_id}`} className="underline">
                 {t("Ver contato")}

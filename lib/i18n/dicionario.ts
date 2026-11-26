@@ -15326,6 +15326,8 @@ export const DICIONARIO: Traducoes = {
   "Equipe no compromisso": { es: "Equipo en el compromiso" },
   // Quem conduz (#3067).
   "Quem conduz": { es: "Quién conduce" },
+  "Conduz com": { es: "Conduce con" },
+  "Salvar quem conduz": { es: "Guardar quién conduce" },
   "principal": { es: "principal" },
   "Quem conduz fica com este horário ocupado.": { es: "Quien conduce queda ocupado en este horario." },
   "Retirar {nome}": { es: "Quitar a {nome}" },
