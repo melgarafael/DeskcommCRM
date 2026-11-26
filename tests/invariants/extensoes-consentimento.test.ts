@@ -445,7 +445,7 @@ describe("o vocabulário do banco é o do TypeScript", () => {
     const inst = await instalarEAtivar();
 
     const e = await erroDe(
-      query("update public.organization_extensions set consented_areas = array['area.financeiro.escrita'] where organization_id = $1 and installation_id = $2", [
+      query("update public.organization_extensions set consented_areas = array['area.inexistente.escrita'] where organization_id = $1 and installation_id = $2", [
         orgA,
         inst,
       ]),
