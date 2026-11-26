@@ -4268,7 +4268,10 @@ async function executarTurnoDoAgente(
   // receber mensagens. Uma pessoa assumir não é nada disso.
   const pessoaAssumiuDuranteOTurno = async (): Promise<boolean> => {
     if (preview) return false;
-    if (!(await iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId))) return false;
+    // #5259: o job do turno deixa a guarda reconhecer a transferência que ELE
+    // fez (`crm_assign_conversation`) — o aviso ao cliente sai; pessoa de
+    // verdade assumindo continua vetando.
+    if (!(await iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId, { jobDoTurno: liveJob().id }))) return false;
     if (!turnoDescartado) {
       runLog.info('envio abortado — uma pessoa assumiu a conversa durante o turno', {
         conversation_id: input.conversationId,
