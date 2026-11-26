@@ -813,6 +813,11 @@ async function criarMembro(org: string) {
 
 it("o texto editado e aprovado tem recibo na inscrição que originou o rascunho", async () => {
   const cenario = await prepararEnvioDoDossie();
+  // O envio aprovado avalia a janela pelo relógio real: aberta o dia todo, o caso não depende da hora do CI.
+  await pool.query(
+    "insert into channel_knobs(organization_id,channel_session_id,throttle_ms,jitter_max_ms,window_start_hour,window_end_hour) values($1,$2,0,0,0,24)",
+    [cenario.org, cenario.sessionId],
+  );
   await publicarAgente(cenario, true);
   await rodarTurnoDeEnvio(cenario, "sent", "Podemos retomar a conversa esta semana?");
   const { rows: [draft] } = await pool.query(
