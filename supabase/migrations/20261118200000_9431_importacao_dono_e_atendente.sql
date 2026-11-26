@@ -4,13 +4,20 @@
 -- de outra origem continuam recusados (`carteira_fora_da_posse`). Gerente e admin
 -- escolhem qualquer membro ativo.
 --
+-- INSERT: o lote nasce com o próprio autor em `created_by`, e a linha entra só no lote do
+-- Atendente que a grava (o gerente, em qualquer um) — o mesmo escopo do UPDATE.
+--
 -- UPDATE: o Atendente atualiza só o lote que ele criou; a identidade do lote é imutável
 -- para a sessão (trigger, no desenho da 0262).
 
 drop policy if exists import_batches_insert on public.import_batches;
 create policy import_batches_insert on public.import_batches
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'agent'));
+                         and public.fn_role_at_least(organization_id, 'agent')
+                         -- O autor é quem grava: nenhuma sessão forja `created_by` de outra
+                         -- pessoa. `is not distinct from` e não `=`, para o lote do token de API,
+                         -- que grava `created_by` nulo e não tem `auth.uid()`.
+                         and created_by is not distinct from (select auth.uid()));
 drop policy if exists import_batches_update on public.import_batches;
 create policy import_batches_update on public.import_batches
   for update
@@ -26,7 +33,15 @@ create policy import_batches_update on public.import_batches
 drop policy if exists import_rows_insert on public.import_rows;
 create policy import_rows_insert on public.import_rows
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'agent'));
+                         -- A linha entra no lote do próprio Atendente (o gerente, em qualquer
+                         -- um), o mesmo escopo do UPDATE: ele não polui o lote do colega.
+                         and exists (
+                           select 1 from public.import_batches b
+                            where b.id = import_rows.batch_id
+                              and b.organization_id = import_rows.organization_id
+                              and (public.fn_role_at_least(b.organization_id, 'manager')
+                                   or (public.fn_role_at_least(b.organization_id, 'agent')
+                                       and b.created_by = (select auth.uid())))));
 drop policy if exists import_rows_update on public.import_rows;
 create policy import_rows_update on public.import_rows
   for update

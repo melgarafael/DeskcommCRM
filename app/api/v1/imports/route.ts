@@ -50,7 +50,8 @@ export const dynamic = "force-dynamic";
  * revogado ou de outra organização). `dono_user_id` passa pelo Zod (UUID; 422 se
  * não for). Por token não há pessoa: o ator da checagem NUNCA vem do `dono_user_id`
  * do corpo, e sem pessoa por trás a carteira não é definida (o lote grava, os contatos
- * ficam sem dono).
+ * ficam sem dono) — e, por isso, um `dono_user_id` enviado por token é validado como UUID e
+ * depois IGNORADO: a resposta é `201` sem o bloco `carteira`, sem erro.
  *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */

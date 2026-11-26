@@ -159,6 +159,28 @@ describe("importação: o Atendente importa e é dono do que importa (9431)", ()
       expect(lastLine(sql(`select status from public.import_rows where batch_id = '${doColega}' and row_number = 1;`))).toBe("pending");
     });
 
+    it("o Atendente NÃO insere linha no lote do colega (o gerente insere)", () => {
+      const doColega = "ffffffff-9999-4000-8000-000000000003";
+      sql(
+        `insert into public.import_batches (id, organization_id, filename, created_by) values ('${doColega}', '${ORG}', 'colega.csv', '${COLEGA}') on conflict (id) do nothing;`,
+      );
+      const linha = (n: number) =>
+        `insert into public.import_rows (organization_id, batch_id, row_number) values ('${ORG}', '${doColega}', ${n})`;
+      expect(recusa(ATENDENTE, linha(901))).toMatch(/row-level security/i);
+      expect(recusa(GESTOR, linha(902))).toBe("");
+      expect(
+        Number(lastLine(sql(`select count(*) from public.import_rows where batch_id = '${doColega}' and row_number = 901;`))),
+      ).toBe(0);
+    });
+
+    it("o lote nasce com o PRÓPRIO autor: `created_by` de outra pessoa ou nulo é recusado na sessão", () => {
+      const novo = (id: string, autor: string) =>
+        `insert into public.import_batches (id, organization_id, filename, created_by) values ('${id}', '${ORG}', 'forjado.csv', ${autor})`;
+      expect(recusa(ATENDENTE, novo("ffffffff-9999-4000-8000-000000000011", `'${COLEGA}'`))).toMatch(/row-level security/i);
+      expect(recusa(ATENDENTE, novo("ffffffff-9999-4000-8000-000000000012", "null"))).toMatch(/row-level security/i);
+      expect(recusa(ATENDENTE, novo("ffffffff-9999-4000-8000-000000000013", `'${ATENDENTE}'`))).toBe("");
+    });
+
     it("o leitor (viewer) continua recusado", () => {
       expect(recusa(LEITOR, lote("ffffffff-9999-4000-8000-000000000002"))).toMatch(/row-level security/i);
     });
