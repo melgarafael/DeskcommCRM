@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/branding/regua-do-produto", async () => ({ REGUA_DO_PRODUTO: (await import("@/tests/fixtures/anima/regua-sage")).REGUA_SAGE })); // Fork Ânima: e-mails medidos contra a Sage
 
 import fixture from "@/tests/fixtures/convites-2649-html-main.json";
 import type { MarcaDeSaida } from "@/lib/branding/saida";

@@ -7,7 +7,7 @@ import { PISOS, extrairRegua, melhorFrenteSobre, razaoDeContraste } from "@/lib/
 import type { Fonte, TemaDaRegua } from "@/lib/branding/contraste";
 import { cssDaMarca } from "@/lib/branding/css";
 import { GRAUS, compor, normalizarHex, rgbParaHex } from "@/lib/branding/rampa";
-import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
+import { REGUA_SAGE as REGUA_DO_PRODUTO } from "@/tests/fixtures/anima/regua-sage"; // Fork Ânima: calibração contra a Sage
 import { camadaDoAmbiente, resolverMarca, type CorResolvida } from "@/lib/branding/resolve";
 
 /**
@@ -36,7 +36,7 @@ import { camadaDoAmbiente, resolverMarca, type CorResolvida } from "@/lib/brandi
  */
 
 const RAIZ = process.cwd();
-const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
+const CSS = fs.readFileSync(path.join(RAIZ, "tests/fixtures/anima/globals-sage.css"), "utf8"); // Fork Ânima: calibração contra a Sage
 const REGUA = extrairRegua(CSS);
 
 /** A mesma fixture adversarial versionada de `branding-contraste.test.ts`. */

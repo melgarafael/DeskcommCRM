@@ -27,7 +27,7 @@ import { deltaEOklab, hexParaOklch, rampaDeSemente } from "@/lib/branding/rampa"
 import type { Rampa } from "@/lib/branding/rampa";
 
 const RAIZ = process.cwd();
-const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
+const CSS = fs.readFileSync(path.join(RAIZ, "tests/fixtures/anima/globals-sage.css"), "utf8"); // Fork Ânima: calibração contra a Sage
 const REGUA: Regua = extrairRegua(CSS);
 
 const rampaChapada = (hex: string): Rampa =>

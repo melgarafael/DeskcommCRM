@@ -53,6 +53,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/branding/regua-do-produto", async () => ({ REGUA_DO_PRODUTO: (await import("@/tests/fixtures/anima/regua-sage")).REGUA_SAGE })); // Fork Ânima: e-mails medidos contra a Sage
 
 const enviados = vi.hoisted(() => [] as Array<{ subject: string; html: string; text: string }>);
 const banco = vi.hoisted(() => ({ org: {} as Record<string, unknown> }));

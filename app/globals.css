@@ -32,19 +32,19 @@
 
 :root {
   /* Surfaces (light) */
-  --color-bg: #faf9f6;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
+  --color-bg: #eceff5;
+  --color-surface: #f7faff;
+  --color-surface-elevated: #f1f4fa;
   --color-overlay: rgba(28, 26, 22, 0.42);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #11141b;
+  --color-text-muted: #5f6675;
+  --color-text-subtle: #75787f;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #e5e8ed;
+  --color-border-strong: #cacdd3;
 
   /* ---- Identidade de canal (#4094) -------------------------------------
    * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
@@ -61,48 +61,48 @@
   --color-canal-tiktok: #111111;
 
   /* Accent — Sage (11 stops) */
-  --color-accent-50: #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  --color-accent-50: #f1f8ea;
+  --color-accent-100: #c5fe59;
+  --color-accent-200: #c1db9d;
+  --color-accent-300: #9bc15b;
+  --color-accent-400: #7aa600;
+  --color-accent-500: #668b00;
+  --color-accent-600: #506f00;
+  --color-accent-700: #405a00;
+  --color-accent-800: #344a00;
+  --color-accent-900: #2c3f00;
+  --color-accent-950: #152100;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
-  --color-accent-soft: var(--color-accent-100);
+  --color-accent-soft: var(--color-accent-50);
   --color-accent-hover: var(--color-accent-700);
 
   /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  --color-neutral-50: #f6f9fe;
+  --color-neutral-100: #eef1f6;
+  --color-neutral-200: #e0e3e9;
+  --color-neutral-300: #cacdd3;
+  --color-neutral-400: #a0a4aa;
+  --color-neutral-500: #75787f;
+  --color-neutral-600: #565960;
+  --color-neutral-700: #40434a;
+  --color-neutral-800: #292c33;
+  --color-neutral-900: #171a21;
+  --color-neutral-950: #0a0d14;
 
   /* States (light) */
-  --color-success: #5a8a5f;
-  --color-success-bg: rgba(90, 138, 95, 0.12);
-  --color-success-fg: #41673f;
-  --color-warning: #b07a2b;
-  --color-warning-bg: rgba(176, 122, 43, 0.12);
-  --color-warning-fg: #875a1a;
-  --color-error: #a94a3c;
-  --color-error-bg: rgba(169, 74, 60, 0.12);
-  --color-error-fg: #8a3a2e;
-  --color-info: #4a7a93;
-  --color-info-bg: rgba(74, 122, 147, 0.12);
-  --color-info-fg: #355d72;
+  --color-success: #16a34a;
+  --color-success-bg: rgba(22, 163, 74, 0.15);
+  --color-success-fg: #00722f;
+  --color-warning: #c27803;
+  --color-warning-bg: rgba(194, 120, 3, 0.15);
+  --color-warning-fg: #8d5500;
+  --color-error: #d63c37;
+  --color-error-bg: rgba(214, 60, 55, 0.15);
+  --color-error-fg: #b91a1e;
+  --color-info: #2457e6;
+  --color-info-bg: rgba(36, 87, 230, 0.15);
+  --color-info-fg: #1f50df;
 
   /* Spacing (4-base) */
   --space-0: 0px;
@@ -122,18 +122,18 @@
 
   /* Radius */
   --radius-none: 0px;
-  --radius-sm: 4px;
+  --radius-sm: 12px;
   --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 28px;
   --radius-xl: 16px;
   --radius-full: 9999px;
 
   /* Shadows — desaturated, neutral-based */
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.1), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --shadow-xs: 0 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 1px 2px 0 rgba(0, 0, 0, 0.06), 0 8px 24px 0 rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -162,6 +162,9 @@
   --duration-slow: 320ms;
   --duration-spring: 420ms;
 
+  /* Fonte do texto — fork Ânima: Inter do DS (declarada pelo next/font em app/layout.tsx). */
+  --font-texto:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* Z-index */
   --z-base: 0;
   --z-raised: 10;
@@ -277,15 +280,15 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
+  --color-bg: #eceff5;
+  --color-surface: #f7faff;
+  --color-surface-elevated: #f1f4fa;
   --color-overlay: rgba(28, 26, 22, 0.42);
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-text: #11141b;
+  --color-text-muted: #5f6675;
+  --color-text-subtle: #75787f;
+  --color-border: #e5e8ed;
+  --color-border-strong: #cacdd3;
 
   /* ---- Identidade de canal (#4094) -------------------------------------
    * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
@@ -302,36 +305,36 @@
   --color-canal-tiktok: #111111;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
-  --color-accent-soft: var(--color-accent-100);
+  --color-accent-soft: var(--color-accent-50);
   --color-accent-hover: var(--color-accent-700);
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
-  --color-success: #5a8a5f;
-  --color-success-bg: rgba(90, 138, 95, 0.12);
-  --color-success-fg: #41673f;
-  --color-warning: #b07a2b;
-  --color-warning-bg: rgba(176, 122, 43, 0.12);
-  --color-warning-fg: #875a1a;
-  --color-error: #a94a3c;
-  --color-error-bg: rgba(169, 74, 60, 0.12);
-  --color-error-fg: #8a3a2e;
-  --color-info: #4a7a93;
-  --color-info-bg: rgba(74, 122, 147, 0.12);
-  --color-info-fg: #355d72;
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.1), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --color-neutral-50: #f6f9fe;
+  --color-neutral-100: #eef1f6;
+  --color-neutral-200: #e0e3e9;
+  --color-neutral-300: #cacdd3;
+  --color-neutral-400: #a0a4aa;
+  --color-neutral-500: #75787f;
+  --color-neutral-600: #565960;
+  --color-neutral-700: #40434a;
+  --color-neutral-800: #292c33;
+  --color-neutral-900: #171a21;
+  --color-neutral-950: #0a0d14;
+  --color-success: #16a34a;
+  --color-success-bg: rgba(22, 163, 74, 0.15);
+  --color-success-fg: #00722f;
+  --color-warning: #c27803;
+  --color-warning-bg: rgba(194, 120, 3, 0.15);
+  --color-warning-fg: #8d5500;
+  --color-error: #d63c37;
+  --color-error-bg: rgba(214, 60, 55, 0.15);
+  --color-error-fg: #b91a1e;
+  --color-info: #2457e6;
+  --color-info-bg: rgba(36, 87, 230, 0.15);
+  --color-info-fg: #1f50df;
+  --shadow-xs: 0 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 1px 2px 0 rgba(0, 0, 0, 0.06), 0 8px 24px 0 rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
   --background: var(--color-bg);
   --foreground: var(--color-text);
   --card: var(--color-surface);
@@ -369,19 +372,19 @@
 
 [data-theme="dark"] {
   /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
+  --color-bg: #11141b;
+  --color-surface: #171b23;
+  --color-surface-elevated: #1d222b;
   --color-overlay: rgba(0, 0, 0, 0.55);
 
   /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  --color-text: #f7faff;
+  --color-text-muted: #9aa1af;
+  --color-text-subtle: #5a5e65;
 
   /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  --color-border: #242830;
+  --color-border-strong: #3e4249;
 
   /* ---- Identidade de canal (#4094) -------------------------------------
    * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
@@ -398,55 +401,55 @@
   --color-canal-tiktok: #f1f1f2;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50: #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
-  --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
-  --color-accent-hover: var(--color-accent-300);
+  --color-accent-50: #f1f8ea;
+  --color-accent-100: #c5fe59;
+  --color-accent-200: #c1db9d;
+  --color-accent-300: #9bc15b;
+  --color-accent-400: #7aa600;
+  --color-accent-500: #668b00;
+  --color-accent-600: #506f00;
+  --color-accent-700: #405a00;
+  --color-accent-800: #344a00;
+  --color-accent-900: #2c3f00;
+  --color-accent-950: #152100;
+  --color-accent: var(--color-accent-100);
+  --color-accent-fg: #11141b;
+  --color-accent-soft: rgba(197, 254, 89, 0.16);
+  --color-accent-hover: var(--color-accent-50);
 
   /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50: #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  --color-neutral-50: #f1f4f9;
+  --color-neutral-100: #e1e4e9;
+  --color-neutral-200: #b5b8be;
+  --color-neutral-300: #888b92;
+  --color-neutral-400: #5a5e65;
+  --color-neutral-500: #3e4249;
+  --color-neutral-600: #2e3138;
+  --color-neutral-700: #23262d;
+  --color-neutral-800: #191c23;
+  --color-neutral-900: #12151c;
+  --color-neutral-950: #080b11;
 
   /* States (dark) */
-  --color-success: #82a077;
-  --color-success-bg: rgba(130, 160, 119, 0.18);
-  --color-success-fg: #a4ba9a;
-  --color-warning: #d09455;
-  --color-warning-bg: rgba(208, 148, 85, 0.18);
-  --color-warning-fg: #e0ad77;
-  --color-error: #c87263;
-  --color-error-bg: rgba(200, 114, 99, 0.18);
-  --color-error-fg: #d99182;
-  --color-info: #7da9bf;
-  --color-info-bg: rgba(125, 169, 191, 0.18);
-  --color-info-fg: #9bbfd2;
+  --color-success: #3fcb6e;
+  --color-success-bg: rgba(63, 203, 110, 0.15);
+  --color-success-fg: #3fcb6e;
+  --color-warning: #f5a524;
+  --color-warning-bg: rgba(245, 165, 36, 0.15);
+  --color-warning-fg: #f5a524;
+  --color-error: #e84a45;
+  --color-error-bg: rgba(232, 74, 69, 0.15);
+  --color-error-fg: #f75851;
+  --color-info: #4c7dff;
+  --color-info-bg: rgba(76, 125, 255, 0.15);
+  --color-info-fg: #5f8dff;
 
   /* Shadows — heavier in dark */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 1px 1px 0 rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-xs: 0 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 1px 2px 0 rgba(0, 0, 0, 0.06), 0 8px 24px 0 rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 2px 4px 0 rgba(0, 0, 0, 0.08), 0 16px 40px 0 rgba(0, 0, 0, 0.12);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -466,7 +469,7 @@
   --destructive-foreground: #ffffff;
   --border: var(--color-border);
   --input: var(--color-border);
-  --ring: var(--color-accent-400);
+  --ring: var(--color-accent-100);
   /* ---- Agenda · cor de pessoa (tema escuro) ----------------------------
    * Mais claras e menos saturadas que as do claro: sobre `#161510` a versão
    * escura de cada matiz sumiria. Mesma ordem, mesmos nomes.
@@ -587,8 +590,7 @@
   --color-card-foreground: var(--color-text);
 
   /* Tipografia */
-  --font-sans:
-    var(--font-atkinson), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-texto);
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e
@@ -803,7 +805,7 @@
     background-color: var(--color-bg);
     color: var(--color-text);
     font-family:
-      var(--font-atkinson),
+      var(--font-inter),
       ui-sans-serif,
       system-ui,
       -apple-system,

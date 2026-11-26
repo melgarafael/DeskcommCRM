@@ -36,7 +36,7 @@ import {
   ESCOPO_DA_ORGANIZACAO,
   type EscopoDaMarca,
 } from "@/lib/branding/css";
-import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
+import { REGUA_SAGE as REGUA_DO_PRODUTO } from "@/tests/fixtures/anima/regua-sage"; // Fork Ânima: calibração contra a Sage
 import {
   camadaDaInstalacao,
   camadaDaOrganizacao,

@@ -29,7 +29,9 @@ function readStoredTheme(): Theme {
   } catch {
     // localStorage indisponível (modo privado, sandbox) — segue com default.
   }
-  return "system";
+  // Fork Ânima: sem preferência salva, o padrão é o escuro (tema principal do DS). O servidor
+  // continua dizendo "system" (getTemaSnapshotDoServidor) para a hidratação bater.
+  return "dark";
 }
 
 function getSystemTheme(): ResolvedTheme {

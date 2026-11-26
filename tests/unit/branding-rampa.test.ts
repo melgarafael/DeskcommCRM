@@ -21,7 +21,7 @@ import {
 } from "@/lib/branding/rampa";
 
 const RAIZ = process.cwd();
-const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
+const CSS = fs.readFileSync(path.join(RAIZ, "tests/fixtures/anima/globals-sage.css"), "utf8"); // Fork Ânima: calibração contra a Sage
 
 /**
  * Os stops esperados saem do CSS, NÃO de uma cópia colada aqui.
