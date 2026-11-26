@@ -92,7 +92,7 @@ export const POLITICAS_DE_AVISO = {
   snooze_expired: { refs: ["conversation"], orientacao: "Confira se cabe retomar o atendimento descrito neste aviso." },
   next_action_ambiguous: { refs: ["contact"], orientacao: "Confira os negócios do contato e escolha a qual deles pertence a próxima ação." },
   risk_backlog_seeded: { refs: ["organization"], orientacao: "Revise os negócios parados no Radar e defina o próximo passo." },
-  reactivation_expired: { refs: ["organization"], orientacao: "Revise no Radar se ainda cabe retomar os negócios indicados." },
+  reactivation_expired: { refs: ["lead", "organization"], orientacao: "Revise no Radar se ainda cabe retomar os negócios indicados." },
   capabilities_missing: { refs: ["conversation"], orientacao: "Peça ao gestor para revisar as ferramentas habilitadas para o assistente deste atendimento." },
   message_send_stuck: { refs: ["conversation"], orientacao: "Confira a resposta que não chegou antes de decidir se precisa enviar novamente." },
   midia_nao_lida: { refs: [], orientacao: "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.", geral: { papel: "manager", href: "/app/ai/providers", rotulo: "Revisar provedores de IA" } },

@@ -136,6 +136,8 @@ declare
   pendencia record;
   envio record;
 begin
+  -- Mesma regra do ledger: a trilha é escrita só pelo sistema.
+  if auth.uid() is not null then return new; end if;
   -- A trilha conserva o vínculo quando o job já foi expurgado ou o
   -- ledger rotacionou para outra tentativa. O id é o da mensagem física.
   for pendencia in

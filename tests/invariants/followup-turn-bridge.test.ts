@@ -921,3 +921,39 @@ it("expõe os recibos para a própria organização e reserva as escritas para o
     conexao.release();
   }
 });
+
+it("o recibo segue a mesma regra de escrita do sistema que o ledger", async () => {
+  const cenario = await prepararEnvioDoDossie();
+  await publicarAgente(cenario);
+  await expect(rodarTurnoDeEnvio(cenario, "queued", "Olá! Podemos conversar amanhã?")).rejects.toThrow("followup_message_not_sent");
+  const { rows: [ledger] } = await pool.query(
+    "select crm_message_id from send_ledger where organization_id=$1 and job_id=$2", [cenario.org, cenario.job.id],
+  );
+  const enviadas = async () => (await cenario.eventos()).filter((e) => e.event_type === "followup_message_sent");
+  const membro = await criarMembro(cenario.org);
+
+  const conexao = await pool.connect();
+  try {
+    await conexao.query("begin");
+    await conexao.query("set local role authenticated");
+    await conexao.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: membro })]);
+    const { rowCount } = await conexao.query(
+      "update messages set status='sent' where organization_id=$1 and id=$2", [cenario.org, ledger.crm_message_id],
+    );
+    expect(rowCount).toBe(1);
+    const { rows } = await conexao.query(
+      "select 1 from followup_delivery_events where enrollment_id=$1 and event_type='followup_message_sent'",
+      [cenario.enrollmentId],
+    );
+    expect(rows).toEqual([]);
+  } finally {
+    await conexao.query("rollback");
+    conexao.release();
+  }
+
+  // Controle: a mesma atualização feita pelo sistema registra o recibo.
+  await pool.query("update messages set status='sent' where organization_id=$1 and id=$2", [
+    cenario.org, ledger.crm_message_id,
+  ]);
+  expect(await enviadas()).toHaveLength(1);
+});

@@ -13025,6 +13025,10 @@ export const DICIONARIO: Traducoes = {
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },
+  "Incluir o link da reunião neste lembrete": { es: "Incluir el enlace de la reunión en este recordatorio" },
+  "Desligado, este aviso sai sem a linha do link e sem a frase de que ele chega pela conversa.": {
+    es: "Desactivado, este aviso sale sin la línea del enlace y sin la frase de que llega por la conversación.",
+  },
   "Adicionar lembrete": { es: "Agregar recordatorio" },
   "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
     es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
@@ -23580,6 +23584,14 @@ export const DICIONARIO: Traducoes = {
   "A configuração da empresa está em um formato inesperado.": {
     es: "La configuración de la empresa está en un formato inesperado.",
   },
+  "Teto de respostas da IA para visitante anônimo": { es: "Límite de respuestas de la IA para visitante anónimo" },
+  "Quantas respostas da IA por conversa": { es: "¿Cuántas respuestas de la IA por conversación?" },
+  "Depois desse número a IA para de responder e a conversa fica para a equipe. Quem deixa telefone ou e-mail sai deste limite.": {
+    es: "Después de ese número la IA deja de responder y la conversación pasa al equipo. Quien deja teléfono o e-mail sale de este límite.",
+  },
+  "Salvar teto": { es: "Guardar límite" },
+  "Use um número inteiro de 1 a 200.": { es: "Usa un número entero entre 1 y 200." },
+  "Deixe em branco para não mudar.": { es: "Déjalo en blanco para no cambiarlo." },
 };
 
 /**

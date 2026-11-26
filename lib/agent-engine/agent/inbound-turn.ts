@@ -5633,16 +5633,13 @@ async function executarTurnoDoAgente(
               // por ele e não mistura o envio seguinte.
               const seqDoEnvio = seq + 1;
               let parteAceita = false;
-              const enviar = async (
+              const enviarAoCanal = async (
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
-                if (await pessoaAssumiuDuranteOTurno()) {
-                  if (parteAceita) await input.historicoDoFollowup?.registrar("parcial", numeroDaCandidata);
-                  return ENVIO_ABORTADO_PELA_PESSOA;
-                }
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 seq += 1;
-                const resultado = await liveChannel().send({
+                return liveChannel().send({
                   tenantId,
                   leadId,
                   jobId: liveJob().id,
@@ -5657,6 +5654,16 @@ async function executarTurnoDoAgente(
                   // metadata que faz os freios de reenvio contarem uma vez.
                   ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
                 });
+              };
+              // O histórico do follow-up fica fora da guarda, para ela seguir em uma linha.
+              const enviar = async (
+                corpo: string,
+                media?: FotoParaEnvio,
+              ): Promise<ChannelSendResult> => {
+                const resultado = await enviarAoCanal(corpo, media);
+                if (resultado === ENVIO_ABORTADO_PELA_PESSOA && parteAceita) {
+                  await input.historicoDoFollowup?.registrar("parcial", numeroDaCandidata);
+                }
                 parteAceita ||= resultado.kind === "sent" || resultado.kind === "already_sent";
                 return resultado;
               };
