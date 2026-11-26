@@ -113,6 +113,33 @@ interface PropostaVencida {
   crm_leads: { title: string; contact_id: string | null } | null;
 }
 
+function montaTextoDoAviso(
+  idioma: Awaited<ReturnType<typeof idiomaDoAviso>>,
+  total: number,
+): { title: string; body: string } {
+  const um = total === 1;
+  return {
+    title: preencher(
+      um
+        ? traduzir("Decida sobre {n} negócio parado — a sugestão de retomar venceu", idioma)
+        : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
+      { n: total },
+    ),
+    body: preencher(
+      um
+        ? traduzir(
+            "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+            idioma,
+          )
+        : traduzir(
+            "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
+            idioma,
+          ),
+      { n: total },
+    ),
+  };
+}
+
 /**
  * Vence as propostas cujo prazo passou — o FALLBACK que impede a demanda de
  * morrer por silêncio.
@@ -143,6 +170,7 @@ export async function venceReativacoes(
   const r: ResultadoDoVencimento = { vencidas: 0, itensDeCaixa: 0, falhasDeAtividade: 0 };
   if (vencidas.length === 0) return r;
 
+  const expiradas: PropostaVencida[] = [];
   for (const p of vencidas) {
     // `decided_at` preenchido porque o CHECK exige: status não-pendente sem
     // data seria registro que não sabe dizer quando aconteceu. Vencer É uma
@@ -154,6 +182,7 @@ export async function venceReativacoes(
       .eq("status", "pending"); // não atropela quem decidiu no mesmo instante
     if (upErr) continue;
     r.vencidas += 1;
+    expiradas.push(p);
 
     const atividade = await emitLeadActivity(admin, {
       organizationId,
@@ -186,7 +215,7 @@ export async function venceReativacoes(
     // houver — item que se duplica ao reprocessar é a praga que ele evita.
     const { data: jaAberto } = await admin
       .from("agent_inbox_items")
-      .select("id")
+      .select("id, ref_kind, ref_id")
       .eq("organization_id", organizationId)
       .eq("kind", "reactivation_expired")
       .eq("status", "open")
@@ -194,37 +223,40 @@ export async function venceReativacoes(
     if (!jaAberto) {
       // A Central mostra o texto como foi gravado: o aviso nasce no idioma da organização.
       const idioma = await idiomaDoAviso(admin, organizationId);
-      const um = r.vencidas === 1;
+      const { title, body } = montaTextoDoAviso(idioma, r.vencidas);
+      const unico = expiradas.length === 1 ? expiradas[0] : undefined;
       const { data: item } = await admin
         .from("agent_inbox_items")
         .insert({
           organization_id: organizationId,
           kind: "reactivation_expired",
           severity: "warn",
-          title: preencher(
-            um
-              ? traduzir("Decida sobre {n} negócio parado — a sugestão de retomar venceu", idioma)
-              : traduzir("Decida sobre {n} negócios parados — a sugestão de retomar venceu", idioma),
-            { n: r.vencidas },
-          ),
-          body: preencher(
-            um
-              ? traduzir(
-                  "Um negócio esfriou e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-                  idioma,
-                )
-              : traduzir(
-                  "{n} negócios esfriaram e a sugestão de retomar contato ficou sem resposta até o prazo. Eles saíram do quadro para não parecerem em andamento. Retomar ou encerrar — as duas são decisões; deixar como está é a única que não é.",
-                  idioma,
-                ),
-            { n: r.vencidas },
-          ),
-          ref_kind: "organization",
-          ref_id: organizationId,
+          title,
+          body,
+          // Um único negócio leva direto a ele ("Abrir negócio"); vários mantêm
+          // o link para o Radar.
+          ref_kind: unico ? "lead" : "organization",
+          ref_id: unico ? unico.lead_id : organizationId,
         })
         .select("id")
         .maybeSingle();
       if (item) r.itensDeCaixa = 1;
+    } else {
+      const aberto = jaAberto as { id: string; ref_kind: string | null; ref_id: string | null };
+      const outroNegocio = expiradas.some((p) => p.lead_id !== aberto.ref_id);
+      if (aberto.ref_kind === "lead" && outroNegocio) {
+        const idioma = await idiomaDoAviso(admin, organizationId);
+        const { title, body } = montaTextoDoAviso(idioma, 1 + r.vencidas);
+        await admin
+          .from("agent_inbox_items")
+          .update({
+            ref_kind: "organization",
+            ref_id: organizationId,
+            title,
+            body,
+          })
+          .eq("id", aberto.id);
+      }
     }
   }
 
