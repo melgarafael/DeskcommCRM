@@ -1,3 +1,5 @@
+> Fork Ânima: leia também [AGENTS.anima.md](AGENTS.anima.md) antes de qualquer tarefa.
+
 # Repository Guidelines
 
 > Contrato portável para **qualquer** agente de código (Codex, Cursor, OpenCode, Antigravity, Copilot).

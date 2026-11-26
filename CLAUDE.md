@@ -1,3 +1,4 @@
+@AGENTS.anima.md
 # CLAUDE.md — DeskcommCRM
 
 > Instruções pra futuras sessões Claude trabalhando neste repo. Leitura obrigatória antes de qualquer task de código.
