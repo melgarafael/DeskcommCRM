@@ -19,12 +19,18 @@ const pool = new pg.Pool({
   max: 6,
 });
 
-const contact = randomUUID();
 const otherOrg = randomUUID();
 
 async function criarConversa(
   overrides: { status?: string; assigned?: string | null; assigneeKind?: string | null } = {},
 ) {
+  const contactId = randomUUID();
+  await pool.query(
+    `insert into contacts(id, organization_id, phone_number, name)
+     values($1, $2, $3, 'Contato Safe Close')
+     on conflict do nothing`,
+    [contactId, GOV_ORG, `+55119${Math.floor(10000000 + Math.random() * 89999999)}`],
+  );
   const id = randomUUID();
   await pool.query(
     `insert into conversations(id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assignee_kind)
@@ -32,22 +38,22 @@ async function criarConversa(
     [
       id,
       GOV_ORG,
-      contact,
+      contactId,
       GOV_SESSION,
       overrides.status ?? "open",
       overrides.assigned ?? null,
       overrides.assigneeKind ?? "ai",
     ],
   );
-  return id;
+  return { id, contactId };
 }
 
-async function inserirInbound(conversationId: string) {
+async function inserirInbound(conversationId: string, contactId: string) {
   const mid = randomUUID();
   await pool.query(
     `insert into messages(id, organization_id, conversation_id, channel_session_id, contact_id, type, direction, status, sent_via, body, sent_at)
      values($1, $2, $3, $4, $5, 'text', 'inbound', 'received', 'crm', 'Oi', clock_timestamp())`,
-    [mid, GOV_ORG, conversationId, GOV_SESSION, contact],
+    [mid, GOV_ORG, conversationId, GOV_SESSION, contactId],
   );
   return mid;
 }
@@ -98,12 +104,6 @@ async function chamarSafeClose(
 
 beforeAll(async () => {
   seedGov();
-  await pool.query(
-    `insert into contacts(id, organization_id, phone_number, name)
-     values($1, $2, '+5511999990101', 'Contato Safe Close')
-     on conflict do nothing`,
-    [contact, GOV_ORG],
-  );
 });
 
 afterAll(async () => {
@@ -112,8 +112,8 @@ afterAll(async () => {
 
 describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
   it("fecha conversa válida atomicamente, preserva auditoria/estado e suporta replay idempotente", async () => {
-    const conv = await criarConversa();
-    const m1 = await inserirInbound(conv);
+    const { id: conv, contactId } = await criarConversa();
+    const m1 = await inserirInbound(conv, contactId);
 
     const r1 = await chamarSafeClose(pool, {
       conv,
@@ -138,9 +138,9 @@ describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
   });
 
   it("recusa com PT409 quando chega nova mensagem inbound antes do encerramento", async () => {
-    const conv = await criarConversa();
-    const m1 = await inserirInbound(conv);
-    await inserirInbound(conv);
+    const { id: conv, contactId } = await criarConversa();
+    const m1 = await inserirInbound(conv, contactId);
+    await inserirInbound(conv, contactId);
 
     await expect(
       chamarSafeClose(pool, {
@@ -152,7 +152,7 @@ describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
   });
 
   it("recusa com PT409 quando há caso aberto (agent_cases) ou conversa assumida por humano", async () => {
-    const convHumana = await criarConversa({
+    const { id: convHumana } = await criarConversa({
       status: "claimed",
       assigned: GOV_AGENT_A,
       assigneeKind: "user",
@@ -162,7 +162,7 @@ describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
       message: "safe_close_conflict:human_attendance_active",
     });
 
-    const convCaso = await criarConversa();
+    const { id: convCaso } = await criarConversa();
     await pool.query(
       `insert into agent_cases(organization_id, conversation_id, status, title, summary, blocker)
        values($1, $2, 'awaiting_human', 'Caso aberto', 'Resumo', 'Dúvida técnica')`,
@@ -175,7 +175,7 @@ describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
   });
 
   it("concorrência real: duas sessões simultâneas com expected_revision — apenas uma fecha, a outra recebe PT409", async () => {
-    const conv = await criarConversa();
+    const { id: conv } = await criarConversa();
     const c1 = await pool.connect();
     const c2 = await pool.connect();
     try {
@@ -196,7 +196,7 @@ describe("Invariantes de banco — fn_safe_close_conversation (PR 01)", () => {
   });
 
   it("isolamento entre organizações: devolve P0002 para outra organização", async () => {
-    const conv = await criarConversa();
+    const { id: conv } = await criarConversa();
     await expect(chamarSafeClose(pool, { org: otherOrg, conv })).rejects.toMatchObject({
       code: "P0002",
     });
