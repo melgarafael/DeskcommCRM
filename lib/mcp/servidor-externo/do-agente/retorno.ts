@@ -9,7 +9,8 @@
  * Quem chega é o navegador do CONTATO (cliente final), que nunca teve sessão
  * nossa. A autoridade inteira vem do `state`: 256 bits gerados no servidor,
  * gravados em `mcp_oauth_pedidos` amarrados a organização, servidor, contato e
- * conversa, de USO ÚNICO e com validade de 10 minutos. Nada do que chega na
+ * conversa, de USO ÚNICO e com validade definida no cadastro do servidor (10
+ * minutos por padrão; 10..1440 desde a #5126). Nada do que chega na
  * URL escolhe organização, servidor ou contato — tudo é lido da linha do
  * pedido. O `code` só vira token com o `code_verifier` cifrado daquela linha.
  * O servidor da URL do callback só serve para CONFERIR: tem de ser o do pedido.
