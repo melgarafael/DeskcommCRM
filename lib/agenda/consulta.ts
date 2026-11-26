@@ -994,7 +994,11 @@ export async function listaAgendamentos(
   const montar = async (comoAdicional: boolean) => {
   let q = supabase
     .from("calendar_appointments")
-    .select(comoAdicional ? `${COLUNAS}, meu:calendar_appointment_responsibles!inner(user_id)` : COLUNAS)
+    // O tipo das linhas sai de COLUNAS: a união dos dois textos quebra o analisador
+    // de `select` do supabase-js (51 erros), e `meu` só serve para filtrar.
+    .select(
+      (comoAdicional ? `${COLUNAS}, meu:calendar_appointment_responsibles!inner(user_id)` : COLUNAS) as typeof COLUNAS,
+    )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
     // O DESEMPATE por `id` é o que faz o cursor ser determinístico: sem ele,
