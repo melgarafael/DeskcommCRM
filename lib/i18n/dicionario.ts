@@ -17501,6 +17501,9 @@ export const DICIONARIO: Traducoes = {
   "Para pedir que a IA esclareça algo com o cliente, envie:": {
     es: "Para pedirle a la IA que aclare algo con el cliente, envía:",
   },
+  "Ou cite esta mensagem e escreva só a resposta; para perguntar ao cliente, comece com ?.": {
+    es: "O cite este mensaje y escriba solo la respuesta; para preguntar al cliente, empiece con ?.",
+  },
   "Responder casos por este WhatsApp": { es: "Responder casos por este WhatsApp" },
   "Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.": {
     es: "Permite usar RESPONDER o PERGUNTAR en el número que recibe los avisos. Está desactivado por defecto.",
