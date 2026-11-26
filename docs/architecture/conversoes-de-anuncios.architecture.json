@@ -21,16 +21,15 @@
       "label": "Dados"
     }
   ],
-  "mainPath": [
-    "funil",
-    "eventos",
-    "handler",
-    "transporte",
-    "registro",
-    "tela",
-    "retry"
-  ],
+  "mainPath": ["funil", "eventos", "handler", "transporte", "registro", "tela", "retry"],
   "nodes": [
+    {
+      "id": "regras-google",
+      "lane": "dados",
+      "col": 2,
+      "type": "component",
+      "label": "google_ads_conversion_rules · conta e ação por etapa"
+    },
     {
       "id": "origem",
       "lane": "dados",
@@ -272,6 +271,24 @@
   ],
   "edges": [
     {
+      "id": "google-etapa-configuracao",
+      "from": "tela",
+      "to": "regras-google",
+      "label": "admin escolhe destinos; autorização de envio existente"
+    },
+    {
+      "id": "google-etapa-destino",
+      "from": "regras-google",
+      "to": "qualificacao",
+      "label": "conta do clique escolhe uma regra; não distribui para várias contas"
+    },
+    {
+      "id": "google-etapa-retrato",
+      "from": "qualificacao",
+      "to": "registro",
+      "label": "conta, MCC, API e ação preservados antes do envio"
+    },
+    {
       "id": "painel-contas-google",
       "from": "painel-google",
       "to": "contas-relatorio-google",
@@ -407,7 +424,7 @@
       "id": "e16",
       "from": "conexao",
       "to": "qualificacao",
-      "label": "etapa e ação opcionais"
+      "label": "autorização nativa de envio"
     },
     {
       "id": "e17",

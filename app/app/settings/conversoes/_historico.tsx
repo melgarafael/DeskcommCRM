@@ -196,6 +196,11 @@ export function HistoricoDeEnvios({
                               : l.plataforma}
                         </span>
                       </p>
+                      {l.plataforma === "google_ads" && (
+                        <p className="text-xs text-muted-foreground">
+                          {t("Conta de destino")}: {l.googleCustomerId ?? "—"}
+                        </p>
+                      )}
                       <p className="truncate text-xs text-muted-foreground">
                         {l.tituloDoLead ?? t("(sem título)")} ·{" "}
                         {new Date(l.tentadoEm).toLocaleString(idioma)}

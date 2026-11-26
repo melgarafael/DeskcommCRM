@@ -43,12 +43,13 @@
 import { canalQueReportaConversao } from "@/lib/channels/conversao-pelo-canal";
 import type { ChannelConversionInput, ChannelConversionResult } from "@/lib/channels/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
-import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
+import { lerCredencial, type DestinoGoogle } from "@/lib/plataformas-de-anuncio/credenciais";
 import { transporteDe, ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
 import type {
   ConversaoOffline,
   NomeDoEvento,
   ResultadoDeEnvio,
+  ApiDeConversaoGoogle,
 } from "@/lib/plataformas-de-anuncio/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -87,6 +88,8 @@ export interface EventoDeEtapa {
   evento?: NomeDoEvento;
   googleActionId?: string;
   eventoMeta?: string;
+  destinoGoogle?: DestinoGoogle;
+  googleDestinationExplicit?: boolean;
 }
 
 export async function processarConversao(
@@ -183,6 +186,17 @@ export async function processarConversao(
   let moedaDaVenda: string | null = lead.currency;
   /** De onde veio o valor (ou por que faltou), quando ele foi lido da conversa. */
   let detalheDoValor: string | null = null;
+  // Credenciais são substituíveis; a identidade do envio não. Protocolos
+  // antigos sem retrato continuam no destino global, sem inferir pela regra.
+  let destinoGoogle = registro?.google_customer_id
+    ? {
+        customerId: registro.google_customer_id,
+        loginCustomerId: registro.google_login_customer_id ?? null,
+      }
+    : qualificacao?.destinoGoogle;
+  let apiGoogle: ApiDeConversaoGoogle | undefined = registro?.google_api ?? undefined;
+  let destinoExplicito =
+    registro?.google_destination_explicit ?? qualificacao?.googleDestinationExplicit ?? false;
 
   const registra = (
     status: "sent" | "skipped" | "error",
@@ -209,6 +223,14 @@ export async function processarConversao(
             ocorridoEm: registro?.event_occurred_at ?? qualificacao.ocorridoEm,
             googleActionId: registro?.google_action_id ?? qualificacao.googleActionId,
             metaEventName: registro?.meta_event_name ?? qualificacao.eventoMeta,
+            ...(!registro?.remote_request_id && destinoGoogle
+              ? {
+                  googleCustomerId: destinoGoogle.customerId,
+                  googleLoginCustomerId: destinoGoogle.loginCustomerId,
+                  googleApi: apiGoogle,
+                  googleDestinationExplicit: destinoExplicito,
+                }
+              : {}),
           }
         : {}),
       moeda: registro?.remote_request_id ? registro.currency : moedaDaVenda,
@@ -280,6 +302,7 @@ export async function processarConversao(
 
   const credencial = await lerCredencial(admin, row.organization_id, plataforma, {
     exigirAcaoDeVenda: !qualificacao,
+    ...(etapaGoogle && destinoGoogle ? { destinoGoogle } : {}),
   });
   if (!credencial.ok) {
     if (credencial.motivo === "leitura_indisponivel")
@@ -391,6 +414,12 @@ export async function processarConversao(
   }
 
   if (valorPodeVirDaConversa) await lerOValorNaConversa();
+  if (etapaGoogle && credencial.credencial.google) {
+    const google = credencial.credencial.google;
+    if (apiGoogle) google.api = apiGoogle;
+    else apiGoogle = google.api ?? "google_ads";
+    destinoGoogle = { customerId: google.customerId, loginCustomerId: google.loginCustomerId };
+  }
   // O modo de valor é do Google (0436). A Meta exige valor na compra sempre —
   // agora que a decisão dela também passa por aqui, a plataforma é explícita.
   const modoDeValor =
@@ -413,6 +442,7 @@ export async function processarConversao(
         row.organization_id,
         contaGoogleDoClique,
         credencial.credencial.google?.customerId,
+        destinoExplicito,
       );
       if (motivo) {
         await registra("skipped", motivo);
@@ -425,7 +455,13 @@ export async function processarConversao(
   if (qualificacao && acaoDoGoogle && credencial.credencial.google) {
     credencial.credencial.google.conversionActionId = acaoDoGoogle;
   }
-  if (qualificacao && !registro?.event_occurred_at) {
+  if (
+    qualificacao &&
+    (!registro?.event_occurred_at ||
+      (etapaGoogle &&
+        (!registro?.google_customer_id || !registro?.google_api) &&
+        !registro?.remote_request_id))
+  ) {
     await registra("skipped", "nova_tentativa_agendada");
     // O primeiro snapshot vence também quando dois movimentos concorrem.
     const salvo = await lerRegistro(admin, row.organization_id, lead.id, EVENTO);
@@ -442,6 +478,35 @@ export async function processarConversao(
       };
       if (credencial.credencial.google)
         credencial.credencial.google.conversionActionId = salvo.google_action_id;
+      if (
+        credencial.credencial.google &&
+        (!salvo.google_customer_id ||
+          !salvo.google_api ||
+          salvo.google_destination_explicit == null)
+      )
+        throw new Error("Destino da qualificação não persistido antes do envio.");
+      if (salvo.google_customer_id && salvo.google_api && credencial.credencial.google) {
+        destinoGoogle = {
+          customerId: salvo.google_customer_id,
+          loginCustomerId: salvo.google_login_customer_id ?? null,
+        };
+        apiGoogle = salvo.google_api;
+        destinoExplicito = salvo.google_destination_explicit === true;
+        Object.assign(credencial.credencial.google, destinoGoogle, { api: apiGoogle });
+        credencial.credencial.datasetId = destinoGoogle.customerId;
+        // Uma execução concorrente pode ter gravado primeiro outro retrato.
+        const motivo = await motivoDeContaDaEtapaGoogle(
+          admin,
+          row.organization_id,
+          contaGoogleDoClique,
+          destinoGoogle.customerId,
+          destinoExplicito,
+        );
+        if (motivo) {
+          await registra("skipped", motivo);
+          return ok("skipped", motivo);
+        }
+      }
     }
   }
 
