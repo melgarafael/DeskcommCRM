@@ -14049,6 +14049,11 @@ export const DICIONARIO: Traducoes = {
   // Criar/renomear agente com nome que a organização já usa (#3952). `409
   // agent_name_taken`; a mesma frase é a do campo de nome na tela.
   "Já existe um agente com esse nome.": { es: "Ya existe un agente con este nombre." },
+  // Mover/reabrir um card quando o mesmo negócio já tem cópia aberta no funil
+  // (#5281). `409 copia_aberta_no_funil`.
+  "Este negócio já tem uma cópia aberta neste funil. Continue o atendimento por ela.": {
+    es: "Este negocio ya tiene una copia abierta en este embudo. Continúa la atención por ella.",
+  },
   "O rascunho foi salvo; o nome do agente não mudou.": { es: "El borrador se guardó; el nombre del agente no cambió." },
   "Já existe um contato com este CPF.": { es: "Ya existe un contacto con este CPF." },
   "Já existe um contato com este e-mail.": { es: "Ya existe un contacto con este correo electrónico." },
@@ -17502,6 +17507,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Para pedir que a IA esclareça algo com o cliente, envie:": {
     es: "Para pedirle a la IA que aclare algo con el cliente, envía:",
+  },
+  "Ou cite esta mensagem e escreva só a resposta; para perguntar ao cliente, comece com ?.": {
+    es: "O cite este mensaje y escriba solo la respuesta; para preguntar al cliente, empiece con ?.",
   },
   "Responder casos por este WhatsApp": { es: "Responder casos por este WhatsApp" },
   "Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.": {
@@ -23058,6 +23066,7 @@ export const DICIONARIO: Traducoes = {
   "Use um número inteiro de 0 a 120 segundos.": { es: "Usa un número entero de 0 a 120 segundos." },
   "Tocar som ao chegar resposta": { es: "Reproducir sonido al llegar una respuesta" },
   "Respostas rápidas do chat": { es: "Respuestas rápidas del chat" },
+  "Ex.: Sim": { es: "Ej.: Sí" },
   "Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.": { es: "Una respuesta rápida por línea, hasta 5, de 1 a 80 caracteres." },
   "Use até 5 respostas rápidas, de 1 a 80 caracteres cada.": { es: "Usa hasta 5 respuestas rápidas, de 1 a 80 caracteres cada una." },
   "Salvar ajustes": { es: "Guardar ajustes" },

@@ -22,10 +22,10 @@ import {
   type EtapaDoFunil,
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
-import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 // A cópia dos anexos do card de origem — a MESMA dos outros dois caminhos de
 // troca de funil, e idempotente de propósito (#4544).
-import { copiarAnexosDoClone } from "@/lib/leads/anexos-do-clone";
+import { criarCloneNoFunil, reporAnexosNaCopiaExistente } from "@/lib/leads/clone-com-anexos";
+import type { ResultadoDaCopiaDeAnexos } from "@/lib/leads/anexos-do-clone";
 // MESMA transferência do roteador de intenção (#2155): duas implementações de
 // "trocar de funil" divergiriam na primeira mudança de uma delas.
 import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
@@ -258,32 +258,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
             // foi reatribuída, ou nasceu sem dono porque o da origem não podia
             // mais ser dono): a reposição fica de fora e o recibo diz por quê;
             // a cópia da criação, que é da própria ação, segue intacta.
-            const idDaContinuacao = String((continuacao as { id?: unknown }).id ?? "");
-            const donoDaContinuacao = (continuacao as { owner_user_id?: string | null }).owner_user_id ?? null;
-            const mesmoDono = donoDaContinuacao === (lead.owner_user_id ?? null);
-            const anexos = mesmoDono
-              ? await copiarAnexosDoClone(ctx.admin, {
-                  organizationId: ctx.organizationId,
-                  origemLeadId: lead.id,
-                  destinoLeadId: idDaContinuacao,
-                })
-              : null;
-            publicaNoContexto(ctx, continuacao as Record<string, unknown>, contactId);
-            return {
-              type: "create_or_move_lead",
-              status: "success",
-              detail: {
-                ja_existia: idDaContinuacao,
-                origem: lead.id,
-                ...(anexos
-                  ? {
-                      anexos: anexos.copiados,
-                      anexos_que_ja_estavam: anexos.jaEstavam,
-                      ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
-                    }
-                  : { anexos_nao_repostos: "dono_diferente" }),
-              },
-            };
+            return respondeComAContinuacao(
+              ctx, lead, continuacao as Record<string, unknown>, contactId,
+              await reporAnexosNaCopiaExistente(ctx.admin, ctx.organizationId, lead, continuacao as Record<string, unknown>),
+            );
           }
 
           // O card novo nasce COM os anexos da origem (#4544). Os documentos da
@@ -291,9 +269,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           // pós-venda abria o card de Experiência sem eles: a cópia é do passo
           // único dos caminhos de troca de funil, e o `anexos` do retorno conta
           // o que veio (o que falhou não interrompe a continuação).
-          const { clone: criado, anexos } = await criarCloneNoFunil(ctx.admin, handlerCtx, lead, destino.etapa, {
+          const { clone: criado, anexos, reaproveitada } = await criarCloneNoFunil(ctx.admin, handlerCtx, lead, destino.etapa, {
             ajustes: { retomado_de_lead_id: null },
           });
+          // Outra execução gravou a continuação entre a busca acima e o INSERT, e
+          // o índice único recusou a segunda (#5281): a resposta é a da busca.
+          if (reaproveitada) {
+            return respondeComAContinuacao(
+              ctx, lead, criado, contactId,
+              await reporAnexosNaCopiaExistente(ctx.admin, ctx.organizationId, lead, criado),
+            );
+          }
           // O card novo é o negócio que as ações seguintes da regra enxergam.
           publicaNoContexto(ctx, criado, contactId);
           return {
@@ -466,6 +452,36 @@ async function negocioAbertoEmOutroFunil(
  * condições da regra já foram avaliadas quando isto roda (`engine.ts` filtra
  * `applicable` antes do laço), então escrever aqui não muda o que casou.
  */
+/**
+ * O recibo de "a continuação deste negócio já existe neste funil" — achada pela
+ * busca ou devolvida pelo índice único na corrida (#5281). `anexos` é `null`
+ * quando a reposição ficou de fora por dono diferente.
+ */
+function respondeComAContinuacao(
+  ctx: ActionCtx,
+  lead: OrigemParaClonar,
+  continuacao: Record<string, unknown>,
+  contactId: string | undefined,
+  anexos: ResultadoDaCopiaDeAnexos | null,
+): ActionResultDetail {
+  publicaNoContexto(ctx, continuacao, contactId);
+  return {
+    type: "create_or_move_lead",
+    status: "success",
+    detail: {
+      ja_existia: String(continuacao.id ?? ""),
+      origem: lead.id,
+      ...(anexos
+        ? {
+            anexos: anexos.copiados,
+            anexos_que_ja_estavam: anexos.jaEstavam,
+            ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+          }
+        : { anexos_nao_repostos: "dono_diferente" }),
+    },
+  };
+}
+
 function publicaNoContexto(ctx: ActionCtx, row: Record<string, unknown>, contactId?: string): void {
   // A LINHA INTEIRA, mesclada com o que já havia no contexto — nunca um objeto
   // com três campos. `add_tag` lê `ctx.context.lead.tags` como "as tags do
