@@ -18,7 +18,7 @@ describe("cerca do teto de responsáveis", () => {
         "..",
         "supabase",
         "migrations",
-        "20261125180100_9482_responsaveis_da_consulta.sql",
+        "20261126114644_9494_responsaveis_da_consulta.sql",
       ),
       "utf8",
     );
