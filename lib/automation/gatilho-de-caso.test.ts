@@ -85,9 +85,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import {
   campoFaltandoNoPayload,
   ENTIDADE_ESPERADA_POR_GATILHO,
-  eventoDoGatilho,
   EVENTOS_DOS_GATILHOS,
-  gatilhoDoEvento,
   PAYLOAD_EXIGIDO_POR_GATILHO,
   TRIGGER_EVENTS,
   createAutomationRuleSchema,
@@ -206,7 +204,7 @@ function regra(extra: Linha = {}): Linha {
   return {
     id: REGRA,
     organization_id: ORG,
-    trigger_event: "case_closed",
+    trigger_event: "ai.case_closed",
     is_active: true,
     name: "Caso encerrado leva o card para Resolvido",
     conditions: [],
@@ -289,37 +287,40 @@ beforeEach(() => {
 
 describe("catálogo: caso aberto e caso encerrado são gatilhos de primeira classe", () => {
   it("os dois estão na fonte única, com a entidade `agent_case`", () => {
-    expect(TRIGGER_EVENTS).toContain("case_opened");
-    expect(TRIGGER_EVENTS).toContain("case_closed");
-    expect(ENTIDADE_ESPERADA_POR_GATILHO.case_opened).toBe("agent_case");
-    expect(ENTIDADE_ESPERADA_POR_GATILHO.case_closed).toBe("agent_case");
+    expect(TRIGGER_EVENTS).toContain("ai.case_opened");
+    expect(TRIGGER_EVENTS).toContain("ai.case_closed");
+    expect(ENTIDADE_ESPERADA_POR_GATILHO["ai.case_opened"]).toBe("agent_case");
+    expect(ENTIDADE_ESPERADA_POR_GATILHO["ai.case_closed"]).toBe("agent_case");
   });
 
-  it("o nome da regra e o evento do barramento são traduzidos nos DOIS sentidos", () => {
-    // O barramento já fala `ai.case_*` (0148, com dois consumidores): renomear o
-    // evento para caber na regra quebraria os dois. A tradução é a ponte.
-    expect(eventoDoGatilho("case_opened")).toBe("ai.case_opened");
-    expect(eventoDoGatilho("case_closed")).toBe("ai.case_closed");
-    expect(gatilhoDoEvento("ai.case_opened")).toBe("case_opened");
-    expect(gatilhoDoEvento("ai.case_closed")).toBe("case_closed");
-    // E o caminho de sempre continua identidade — nada muda para os antigos.
-    expect(eventoDoGatilho("lead.created")).toBe("lead.created");
-    expect(gatilhoDoEvento("lead.created")).toBe("lead.created");
+  it("o nome do gatilho é o nome do evento no barramento — sem tradução", () => {
+    // A primeira versão desta issue gravava `case_opened` na regra e traduzia no
+    // motor. O banco nunca aceitou: o CHECK de `automation_rules.trigger_event`
+    // (`supabase/baseline.sql:5801`) exige um ponto no nome. Aqui a régua é a
+    // mesma do banco, aplicada ao catálogo inteiro — nome sem ponto é regra que
+    // o operador não consegue salvar.
+    for (const gatilho of TRIGGER_EVENTS) {
+      expect(gatilho, gatilho).toContain(".");
+      expect(gatilho, gatilho).toMatch(/^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$/);
+    }
+    expect(TRIGGER_EVENTS).not.toContain("case_opened");
+    expect(TRIGGER_EVENTS).not.toContain("case_closed");
   });
 
   it("o handler do motor assina os eventos que o barramento publica", () => {
-    // Assinar o nome da REGRA (`case_opened`) seria assinar um evento que
-    // ninguém emite: a regra salvaria e nunca rodaria, em silêncio.
+    // Um gatilho a mais aqui é evento sem regra; um a menos é regra que nunca
+    // roda. Assinar o nome antigo (`case_opened`) seria assinar um evento que
+    // ninguém emite.
+    expect([...automationRulesHandler.events].sort()).toEqual([...EVENTOS_DOS_GATILHOS].sort());
+    expect([...automationRulesHandler.events].sort()).toEqual([...TRIGGER_EVENTS].sort());
     expect(automationRulesHandler.events).toContain("ai.case_opened");
     expect(automationRulesHandler.events).toContain("ai.case_closed");
-    expect(automationRulesHandler.events).not.toContain("case_opened");
-    expect([...automationRulesHandler.events].sort()).toEqual([...EVENTOS_DOS_GATILHOS].sort());
   });
 
   it("cada gatilho de caso DECLARA o payload de que a ação precisa", () => {
     // A completude que a issue cobra: gatilho sem payload declarado é gatilho
     // que aceita entidade nenhuma e falha só na hora de mover o card.
-    for (const gatilho of ["case_opened", "case_closed"] as const) {
+    for (const gatilho of ["ai.case_opened", "ai.case_closed"] as const) {
       const exigidos = PAYLOAD_EXIGIDO_POR_GATILHO[gatilho];
       expect(exigidos, gatilho).toBeTruthy();
       expect(exigidos).toContain("contact_id");
@@ -328,8 +329,8 @@ describe("catálogo: caso aberto e caso encerrado são gatilhos de primeira clas
     }
     // O payload real do emissor passa inteiro; sem o contato, ele é recusado e
     // o motor diz QUAL campo faltou.
-    expect(campoFaltandoNoPayload("case_closed", eventoDeCaso("ai.case_closed").payload)).toBeNull();
-    expect(campoFaltandoNoPayload("case_closed", { case_id: CASO, status: "resolved" })).toBe("contact_id");
+    expect(campoFaltandoNoPayload("ai.case_closed", eventoDeCaso("ai.case_closed").payload)).toBeNull();
+    expect(campoFaltandoNoPayload("ai.case_closed", { case_id: CASO, status: "resolved" })).toBe("contact_id");
     // Gatilho que não declara nada continua sem exigência nenhuma.
     expect(campoFaltandoNoPayload("lead.created", {})).toBeNull();
   });
@@ -339,17 +340,17 @@ describe("catálogo: caso aberto e caso encerrado são gatilhos de primeira clas
     // eventos de caso, e só eles são servidos por eles. Um gatilho antigo que
     // caísse aqui rodaria duas regras com o mesmo evento.
     for (const gatilho of TRIGGER_EVENTS) {
-      if (gatilho === "case_opened" || gatilho === "case_closed") continue;
-      expect(eventoDoGatilho(gatilho), gatilho).toBe(gatilho);
+      if (gatilho === "ai.case_opened" || gatilho === "ai.case_closed") continue;
       expect(ENTIDADE_ESPERADA_POR_GATILHO[gatilho], gatilho).not.toBe("agent_case");
     }
-    expect(gatilhoDoEvento("ai.case_updated")).toBe("ai.case_updated");
+    // Um evento de caso que ninguém declarou continua sem gatilho.
+    expect(TRIGGER_EVENTS).not.toContain("ai.case_updated");
   });
 
   it("o schema da regra aceita o gatilho com a ação que já existe", () => {
     const resultado = createAutomationRuleSchema.safeParse({
       name: "Caso encerrado → Resolvido",
-      trigger_event: "case_closed",
+      trigger_event: "ai.case_closed",
       conditions: [],
       actions: [
         {
@@ -367,7 +368,7 @@ describe("motor: o caso move o card do funil de atendimento", () => {
   it("caso ABERTO cria o card na etapa que a regra declara", async () => {
     const { cliente } = mundo({
       regra: regra({
-        trigger_event: "case_opened",
+        trigger_event: "ai.case_opened",
         actions: [
           {
             type: "create_or_move_lead",
@@ -445,7 +446,7 @@ describe("motor: o caso move o card do funil de atendimento", () => {
     const { tabelas } = mundo({
       leads: [venda],
       regra: regra({
-        trigger_event: "case_opened",
+        trigger_event: "ai.case_opened",
         actions: [
           {
             type: "create_or_move_lead",

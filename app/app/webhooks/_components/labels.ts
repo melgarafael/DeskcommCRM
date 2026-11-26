@@ -86,8 +86,8 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // tela de atendimento. O desfecho (resolvido, cancelado, passado adiante) não
   // entra na frase porque é CONDIÇÃO (`event.status`), e a mesma regra serve aos
   // três se o operador não filtrar.
-  "case_opened": "Quando a Central abrir um caso",
-  "case_closed": "Quando a Central encerrar um caso",
+  "ai.case_opened": "Quando a Central abrir um caso",
+  "ai.case_closed": "Quando a Central encerrar um caso",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

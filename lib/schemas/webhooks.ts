@@ -144,66 +144,36 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // três terminais. Nada de segundo emissor aqui: esta lista só passa a ASSINAR
   // o que o barramento já entrega.
   //
-  // Os nomes no vocabulário das regras são `case_opened`/`case_closed` (as
-  // mesmas palavras do `trigger_config.kind` do follow-up, e as que o operador
-  // lê na tela); o evento no barramento continua `ai.case_*`. A tradução mora em
-  // `EVENTO_DO_GATILHO`, logo abaixo, e o motor a aplica nos dois sentidos.
+  // O NOME DO GATILHO É O NOME DO EVENTO (`ai.case_opened`/`ai.case_closed`):
+  // não há tradução, e não é por gosto — é o que o banco aceita. A primeira
+  // versão desta issue gravava `case_opened` na regra e traduzia no motor, e o
+  // INSERT nunca passou: o CHECK de `automation_rules.trigger_event`
+  // (`supabase/baseline.sql:5801`) exige um ponto no nome
+  // (`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`). Adotar o nome do barramento
+  // conserta o CHECK e apaga a ponte de uma vez.
   //
   // A entidade é `agent_case`: é o `entity_kind` que o emissor grava. O
   // `buildContext` hidrata o CONTATO a partir do payload, porque é ele (com o
   // funil e a etapa da regra) que a ação precisa. O negócio NÃO é hidratado de
   // propósito — o `lead_id` do caso costuma ser o card de VENDAS, e mover esse
   // card para o funil de atendimento esvaziaria o board de quem vende.
-  "case_opened": "agent_case",
+  "ai.case_opened": "agent_case",
   // O CASO FECHOU (#4900): resolvido, passado para uma pessoa (`escalated`) ou
   // cancelado. O desfecho vem no `status` do payload, então a regra filtra por
   // `event.status` — é o que separa "caso resolvido leva o card para Resolvido"
   // de "caso cancelado leva para Cancelado".
-  "case_closed": "agent_case",
+  "ai.case_closed": "agent_case",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
 
-/**
- * A TRADUÇÃO entre o nome do gatilho (o que a regra grava) e o `event_type` do
- * barramento — só onde os dois DIVERGEM.
- *
- * O mapa é parcial de propósito: quase todo gatilho tem o nome do próprio
- * evento, e repetir os nomes iguais aqui seria uma segunda cópia do catálogo,
- * envelhecendo no primeiro gatilho novo. Só entra o que muda de nome.
- *
- * O CASO entra porque o barramento já fala `ai.case_opened` desde a 0148, com
- * dois consumidores vivos (o follow-up e o aviso ao suporte): renomear o evento
- * para caber na regra quebraria os dois. Quem lê `event_type` para achar a regra
- * — o motor, ao carregar as regras do gatilho e ao conferir a entidade — passa
- * por `gatilhoDoEvento`; quem monta a assinatura do handler passa por
- * `eventoDoGatilho`. Um sentido sem o outro é a regra salva que nunca roda.
- */
-export const EVENTO_DO_GATILHO = {
-  case_opened: "ai.case_opened",
-  case_closed: "ai.case_closed",
-} as const satisfies Partial<Record<GatilhoDeAutomacao, string>>;
-
-/** O `event_type` que o barramento usa para este gatilho. */
-export function eventoDoGatilho(gatilho: string): string {
-  return (EVENTO_DO_GATILHO as Record<string, string>)[gatilho] ?? gatilho;
-}
-
-/** O gatilho que a regra grava para este `event_type`. Identidade fora do mapa. */
-export function gatilhoDoEvento(eventType: string): string {
-  for (const [gatilho, evento] of Object.entries(EVENTO_DO_GATILHO)) {
-    if (evento === eventType) return gatilho;
-  }
-  return eventType;
-}
-
 /** Os dois gatilhos de caso — o recorte que a ação consulta. */
-export const GATILHOS_DE_CASO = ["case_opened", "case_closed"] as const;
+export const GATILHOS_DE_CASO = ["ai.case_opened", "ai.case_closed"] as const;
 
-/** O evento é de CASO? Vale pelo `event_type` do barramento e pelo nome do gatilho. */
+/** O evento é de CASO? Comparação direta: o nome do gatilho É o do evento. */
 export function ehGatilhoDeCaso(eventType: string | null | undefined): boolean {
   if (!eventType) return false;
-  return (GATILHOS_DE_CASO as readonly string[]).includes(gatilhoDoEvento(eventType));
+  return (GATILHOS_DE_CASO as readonly string[]).includes(eventType);
 }
 
 /**
@@ -231,8 +201,8 @@ export const CAMPOS_DO_PAYLOAD_DO_CASO = ["case_id", "contact_id", "conversation
  * antes de chegar à tela.
  */
 export const PAYLOAD_EXIGIDO_POR_GATILHO: Partial<Record<GatilhoDeAutomacao, readonly string[]>> = {
-  case_opened: CAMPOS_DO_PAYLOAD_DO_CASO,
-  case_closed: CAMPOS_DO_PAYLOAD_DO_CASO,
+  "ai.case_opened": CAMPOS_DO_PAYLOAD_DO_CASO,
+  "ai.case_closed": CAMPOS_DO_PAYLOAD_DO_CASO,
 };
 
 /** O primeiro campo exigido que o payload não trouxe (ou vazio), ou `null`. */
@@ -408,15 +378,14 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
 ];
 
 /**
- * Os `event_type` que o motor precisa ASSINAR — os nomes dos gatilhos,
- * traduzidos por `eventoDoGatilho`.
+ * Os `event_type` que o motor precisa ASSINAR — hoje a MESMA lista de
+ * `TRIGGER_EVENTS`, porque o nome do gatilho é o nome do evento (#4900).
  *
- * Existe separado de `TRIGGER_EVENTS` porque as duas listas deixaram de ser a
- * mesma coisa no dia em que um gatilho passou a escutar um evento com outro
- * nome (`case_opened` → `ai.case_opened`). Quem grava, valida e mostra na tela
- * usa `TRIGGER_EVENTS`; quem assina no barramento usa esta.
+ * O alias fica: quando um gatilho precisar assinar um evento de outro nome, é
+ * aqui que a tradução entra, e o handler não muda. Enquanto não houver, é
+ * identidade — e o teste de fonte única cobra as duas pontas.
  */
-export const EVENTOS_DOS_GATILHOS = TRIGGER_EVENTS.map(eventoDoGatilho);
+export const EVENTOS_DOS_GATILHOS = [...TRIGGER_EVENTS];
 
 /**
  * As condições de uma regra (#2727): o schema e o avaliador vivem juntos em

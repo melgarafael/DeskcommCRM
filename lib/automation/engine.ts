@@ -38,7 +38,6 @@ import {
   acoesQueFechamLaco,
   campoFaltandoNoPayload,
   ENTIDADE_ESPERADA_POR_GATILHO,
-  gatilhoDoEvento,
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
@@ -688,13 +687,11 @@ export async function runAutomationForEvent(
 
   // ── O GATILHO que este evento representa (#4900) ─────────────────────────
   //
-  // Quase sempre `event_type` e o nome do gatilho são a MESMA string. Os dois de
-  // caso não são: o barramento publica `ai.case_opened`/`ai.case_closed` desde a
-  // 0148 (com dois consumidores), e a regra grava `case_opened`/`case_closed`.
-  // A tradução é uma função do catálogo (`gatilhoDoEvento`), e é ela que o guard
-  // de entidade e a busca das regras usam — sem isso, a regra de caso é salva e
-  // nunca casa, em silêncio.
-  const gatilho = gatilhoDoEvento(row.event_type);
+  // `event_type` E o nome do gatilho: a regra grava `ai.case_opened`, que é o
+  // nome que o barramento publica desde a 0148. Não há tradução — o banco
+  // recusa o nome sem ponto no CHECK de `automation_rules.trigger_event`, então
+  // a regra e o evento têm de falar a mesma língua.
+  const gatilho = row.event_type;
 
   const expectedKind = EXPECTED_ENTITY_KIND[gatilho];
   if (expectedKind && entidadeDoEvento(row) !== expectedKind) {
@@ -728,8 +725,8 @@ export async function runAutomationForEvent(
     .from("automation_rules")
     .select("id, name, conditions, actions, trigger_config")
     .eq("organization_id", row.organization_id)
-    // Pelo GATILHO traduzido, não pelo `event_type` cru: `case_opened` é o que
-    // está gravado na regra, `ai.case_opened` é o que está na linha.
+    // Pelo gatilho, que é o `event_type` — a regra grava exatamente o nome do
+    // evento (`ai.case_opened`).
     .eq("trigger_event", gatilho)
     .eq("is_active", true)
     .order("created_at", { ascending: true });

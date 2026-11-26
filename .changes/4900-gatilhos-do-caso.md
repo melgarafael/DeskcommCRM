@@ -4,7 +4,7 @@ secao: adicionado
 titulo: Automações ganharam os gatilhos "caso aberto" e "caso encerrado", e o card do funil de atendimento passa a acompanhar o chamado
 ---
 
-A tela **Automações** ganhou dois gatilhos: **Quando a Central abrir um caso** (`case_opened`) e **Quando a Central encerrar um caso** (`case_closed`). Com eles, a regra que já existe de mover o card — "Criar/mover lead no funil" — passa a levar o card do contato no funil de atendimento para a etapa que a regra declara: "caso aberto leva o card para Em atendimento", "caso resolvido leva para Resolvido".
+A tela **Automações** ganhou dois gatilhos: **Quando a Central abrir um caso** (`ai.case_opened`) e **Quando a Central encerrar um caso** (`ai.case_closed`). Com eles, a regra que já existe de mover o card — "Criar/mover lead no funil" — passa a levar o card do contato no funil de atendimento para a etapa que a regra declara: "caso aberto leva o card para Em atendimento", "caso resolvido leva para Resolvido".
 
 Até aqui a etapa do card vinha do passo do agente (`crm_stages.agent_stage_hint`), que tem sete passos fixos e serve ao funil de vendas: num funil de atendimento as etapas do meio dependem do caso, e "resolvido" não é "ganho". Essa ponte continua exatamente como era — quem quiser trocar o funil de vendas pelo passo do agente não perde nada.
 
