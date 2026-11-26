@@ -61,6 +61,7 @@ export const ApiErrorCodes = {
   agenda_responsaveis_invalidos: "agenda_responsaveis_invalidos", // 422: responsável adicional inválido
   agenda_tipo_invalido: "agenda_tipo_invalido", // 422: tipo de compromisso fora da organização
   agenda_contato_invalido: "agenda_contato_invalido", // 422: contato fora da organização
+  agenda_dono_invalido: "agenda_dono_invalido", // 422: responsável principal fora da organização
   agenda_conversa_invalida: "agenda_conversa_invalida", // 422: conversa fora da organização
   agenda_equipe_invalida: "agenda_equipe_invalida", // 422: convidado da equipe fora da organização
   agenda_sem_responsavel: "agenda_sem_responsavel",

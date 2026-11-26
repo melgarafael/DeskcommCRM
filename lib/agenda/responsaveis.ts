@@ -59,6 +59,11 @@ export const ERRO_RESPONSAVEIS = {
     code: "agenda_contato_invalido",
     message: "Contato não encontrado nesta organização.",
   },
+  appointment_owner_invalid: {
+    status: 422,
+    code: "agenda_dono_invalido",
+    message: "O responsável principal precisa ser membro ativo desta organização.",
+  },
   appointment_conversation_invalid: {
     status: 422,
     code: "agenda_conversa_invalida",

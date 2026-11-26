@@ -7,14 +7,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * RESPONSÁVEIS DA CONSULTA (#3067, F2) — invariantes de BANCO. Roda só no CI
  * (`pnpm test:db`): exige o baseline aplicado com o apêndice novo.
  *
- * Casos = seção F do desenho ("Desenho F2"). Cada um nomeia o que deve
- * ACONTECER. A régua de decisão (F.6) fica `it.todo` até o Paulo decidir.
- * O F.16 (estado do PATCH: resposta e auditoria) é de camada de rota e está nos
- * testes unitários do `_handler`, não aqui.
+ * Casos = seção F do desenho. Cada um nomeia o que deve ACONTECER. A régua de
+ * decisão (F.6) fica `it.todo` até o Paulo decidir. O F.16 (estado do PATCH:
+ * resposta e auditoria) é de camada de rota e está nos testes unitários do
+ * `_handler`, não aqui.
  *
  * Escrita de consulta passa por `fn_appointment_change` com JWT de quem pede
  * (`set local role authenticated`), como a tela: `fn_appointment_change_core`
  * não é concedida a `authenticated`.
+ *
+ * ISOLAMENTO ENTRE CASOS: os casos não se limpam. O índice
+ * `calendar_appointments_sem_duplicata_idx` é único em (organização, dono,
+ * começo) enquanto o compromisso está pending/confirmed; por isso cada
+ * compromisso nasce num horário DIFERENTE por padrão (`novoHorario`), e só os
+ * casos que precisam de sobreposição passam o mesmo horário de propósito.
  */
 
 const pool = new pg.Pool({
@@ -37,10 +43,25 @@ const Y = umAdicional(adicionais, 1);
 const Z = umAdicional(adicionais, 2);
 const inativo = randomUUID(); // membro de A com revoked_at
 const deFora = randomUUID(); // membro só de B
-const INICIO = "2026-12-01T14:00:00Z";
-const FIM = "2026-12-01T15:00:00Z";
-const DEPOIS = "2026-12-01T18:00:00Z";
-const FIM_DEPOIS = "2026-12-01T19:00:00Z";
+
+// Próxima terça-feira: a reserva de serviço usa o relógio real do banco (mesmo molde de agenda-servicos.test.ts).
+const diaDaAula = new Date();
+diaDaAula.setUTCHours(0, 0, 0, 0);
+diaDaAula.setUTCDate(diaDaAula.getUTCDate() + ((2 - diaDaAula.getUTCDay() + 7) % 7 || 7));
+function em(hora: string, dias = 0): string {
+  const dia = new Date(diaDaAula);
+  dia.setUTCDate(dia.getUTCDate() + dias);
+  return `${dia.toISOString().slice(0, 10)}T${hora}`;
+}
+
+type Horario = { inicio: string; fim: string };
+let sequencia = 0;
+/** Um horário novo a cada chamada: 2 h de distância, 1 h de duração, a partir de 05/01/2027 08:00Z. */
+function novoHorario(): Horario {
+  const base = Date.UTC(2027, 0, 5, 8, 0, 0);
+  const ini = new Date(base + sequencia++ * 2 * 3600 * 1000);
+  return { inicio: ini.toISOString(), fim: new Date(ini.getTime() + 3600 * 1000).toISOString() };
+}
 
 async function criaUsuario(id: string) {
   await pool.query("insert into auth.users(id,email) values($1,$2) on conflict (id) do nothing", [
@@ -54,11 +75,19 @@ async function vincula(user: string, org: string, revogado = false) {
     [org, user, revogado ? new Date() : null],
   );
 }
-async function compromisso(org: string, owner: string, inicio = INICIO, fim = FIM): Promise<string> {
+/** Disponível a semana toda, em UTC: sem isso `fn_calendar_service_person_available` recusa por "sem jornada", e não pelo motivo que o caso testa. */
+async function disponivelNaSemanaToda(user: string, org: string) {
+  const windows = [0, 1, 2, 3, 4, 5, 6].map((dow) => ({ dow, start: "00:00", end: "23:59" }));
+  await pool.query(
+    "insert into attendant_availability(organization_id,user_id,is_available,schedule) values($1,$2,true,$3) on conflict(organization_id,user_id) do update set is_available=true,schedule=excluded.schedule",
+    [org, user, { timezone: "UTC", windows }],
+  );
+}
+async function compromisso(org: string, owner: string, h: Horario = novoHorario()): Promise<string> {
   const id = randomUUID();
   await pool.query(
     "insert into calendar_appointments(id,organization_id,owner_user_id,title,starts_at,ends_at,status,time_zone) values($1,$2,$3,'Consulta fictícia',$4,$5,'confirmed','America/Sao_Paulo')",
-    [id, org, owner, inicio, fim],
+    [id, org, owner, h.inicio, h.fim],
   );
   return id;
 }
@@ -74,6 +103,24 @@ async function adicionaisDe(compromissoId: string): Promise<string[]> {
     [compromissoId],
   );
   return rows.map((r: { user_id: string }) => r.user_id).sort();
+}
+async function contato(org = A.org): Promise<string> {
+  const id = randomUUID();
+  await pool.query("insert into contacts(id,organization_id,display_name) values($1,$2,'Participante fictício')", [id, org]);
+  return id;
+}
+/** Serviço com a mesma semente de agenda-servicos.test.ts: terça às 14:00 locais (= 17:00Z), 40 min, sem aviso mínimo. */
+async function servico(modo = "collective_unlimited"): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes,minimum_notice_minutes,service_enabled,booking_mode,service_capacity) values($1::uuid,$2,'Atividade fictícia',$1::text,40,0,true,$3,$4)",
+    [id, A.org, modo, null],
+  );
+  await pool.query(
+    "insert into calendar_service_schedule(organization_id,event_type_id,weekday,timing_kind,start_minute) values($1,$2,2,'fixed',840)",
+    [A.org, id],
+  );
+  return id;
 }
 /**
  * Altera a consulta como o usuário (JWT), pela RPC da tela. Commita no sucesso
@@ -104,6 +151,25 @@ async function alteraComo(user: string, org: string, id: string, patch: Record<s
   }
 }
 const alterarA = (id: string, patch: Record<string, unknown>) => alteraComo(A.manager, A.org, id, patch);
+/** Quantas linhas de `calendar_appointment_responsibles` o usuário (JWT authenticated) enxerga para o compromisso. */
+async function linhasQueOUsuarioLe(user: string, compromissoId: string): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("set local role authenticated");
+    await client.query("select set_config('request.jwt.claims',$1,true)", [
+      JSON.stringify({ sub: user, role: "authenticated", aal: "aal1" }),
+    ]);
+    const r = await client.query(
+      "select count(*)::int n from calendar_appointment_responsibles where appointment_id=$1",
+      [compromissoId],
+    );
+    return r.rows[0].n as number;
+  } finally {
+    await client.query("rollback");
+    client.release();
+  }
+}
 
 beforeAll(async () => {
   await pool.query(
@@ -115,6 +181,7 @@ beforeAll(async () => {
   await vincula(inativo, A.org, true);
   await vincula(B.manager, B.org);
   await vincula(deFora, B.org);
+  for (const u of [A.manager, A.colega, ...adicionais]) await disponivelNaSemanaToda(u, A.org);
 });
 
 afterAll(() => pool.end());
@@ -159,71 +226,65 @@ describe("responsáveis — principal, repetidos, membros", () => {
   });
 
   it("F.5: o mesmo co-terapeuta em duas consultas no mesmo horário é recusado, nomeando quem", async () => {
-    const outra = await compromisso(A.org, A.colega);
+    const h = novoHorario(); // o MESMO horário nas duas, de propósito
+    const outra = await compromisso(A.org, A.colega, h);
     await porDoAdicional(outra, Y);
-    const nova = await compromisso(A.org, A.manager);
+    const nova = await compromisso(A.org, A.manager, h);
     await expect(alterarA(nova, { responsible_user_ids: [Y] })).rejects.toMatchObject({ code: "PT409", detail: Y });
     expect(await adicionaisDe(nova)).toHaveLength(0);
   });
 });
 
 describe("responsáveis — sessão coletiva (equipe herdada)", () => {
-  async function servicoColetivo(): Promise<string> {
-    const id = randomUUID();
-    await pool.query(
-      "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes,minimum_notice_minutes,service_enabled,booking_mode,service_capacity) values($1::uuid,$2,'Sessão fictícia',$1::text,60,0,true,'collective_unlimited',10)",
-      [id, A.org],
-    );
-    await pool.query(
-      "insert into calendar_service_schedule(organization_id,event_type_id,weekday,timing_kind,start_minute) values($1,$2,2,'fixed',840)",
-      [A.org, id],
-    );
-    return id;
-  }
   const actor = { type: "user", id: A.manager };
-  const entrada = (tipo: string, extra: Record<string, unknown> = {}) => ({
-    event_type_id: tipo,
-    starts_at: INICIO,
-    contact_id: null,
-    operation_key: randomUUID(),
-    ...extra,
-  });
+  const reservar = (tipo: string, contactId: string, extra: Record<string, unknown> = {}) =>
+    pool.query("select fn_calendar_service_book($1,$2,$3) r", [
+      A.org,
+      actor,
+      { event_type_id: tipo, starts_at: em("17:00:00Z"), contact_id: contactId, operation_key: randomUUID(), ...extra },
+    ]);
+  const ordenados = (ids: string[]) => [...ids].sort();
 
   it("F.7: a segunda reserva da mesma sessão herda a equipe; equipe diferente é service_team_conflict", async () => {
-    const tipo = await servicoColetivo();
-    const primeira = await pool.query("select fn_calendar_service_book($1,$2,$3) r", [A.org, actor, entrada(tipo, { responsible_user_ids: [X, Y] })]);
-    expect([...primeira.rows[0].r.responsible_user_ids].sort()).toEqual([X, Y].sort());
-    const herdada = await pool.query("select fn_calendar_service_book($1,$2,$3) r", [A.org, actor, entrada(tipo)]);
-    expect([...herdada.rows[0].r.responsible_user_ids].sort()).toEqual([X, Y].sort());
-    await expect(
-      pool.query("select fn_calendar_service_book($1,$2,$3)", [A.org, actor, entrada(tipo, { responsible_user_ids: [X] })]),
-    ).rejects.toMatchObject({ code: "PT409" });
+    const tipo = await servico();
+    const [c1, c2, c3] = [await contato(), await contato(), await contato()];
+    const primeira = await reservar(tipo, c1, { responsible_user_ids: [X, Y] });
+    expect(ordenados(primeira.rows[0].r.responsible_user_ids)).toEqual(ordenados([X, Y]));
+    const herdada = await reservar(tipo, c2);
+    expect(ordenados(herdada.rows[0].r.responsible_user_ids)).toEqual(ordenados([X, Y]));
+    await expect(reservar(tipo, c3, { responsible_user_ids: [X] })).rejects.toMatchObject({ code: "PT409" });
   });
 
   it("F.8: reenvio com a mesma chave e equipe diferente é service_idempotency_conflict, não a reserva antiga", async () => {
-    const tipo = await servicoColetivo();
+    const tipo = await servico();
+    const c = await contato();
     const chave = randomUUID();
-    await pool.query("select fn_calendar_service_book($1,$2,$3)", [A.org, actor, entrada(tipo, { operation_key: chave, responsible_user_ids: [X] })]);
-    await expect(
-      pool.query("select fn_calendar_service_book($1,$2,$3)", [A.org, actor, entrada(tipo, { operation_key: chave, responsible_user_ids: [Y] })]),
-    ).rejects.toMatchObject({ code: "PT409" });
+    await reservar(tipo, c, { operation_key: chave, responsible_user_ids: [X] });
+    await expect(reservar(tipo, c, { operation_key: chave, responsible_user_ids: [Y] })).rejects.toMatchObject({
+      code: "PT409",
+    });
   });
 });
 
 describe("responsáveis — remarcação e lista vazia", () => {
   it("F.9: remarcar para horário em que o adicional está ocupado recusa, e o horário antigo continua gravado", async () => {
-    await compromisso(A.org, Z, DEPOIS, FIM_DEPOIS); // Z é principal em DEPOIS
-    const minha = await compromisso(A.org, A.manager);
+    const ocupado = novoHorario();
+    await compromisso(A.org, Z, ocupado); // Z é principal nesse horário
+    const hMinha = novoHorario();
+    const minha = await compromisso(A.org, A.manager, hMinha);
     await porDoAdicional(minha, Z);
-    await expect(alterarA(minha, { starts_at: DEPOIS, ends_at: FIM_DEPOIS })).rejects.toThrow("responsible_unavailable");
+    await expect(alterarA(minha, { starts_at: ocupado.inicio, ends_at: ocupado.fim })).rejects.toThrow(
+      "responsible_unavailable",
+    );
     const { rows } = await pool.query("select starts_at from calendar_appointments where id=$1", [minha]);
-    expect(new Date(rows[0].starts_at).toISOString()).toBe(new Date(INICIO).toISOString());
+    expect(new Date(rows[0].starts_at).toISOString()).toBe(new Date(hMinha.inicio).toISOString());
   });
 
   it("F.10: remarcar sem mexer na equipe, com o adicional livre, dá certo e mantém a equipe", async () => {
     const minha = await compromisso(A.org, A.manager);
     await porDoAdicional(minha, Y);
-    await alterarA(minha, { starts_at: "2026-12-02T14:00:00Z", ends_at: "2026-12-02T15:00:00Z" });
+    const novo = novoHorario();
+    await alterarA(minha, { starts_at: novo.inicio, ends_at: novo.fim });
     expect(await adicionaisDe(minha)).toEqual([Y]);
   });
 
@@ -238,24 +299,11 @@ describe("responsáveis — remarcação e lista vazia", () => {
 });
 
 describe("responsáveis — isolamento entre organizações", () => {
-  it("F.12: o usuário de B não lê os responsáveis de A e não inclui membro de A", async () => {
+  it("F.12: o usuário de B não lê os responsáveis de A e não inclui membro de A; o de A lê os próprios (controle positivo)", async () => {
     const deA = await compromisso(A.org, A.manager);
     await porDoAdicional(deA, X);
-    const lidos = await pool.connect().then(async (client) => {
-      try {
-        await client.query("begin");
-        await client.query("set local role authenticated");
-        await client.query("select set_config('request.jwt.claims',$1,true)", [
-          JSON.stringify({ sub: B.manager, role: "authenticated", aal: "aal1" }),
-        ]);
-        const r = await client.query("select count(*)::int n from calendar_appointment_responsibles where appointment_id=$1", [deA]);
-        return r.rows[0].n as number;
-      } finally {
-        await client.query("rollback");
-        client.release();
-      }
-    });
-    expect(lidos).toBe(0);
+    expect(await linhasQueOUsuarioLe(A.manager, deA)).toBeGreaterThanOrEqual(1); // controle positivo
+    expect(await linhasQueOUsuarioLe(B.manager, deA)).toBe(0);
     const daB = await compromisso(B.org, B.manager);
     await expect(alteraComo(B.manager, B.org, daB, { responsible_user_ids: [X] })).rejects.toThrow(
       "appointment_responsibles_invalid",
@@ -268,7 +316,10 @@ describe("responsáveis — isolamento entre organizações", () => {
     await vincula(membroDeLinha, A.org);
     const minha = await compromisso(A.org, A.manager);
     await porDoAdicional(minha, membroDeLinha);
-    await pool.query("update user_organizations set revoked_at=now() where user_id=$1 and organization_id=$2", [membroDeLinha, A.org]);
+    await pool.query("update user_organizations set revoked_at=now() where user_id=$1 and organization_id=$2", [
+      membroDeLinha,
+      A.org,
+    ]);
     expect(await adicionaisDe(minha)).toHaveLength(1);
     await pool.query("delete from user_organizations where user_id=$1 and organization_id=$2", [membroDeLinha, A.org]);
     expect(await adicionaisDe(minha)).toHaveLength(0);
@@ -284,18 +335,14 @@ describe("responsáveis — isolamento entre organizações", () => {
 
 describe("responsáveis — preview e decisões em aberto", () => {
   it("F.15: o preview olha só o principal; adicional ocupado não o faz recusar (comportamento atual fixado)", async () => {
-    const tipo = randomUUID();
-    await pool.query(
-      "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes,minimum_notice_minutes,service_enabled,booking_mode,service_capacity) values($1::uuid,$2,'Preview fictício',$1::text,60,0,true,'individual',1)",
-      [tipo, A.org],
-    );
-    await pool.query(
-      "insert into calendar_service_schedule(organization_id,event_type_id,weekday,timing_kind,start_minute) values($1,$2,2,'fixed',840)",
-      [A.org, tipo],
-    );
-    const ocupadoComoAdicional = await compromisso(A.org, A.colega, INICIO, FIM);
+    const tipo = await servico();
+    const ocupadoComoAdicional = await compromisso(A.org, A.colega, { inicio: em("17:00:00Z"), fim: em("17:40:00Z") });
     await porDoAdicional(ocupadoComoAdicional, Z);
-    const { rows } = await pool.query("select fn_calendar_service_check($1,$2,$3,null,null,now()) result", [A.org, tipo, INICIO]);
+    const { rows } = await pool.query("select fn_calendar_service_check($1,$2,$3,null,null,now()) result", [
+      A.org,
+      tipo,
+      em("17:00:00Z"),
+    ]);
     expect(rows[0].result).toMatchObject({ available: true });
   });
 

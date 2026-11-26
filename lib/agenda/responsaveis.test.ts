@@ -60,6 +60,13 @@ describe("traduzErroResponsaveis — exceções da criação para ids forjados v
     });
   });
 
+  it("dono fora da organização vira 422 agenda_dono_invalido", () => {
+    expect(traduzErroResponsaveis({ message: "appointment_owner_invalid" }, REQ)).toMatchObject({
+      status: 422,
+      code: "agenda_dono_invalido",
+    });
+  });
+
   it("conversa de outra organização vira 422 agenda_conversa_invalida", () => {
     expect(traduzErroResponsaveis({ message: "appointment_conversation_invalid" }, REQ)).toMatchObject({
       status: 422,
