@@ -5794,20 +5794,20 @@ async function executarTurnoDoAgente(
                 return resultado;
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
-              // A21: as fotos só usam o saldo da janela que sobra depois do texto e da reserva da
-              // equipe. Leitura fora de transação; se falhar, vale o teto fixo e o gate segue barrando.
-              let maxFotosDaRede = limitesDoCanal?.fotosPorTurnoDaIa ?? 0;
-              if (limitesDoCanal !== null && input.channelSessionId) {
-                try {
-                  const estado = await carregarLimiteDaRede(pool, { organizationId: tenantId, contactId: leadId, channelSessionId: input.channelSessionId });
-                  if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, estado.respostasNaJanela);
-                } catch (err) {
-                  runLog.warn('limite_da_rede: saldo da janela não lido; usando o teto fixo de fotos', { err: String(err) });
-                }
-              }
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
-              return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
+              return enviarComSaidaConfiguravel(saida, finalBody, async (finalBody) => {
                   corposEnviados.push(finalBody);
+                  // A21: as fotos só usam o saldo da janela que sobra depois do texto e da reserva da
+                  // equipe. Leitura fora de transação; se falhar, vale o teto fixo e o gate segue barrando.
+                  let maxFotosDaRede = limitesDoCanal?.fotosPorTurnoDaIa ?? 0;
+                  if (limitesDoCanal !== null && input.channelSessionId) {
+                    try {
+                      const estado = await carregarLimiteDaRede(pool, { organizationId: tenantId, contactId: leadId, channelSessionId: input.channelSessionId });
+                      if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, estado.respostasNaJanela);
+                    } catch (err) {
+                      runLog.warn('limite_da_rede: saldo da janela não lido; usando o teto fixo de fotos', { err: String(err) });
+                    }
+                  }
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto. O material da
                   // empresa (#4129) entra pela MESMA cadeia — um anexo só.
