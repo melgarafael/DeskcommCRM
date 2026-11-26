@@ -9096,6 +9096,25 @@ export const DICIONARIO: Traducoes = {
   "Integração pode enviar em nome de um atendente": {
     es: "La integración puede enviar en nombre de un asesor",
   },
+  "Enviar avisos institucionais sem alterar a fila, SLA ou silenciar a IA": {
+    es: "Enviar avisos institucionales sin alterar la fila, SLA ni silenciar la IA",
+  },
+  "Aviso institucional": { es: "Aviso institucional" },
+  "Agentes de IA não podem enviar mensagens institucionais.": {
+    es: "Los agentes de IA no pueden enviar mensajes institucionales.",
+  },
+  "Envio institucional exige o escopo messages:institutional.": {
+    es: "El envío institucional requiere el alcance messages:institutional.",
+  },
+  "Mensagens institucionais não podem ser enviadas em nome de um atendente.": {
+    es: "Los mensajes institucionales no pueden enviarse en nombre de un asesor.",
+  },
+  "Mensagens institucionais exigem conversation_id explícito de uma conversa ativa e não aceitam phone_number.": {
+    es: "Los mensajes institucionales requieren conversation_id explícito de una conversación activa y no aceptan phone_number.",
+  },
+  "Não é possível enviar mensagem institucional em conversa encerrada, resolvida ou arquivada.": {
+    es: "No es posible enviar un mensaje institucional en una conversación cerrada, resuelta o archivada.",
+  },
   "Ler o log de auditoria": { es: "Leer el registro de auditoría" },
   // ─── Configurações: Distribuição de atendimento ───
   "Distribuição de atendimento salva.": { es: "Distribución de atención guardada." },

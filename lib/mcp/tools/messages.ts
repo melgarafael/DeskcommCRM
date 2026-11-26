@@ -15,15 +15,18 @@
 import { z } from "zod";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { ESCOPO_MENSAGENS_INSTITUCIONAIS } from "@/lib/api/escopos-do-token";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
   canalDaConversa,
   prepararMaterialDaEmpresa,
 } from "@/lib/agent-engine/agent/materiais-da-empresa";
 import { copiarMaterialNoStorage } from "@/lib/materiais/copiar-no-storage";
+import { MODOS_DE_ENVIO, MODO_DE_ENVIO_INSTITUCIONAL } from "@/lib/messaging/modo-de-envio";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { McpAuthError } from "../auth";
 import { enviarComChave } from "../idempotencia-da-ferramenta";
 import type { McpToolDefinition } from "../types";
 
@@ -43,6 +46,10 @@ const inputShape = {
     .enum(["text", "image", "audio", "document", "sticker", "video", "location", "contact"])
     .optional()
     .default("text"),
+  dispatch_mode: z
+    .enum(MODOS_DE_ENVIO)
+    .optional()
+    .describe("Use 'institutional' para aviso sem efeito na fila, SLA, IA ou prévia (requer escopo messages:institutional)."),
   idempotency_key: z
     .string()
     .min(1)
@@ -77,7 +84,28 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
       media_storage_path: input.media_storage_path,
       media_filename: input.media_filename,
       media_mime: input.media_mime,
+      ...(input.dispatch_mode !== undefined ? { dispatch_mode: input.dispatch_mode } : {}),
     });
+
+    const ehInstitucional = parsed.dispatch_mode === MODO_DE_ENVIO_INSTITUCIONAL;
+    if (ehInstitucional) {
+      if (ctx.actor.type === "ai_agent") {
+        throw new McpAuthError(
+          -32002,
+          403,
+          "forbidden: agentes de IA não podem enviar mensagens institucionais.",
+          "forbidden",
+        );
+      }
+      if (!ctx.tokenScopes?.includes(ESCOPO_MENSAGENS_INSTITUCIONAIS)) {
+        throw new McpAuthError(
+          -32002,
+          403,
+          `forbidden: token sem o escopo '${ESCOPO_MENSAGENS_INSTITUCIONAIS}'.`,
+          "forbidden",
+        );
+      }
+    }
 
     return enviarComChave({
       ctx,
@@ -100,6 +128,7 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
             organization_id: ctx.organizationId,
             actor: ctx.actor,
             requestId: ctx.requestId,
+            ...(ehInstitucional ? { dispatchMode: MODO_DE_ENVIO_INSTITUCIONAL } : {}),
           },
           parsed,
         );
