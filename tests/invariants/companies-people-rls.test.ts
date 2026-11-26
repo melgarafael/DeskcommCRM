@@ -145,10 +145,13 @@ describe("escrita por papel no banco (RLS por operação)", () => {
   });
 
   it("viewer não escreve no importador; agent (A23 parte 2, migration 9431) e manager escrevem", () => {
-    const lote = `insert into public.import_batches (organization_id, filename) values ('${GOV_ORG}', 'x.csv')`;
-    expect(writeCountAs(GOV_VIEWER, lote)).toBe(0);
-    expect(writeCountAs(GOV_AGENT_A, lote)).toBe(1);
-    expect(writeCountAs(GOV_MANAGER, lote)).toBe(1);
+    // O lote nasce com o PRÓPRIO autor em `created_by` (a rota sempre grava assim; a policy de
+    // INSERT recusa autor de outra pessoa ou nulo na sessão — ver importacao-dono-e-atendente).
+    const lote = (autor: string) =>
+      `insert into public.import_batches (organization_id, filename, created_by) values ('${GOV_ORG}', 'x.csv', '${autor}')`;
+    expect(writeCountAs(GOV_VIEWER, lote(GOV_VIEWER))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, lote(GOV_AGENT_A))).toBe(1);
+    expect(writeCountAs(GOV_MANAGER, lote(GOV_MANAGER))).toBe(1);
   });
 
   it("manager de B não cria empresa em A", () => {
