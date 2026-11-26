@@ -379,6 +379,16 @@ export interface ListMessagesResult {
   has_more: boolean;
 }
 
+function conversaNaoEncontrada(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    404,
+    "not_found",
+    undefined,
+    ctx.requestId,
+    traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
 async function conferirConversaDoHistorico(
   supabase: SB, ctx: HandlerCtx, conversationId: string, confirmarConversa: boolean,
 ) {
@@ -402,7 +412,9 @@ async function conferirConversaDoHistorico(
   if (confirmarConversa && erroDaConversa) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDaConversa.message);
   }
-  const conversaVisivel = Boolean(donas?.length);
+  if (confirmarConversa && !donas?.length) {
+    throw conversaNaoEncontrada(ctx);
+  }
   const contatoId = ((donas ?? []) as Array<{ contact_id?: string | null }>)[0]?.contact_id ?? null;
   let contatoDaConversa: { is_personal?: boolean; personal_owner_user_id?: string | null } | null =
     null;
@@ -422,14 +434,8 @@ async function conferirConversaDoHistorico(
         personal_owner_user_id?: string | null;
       }>)[0] ?? null;
   }
-  if ((confirmarConversa && !conversaVisivel) || !podeVerPessoal(ctx.actor, contatoDaConversa)) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+  if (!podeVerPessoal(ctx.actor, contatoDaConversa)) {
+    throw conversaNaoEncontrada(ctx);
   }
 }
 
@@ -658,13 +664,7 @@ export async function sendMessageHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr.message);
   }
   if (!conv) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+    throw conversaNaoEncontrada(ctx);
   }
 
   type Joined = {
