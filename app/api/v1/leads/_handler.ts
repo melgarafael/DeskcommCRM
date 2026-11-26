@@ -59,6 +59,7 @@ import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import { decideMotivoDaPerda, recusaDeMotivoDaPerdaPeloBanco } from "@/lib/leads/motivo-da-perda";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
@@ -292,6 +293,12 @@ function recusaDaGuardaDoBanco(
       ctx.requestId,
       traduzir("Responsável não é um atendente ativo desta organização.", ctx.idioma ?? "pt-BR"),
     );
+  }
+  // Uma cópia aberta por negócio de origem e funil (#5281): criar ou editar o
+  // card que viraria a segunda é recusa de negócio, não 500.
+  const copiaAberta = recusaDeCopiaAbertaPeloBanco(erro, ctx.idioma);
+  if (copiaAberta) {
+    return new ApiError(409, copiaAberta.codigo, undefined, ctx.requestId, copiaAberta.mensagem);
   }
   // Só a policy de `crm_leads` (a régua mora no predicado); o 42501 de GRANT
   // faltando continua 500 com a mensagem do banco.
@@ -1840,6 +1847,11 @@ export async function moveLeadHandler(
     const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, ctx.idioma);
     if (recusa) {
       throw new ApiError(422, recusa.codigo, undefined, ctx.requestId, recusa.mensagem);
+    }
+    // Reabrir/mover a cópia quando o negócio já tem outra aberta no funil (#5281).
+    const copiaAberta = recusaDeCopiaAbertaPeloBanco(updErr, ctx.idioma);
+    if (copiaAberta) {
+      throw new ApiError(409, copiaAberta.codigo, undefined, ctx.requestId, copiaAberta.mensagem);
     }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }

@@ -6,7 +6,7 @@
  * antes de falar com o GoTrue. Sem a chamada em signInWithPassword.ts, as seis
  * tentativas chegariam ao provedor e o teste fica vermelho.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
@@ -113,5 +113,126 @@ describe("signInWithPassword — dispositivo confiável", () => {
     await signInWithPassword({ email: "dona@example.com", password: "senha-certa-123" }, "/app/inbox");
     expect(vi.mocked(reconhecerDispositivoConfiavel)).toHaveBeenCalledWith("u1", "f1", "jwt-novo");
     expect(vi.mocked(redirect)).toHaveBeenCalledWith("/app/inbox");
+  });
+});
+
+/**
+ * Issue #4743, item 1 — a janela do dia está LIGADA no login, e com castigo
+ * crescente. A régua em si tem teste próprio (`lib/auth/bloqueio-progressivo`);
+ * aqui se prova a fiação: o login recusa a tentativa antes de falar com o
+ * GoTrue, emite o evento do degrau e responde IGUAL para conta inexistente.
+ *
+ * Relógio controlado do começo ao fim — nenhum `sleep`.
+ */
+describe("signInWithPassword — bloqueio progressivo por conta (issue #4743)", () => {
+  /** Meio-dia UTC: longe da virada do dia (meia-noite UTC). */
+  const AGORA = Date.parse("2026-03-10T12:00:00.000Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(AGORA);
+    signIn.mockClear();
+    signIn.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { message: "Invalid login credentials", status: 400 },
+    } as never);
+    // O `createClient` daqui é o do login por senha: a suíte anterior troca o
+    // dublê pelo caminho do MFA, e sem esta linha o teste mediria outro fluxo.
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        signInWithPassword: signIn,
+        mfa: { listFactors: vi.fn(async () => ({ data: { totp: [] } })) },
+      },
+    } as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("o atacante que tenta uma vez por minuto o dia UTC inteiro chega a 57, não a 1.440", async () => {
+    // Do primeiro ao último minuto do mesmo dia UTC: a conta do dia não vira no
+    // meio. A conta à mão: 5 falhas seguidas, mais 5 espaçadas pelo castigo de
+    // 5 min (a 10ª no minuto 29), e depois uma a cada 30 min até o minuto
+    // 1.439 — 9 + 48 = 57.
+    vi.setSystemTime(Date.parse("2026-03-10T00:00:00.000Z"));
+    const { signInWithPassword } = await import("./signInWithPassword");
+    const { audit } = await import("@/lib/audit");
+    vi.mocked(audit).mockClear();
+    const input = { email: "o-dia-todo@empresa.test", password: "senha-errada-123" };
+
+    for (let i = 0; i < 1440; i++) {
+      if (i > 0) vi.setSystemTime(Date.now() + 60_000);
+      await signInWithPassword(input);
+    }
+
+    expect(signIn).toHaveBeenCalledTimes(57);
+
+    // Um evento de degrau por castigo que NASCE: aqui cada falha que passou
+    // chegou com o castigo anterior já vencido, então cada uma abre um castigo
+    // novo — 5 de 5 min (falhas 5 a 9) e 48 de 30 min (da 10ª em diante). As
+    // 1.383 tentativas barradas NÃO viram evento de degrau: seguem no registro
+    // de sempre, com o degrau anotado ao lado.
+    const eventos = vi.mocked(audit).mock.calls.map(([evento]) => evento);
+    const acoes = eventos.map((e) => e.action);
+    expect(acoes.filter((a) => a === "auth.login_bloqueio_5min").length).toBe(5);
+    expect(acoes.filter((a) => a === "auth.login_bloqueio_30min").length).toBe(48);
+    expect(acoes.filter((a) => a === "auth.login_rate_limited").length).toBe(1440 - 57);
+    expect(
+      eventos.find((e) => e.action === "auth.login_rate_limited" && e.metadata?.degrau === 2),
+    ).toBeDefined();
+  });
+
+  it("a cadência de 5 erros a cada 5 minutos não rende 1.440 tentativas por dia", async () => {
+    const { signInWithPassword } = await import("./signInWithPassword");
+    const input = { email: "gotejando@empresa.test", password: "senha-errada-123" };
+
+    // 66 tentativas, uma por minuto. Com SÓ a janela curta, todas chegariam ao
+    // provedor — 66 em 66 minutos, e ~1.440 por dia, para sempre. O castigo de
+    // 5 minutos quebra a cadência, e o contador do dia não zera quando a janela
+    // curta vence.
+    const resultados = [];
+    for (let i = 0; i < 66; i++) {
+      if (i > 0) vi.setSystemTime(Date.now() + 60_000);
+      resultados.push(await signInWithPassword(input));
+    }
+
+    // MEDIDO: 11 chegam ao provedor em 66 minutos (eram 66), e o dia fecha em 11
+    // falhas — não em 1.440.
+    expect(signIn.mock.calls.length).toBe(11);
+    expect(resultados.filter((r) => r.error === "rate_limited").length).toBe(55);
+
+    const { falhasNaJanelaDiaria } = await import("@/lib/auth/rate-limit");
+    expect(await falhasNaJanelaDiaria("gotejando@empresa.test")).toBe(11);
+  });
+
+  it("a resposta é a mesma para e-mail que não existe — o bloqueio não enumera contas", async () => {
+    const { signInWithPassword } = await import("./signInWithPassword");
+    const { falhasNaJanelaDiaria } = await import("@/lib/auth/rate-limit");
+
+    // Uma tentativa a cada 6 minutos: a janela CURTA vence entre elas, então
+    // quem barra é só a régua diária — é ela que não pode saber se a conta
+    // existe. Com o ataque em rajada as duas sequências concordariam por
+    // acidente (a janela de 5 min barra os dois), e o teste não provaria nada.
+    const sequencia = async (email: string) => {
+      const respostas: Array<string | undefined> = [];
+      for (let i = 0; i < 11; i++) {
+        if (i > 0) vi.setSystemTime(Date.now() + 6 * 60_000);
+        respostas.push(
+          (await signInWithPassword({ email, password: "senha-errada-123" })).error,
+        );
+      }
+      return respostas;
+    };
+
+    const existente = await sequencia("conta-real@empresa.test");
+    const inexistente = await sequencia("ninguem-aqui@empresa.test");
+
+    expect(existente).toEqual(Array(10).fill("invalid_credentials").concat("rate_limited"));
+    expect(inexistente).toEqual(existente);
+    // As duas contas acumularam o mesmo dia — a inexistente inclusive.
+    expect(await falhasNaJanelaDiaria("ninguem-aqui@empresa.test")).toBe(
+      await falhasNaJanelaDiaria("conta-real@empresa.test"),
+    );
   });
 });
