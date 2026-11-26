@@ -36,6 +36,12 @@ export interface CampanhaDaLista {
   next_send_at: string;
   created_at: string;
   channel_session_id: string | null;
+  /**
+   * A pausa foi da JANELA (#4830)? O cartão usa para oferecer "Pausar
+   * abordagens" também nesse estado (#4847): sem a coluna no GET, a tela não
+   * sabe que pode pausar e o botão não aparece.
+   */
+  pausada_pela_janela: boolean;
 }
 
 /**
@@ -47,7 +53,7 @@ export interface CampanhaDaLista {
  * A subconsulta conta por organização — a mesma varredura do índice que a página
  * já paga ao buscar as empresas da tela.
  */
-export const CAMPANHAS_DA_LISTA_SQL = `select c.id,c.name,c.search,c.config,c.status,c.search_status,c.run_id,c.cost_usd,coalesce(k.empresas,0)::int as result_count,c.skipped_count,c.error,c.next_send_at,c.created_at,c.channel_session_id from prospecting_campaigns c left join (select campaign_id,count(*)::int as empresas from prospecting_candidates where organization_id=$1 group by campaign_id) k on k.campaign_id=c.id where c.organization_id=$1 order by (c.config->>'arquivada_em' is null) desc, c.created_at desc limit 50`;
+export const CAMPANHAS_DA_LISTA_SQL = `select c.id,c.name,c.search,c.config,c.status,c.search_status,c.run_id,c.cost_usd,coalesce(k.empresas,0)::int as result_count,c.skipped_count,c.error,c.next_send_at,c.created_at,c.channel_session_id,c.pausada_pela_janela from prospecting_campaigns c left join (select campaign_id,count(*)::int as empresas from prospecting_candidates where organization_id=$1 group by campaign_id) k on k.campaign_id=c.id where c.organization_id=$1 order by (c.config->>'arquivada_em' is null) desc, c.created_at desc limit 50`;
 
 export async function listarCampanhasDaLista(
   db: pg.Pool | pg.PoolClient,

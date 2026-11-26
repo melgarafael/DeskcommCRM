@@ -303,12 +303,15 @@ export const KanbanCard = memo(function KanbanCard({
               </h3>
             </div>
             {!somenteLeitura && (
-              <KanbanCardActions
-                lead={lead}
-                pipelineId={pipelineId}
-                etapas={etapas}
-                onMoverPara={onMoverPara}
-              />
+              <div className="flex shrink-0 items-center">
+                {/* O "+" de registrar venda mora em KanbanCardActions, atrás do mesmo piso de papel. */}
+                <KanbanCardActions
+                  lead={lead}
+                  pipelineId={pipelineId}
+                  etapas={etapas}
+                  onMoverPara={onMoverPara}
+                />
+              </div>
             )}
           </div>
 

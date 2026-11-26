@@ -44,6 +44,8 @@ import {
 } from "@/components/ui/table";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
+import { ErroDoPainel } from "./ErroDoPainel";
 import { type FunilDaSerie, useSerieTemporal } from "@/hooks/metrics/useSerieTemporal";
 import { granularidadeValida, type Granularidade } from "@/lib/metrics/serie-temporal";
 
@@ -64,7 +66,7 @@ function rotuloDoBalde(balde: string, tagDoIdioma: string): string {
     : d.toLocaleDateString(tagDoIdioma, { day: "2-digit", month: "2-digit" });
 }
 
-export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
+export function SeriePanel({ funis, janela }: { funis: FunilDaSerie[]; janela: JanelaDeMetricas }) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
   const [granularidade, setGranularidade] = useState<Granularidade>("dia");
@@ -72,34 +74,9 @@ export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
   // organização inteira — exatamente o pedido que a rota fazia antes.
   const [funil, setFunil] = useState<string>(TODOS_OS_FUNIS);
   const funilId = funil === TODOS_OS_FUNIS ? null : funil;
-  const { data, isLoading, isError } = useSerieTemporal(granularidade, funilId);
+  const { data, isLoading, isError, isFetching, refetch } = useSerieTemporal(granularidade, funilId, janela);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-2" aria-busy="true" aria-label={t("Ganhos por período")}>
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t("Ganhos por período")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-destructive">
-            {t("Erro ao carregar a evolução dos ganhos.")}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const serie = data.data;
-  const baldes = serie.baldes;
+  const serie = janela === undefined || isError ? undefined : data?.data;
   const formatar = (n: number) => n.toLocaleString(tagDoIdioma);
 
   return (
@@ -107,17 +84,19 @@ export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <div className="flex flex-col gap-0.5">
           <CardTitle className="text-base">
-            {t("Ganhos por período")} · {serie.total}
+            {t("Ganhos por período")}{serie ? ` · ${serie.total}` : ""}
           </CardTitle>
           {/* O ESCOPO do número (#4918). O nome do funil vem da RESPOSTA, não do
               seletor: é o conjunto que a rota de fato contou. Sem funil, o card
               diz que a conta é a da organização inteira — antes ele não dizia
               nada e dava a soma de todos os funis como se fosse uma coisa só. */}
-          <p data-testid="escopo-dos-ganhos" className="text-xs text-muted-foreground">
-            {serie.funil
-              ? `${t("Funil:")} ${serie.funil.name}`
-              : t("Organização inteira")}
-          </p>
+          {serie && (
+            <p data-testid="escopo-dos-ganhos" className="text-xs text-muted-foreground">
+              {serie.funil
+                ? `${t("Funil:")} ${serie.funil.name}`
+                : t("Organização inteira")}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {funis.length > 0 ? (
@@ -153,14 +132,22 @@ export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {baldes.length === 0 ? (
+        {janela === undefined || isLoading ? (
+          <Skeleton className="h-64 w-full" aria-busy="true" aria-label={t("Carregando…")} />
+        ) : !serie ? (
+          <ErroDoPainel
+            mensagem={t("Erro ao carregar a evolução dos ganhos.")}
+            tentando={isFetching}
+            onRetry={() => void refetch()}
+          />
+        ) : serie.total === 0 && !serie.truncado ? (
           <p className="text-sm text-muted-foreground">{t("Sem ganhos no período.")}</p>
         ) : (
           <>
             <div data-testid="ganhos-no-tempo" className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={baldes}
+                  data={serie.baldes}
                   margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
@@ -214,7 +201,7 @@ export function SeriePanel({ funis }: { funis: FunilDaSerie[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {baldes.map((b) => (
+                {serie.baldes.map((b) => (
                   <TableRow key={b.balde}>
                     <TableCell className="font-medium tabular-nums">
                       {rotuloDoBalde(b.balde, tagDoIdioma)}

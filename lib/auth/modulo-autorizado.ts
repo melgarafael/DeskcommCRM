@@ -24,7 +24,11 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { areaDaPorta, SEGMENTOS_LITERAIS_CONHECIDOS } from "@/lib/auth/portas-de-token/areas";
+import {
+  areaDaPorta,
+  leituraExigeAreaContatos,
+  SEGMENTOS_LITERAIS_CONHECIDOS,
+} from "@/lib/auth/portas-de-token/areas";
 import { permissaoDaArea } from "@/lib/extensions/areas";
 import { checkCompatibility } from "@/lib/extensions/manifest";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -40,7 +44,7 @@ export const MODULO_NAO_ENTRA_AQUI = "module_token_not_allowed_here";
 
 /** `installationId` sai da LINHA DO TOKEN; o JWT de contexto (F3, tarefa 4) é conferido contra ele. */
 export type ResultadoDoModulo =
-  | { ok: true; installationId: string }
+  | { ok: true; installationId: string; contatoVisivel: boolean }
   | { ok: false; codigo: CodigoDeRecusaDoModulo };
 
 export const MENSAGEM_DA_RECUSA_DO_MODULO: Record<
@@ -200,7 +204,14 @@ export async function autorizarModulo(p: AutorizarModuloParams): Promise<Resulta
 
     // 4. declarado ∩ consentido, no modo da porta.
     if (declaradas.includes(exigida) && consentidas.includes(exigida)) {
-      return { ok: true, installationId };
+      // O módulo enxerga contato (nome, telefone, etiquetas…) DENTRO de conversas, negócios e agenda só se
+      // a área `contatos` também foi declarada e consentida, em leitura: o consentimento por área vale para
+      // o dado que vem dentro da resposta, e não só para a rota (ADR-0005 D4).
+      const contatos = permissaoDaArea("contatos", "leitura");
+      const contatoVisivel = declaradas.includes(contatos) && consentidas.includes(contatos);
+      // Leitura que embute contato e não passa pelo redator: sem `contatos`, a porta fecha.
+      if (!contatoVisivel && leituraExigeAreaContatos(modelo, p.metodo)) return NEGADO_AREA;
+      return { ok: true, installationId, contatoVisivel };
     }
     return NEGADO_AREA;
   } catch {

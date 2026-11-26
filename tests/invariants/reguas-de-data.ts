@@ -50,6 +50,7 @@ import type pg from "pg";
 
 import { precisaRenovar } from "@/lib/agenda/google/oauth";
 import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
+import { emMs } from "@/lib/agent-engine/edge/crm/debounce";
 import { midiaDerivavelPendente } from "@/lib/agent-engine/edge/crm/midia-derivavel";
 import { idadeNoStatusEmMs } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { normalizarInstante } from "@/lib/ai/elegibilidade/gate";
@@ -345,6 +346,19 @@ export function reguasDeData(pool: pg.Pool): ReguaDeData[] {
       // muda, que é exatamente o defeito que ela veio fechar.
       entrada: "valor",
       exercitar: (valorCru) => idadeNoStatusEmMs(valorCru, CHEGADA_MS) === 0,
+    },
+    {
+      nome: "emMs",
+      onde: "lib/agent-engine/edge/crm/debounce.ts:145",
+      // (#196) A âncora da rajada do inbound: `jobs.created_at` e o `run_after`
+      // vigente são lidos da linha do job — `timestamptz`, `Date` no driver `pg`
+      // e string no PostgREST/payload clonado. É essa conversão que decide se a
+      // janela PODE estender e de onde o teto conta. Recusar o `Date` devolveria
+      // `null`, e a rajada andaria só com a coalescência ancorada de antes, sem
+      // uma linha de erro: o modo de falha mudo que esta cerca existe para pegar.
+      entrada: "valor",
+      exercitar: (valorCru) =>
+        emMs(valorCru as Date | string | null | undefined) === CHEGADA_MS,
     },
   ];
 }

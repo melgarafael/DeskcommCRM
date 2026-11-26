@@ -98,6 +98,34 @@ describe("updateModuloDaInstalacao", () => {
   );
 });
 
+describe("módulo que ainda não liga (MODULOS_AINDA_NAO_LIGAVEIS)", () => {
+  it("ligar módulo que ainda não liga é recusado e nada é gravado nem auditado", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "campanha_por_email", ligado: true })).toEqual({
+      ok: false,
+      error: "modulo_ainda_nao_disponivel",
+    });
+    expect(deps.upsert).not.toHaveBeenCalled();
+    expect(acoes()).toEqual([]);
+  });
+
+  it("desligar módulo que ainda não liga continua permitido", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "campanha_por_email", ligado: false })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_CAMPANHA_POR_EMAIL", valor: "desligado" }),
+      expect.anything(),
+    );
+  });
+
+  it("ligar o chat no site agora é permitido (saiu de MODULOS_AINDA_NAO_LIGAVEIS)", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "canal_webchat", ligado: true })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_CANAL_WEBCHAT", valor: "ligado" }),
+      expect.anything(),
+    );
+    expect(acoes()).toEqual(["platform.modulo_updated"]);
+  });
+});
+
 describe("a chave da cobrança", () => {
   it("ligar grava a chave e não libera nada (a liberação é só do desligar)", async () => {
     expect(await updateModuloDaInstalacao({ modulo: "cobranca", ligado: true })).toEqual({ ok: true });

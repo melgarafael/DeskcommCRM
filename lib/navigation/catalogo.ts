@@ -955,9 +955,25 @@ export const NAV_CATALOG = [
     modulo: "honorarios",
   },
   {
+    // ── O PAINEL DE VENDAS ─────────────────────────────────────
+    //
+    // "Quanto vendi" numa tela só: cartões de Vendas, Valor vendido, Ticket
+    // médio e Conversão, o gráfico do período e a lista das vendas por funil e
+    // tag. Fonte: os negócios GANHOS (`lib/relatorios/painel-de-vendas.ts`).
+    // SÓ NO HUB ("Ver tudo em Análise") e no ⌘K: o menu lateral está no teto
+    // medido de 15 itens (`tests/unit/interface-por-empresa.test.ts`).
+    href: "/app/vendas",
+    label: "Vendas",
+    description: "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.",
+    icon: "CurrencyDollar",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
+  },
+  {
     href: "/app/metrics",
     label: "Desempenho",
-    description: "Funil e performance por atendente nos últimos 30 dias.",
+    description: "Atrito, funil e desempenho por atendente.",
     icon: "ChartBar",
     group: "analise",
     section: "Os números do período",
@@ -1195,6 +1211,23 @@ export const NAV_CATALOG = [
     group: "organizacao",
     section: "Sua empresa",
     minRole: "manager",
+  },
+  {
+    // #5128 — quais TIPOS de link a ficha e o funil mostram. O catálogo vivia
+    // fixo no código (`lib/leads/links-de-contato.ts`) e toda operação carregava
+    // campo que não usa: clínica não preenche TikTok, escritório não preenche
+    // Google Meu Negócio. Desmarcar não apaga valor nenhum — o ajuste é de TELA.
+    //
+    // `admin` e não `manager`: a escolha vale para a empresa inteira e esconde
+    // campo de todo mundo, o mesmo alcance da chave que a tela vizinha
+    // (`settings/catalogo`) grava. A rota de escrita cobra o mesmo papel.
+    href: "/app/settings/links-de-contato",
+    label: "Tipos de link do contato",
+    description: "Quais tipos de link a ficha do contato e o funil mostram.",
+    icon: "LinkIcon",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
   },
   {
     // A área única dos recursos opcionais (pedido do mantenedor, doc 73/80):

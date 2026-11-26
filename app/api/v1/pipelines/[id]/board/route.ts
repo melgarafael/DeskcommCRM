@@ -21,6 +21,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { extractBearer } from "@/lib/mcp/auth";
+import { moduloSemContato, redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -29,7 +30,12 @@ import {
   type PropostaAmbigua,
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
-import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
+import {
+  anexarDadosDoContato,
+  anexarNomeDoContato,
+  type LinhaDoContatoNoQuadro,
+  type NomeDoContatoNoQuadro,
+} from "@/lib/kanban/dados-do-contato";
 import {
   anexarAnexosAosNegocios,
   type LinhaDoAnexoNoQuadro,
@@ -358,6 +364,8 @@ async function withMarcadoresDoContato(
   supabase: SupabaseClient,
   organizationId: string,
   leadsDoQuadro: Lead[],
+  /** Só módulo sem `contatos`: lê também o nome, para o filtro de texto livre (a resposta continua sem ele). */
+  lerNome = false,
 ): Promise<{ leads: Lead[]; error: string | null }> {
   const contactIds = [
     ...new Set(leadsDoQuadro.map((l) => l.contact_id).filter((c): c is string => !!c)),
@@ -374,7 +382,21 @@ async function withMarcadoresDoContato(
   if (error) return { leads: leadsDoQuadro, error: error.message };
 
   const linhas = (data ?? []) as Array<{ id: string; tags: string[] | null } & LinhaDoContatoNoQuadro>;
-  const leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+  let leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+
+  // Só módulo sem `contatos`: uma leitura À PARTE do nome, que serve ao filtro de texto livre e é
+  // anulada na resposta. A consulta de cima fica igual para sessão e módulo com `contatos`.
+  if (lerNome) {
+    const nomes = await buscaEmLotes(contactIds, (lote) =>
+      supabase
+        .from("contacts")
+        .select("id, name, display_name, is_anonymized")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    );
+    if (nomes.error) return { leads: leadsDoQuadro, error: nomes.error.message };
+    leads = anexarNomeDoContato(leads, (nomes.data ?? []) as NomeDoContatoNoQuadro[]);
+  }
 
   const porContato = new Map<string, string[]>();
   for (const row of linhas) {
@@ -584,6 +606,12 @@ const COLUNAS_DO_QUADRO = [
   "description",
   "status",
   "lost_reason",
+  // #4191: a ficha do negócio desenha a classificação comercial a partir do
+  // card que o quadro já entregou — sem estas três, a ficha pediria uma
+  // segunda consulta só para saber se o negócio está classificado.
+  "nao_comercial_em",
+  "nao_comercial_motivo",
+  "nao_comercial_por",
   "position_in_stage",
   "value_cents",
   "recurring_value_cents",
@@ -632,6 +660,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       req,
       requestId,
       authz.idioma ?? IDIOMA_PADRAO,
+      authz,
     );
   }
 
@@ -660,6 +689,8 @@ async function responder(
   req: NextRequest,
   requestId: string,
   idioma: Idioma,
+  /** Só no caminho do token: módulo sem a área `contatos` não recebe dado de contato (Spec 33, F3). */
+  quemChama?: { actor: { type: string }; contatoVisivel?: boolean },
 ): Promise<Response> {
   const t = (texto: string) => traduzir(texto, idioma);
 
@@ -844,6 +875,7 @@ async function responder(
     supabase,
     (pipeline as Pipeline).organization_id,
     leadsComConversa.leads,
+    quemChama ? moduloSemContato(quemChama) : false,
   );
   if (leadsComMarcadores.error) {
     return fail("internal_error", leadsComMarcadores.error, 500, { requestId });
@@ -863,7 +895,7 @@ async function responder(
     ...(truncado ? { truncado: true as const } : {}),
   };
 
-  return ok(board, {
+  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, {
     requestId,
     headers: truncado ? { "X-Quadro-Truncado": "1" } : undefined,
   });

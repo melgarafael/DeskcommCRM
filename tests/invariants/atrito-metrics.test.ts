@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { razao } from "@/lib/metrics/atrito";
+
 import { GOV_ORG, GOV_PIPELINE, GOV_SESSION, GOV_STAGE, GOV_AGENT_A, lastLine, seedGov, sql } from "./gov-helpers";
 
 /**
@@ -57,11 +59,11 @@ const DE = "2026-03-01T00:00:00Z";
 const ATE = "2026-04-01T00:00:00Z";
 
 /** Chama a função como `authenticated` com os claims do usuário. */
-function atritoComo(userId: string, org: string, horas = 72): Record<string, Record<string, number | null>> {
+function atritoComo(userId: string, org: string, horas = 72, de = DE, ate = ATE): Record<string, Record<string, number | null>> {
   const out = sql(`
     set role authenticated;
     select set_config('request.jwt.claims', '{"sub":"${userId}"}', false);
-    select public.fn_atrito_metrics('${org}'::uuid, '${DE}'::timestamptz, '${ATE}'::timestamptz, ${horas});
+    select public.fn_atrito_metrics('${org}'::uuid, '${de}'::timestamptz, '${ate}'::timestamptz, ${horas});
   `);
   return JSON.parse(lastLine(out));
 }
@@ -77,7 +79,7 @@ beforeAll(() => {
     delete from public.agent_cases       where id in ('${CASO_1}', '${CASO_2}', '${CASO_VIZ}');
     delete from public.before_send_traces where job_id in ('${JOB_1}', '${JOB_2}');
     delete from public.job_queue          where id in ('${JOB_1}', '${JOB_2}');
-    delete from public.messages           where conversation_id in ('${CONV}', '${CONV_VIZ}');
+    delete from public.messages           where conversation_id in ('${CONV}', '${CONV_VIZ}', '${CONV_RESPONDIDA}');
     delete from public.crm_lead_activities where lead_id = '${LEAD_GANHO}';
     delete from public.crm_leads          where id = '${LEAD_GANHO}';
     delete from public.conversations      where id in ('${CONV}', '${CONV_VIZ}', '${CONV_RESPONDIDA}');
@@ -113,7 +115,19 @@ beforeAll(() => {
     insert into public.conversations
       (id, organization_id, contact_id, channel_session_id, status, last_outbound_at, last_inbound_at)
       values ('${CONV_RESPONDIDA}', '${GOV_ORG}', '${CONTATO_RESP}', '${GOV_SESSION}', 'open',
-              '2026-03-21T10:00:00Z', '2026-03-22T10:00:00Z');
+              '2026-03-21T00:00:00Z', '2026-03-22T10:00:00Z');
+
+    -- A conversa respondida também recebeu uma mensagem no dia anterior ao
+    -- follow-up que aparece em last_outbound_at.
+    insert into public.messages
+      (organization_id, conversation_id, channel_session_id, contact_id, type, direction, status, sent_via, sent_at)
+    values
+      ('${GOV_ORG}', '${CONV_RESPONDIDA}', '${GOV_SESSION}', '${CONTATO_RESP}', 'text',
+       'outbound', 'sent', 'system', '2026-03-20T00:00:00Z'),
+      ('${GOV_ORG}', '${CONV_RESPONDIDA}', '${GOV_SESSION}', '${CONTATO_RESP}', 'text',
+       'outbound', 'sent', 'system', '2026-03-21T00:00:00Z'),
+      ('${GOV_ORG}', '${CONV_RESPONDIDA}', '${GOV_SESSION}', '${CONTATO_RESP}', 'text',
+       'inbound', 'received', 'system', '2026-03-22T10:00:00Z');
 
     -- DUAS demandas encerradas na janela. followup_attempts 4 e 0 → média 2, máx 4.
     insert into public.agent_cases
@@ -261,6 +275,15 @@ describe("fn_atrito_metrics — abandono (Fase 2)", () => {
     expect(Number(m.cliente!.abandonos)).toBeLessThan(
       Number(m.cliente!.conversas_com_fala_nossa),
     );
+  });
+
+  it("mantém na base do dia a conversa com novo envio e resposta depois da janela", () => {
+    const { cliente } = atritoComo(GOV_AGENT_A, GOV_ORG, 72, "2026-03-20T00:00:00Z", "2026-03-21T00:00:00Z");
+    const abandonos = Number(cliente!.abandonos);
+    const conversas = Number(cliente!.conversas_com_fala_nossa);
+    expect(abandonos).toBe(1);
+    expect(razao(abandonos, conversas)).toBe(0.5);
+    expect(conversas).toBe(2);
   });
 
   it("a RÉGUA governa: janela larga o bastante não acusa abandono nenhum", () => {

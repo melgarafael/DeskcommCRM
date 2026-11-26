@@ -48,6 +48,30 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_search_contacts": { tokens: 135, motivo: BASE },
   "crm_get_contact": { tokens: 188, motivo: BASE },
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
+  // #4517 — a ficha editável e os quatro comandos de conversa, medidos na
+  // criação (2026-11-12) e remedidos neste head em 2026-11-18. Os quatro comandos
+  // são pequenos de propósito: um input só (o id da conversa, mais a revisão
+  // opcional) e uma descrição que ensina o EFEITO, não a rota.
+  "crm_update_contact": {
+    tokens: 627,
+    motivo: "ferramenta nova de edição de ficha (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_pause_ai": {
+    tokens: 243,
+    motivo: "ferramenta nova de pausa da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_resume_ai": {
+    tokens: 244,
+    motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_close_conversation": {
+    tokens: 256,
+    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_reopen_conversation": {
+    tokens: 242,
+    motivo: "ferramenta nova de reabertura por token (#4517), medida na criação (2026-11-12)",
+  },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
   "crm_get_conversation_history": {
@@ -56,9 +80,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
       "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
   },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
+  "crm_count_conversations": { tokens: 117, motivo: "#4996 (item 2): ferramenta nova, só leitura, 1 filtro (status). Conta conversas por status sem paginar crm_list_conversations (que traz prévia de mensagem). Medido, não somado à mão" },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
-  "crm_count_leads": { tokens: 317, motivo: "ferramenta nova: conta negócios sem listá-los, para o agente não paginar crm_list_leads só para responder 'quantos?'; 3 filtros (funil, etapa, status), sem responsável, de propósito, para pesar menos" },
+  "crm_count_leads": { tokens: 356, motivo: "#4996: ganhou por_etapa (+31 tokens) e a descrição passou a dizer que por_etapa traz só o stage_id, em vez de 'nunca ids' (+8, pedido do mantenedor no #5192): com ele o agente conta todas as etapas de um funil numa chamada, em vez de uma chamada por etapa (ou de paginar crm_list_leads). Base: 317 da ferramenta nova (3 filtros — funil, etapa, status —, sem responsável, de propósito, para pesar menos)" },
   "crm_list_lead_attachments": {
     tokens: 259,
     motivo:
@@ -82,7 +107,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
-  "crm_save_ai_agent_draft": { tokens: 1015, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens); nunca montada no turno do agente" },
+  "crm_save_ai_agent_draft": { tokens: 1019, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens), +4 com o provedor aimlapi no enum; nunca montada no turno do agente" },
   "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
   "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
   "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
@@ -114,8 +139,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_available_attendants": { tokens: 179, motivo: BASE },
   "crm_list_human_cases": { tokens: 149, motivo: BASE },
   "crm_get_human_case": { tokens: 208, motivo: BASE },
-  "crm_find_and_book_appointment": { tokens: 1028, motivo: BASE },
-  "crm_book_appointment": { tokens: 1203, motivo: BASE },
+  "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
+  "crm_book_appointment": { tokens: 1330, motivo: BASE },
   "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
@@ -242,7 +267,18 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // 45880 = 43286 + 2594 (2026-11-20), não somado à mão.
 // +39 de `crm_send_whatsapp_message` com media_storage_path e media_filename (#5034).
 // MEDIDO no merge com a main de 20/11: 45919 = 45880 + 39 (2026-11-20), não somado à mão.
-const TETO_TOTAL = 45919;
+// +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242), MEDIDO
+// neste head em 2026-11-18 contra a main de então. MEDIDO de novo no merge com a
+// main de 2026-11-22 (`b6c92fba97`, que já tinha 45919): 47531 = 45919 + 1612.
+// +31 do `por_etapa` em `crm_count_leads` (#4996). MEDIDO no rebase sobre a main de
+// 2026-11-23 (`da918574d`, que tinha 47531): 47562 = 47531 + 31, não somado à mão.
+// +117 de `crm_count_conversations` (#4996, item 2). MEDIDO neste head sobre a main de
+// 2026-11-24 (`ceaa51d67`, que tinha 47562): 47679 = 47562 + 117, não somado à mão.
+// +8 da descrição de `crm_count_leads` corrigida (por_etapa traz stage_id). MEDIDO: 47687 = 47679 + 8.
+// +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
+// MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
+// não somado à mão.
+const TETO_TOTAL = 47945;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

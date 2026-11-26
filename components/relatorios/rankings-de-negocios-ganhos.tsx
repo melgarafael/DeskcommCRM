@@ -51,11 +51,41 @@ const CELULA_DE_NOME = "w-full max-w-0 truncate";
 const CLASSE_DO_SELETOR =
   "rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11";
 
-export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string }) {
+/** O recorte (funil e tag) quando quem controla é a tela de fora. */
+export interface RecorteDeVendas {
+  pipelineId: string;
+  tag: string;
+}
+
+/**
+ * Sem `recorte`, o bloco guarda o próprio funil e a própria tag e desenha os
+ * seletores — é o uso do Faturamento. COM `recorte`, quem guarda é a tela de
+ * fora (o painel de vendas, que aplica o mesmo recorte aos cartões): o bloco
+ * usa o que recebe, avisa as mudanças por `aoMudarRecorte` (o clique numa tag
+ * do ranking incluído) e não desenha os seletores, que já estão no topo da tela.
+ */
+export function RankingsDeNegociosGanhos({
+  de,
+  ate,
+  recorte,
+  aoMudarRecorte,
+}: {
+  de: string;
+  ate: string;
+  recorte?: RecorteDeVendas;
+  aoMudarRecorte?: (recorte: RecorteDeVendas) => void;
+}) {
   const t = useT();
   const tagDeIdioma = useTagDeIdioma();
-  const [pipelineId, setPipelineId] = useState<string>("");
-  const [tag, setTag] = useState<string>("");
+  const [pipelineLocal, setPipelineLocal] = useState<string>("");
+  const [tagLocal, setTagLocal] = useState<string>("");
+  const controlado = recorte !== undefined;
+  const pipelineId = controlado ? recorte.pipelineId : pipelineLocal;
+  const tag = controlado ? recorte.tag : tagLocal;
+  const setPipelineId = (valor: string) =>
+    controlado ? aoMudarRecorte?.({ pipelineId: valor, tag }) : setPipelineLocal(valor);
+  const setTag = (valor: string) =>
+    controlado ? aoMudarRecorte?.({ pipelineId, tag: valor }) : setTagLocal(valor);
   const { data, isLoading, isError, isFetching, isPlaceholderData } = useCommercialReport({
     de,
     ate,
@@ -71,12 +101,16 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
   // estado no render (o padrão do React para estado derivado de props), e SÓ
   // com a resposta do período atual: a de `keepPreviousData` é do período
   // anterior e zeraria um filtro válido.
-  if (relatorio && !isPlaceholderData) {
-    const funilSumiu = pipelineId !== "" && !relatorio.opcoes.pipeline_ids.includes(pipelineId);
+  //
+  // CONTROLADO, quem zera é a tela de fora (o painel de vendas faz a mesma
+  // conta): avisar o pai DURANTE a renderização do filho seria atualizar outro
+  // componente no meio do render, que o React recusa.
+  if (!controlado && relatorio && !isPlaceholderData) {
+    const funilSumiu = pipelineLocal !== "" && !relatorio.opcoes.pipeline_ids.includes(pipelineLocal);
     const tagSumiu =
-      tag !== "" && !relatorio.opcoes.tags.includes(normalizarTagDoRelatorio(tag));
-    if (funilSumiu) setPipelineId("");
-    if (tagSumiu) setTag("");
+      tagLocal !== "" && !relatorio.opcoes.tags.includes(normalizarTagDoRelatorio(tagLocal));
+    if (funilSumiu) setPipelineLocal("");
+    if (tagSumiu) setTagLocal("");
   }
 
   const moldura = (conteudo: ReactNode) => (
@@ -84,9 +118,14 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
       <div>
         <h2 className="text-base font-semibold">{t("Negócios ganhos")}</h2>
         <p className="text-xs text-text-muted">
-          {t(
-            "Estes blocos somam os negócios marcados como ganhos no período — não as comandas dos números acima.",
-          )}
+          {/* "Os números acima" só existem no Faturamento (as comandas). No
+              painel de vendas, acima estão os cartões dos MESMOS negócios —
+              a frase do Faturamento ali diria o contrário do que a tela mostra. */}
+          {controlado
+            ? t("As vendas do período, por tag, cliente e funil, com o mesmo recorte dos cartões.")
+            : t(
+                "Estes blocos somam os negócios marcados como ganhos no período — não as comandas dos números acima.",
+              )}
         </p>
       </div>
       {conteudo}
@@ -96,7 +135,7 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
   if (isLoading) return moldura(<p className="text-sm text-text-muted">{t("Carregando…")}</p>);
 
   if (isError || !relatorio) {
-    return moldura(<p className="text-sm text-danger">{t("Erro ao carregar o relatório.")}</p>);
+    return moldura(<p className="text-danger text-sm">{t("Erro ao carregar o relatório.")}</p>);
   }
 
   if (relatorio.sem_dados) {
@@ -110,7 +149,11 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
     const contato = relatorio.contatos[contactId] ?? null;
     if (!contato) return t("Contato");
     return rotuloDoContato(
-      { display_name: contato.display_name, name: contato.name, phone_number: contato.phone_number },
+      {
+        display_name: contato.display_name,
+        name: contato.name,
+        phone_number: contato.phone_number,
+      },
       t,
     );
   };
@@ -126,54 +169,56 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
 
   return moldura(
     <>
-      <div className="flex flex-wrap items-end gap-3" data-testid="recorte-de-negocios-ganhos">
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
-          {t("Funil")}
-          <select
-            value={pipelineId}
-            data-testid="recorte-funil"
-            onChange={(e) => setPipelineId(e.target.value)}
-            className={CLASSE_DO_SELETOR}
-          >
-            <option value="">{t("Todos os funis")}</option>
-            {relatorio.opcoes.pipeline_ids.map((id) => (
-              <option key={id} value={id}>
-                {nomeDoFunil(id)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
-          {t("Tag")}
-          <select
-            value={tag}
-            data-testid="recorte-tag"
-            onChange={(e) => setTag(e.target.value)}
-            className={CLASSE_DO_SELETOR}
-          >
-            <option value="">{t("Todas as tags")}</option>
-            {relatorio.opcoes.tags.map((opcao) => (
-              <option key={opcao} value={opcao}>
-                {opcao}
-              </option>
-            ))}
-          </select>
-        </label>
-        {comRecorte && (
-          <button
-            type="button"
-            data-testid="recorte-limpar"
-            onClick={() => {
-              setPipelineId("");
-              setTag("");
-            }}
-            className="rounded-md border border-border px-3 py-2 text-sm text-text hover:bg-surface-elevated max-md:min-h-11"
-          >
-            {t("Limpar filtros")}
-          </button>
-        )}
-        {isFetching && <span className="text-xs text-text-muted">{t("Atualizando…")}</span>}
-      </div>
+      {!controlado && (
+        <div className="flex flex-wrap items-end gap-3" data-testid="recorte-de-negocios-ganhos">
+          <label className="flex flex-col gap-1 text-xs text-text-muted">
+            {t("Funil")}
+            <select
+              value={pipelineId}
+              data-testid="recorte-funil"
+              onChange={(e) => setPipelineId(e.target.value)}
+              className={CLASSE_DO_SELETOR}
+            >
+              <option value="">{t("Todos os funis")}</option>
+              {relatorio.opcoes.pipeline_ids.map((id) => (
+                <option key={id} value={id}>
+                  {nomeDoFunil(id)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-text-muted">
+            {t("Tag")}
+            <select
+              value={tag}
+              data-testid="recorte-tag"
+              onChange={(e) => setTag(e.target.value)}
+              className={CLASSE_DO_SELETOR}
+            >
+              <option value="">{t("Todas as tags")}</option>
+              {relatorio.opcoes.tags.map((opcao) => (
+                <option key={opcao} value={opcao}>
+                  {opcao}
+                </option>
+              ))}
+            </select>
+          </label>
+          {comRecorte && (
+            <button
+              type="button"
+              data-testid="recorte-limpar"
+              onClick={() => {
+                setPipelineId("");
+                setTag("");
+              }}
+              className="rounded-md border border-border px-3 py-2 text-sm text-text hover:bg-surface-elevated max-md:min-h-11"
+            >
+              {t("Limpar filtros")}
+            </button>
+          )}
+          {isFetching && <span className="text-xs text-text-muted">{t("Atualizando…")}</span>}
+        </div>
+      )}
 
       {relatorio.negocios_ganhos === 0 ? (
         <p className="text-sm text-text-muted" data-testid="recorte-vazio">
@@ -299,8 +344,8 @@ export function RankingsDeNegociosGanhos({ de, ate }: { de: string; ate: string 
               </CardTitle>
               {relatorio.vendas_no_filtro > relatorio.vendas.length && (
                 <p className="text-xs text-text-muted">
-                  {t("Mostrando as vendas mais recentes:")} {relatorio.vendas.length}{" "}
-                  {t("de")} {relatorio.vendas_no_filtro}.
+                  {t("Mostrando as vendas mais recentes:")} {relatorio.vendas.length} {t("de")}{" "}
+                  {relatorio.vendas_no_filtro}.
                 </p>
               )}
             </CardHeader>
@@ -366,9 +411,7 @@ function avisosDoRelatorio(
 ): string[] {
   const avisos: string[] = [];
   if (relatorio.truncado) {
-    avisos.push(
-      t("Os números são um piso: a leitura foi interrompida antes do fim do período."),
-    );
+    avisos.push(t("Os números são um piso: a leitura foi interrompida antes do fim do período."));
   }
   if (relatorio.negocios_sem_valor > 0) {
     avisos.push(

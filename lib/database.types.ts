@@ -5523,6 +5523,7 @@ export type Database = {
         Row: {
           archived_at: string | null;
           consecutive_health_fails: number;
+          conversa_nova_cria_negocio: boolean;
           created_at: string;
           created_by: string | null;
           daily_message_limit: number;
@@ -5568,6 +5569,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null;
           consecutive_health_fails?: number;
+          conversa_nova_cria_negocio?: boolean;
           created_at?: string;
           created_by?: string | null;
           daily_message_limit?: number;
@@ -5612,6 +5614,7 @@ export type Database = {
         Update: {
           archived_at?: string | null;
           consecutive_health_fails?: number;
+          conversa_nova_cria_negocio?: boolean;
           created_at?: string;
           created_by?: string | null;
           daily_message_limit?: number;
@@ -6962,7 +6965,7 @@ export type Database = {
           created_at: string;
           evidence: Json | null;
           id: string;
-          lead_id: string;
+          lead_id: string | null;
           metadata: NonNullable<Json>;
           organization_id: string;
           payload: NonNullable<Json>;
@@ -6981,7 +6984,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id: string;
           payload?: NonNullable<Json>;
@@ -6999,7 +7002,7 @@ export type Database = {
           created_at?: string;
           evidence?: Json | null;
           id?: string;
-          lead_id?: string;
+          lead_id?: string | null;
           metadata?: NonNullable<Json>;
           organization_id?: string;
           payload?: NonNullable<Json>;
@@ -7348,6 +7351,8 @@ export type Database = {
           tags: string[];
           title: string;
           updated_at: string;
+          valor_digitado_cents: number | null;
+          valor_pelas_vendas: boolean;
           value_cents: number | null;
           webhook_source_id: string | null;
           won_reason: string | null;
@@ -7386,6 +7391,8 @@ export type Database = {
           tags?: string[];
           title: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -7423,6 +7430,8 @@ export type Database = {
           tags?: string[];
           title?: string;
           updated_at?: string;
+          valor_digitado_cents?: number | null;
+          valor_pelas_vendas?: boolean;
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
@@ -12841,7 +12850,9 @@ export type Database = {
       };
       platform_meta_app: {
         Row: {
+          app_id: string | null;
           app_secret_encrypted: string | null;
+          config_id: string | null;
           id: number;
           updated_at: string;
           updated_by: string | null;
@@ -12850,7 +12861,9 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;
@@ -12858,7 +12871,9 @@ export type Database = {
           verify_token_encrypted?: string | null;
         };
         Update: {
+          app_id?: string | null;
           app_secret_encrypted?: string | null;
+          config_id?: string | null;
           id?: number;
           updated_at?: string;
           updated_by?: string | null;
@@ -14005,6 +14020,7 @@ export type Database = {
           passada_do_banco: number | null;
           requested_by: string | null;
           retentativas_do_banco: number | null;
+          scheduled_for: string | null;
           status: string;
           to_version: string;
         };
@@ -14021,6 +14037,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14036,6 +14053,7 @@ export type Database = {
           passada_do_banco?: number | null;
           requested_by?: string | null;
           retentativas_do_banco?: number | null;
+          scheduled_for?: string | null;
           status?: string;
           to_version?: string;
         };
@@ -14320,6 +14338,74 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      vendas_registradas: {
+        Row: {
+          contact_id: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          data: string;
+          id: string;
+          lead_id: string | null;
+          observacao: string | null;
+          organization_id: string;
+          tags: string[];
+          updated_at: string;
+          valor_cents: number;
+        };
+        ComputedFields: never;
+        Insert: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents: number;
+        };
+        Update: {
+          contact_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          data?: string;
+          id?: string;
+          lead_id?: string | null;
+          observacao?: string | null;
+          organization_id?: string;
+          tags?: string[];
+          updated_at?: string;
+          valor_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vendas_registradas_lead_fk";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_contact_fk";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "vendas_registradas_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       voice_calls: {
         Row: {
@@ -16005,6 +16091,15 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      fn_conversation_release_if_idle: {
+        Args: {
+          p_conversation_id: string;
+          p_expected_assignee: string;
+          p_organization_id: string;
+          p_sem_sinal_humano_desde: string;
+        };
+        Returns: boolean;
       };
       fn_conversation_scope: {
         Args: Record<PropertyKey, never>;

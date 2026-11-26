@@ -159,6 +159,27 @@ describe("a instalação é TETO", () => {
   });
 });
 
+describe("chat no site agora pode ser ligado pela empresa (saiu de MODULOS_AINDA_NAO_LIGAVEIS)", () => {
+  it("com a instalação ligada, ligar o chat no site para a empresa é permitido e grava a linha", async () => {
+    deps.flagsLigadas = ["MODULO_CANAL_WEBCHAT"];
+    const r = await updateModuloDaEmpresa({ organizationId: ORG, modulo: "canal_webchat", estado: "ligado" });
+    expect(r).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ organization_id: ORG, modulo: "canal_webchat", estado: "ligado" }),
+      { onConflict: "organization_id,modulo" },
+    );
+  });
+
+  it("desligar o chat no site para a empresa continua permitido", async () => {
+    const r = await updateModuloDaEmpresa({ organizationId: ORG, modulo: "canal_webchat", estado: "desligado" });
+    expect(r).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ organization_id: ORG, modulo: "canal_webchat", estado: "desligado" }),
+      { onConflict: "organization_id,modulo" },
+    );
+  });
+});
+
 describe("desligar não apaga dado", () => {
   it("grava `desligado` tocando SÓ a tabela da decisão (organizations + organization_modules)", async () => {
     deps.linhaAnterior = { estado: "ligado" };

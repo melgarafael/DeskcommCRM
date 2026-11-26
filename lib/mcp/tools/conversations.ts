@@ -11,6 +11,7 @@ import { projetarDerivadoNoHistorico } from "@/lib/mcp/media-derived-read";
 import {
   listConversationsHandler,
   getConversationHandler,
+  countConversationsHandler,
 } from "@/app/api/v1/conversations/_handler";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
@@ -159,6 +160,38 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
       has_more: result.has_more,
     };
   },
+};
+
+// ---------------------------------------------------------------------------
+// count (#4996, item 2)
+// ---------------------------------------------------------------------------
+const countInputShape = {
+  status: z.enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"]).optional(),
+};
+
+export const crmCountConversations: McpToolDefinition<typeof countInputShape> = {
+  name: "crm_count_conversations",
+  description:
+    "Conta conversas por status e devolve só números (total e, sem filtro de status, o total por status), sem prévia nem mensagens. " +
+    "Para 'quantas conversas abertas/pendentes/com a IA?', use esta em vez de paginar crm_list_conversations. Em atendimento, conta só as conversas do contato desta conversa.",
+  inputSchema: countInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) =>
+    countConversationsHandler(
+      ctx.supabase,
+      {
+        organization_id: ctx.organizationId,
+        actor: ctx.actor,
+        requestId: ctx.requestId,
+      },
+      {
+        status: input.status,
+        // Escopo do turno NO WHERE, como na listagem (#2184).
+        contact_id: ctx.contatoDoTurno,
+      },
+    ),
 };
 
 const getInputShape = {

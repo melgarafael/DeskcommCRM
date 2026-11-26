@@ -115,7 +115,7 @@ Ao acionar: criar activity `handoff_triggered` com `metadata.trigger_reason` (`'
 
 Default: bot **não reassume**. Humano fica responsável até `conversation.status='resolved'`. Atendente pode reativar bot via botão "Passar pra IA"; ação auditada (`ai_reactivated_by_agent` activity). Após `resolved`, próxima conversation que abrir naquele contact começa com bot (default), exceto se `contacts.force_human=true` (§3.12). Sem retomada automática por "cliente voltou a engajar bem" no MVP — risco de oscilação confunde cliente.
 
-**ACs.** Handoff → bot silencioso até reativação ou resolved. "Passar pra IA" → próxima inbound com bot. Conversa resolvida + nova conversation 7 dias depois no mesmo contact → bot responde. Contact com `force_human=true` → bot nunca responde.
+**ACs.** Handoff → bot silencioso até reativação ou resolved. "Passar pra IA" (na tela, "Devolver ao automático") → próxima inbound com bot. Exceção opcional, por agente e desligada por padrão: com "Continuar a conversa assim que a equipe devolver ao automático" (`trigger_config.resume_on_handback`) ligada e a última fala da conversa sendo da equipe, o agente continua na hora, sem esperar a próxima inbound — e não fala se o cliente já respondeu, se a IA já falou depois da equipe ou se há follow-up vivo para o contato (`lib/escalacao/retomada-ao-devolver.ts`). Conversa resolvida + nova conversation 7 dias depois no mesmo contact → bot responde. Contact com `force_human=true` → bot nunca responde.
 
 ### 3.9 Logs de chamadas LLM
 

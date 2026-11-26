@@ -57,6 +57,7 @@ const MOTIVOS_DE_RITMO: ReadonlySet<string> = new Set([
   "pacing_throttle",
   "daily_cap",
   "warmup_cap",
+  "followup_cap",
 ]);
 
 /**

@@ -42,9 +42,12 @@ import {
  *     exatamente isso). O `organization_id` na consulta é a única camada que
  *     confere a empresa DA LINHA — não é enfeite de índice;
  *  4. a segunda perna do eixo (`contact_id = C and lead_id is null`) casa zero
- *     linhas por construção: `crm_lead_activities.lead_id` é NOT NULL
- *     (`baseline.sql:1440`). Por isso o invariante (c) avalia o predicado sobre
- *     `values` e MEDE a nulabilidade, em vez de inserir linha impossível.
+ *     linhas por construção: até a migration 9466 (#4802, item 3),
+ *     `crm_lead_activities.lead_id` era NOT NULL (`baseline.sql:1440`). Desde a
+ *     9466 a coluna é anulável com FK `ON DELETE SET NULL` — a linha do
+ *     histórico sobrevive ao negócio —, então o invariante (c) MEDE as duas
+ *     metades (anulável e SET NULL) em vez de supor a nulabilidade, que é o que
+ *     mantinha a perna inalcançável.
  *
  * Namespace 859a (cada invariante roda no seu próprio banco, copiado do molde).
  */
@@ -370,9 +373,16 @@ describe("#4324 — a linha do tempo do negócio diz de qual empresa é", () => 
 
   /**
    * (c) A segunda perna do eixo (`contact_id = C and lead_id is null`) também
-   * carrega a empresa. Roda sobre `values` porque no banco real essa perna é
-   * inalcançável: `lead_id` é NOT NULL — o teste logo abaixo mede isso, para o
-   * dia em que deixar de ser.
+   * carrega a empresa. Roda sobre `values` porque o fixture não tem atividade
+   * órfã de negócio — mas desde a migration 9466 (#4802, item 3) a perna é
+   * ALCANÇÁVEL no banco real: `lead_id` deixou de ser NOT NULL e a FK virou
+   * `ON DELETE SET NULL`, para a linha do histórico sobreviver ao negócio.
+   *
+   * A nulabilidade é MEDIDA aqui, e a asserção é a regra do produto inteira:
+   * anulável **e** `SET NULL`. Só a primeira metade deixaria passar uma coluna
+   * anulável com `CASCADE` (a timeline continuaria morrendo com o negócio); só a
+   * segunda, uma FK `SET NULL` sobre coluna NOT NULL, que o Postgres nem aceita
+   * e que o caminho de instalação poderia divergir do da cadeia.
    */
   it("(c) a perna do contato respeita a empresa", () => {
     const nulavel = lastLine(
@@ -383,7 +393,18 @@ describe("#4324 — a linha do tempo do negócio diz de qual empresa é", () => 
            and column_name = 'lead_id'
       `),
     );
-    expect(nulavel).toBe("NO");
+    expect(nulavel).toBe("YES");
+
+    // `confdeltype = 'n'` é ON DELETE SET NULL (pg_constraint); 'c' seria CASCADE,
+    // que é o defeito que a 9466 conserta — apagar o negócio apagava a timeline.
+    const aoApagar = lastLine(
+      sql(`
+        select confdeltype from pg_constraint
+         where conname = 'crm_lead_activities_lead_id_fkey'
+           and conrelid = 'public.crm_lead_activities'::regclass
+      `),
+    );
+    expect(aoApagar).toBe("n");
 
     const condicao = condicaoSql(filtroDaPagina(ORG_A, LEAD_A, CONTATO_A));
     const saida = sql(`

@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { fetchDoServidor } from "@/lib/supabase/fetch-do-servidor";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { isPublicPath } from "@/lib/auth/public-paths";
+import { CAMINHO_DO_TUNEL, recusaDoTunelDoSentry } from "@/lib/sentry/tunel";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
 import { marcaDaSaida } from "@/lib/branding/saida";
@@ -79,6 +80,13 @@ export async function proxy(request: NextRequest) {
   // documentation of the intended deploy topology.
   const host = request.headers.get("host") ?? "";
   const isAdminSurface = host.startsWith("admin.") || pathname.startsWith("/admin");
+
+  // O túnel do Sentry é público (sem sessão), mas só para o projeto do DSN
+  // desta instalação, com teto de tamanho e de frequência. Ver `lib/sentry/tunel.ts`.
+  if (pathname === CAMINHO_DO_TUNEL) {
+    const recusa = await recusaDoTunelDoSentry(request, env.SENTRY_DSN);
+    if (recusa) return recusa;
+  }
 
   if (isPublicPath(pathname)) {
     return response;

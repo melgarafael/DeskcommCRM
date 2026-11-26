@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 
@@ -94,5 +95,137 @@ export function useArquivarFunil() {
     mutationFn: ({ id, definitivo }: { id: string; definitivo?: boolean }) =>
       apiClient.delete<Resposta>(definitivo ? `${doFunil(id)}?definitivo=1` : doFunil(id)),
     onSettled: reler,
+  });
+}
+
+/** O que amarra o funil ao resto do sistema, como a rota de arquivar conta. */
+export interface VinculosDoFunil {
+  negocios: number;
+  /** Os em andamento — os únicos que a transferência leva (doc 400, opção B). */
+  abertos: number;
+  fontes_de_webhook: number;
+  automacoes: number;
+}
+
+/**
+ * QUANTOS negócios estão vinculados ao funil (#4802, item 3).
+ *
+ * ⚠️ É A CONTAGEM DO SERVIDOR, e não uma conta feita na tela: sai da rota que usa
+ * a MESMA leitura do `DELETE` (recusa do arquivamento e contagem da confirmação
+ * não podem discordar). Enquanto ela não chega, `negocios` é `null` — a tela não
+ * afirma "0" antes de saber, porque uma decisão sobre o número errado é pior que
+ * uma frase de espera.
+ *
+ * `useEffect` e não `useQuery`: um número por funil aberto, com `ativo` mandando
+ * buscar só quando o painel abre. Sem cache para invalidar, e o painel é efêmero.
+ */
+export function useNegociosDoFunil(funilId: string, ativo: boolean, rodada = 0) {
+  const [estado, setEstado] = useState<{
+    negocios: number | null;
+    abertos: number | null;
+    carregando: boolean;
+    erro: string | null;
+  }>({ negocios: null, abertos: null, carregando: ativo, erro: null });
+
+  useEffect(() => {
+    if (!ativo) return;
+    let vivo = true;
+    setEstado({ negocios: null, abertos: null, carregando: true, erro: null });
+    apiClient
+      .get<{ data: VinculosDoFunil }>(`${doFunil(funilId)}/negocios`)
+      .then((r) => {
+        if (vivo) {
+          setEstado({ negocios: r.data.negocios, abertos: r.data.abertos, carregando: false, erro: null });
+        }
+      })
+      .catch((e: unknown) => {
+        if (vivo) {
+          setEstado({
+            negocios: null,
+            abertos: null,
+            carregando: false,
+            erro: e instanceof Error ? e.message : "erro",
+          });
+        }
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [funilId, ativo, rodada]);
+
+  return estado;
+}
+
+/** Uma etapa do funil, como o seletor de destino precisa dela. */
+export interface EtapaParaDestino {
+  id: string;
+  name: string;
+  is_won: boolean;
+  is_lost: boolean;
+}
+
+/**
+ * As etapas vivas de um funil (#4802, item 3) — o seletor de "etapa específica"
+ * do destino.
+ *
+ * `funilId` nulo = nada a buscar (o seletor não está aberto). A lista vem da rota
+ * que já serve a tela de etapas, e não de uma consulta nova: duas réguas para
+ * "quais etapas este funil tem" divergiriam no primeiro arquivamento.
+ */
+export function useEtapasDoFunil(funilId: string | null) {
+  const [estado, setEstado] = useState<{
+    etapas: EtapaParaDestino[];
+    carregando: boolean;
+  }>({ etapas: [], carregando: false });
+
+  useEffect(() => {
+    if (!funilId) {
+      setEstado({ etapas: [], carregando: false });
+      return;
+    }
+    let vivo = true;
+    setEstado({ etapas: [], carregando: true });
+    apiClient
+      .get<{ data: EtapaParaDestino[] }>(`${doFunil(funilId)}/stages`)
+      .then((r) => {
+        if (vivo) setEstado({ etapas: r.data ?? [], carregando: false });
+      })
+      .catch(() => {
+        // Sem lista, o seletor fica vazio e o botão não habilita — a tela não
+        // inventa etapa nenhuma para "resolver" a falha.
+        if (vivo) setEstado({ etapas: [], carregando: false });
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [funilId]);
+
+  return estado;
+}
+
+/** O pedido de transferência/remoção — o corpo que a rota aceita. */
+export type EscolhaSobreOsNegocios =
+  | { escolha: "transferir"; funil_id: string; etapa_id?: string | null }
+  | { escolha: "remover" };
+
+export interface RespostaDaEscolha {
+  escolha: "transferir" | "remover";
+  movidos: number;
+  restantes: number;
+  mensagem: string | null;
+}
+
+/**
+ * Executa a escolha sobre os negócios do funil (#4802, item 3).
+ *
+ * ⚠️ NÃO arquiva e não exclui — quem faz isso é o `DELETE` de sempre, DEPOIS
+ * desta escrita. Misturar as duas coisas aqui daria duas operações destrutivas
+ * numa chamada só, e a tela precisa poder dizer quantos negócios saíram antes de
+ * o funil sumir da lista.
+ */
+export function useMoverNegociosDoFunil() {
+  return useMutation({
+    mutationFn: ({ id, corpo }: { id: string; corpo: EscolhaSobreOsNegocios }) =>
+      apiClient.post<{ data: RespostaDaEscolha }>(`${doFunil(id)}/negocios`, corpo),
   });
 }

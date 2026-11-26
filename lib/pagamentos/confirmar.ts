@@ -239,6 +239,16 @@ async function registrarNaTimeline(
   movido: VereditoDoMovimento,
 ): Promise<void> {
   if (!recebimento.lead_id) return;
+  // O contato vai na linha: é por ele que a anonimização (LGPD) alcança o
+  // histórico de um negócio apagado (migration 9466). Ilegível = sem contato, e
+  // a linha segue (a timeline não derruba o pagamento).
+  const { data: doNegocio } = await admin
+    .from("crm_leads")
+    .select("contact_id")
+    .eq("organization_id", recebimento.organization_id)
+    .eq("id", recebimento.lead_id)
+    .maybeSingle();
+  const contactId = (doNegocio as { contact_id?: string | null } | null)?.contact_id ?? null;
   const valor = formatCents(recebimento.valor_cents, recebimento.moeda);
   const nomeDoProvedor = ehProvedorDeRecebimento(recebimento.provedor)
     ? NOME_DO_PROVEDOR[recebimento.provedor]
@@ -251,6 +261,7 @@ async function registrarNaTimeline(
   const r = await emitLeadActivity(admin, {
     organizationId: recebimento.organization_id,
     leadId: recebimento.lead_id,
+    contactId,
     type: "payment_confirmed",
     sourceModule: "pagamentos",
     sourceId: recebimento.id,

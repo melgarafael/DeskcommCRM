@@ -28,6 +28,7 @@ import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetent
 import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
+import { nomeDaIntegracaoDaMensagem } from "@/lib/messaging/nome-da-integracao";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -423,7 +424,18 @@ export function MessageBubble({
     // A integração falou, a IA não. Sem este ramo a bolha omite a autoria e o
     // dono lê a conversa como se tudo tivesse saído do CRM — que é o defeito do
     // #866 visto de dentro da tela.
-    if (message.sent_via === "system") return "Sistema";
+    //
+    // #5160: o NOME do token viaja GRAVADO na linha (`metadata.integration_actor_name`,
+    // escrito pelo handler com a linha de `api_tokens`, nunca com o `metadata`
+    // do cliente), porque o balão não faz join. Módulo conectado não grava nome
+    // — a identidade dele é o `slug`, não o nome da linha do token — e cai no
+    // rótulo genérico. Sem nome (linha antiga, token revogado) também: o
+    // rótulo diz o que o `sent_via` garante, sem inventar identificação.
+    // "Integração" passa por `t()`; o nome do token sai como cadastrado (#1046).
+    if (message.sent_via === "system") {
+      const nome = nomeDaIntegracaoDaMensagem(message.metadata);
+      return nome ? `${t("Integração")} · ${nome}` : t("Integração");
+    }
     if (message.sent_via === "external_device") return "Celular";
     if (message.sent_via === "user" || message.sent_via === "crm") {
       // "Você" exige as DUAS pontas: saber quem lê e saber quem enviou. Falta

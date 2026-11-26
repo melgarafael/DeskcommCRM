@@ -251,6 +251,32 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     reportaConversao: false,
     marcaLidasPorMensagem: false,
   },
+  /**
+   * Chat no site (Spec 36, F1): o widget no próprio site da empresa.
+   *
+   * Texto livre a qualquer hora, porque o visitante é quem abriu a conversa e a
+   * janela é a da própria sessão de chat. Sem custo por mensagem, sem limite de
+   * ritmo imposto por plataforma (`minIntervalMs: 0`), sem nota de voz e sem
+   * grupos. Tudo o que não se aplica fica `false`, medido na matriz, não
+   * deduzido.
+   */
+  webchat: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 0,
+    voiceNote: "none",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
+    phonebook: false,
+    statusUpdates: false,
+    reportaConversao: false,
+    marcaLidasPorMensagem: false,
+  },
 };
 
 /**
@@ -354,6 +380,9 @@ export const PROVIDERS_DE_MENSAGEM = [
   // fala com quem o iniciou. `PROVIDERS_DE_TELEFONE` fica de fora de propósito,
   // e o motivo está lá embaixo.
   "telegram",
+  // Chat no site (Spec 36): texto livre na conversa aberta pelo visitante. Sem
+  // telefone, pela mesma razão do Telegram.
+  "webchat",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -381,7 +410,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
-] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram">[];
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram" | "webchat">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
@@ -470,8 +499,11 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
  * não num `false` falso na capability de janela: mentir na janela mudaria o
  * que o atendimento pode fazer só para esconder a campanha.
+ *
+ * O chat no site (Spec 36) pelo mesmo motivo: só responde a quem está na página
+ * e abriu a conversa; não há a quem disparar em massa.
  */
-const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS_SEM_CAMPANHA = ["telegram", "webchat"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).

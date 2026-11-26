@@ -39,6 +39,7 @@ const COMPROMISSO_DA_A = "44444444-4444-4444-8444-444444444444";
 const COMPROMISSO_DA_B = "55555555-5555-4555-8555-555555555555";
 const CONTRATO_DA_A = "66666666-6666-4666-8666-666666666666";
 const CONTRATO_DA_B = "77777777-7777-4777-8777-777777777777";
+const ID_INEXISTENTE = "88888888-8888-4888-8888-888888888888";
 
 let empresaAtiva = A;
 let mundo = bancoDeDuasEmpresas();
@@ -116,6 +117,26 @@ describe("POST /api/v1/financeiro/comandas — o vínculo é da empresa ativa", 
     expect(mundo.escritas()).toEqual([]);
   });
 
+  it("a recusa do atendimento de outra empresa é a MESMA do inexistente — não confirma que ele existe", async () => {
+    const deOutraEmpresa = await abrir({ appointment_id: COMPROMISSO_DA_B }).then((r) => r.json());
+    const inexistente = await abrir({ appointment_id: ID_INEXISTENTE }).then((r) => r.json());
+
+    expect(deOutraEmpresa.error).toEqual(inexistente.error);
+    expect(deOutraEmpresa.error.message).not.toContain(COMPROMISSO_DA_B);
+  });
+
+  it("com a empresa B ativa, o atendimento da A é o recusado e só a comanda da B é gravada", async () => {
+    empresaAtiva = B;
+
+    const daB = await abrir({ appointment_id: COMPROMISSO_DA_B });
+    const daA = await abrir({ appointment_id: COMPROMISSO_DA_A });
+
+    expect(daB.status).toBe(200);
+    expect(daA.status).toBe(422);
+    expect((await daA.json()).error.code).toBe("financeiro_agendamento_fora_da_empresa");
+    expect(mundo.linhas("sales").map((s) => s.organization_id)).toEqual([B]);
+  });
+
   it("controle: cliente e atendimento da própria empresa abrem a comanda", async () => {
     const res = await abrir({ contact_id: CONTATO_DA_A, appointment_id: COMPROMISSO_DA_A });
 
@@ -164,11 +185,25 @@ describe("GET /api/v1/honorarios/contratos/[id]/parcelas — o contrato é da em
     expect(JSON.stringify(corpo)).not.toContain("parcela-b");
   });
 
-  it("contrato inexistente → o MESMO 404", async () => {
-    const res = await listar("88888888-8888-4888-8888-888888888888");
+  it("contrato inexistente → o MESMO 404, com a MESMA resposta do contrato de outra empresa", async () => {
+    const inexistente = await listar(ID_INEXISTENTE);
+    const deOutraEmpresa = await listar(CONTRATO_DA_B);
 
-    expect(res.status).toBe(404);
-    expect((await res.json()).error.code).toBe("not_found");
+    expect(inexistente.status).toBe(404);
+    const erro = (await inexistente.json()).error;
+    expect(erro.code).toBe("not_found");
+    expect((await deOutraEmpresa.json()).error).toEqual(erro);
+  });
+
+  it("com a empresa B ativa, o contrato da B lista e o da A é o 404", async () => {
+    empresaAtiva = B;
+
+    const daB = await listar(CONTRATO_DA_B);
+    const daA = await listar(CONTRATO_DA_A);
+
+    expect(daB.status).toBe(200);
+    expect((await daB.json()).data.map((p: { id: string }) => p.id)).toEqual(["parcela-b"]);
+    expect(daA.status).toBe(404);
   });
 
   it("controle: o contrato da própria empresa lista as parcelas dele", async () => {

@@ -664,7 +664,8 @@ export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
     };
   }
 
-  async function lerSituacao(p: { clienteRef: string; assinaturaRef?: string | null }): Promise<Situacao> {
+  /** `organizacao` é aceita e IGNORADA: não há assinatura de fora do Efi vinculada ao cliente (mesma razão da Stripe), e `assinaturaRef` continua sendo o atalho da linha. */
+  async function lerSituacao(p: { clienteRef: string; organizacao: string; assinaturaRef?: string | null }): Promise<Situacao> {
     if (p.assinaturaRef) {
       const lida = ler(
         z.object({ code: z.number().nullish(), data: assinaturaDoEfi }),
@@ -697,9 +698,9 @@ export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
     }
   }
 
-  /** O Efi não tem portal: "gerenciar" é pagar a cobrança aberta. Sem ela, `null` (409 `sem_portal`). */
-  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string }): Promise<string | null> {
-    return (await lerSituacao({ clienteRef: p.clienteRef })).linkDePagamento;
+  /** O Efi não tem portal: "gerenciar" é pagar a cobrança aberta. Sem ela, `null` (409 `sem_portal`). `organizacao` é aceita e ignorada (ver `lerSituacao`). */
+  async function urlDeGerenciar(p: { clienteRef: string; urlDeVolta: string; organizacao: string }): Promise<string | null> {
+    return (await lerSituacao({ clienteRef: p.clienteRef, organizacao: p.organizacao })).linkDePagamento;
   }
 
   return {

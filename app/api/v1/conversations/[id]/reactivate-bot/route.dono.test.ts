@@ -117,6 +117,9 @@ describe("reactivate-bot e o dono da conversa (#3436)", () => {
 
     expect(res.status).toBe(200);
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledTimes(1);
+    // "Devolver ao automático" é gesto de pessoa: o setor que a IA escolheu sai junto.
+    const [, input] = vi.mocked(devolverAtendimentoAoAgente).mock.calls[0]!;
+    expect(input).toMatchObject({ limparClassificacaoDaIa: true });
   });
 
   it("CONTROLE: agent na PRÓPRIA conversa devolve (200)", async () => {

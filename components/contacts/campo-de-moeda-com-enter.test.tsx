@@ -17,6 +17,12 @@ const estado = vi.hoisted(() => ({
   editarContato: vi.fn(),
 }));
 
+// O Valor do negócio consulta as vendas registradas (TanStack Query); aqui o negócio não tem venda.
+vi.mock("@/hooks/vendas/useVendasRegistradas", () => ({
+  useVendasDoNegocio: () => ({ data: [] }),
+  useRegistrarVenda: () => ({ mutateAsync: async () => ({}), isPending: false }),
+  useApagarVenda: () => ({ mutate: () => {}, isPending: false }),
+}));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useActiveOrg: () => ({ currency: estado.moeda, country: "BR", orgId: "org-1" }),
 }));
