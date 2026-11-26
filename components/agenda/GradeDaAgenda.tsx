@@ -525,7 +525,16 @@ function BlocoDeAgendamento({
 }: {
   agendamento: Agendamento;
   pessoa: Pessoa | undefined;
+  /**
+   * QUEM MAIS FOI CONVIDADO (#4006) — pessoas da equipe, resolvidas pelo pai.
+   *
+   * O card responde de quem é o bloco (a faixa) e com quem é o atendimento (a
+   * segunda linha); sem esta linha, o compromisso em que a pessoa foi convidada
+   * era indistinguível de um compromisso dela. Vem como `Pessoa[]` já filtrada:
+   * id de quem saiu da equipe não vira nome inventado nem quebra o card.
+   */
   convidados?: Pessoa[];
+  /** Quem conduz junto com o principal (#3067), com a mesma filtragem dos convidados. */
   conduzem?: Pessoa[];
   onAbrir?: (id: string) => void;
   fuso: string;
@@ -613,6 +622,10 @@ function BlocoDeAgendamento({
       aria-label={`${agendamento.titulo}, ${rotuloHora(comeca, fuso)} ${t("às")} ${rotuloHora(termina, fuso)}${
         agendamento.quemSeraAtendido ? `, ${t("com")} ${agendamento.quemSeraAtendido}` : ""
       }${pessoa ? `, ${t("atendido por")} ${pessoa.nome}` : ""}${
+        // Quem conduz junto e a equipe entram no rótulo SEMPRE, inclusive no
+        // compromisso curto em que a linha visível não cabe: é a única pista de
+        // que este bloco não é só do responsável para quem lê a agenda com leitor
+        // de tela (#4006, #3067).
         conduzem.length > 0 ? `, ${t("conduz com")} ${conduzem.map((p) => p.nome).join(", ")}` : ""
       }${convidados.length > 0
         ? `, ${t("com a equipe")} ${convidados.map((p) => p.nome).join(", ")}`
