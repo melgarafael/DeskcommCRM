@@ -32,6 +32,8 @@ vi.mock("@/lib/atendimento/origem", () => ({ observeServiceOrigin: async () => "
 import { getAction } from "@/lib/automation/actions";
 import "@/lib/automation/actions/create-or-move-lead";
 import type { ActionCtx } from "@/lib/automation/types";
+import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
+import { ehCopiaAbertaRepetida, recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 import { transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
 import { ORG_ID, PIPE, etapa, funilRow, makeDb, type LeadRow } from "@/tests/helpers/stages-db-double";
 
@@ -162,3 +164,48 @@ describe("#5281 — o 23505 do índice único vira a cópia que já existe", () 
     expect(db.tabelas.crm_leads.find((l) => l.id === ORIGEM)?.stage_id).toBe("perda");
   });
 });
+
+/**
+ * O MESMO índice, do outro lado: mover ou reabrir um card que viraria a segunda
+ * cópia aberta. A recusa do banco vira 409 `copia_aberta_no_funil`, não 500.
+ * Sabotagem: sem o mapeamento em `moveLeadHandler`, o caso cai no 500.
+ */
+describe("#5281 — reabrir a cópia quando já existe outra aberta no funil", () => {
+  const RECUSA = {
+    code: "23505",
+    message: 'duplicate key value violates unique constraint "crm_leads_clone_aberto_no_funil_uidx"',
+  };
+
+  it("a régua reconhece SÓ este índice, e fala espanhol", () => {
+    expect(ehCopiaAbertaRepetida(RECUSA)).toBe(true);
+    expect(ehCopiaAbertaRepetida({
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "uniq_crm_leads_org_source_external"',
+    })).toBe(false);
+    expect(ehCopiaAbertaRepetida({ code: "23514", message: RECUSA.message })).toBe(false);
+    expect(recusaDeCopiaAbertaPeloBanco(RECUSA, "es")).toEqual({
+      codigo: "copia_aberta_no_funil",
+      mensagem: "Este negocio ya tiene una copia abierta en este embudo. Continúa la atención por ella.",
+    });
+  });
+
+  it("moveLeadHandler (MCP, automação, IA): 409 copia_aberta_no_funil", async () => {
+    const perdida = { ...copiaAberta("copia-perdida"), pipeline_id: PIPE, stage_id: "perda", status: "lost", lost_reason: "price" };
+    const db = makeDb({
+      pipelines: [funilRow({ id: PIPE, name: "Vendas" })],
+      stages: ETAPAS,
+      leads: [perdida] as unknown as LeadRow[],
+      writeError: (_n, tabela) => (tabela === "crm_leads" && db.escritas.at(-1)?.tipo === "update" ? RECUSA : null),
+    });
+
+    const erro = await moveLeadHandler(
+      db.client as never,
+      { organization_id: ORG_ID, actor: { type: "user", id: "user-1" }, requestId: "req-1" },
+      "copia-perdida",
+      { to_stage_id: "aberta" },
+    ).catch((e: unknown) => e);
+
+    expect(erro).toMatchObject({ name: "ApiError", status: 409, code: "copia_aberta_no_funil" });
+  });
+});
+
