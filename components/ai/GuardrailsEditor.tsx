@@ -176,7 +176,7 @@ function GuardrailFields({
     return (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="space-y-1 md:col-span-2">
-          <Label className="text-xs">Pattern (regex)</Label>
+          <Label className="text-xs">{t("Padrão (regex)")}</Label>
           <Input
             value={item.pattern}
             onChange={(e) => onPatch({ pattern: e.target.value } as Partial<GuardrailItem>)}
@@ -185,7 +185,7 @@ function GuardrailFields({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Flags</Label>
+          <Label className="text-xs">{t("Opções da regex")}</Label>
           <Input
             value={item.flags ?? "i"}
             onChange={(e) => onPatch({ flags: e.target.value } as Partial<GuardrailItem>)}

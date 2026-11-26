@@ -65,6 +65,64 @@ describe("splitIntoBubbles", () => {
   });
 });
 
+// Abreviação não é fim de frase. Medido em produção (23/11/2026, clínica): um
+// parágrafo de 405 caracteres, com teto de 250, saiu em duas mensagens do WhatsApp
+// partidas em "Antes, o Dr." | "avalia seu sorriso…" — o ponto do "Dr." contava
+// como fim de frase, e o corte caiu no meio da frase.
+describe("splitIntoBubbles — abreviação não termina a frase", () => {
+  const terminaEmAbreviacao = /\b(Dr|Dra|Sr|Sra|Srta|Prof|Profa)\.$/;
+
+  it("o parágrafo real da clínica não sai partido em 'o Dr.' | 'avalia…'", () => {
+    const texto =
+      "Oi, Carla! Boa tarde. Aqui é a Ana, da equipe do Dr. Paulo. A faceta em resina é feita diretamente no consultório e geralmente em uma sessão mais longa. Antes, o Dr. avalia seu sorriso e planeja o tratamento de forma individual, priorizando a saúde e a função dos dentes para buscar um resultado natural. O que mais você gostaria de mudar no seu sorriso: a cor, o formato, o tamanho ou o alinhamento?";
+    const out = splitIntoBubbles(texto, 250);
+    expect(out.length).toBeGreaterThan(1); // continua partindo: o parágrafo passa do teto
+    for (const bolha of out) {
+      expect(bolha).not.toMatch(terminaEmAbreviacao);
+      expect(bolha.length).toBeLessThanOrEqual(250);
+    }
+    expect(out.join(" ")).toContain("o Dr. avalia seu sorriso");
+    expect(out.join(" ")).toBe(texto);
+  });
+
+  it("título seguido do nome (Dr. Paulo) não vira duas bolhas", () => {
+    const texto =
+      "A faceta em porcelana custa a partir de R$ 2.700 por dente. O total exato é definido na avaliação com o Dr. Paulo, que examina o sorriso e monta o planejamento.";
+    const out = splitIntoBubbles(texto, 120);
+    for (const bolha of out) expect(bolha).not.toMatch(terminaEmAbreviacao);
+    expect(out.join(" ")).toContain("com o Dr. Paulo");
+  });
+
+  it("vale para o espanhol e para o feminino (Dra., Sra.)", () => {
+    const texto =
+      "La Dra. Gómez atiende los lunes y los jueves. La Sra. Pérez confirma su cita por este mismo número.";
+    const out = splitIntoBubbles(texto, 60);
+    for (const bolha of out) expect(bolha).not.toMatch(terminaEmAbreviacao);
+    expect(out.join(" ")).toContain("La Dra. Gómez");
+    expect(out.join(" ")).toContain("La Sra. Pérez");
+  });
+
+  it("ponto seguido de minúscula não termina a frase (etc. e…)", () => {
+    const out = splitIntoBubbles(
+      "Levamos escova, fio, creme etc. e o kit de clareamento para a sua avaliação de amanhã.",
+      70,
+    );
+    for (const bolha of out) expect(bolha).not.toMatch(/etc\.$/);
+  });
+
+  it("o fim de frase de verdade continua partindo o parágrafo que estoura", () => {
+    const out = splitIntoBubbles(
+      "A avaliação é com o Dr. Paulo. Ela leva de 40 minutos a 1 hora. O endereço fica no centro.",
+      40,
+    );
+    expect(out).toEqual([
+      "A avaliação é com o Dr. Paulo.",
+      "Ela leva de 40 minutos a 1 hora.",
+      "O endereço fica no centro.",
+    ]);
+  });
+});
+
 // O parágrafo é a fronteira da bolha (medido em produção, 26/09/2026: com os
 // parágrafos juntados até o teto, a opção não tinha ajuste — teto alto virava
 // uma bolha só, teto baixo picotava o resumo do pedido no meio da linha).

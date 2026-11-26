@@ -31,6 +31,8 @@ const base: EstadoDeElegibilidade = {
   numeroDeTesteAutorizado: false,
   agora: AGORA,
   ttlMs: 21 * DIA,
+  // F4, Task 1: não se aplica nos testes do gate puro (a contagem é dos loaders).
+  tetoDoAnonimo: null,
 };
 
 describe("lerModoDoGate", () => {
@@ -468,5 +470,65 @@ describe("#3974 — conversa com dono: a IA continua barrada", () => {
     const d = decidirElegibilidade({ ...base, assigneeKind: "user", botSilencedUntil: null });
     expect(d.permite).toBe(false);
     expect(d.motivo).toBe("conversa_de_humano");
+  });
+});
+
+describe("F4, Task 1 — teto de respostas da IA para visitante anônimo", () => {
+  const teto = (limite: number, respostasDaIa: number | null) =>
+    ({ ...base, modo: "open", tetoDoAnonimo: { limite, respostasDaIa } } as const);
+
+  it("abaixo do teto: permite", () => {
+    const d = decidirElegibilidade(teto(20, 19));
+    expect(d).toEqual({ permite: true, motivo: "gate_aberto", bloqueioPorAllowlist: false });
+  });
+
+  it("no teto: veta com o motivo novo", () => {
+    const d = decidirElegibilidade(teto(20, 20));
+    expect(d).toEqual({
+      permite: false,
+      motivo: "teto_do_visitante_anonimo",
+      bloqueioPorAllowlist: false,
+    });
+  });
+
+  it("teto 1: a primeira resposta da IA já veta", () => {
+    const d = decidirElegibilidade(teto(1, 1));
+    expect(d.permite).toBe(false);
+    expect(d.motivo).toBe("teto_do_visitante_anonimo");
+  });
+
+  it("teto máximo 200: 199 permite, 200 veta", () => {
+    expect(decidirElegibilidade(teto(200, 199)).permite).toBe(true);
+    expect(decidirElegibilidade(teto(200, 200)).motivo).toBe("teto_do_visitante_anonimo");
+  });
+
+  it("respostasDaIa nulo (leitura falhou): passa com gate_aberto", () => {
+    const d = decidirElegibilidade(teto(20, null));
+    expect(d).toEqual({ permite: true, motivo: "gate_aberto", bloqueioPorAllowlist: false });
+  });
+
+  it("tetoDoAnonimo nulo (canal sem teto): não muda nada, permite", () => {
+    const d = decidirElegibilidade({ ...base, modo: "open", tetoDoAnonimo: null });
+    expect(d).toEqual({ permite: true, motivo: "gate_aberto", bloqueioPorAllowlist: false });
+  });
+
+  it("veto de contato interno vence o teto (ordem declarada)", () => {
+    const d = decidirElegibilidade({
+      ...base,
+      modo: "open",
+      contatoInterno: true,
+      tetoDoAnonimo: { limite: 20, respostasDaIa: 100 },
+    });
+    expect(d).toEqual({ permite: false, motivo: "contato_interno", bloqueioPorAllowlist: false });
+  });
+
+  it("o teto só conta respostas da IA: abaixo do teto com modo allowlist segue a régua de autorização", () => {
+    const d = decidirElegibilidade({
+      ...base,
+      modo: "allowlist",
+      aiAuthorizedAt: new Date(AGORA.getTime() - DIA),
+      tetoDoAnonimo: { limite: 20, respostasDaIa: 5 },
+    });
+    expect(d).toEqual({ permite: true, motivo: "autorizado", bloqueioPorAllowlist: false });
   });
 });

@@ -18,7 +18,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { createLeadHandler, type PersistirCriacaoDeLead } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 
 import { copiarAnexosDoClone, copiarObjetoPeloAdmin, type CopiarObjetoDoStorage } from "./anexos-do-clone";
@@ -36,6 +36,7 @@ export interface OpcoesDoClone {
    * é uma nova TENTATIVA do mesmo negócio).
    */
   ajustes?: Record<string, unknown>;
+  persistir?: PersistirCriacaoDeLead;
   /** Injetado no teste; em produção a cópia é sempre pelo cliente de serviço. */
   copiarObjeto?: CopiarObjetoDoStorage;
 }
@@ -48,7 +49,9 @@ export async function criarCloneNoFunil(
   opcoes: OpcoesDoClone = {},
 ): Promise<CloneComAnexos> {
   const payload = { ...montaPayloadDoClone(origem, etapa), ...(opcoes.ajustes ?? {}) };
-  const clone = await createLeadHandler(db, ctx, payload);
+  const clone = await createLeadHandler(
+    db, ctx, payload, opcoes.persistir ? { persistir: opcoes.persistir } : undefined,
+  );
   const anexos = await copiarAnexosDoClone(
     db,
     {

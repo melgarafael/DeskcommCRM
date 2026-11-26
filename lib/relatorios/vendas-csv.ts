@@ -31,6 +31,11 @@
  * medidas saem VAZIAS — `0` diria "respondeu na hora zero".
  */
 import { neutralizarFormula } from "@/lib/csv/neutralizar-formula";
+import {
+  parametrosDaJanela,
+  type DiasDoPeriodo,
+  type JanelaIso,
+} from "@/lib/metrics/periodo-do-desempenho";
 
 /** O separador do Excel em pt-BR — o mesmo de `lib/prospecting/exportar.ts`. */
 export const SEPARADOR = ";";
@@ -101,11 +106,6 @@ export function csvDoRelatorioDeVendas(linhas: readonly LinhaDoRelatorio[]): str
   return `\uFEFF${corpo.join("\r\n")}\r\n`;
 }
 
-/** `AAAA-MM-DD` de um instante — o mesmo corte que os outros exports usam. */
-function dia(instante: Date): string {
-  return instante.toISOString().slice(0, 10);
-}
-
 /**
  * `vendas-por-atendente-AAAA-MM-DD_a_AAAA-MM-DD.csv`.
  *
@@ -114,8 +114,8 @@ function dia(instante: Date): string {
  * JANELA EXPORTADA (não do dia de hoje): um arquivo de 30 dias baixado hoje e o
  * mesmo recorte baixado amanhã não podem se chamar igual na pasta de downloads.
  */
-export function nomeDoArquivoDoRelatorio(janela: { from: Date; to: Date }): string {
-  return `vendas-por-atendente-${dia(janela.from)}_a_${dia(janela.to)}.csv`;
+export function nomeDoArquivoDoRelatorio({ de, ate }: DiasDoPeriodo): string {
+  return `vendas-por-atendente-${de}_a_${ate}.csv`;
 }
 
 /**
@@ -125,7 +125,8 @@ export function nomeDoArquivoDoRelatorio(janela: { from: Date; to: Date }): stri
  * sair com o recorte visível em vez do mundo inteiro. Puro para o botão poder
  * ser medido sem navegador.
  */
-export function urlDaExportacao(ownerUserId?: string | null): string {
-  const qs = ownerUserId ? `?owner_user_id=${encodeURIComponent(ownerUserId)}` : "";
-  return `/api/v1/reports/vendas/export${qs}`;
+export function urlDaExportacao(ownerUserId?: string | null, janela?: JanelaIso): string {
+  const busca = parametrosDaJanela(janela);
+  if (ownerUserId) busca.set("owner_user_id", ownerUserId);
+  return `/api/v1/reports/vendas/export${busca.size ? `?${busca}` : ""}`;
 }

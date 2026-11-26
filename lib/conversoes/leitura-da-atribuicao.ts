@@ -1,5 +1,6 @@
 /**
- * Ler de qual anúncio o contato veio — o outro lado da 0164.
+ * Ler o clique que identifica a conversão. A etapa Google usa o retrato
+ * capturado no nascimento do negócio; as demais conversões usam o primeiro toque do contato.
  *
  * A 0164 (`lib/leads/atribuicao-de-anuncio.ts`) ESTAMPA a atribuição no contato,
  * com guarda de primeiro toque e merge atômico no banco. Este arquivo é o
@@ -15,6 +16,7 @@ import {
   lerIdentificadoresGoogle,
   type IdentificadoresGoogle,
 } from "@/lib/plataformas-de-anuncio/google/identificadores";
+import { idDaContaGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
@@ -33,6 +35,8 @@ export interface AtribuicaoParaEnvio {
    */
   identidadeDoNavegador?: { fbc: string | null; fbp: string | null };
   identificadoresGoogle?: IdentificadoresGoogle;
+  /** Customer ID estampado junto com o clique que será enviado. */
+  contaGoogleDoClique?: string;
 }
 
 export type LeituraDeAtribuicao =
@@ -50,23 +54,25 @@ export async function lerAtribuicao(
   admin: SupabaseClient,
   organizationId: string,
   contactId: string | null,
+  negocioDaEtapaGoogle?: { source_metadata?: unknown },
 ): Promise<LeituraDeAtribuicao> {
   if (!contactId) return { temAtribuicao: false, motivo: "sem_contato" };
 
-  const { data, error } = await admin
+  const { data: linha, error } = await admin
     .from("contacts")
-    .select("phone_number, source_metadata")
+    .select(negocioDaEtapaGoogle ? "phone_number" : "phone_number, source_metadata")
     .eq("id", contactId)
     .eq("organization_id", organizationId)
-    .maybeSingle();
+    .maybeSingle<{ phone_number: string | null; source_metadata?: unknown }>();
 
   if (error) throw new Error("Não foi possível ler a origem do contato.");
-  if (!data) return { temAtribuicao: false, motivo: "sem_contato" };
-
-  const linha = data as { phone_number: string | null; source_metadata: unknown };
+  if (!linha) return { temAtribuicao: false, motivo: "sem_contato" };
+  const metadata = negocioDaEtapaGoogle
+    ? negocioDaEtapaGoogle.source_metadata
+    : linha.source_metadata;
   const meta =
-    linha.source_metadata && typeof linha.source_metadata === "object"
-      ? (linha.source_metadata as Record<string, unknown>)
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
       : {};
 
   const clique = typeof meta.ad_source_id === "string" ? meta.ad_source_id.trim() : "";
@@ -124,18 +130,47 @@ export async function lerAtribuicao(
       : null;
   if (meta.ad_platform === "google_ads" && !ids)
     return { temAtribuicao: false, motivo: "sem_atribuicao" };
+  if (negocioDaEtapaGoogle && ids && clique !== (ids.gclid ?? ids.gbraid ?? ids.wbraid))
+    return { temAtribuicao: false, motivo: "sem_atribuicao" };
+  const conta = ids ? idDaContaGoogle.safeParse(meta.google_customer_id).data : undefined;
 
   return {
     temAtribuicao: true,
     atribuicao: {
       plataforma: meta.ad_platform,
       ...(ids ? { identificadoresGoogle: ids } : {}),
+      ...(conta ? { contaGoogleDoClique: conta } : {}),
       cliqueDeOrigem: clique,
       // Só dígitos: a plataforma exige E.164 sem `+` nem separadores ANTES do
       // hash. Normalizar depois do hash seria tarde — o hash já estaria errado.
       telefone,
     },
   };
+}
+
+/** Com uma única conta, o destino pode ser a gerente e o clique vir da conta filha. */
+export async function motivoDeContaDaEtapaGoogle(
+  admin: SupabaseClient,
+  organizationId: string,
+  contaDoClique: string | undefined,
+  contaDeDestino: string | undefined,
+) {
+  const destino = idDaContaGoogle.safeParse(contaDeDestino).data;
+  if (!destino) return "credencial_incompleta";
+  if (contaDoClique === destino) return null;
+
+  // A credencial de conversões já conta como uma conta. Basta uma conta de
+  // relatório diferente dela; a PK da tabela é (organization_id, customer_id).
+  const { data: outraConta, error } = await admin
+    .from("google_ads_reporting_accounts")
+    .select("customer_id")
+    .eq("organization_id", organizationId)
+    .neq("customer_id", destino)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error("Não foi possível verificar as contas de relatório do Google Ads.");
+  if (!outraConta) return null;
+  return contaDoClique ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente";
 }
 
 /**

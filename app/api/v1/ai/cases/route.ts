@@ -64,12 +64,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
     // Token: admin é org-wide por desenho (o mesmo que a RLS devolveria), então
     // o recorte é "todas"; a organização continua filtrada em toda consulta.
+    // O universo acompanha a aba: na de abertos, só as conversas dos casos
+    // abertos entram no recorte (#5255).
+    const estado = parsed.data.status === "open" ? "abertos" : "fechados";
     const visiveisPara: ConversasVisiveis =
       authz.via === "token"
         ? "todas"
-        : await conversasVisiveisDosCasos(authz.supabase, org.orgId);
+        : await conversasVisiveisDosCasos(authz.supabase, org.orgId, { estado });
     const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
-      estado: parsed.data.status === "open" ? "abertos" : "fechados",
+      estado,
       visiveisPara,
       contatoSeparado: authz.via === "token",
     });

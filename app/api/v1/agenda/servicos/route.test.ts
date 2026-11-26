@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { rpcDoServico } from "@/lib/agenda/servicos/escrita";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 /**
  * Doc 283 (A): o LUGAR da agenda (mesa, camarote, quadra — #4029) é o módulo
@@ -13,6 +13,9 @@ import { POST } from "./route";
  * (exigência com unidades) segue como sempre, com o módulo ligado ou não.
  */
 
+vi.mock("@/lib/auth/require-role", () => ({
+  requireRole: vi.fn(async () => ({ ok: true, response: null, org: { orgId: "org-1" }, user: { idioma: "pt-BR" } as never })),
+}));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/api/auth-dual", () => ({
   resolveAuthDual: vi.fn(async () => ({ ok: true, organizationId: "org-1", actor: { type: "user", id: "u-1" }, idioma: "pt-BR", apiTokenId: null })),
@@ -20,9 +23,27 @@ vi.mock("@/lib/api/auth-dual", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+import { createClient } from "@/lib/supabase/server";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn() }));
 vi.mock("@/lib/agenda/servicos/escrita", () => ({ rpcDoServico: vi.fn(async () => ({ id: "r-1" })) }));
+vi.mock("@/lib/agenda/servicos/consulta", () => ({
+  lerServico: vi.fn(async () => null),
+  consultarServico: vi.fn(async () => ({ candidates: [], availability: [] })),
+}));
+vi.mock("@/lib/agenda/google/sync-store", () => ({ googleRpc: vi.fn(async () => []) }));
+
+const cadeia = {
+  select: vi.fn(() => cadeia),
+  eq: vi.fn(() => cadeia),
+  is: vi.fn(() => cadeia),
+  order: vi.fn(() => cadeia),
+  limit: vi.fn(() => cadeia),
+  maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+};
+const db = { from: vi.fn(() => cadeia) };
+
+vi.mocked(createClient).mockReturnValue(db as never);
 
 function pedido(input: Record<string, unknown>) {
   return new NextRequest("http://localhost/api/v1/agenda/servicos", {
@@ -32,7 +53,14 @@ function pedido(input: Record<string, unknown>) {
   });
 }
 
-beforeEach(() => vi.clearAllMocks());
+function req() {
+  return new NextRequest("http://localhost/api/v1/agenda/servicos", { method: "GET" });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(moduloLigado).mockResolvedValue(false);
+});
 
 describe("POST /api/v1/agenda/servicos — o lugar segue o módulo reservas_de_lugar", () => {
   it("desligado: criar um lugar responde 404 e não chega ao banco", async () => {
@@ -57,5 +85,24 @@ describe("POST /api/v1/agenda/servicos — o lugar segue o módulo reservas_de_l
     expect((await POST(pedido({ kind: "resource" }))).status).toBe(200);
     expect(rpcDoServico).toHaveBeenCalledTimes(2);
     expect(moduloLigado).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/agenda/servicos — lugares_ligado segue o módulo reservas_de_lugar", () => {
+  it("desligado: devolve lugares_ligado false", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(false);
+    const res = await GET(req());
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { lugares_ligado: boolean } };
+    expect(json.data.lugares_ligado).toBe(false);
+    expect(vi.mocked(moduloLigado).mock.calls[0]![1]).toBe("reservas_de_lugar");
+  });
+
+  it("ligado: devolve lugares_ligado true", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(true);
+    const res = await GET(req());
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { lugares_ligado: boolean } };
+    expect(json.data.lugares_ligado).toBe(true);
   });
 });
