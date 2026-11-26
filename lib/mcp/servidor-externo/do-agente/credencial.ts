@@ -33,12 +33,23 @@ import {
   revogar,
 } from "./oauth";
 import { urlDeInicioMcp, urlDoCallbackMcp } from "./enderecos";
+import { PRAZO_DO_LINK_MINUTOS_PADRAO, validadeDoLinkMs } from "./prazo-do-link";
 import type { ServidorDoAgenteComSegredo } from "./registro";
 
-/** Validade do link de autorização. */
-export const VALIDADE_DO_PEDIDO_MS = 10 * 60 * 1000;
+/**
+ * Validade PADRÃO do link de autorização — o que vale para quem não configurou
+ * nada. Desde a #5126 NÃO é a verdade única: `criarPedidoDeAutorizacao` calcula
+ * o `expira_em` a partir do prazo do SERVIDOR (`prazo_do_link_minutos`, faixa
+ * 10..1440) e usa este valor como fallback de ausente/inválido.
+ */
+export const VALIDADE_DO_PEDIDO_MS = PRAZO_DO_LINK_MINUTOS_PADRAO * 60 * 1000;
 /** Renova antes de chamar quando faltam menos que isto para expirar. */
 export const MARGEM_DE_RENOVACAO_MS = 60 * 1000;
+
+/** Quanto tempo o link DESTE servidor vale — prazo configurado, clampado, ou 10 min. */
+export function validadeDoPedidoDoServidor(servidor: Pick<ServidorDoAgenteComSegredo, "oauth">): number {
+  return validadeDoLinkMs(servidor.oauth?.prazo_do_link_minutos);
+}
 
 // ─── Pedido de autorização ───────────────────────────────────────────────────
 
@@ -69,7 +80,9 @@ export async function criarPedidoDeAutorizacao(
   },
 ): Promise<{ link: string; expiraEm: Date } | null> {
   const state = novoState();
-  const expiraEm = new Date(Date.now() + VALIDADE_DO_PEDIDO_MS);
+  // #5126: o prazo é do SERVIDOR (10..1440 min, padrão 10). O que expira é só o
+  // tempo de ABRIR o link; `state`, PKCE, `redirect_uri` e uso único não mudam.
+  const expiraEm = new Date(Date.now() + validadeDoPedidoDoServidor(entrada.servidor));
   const { error } = await supabase.from("mcp_oauth_pedidos").insert({
     id: state,
     organization_id: entrada.servidor.organizationId,
