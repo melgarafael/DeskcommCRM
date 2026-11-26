@@ -4,7 +4,8 @@
  *
  * Lista, adiciona, edita, remove e testa. Para `oauth_por_contato` mostra o que
  * a descoberta achou (authorization server, escopos, registro dinâmico,
- * revogação) e as opções de retenção e de escrita delegada, com o risco escrito.
+ * revogação) e as opções de retenção, de prazo do link de autorização (#5126)
+ * e de escrita delegada, com o risco escrito.
  * A ESCOLHA das ferramentas de cada servidor vai para o `tool_ids` da versão
  * (`mcp_externo:<servidor_id>:<marca>:<nome>`), pelo mesmo salvar do formulário
  * — as funções puras de `escolha-do-editor.ts` fazem a conta.
@@ -37,6 +38,12 @@ import {
   marcarRemota,
 } from "@/lib/mcp/servidor-externo/escolha-do-editor";
 import { escolhasDoServidor, type MarcaRemota } from "@/lib/mcp/servidor-externo/ids";
+import {
+  PRAZO_DO_LINK_MINUTOS_MAXIMO,
+  PRAZO_DO_LINK_MINUTOS_MINIMO,
+  PRAZO_DO_LINK_MINUTOS_PADRAO,
+  prazoDoLinkEmMinutos,
+} from "@/lib/mcp/servidor-externo/do-agente/prazo-do-link";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { randomId } from "@/lib/random-id";
 
@@ -87,6 +94,7 @@ interface Formulario {
   escoposPedidos: string[];
   escritaDelegada: boolean;
   retencaoHoras: number;
+  prazoDoLinkMinutos: number;
   ativo: boolean;
 }
 
@@ -100,6 +108,7 @@ const VAZIO: Formulario = {
   escoposPedidos: [],
   escritaDelegada: false,
   retencaoHoras: 0,
+  prazoDoLinkMinutos: PRAZO_DO_LINK_MINUTOS_PADRAO,
   ativo: true,
 };
 
@@ -114,6 +123,7 @@ function doServidor(s: ServidorNaTela): Formulario {
     escoposPedidos: s.escoposPedidos,
     escritaDelegada: s.escritaDelegada,
     retencaoHoras: s.retencaoHoras,
+    prazoDoLinkMinutos: prazoDoLinkEmMinutos(s.oauth?.prazo_do_link_minutos),
     ativo: s.ativo,
   };
 }
@@ -440,6 +450,26 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                   onChange={(e) => mudar({ retencaoHoras: Math.max(0, Math.min(720, Number(e.target.value) || 0)) })}
                 />
                 <p className="text-xs text-muted-foreground">{t("0 = o acesso é revogado assim que a conversa é encerrada.")}</p>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="mcp-prazo-do-link">{t("Prazo para abrir o link de autorização (minutos)")}</Label>
+                <Input
+                  id="mcp-prazo-do-link"
+                  type="number"
+                  min={PRAZO_DO_LINK_MINUTOS_MINIMO}
+                  max={PRAZO_DO_LINK_MINUTOS_MAXIMO}
+                  step={1}
+                  className="w-28"
+                  data-testid="prazo-do-link-mcp"
+                  value={f.prazoDoLinkMinutos}
+                  // Digitar "1440" passa por 1, 14, 144: o clamp só vale no blur.
+                  onChange={(e) => mudar({ prazoDoLinkMinutos: Number(e.target.value) || 0 })}
+                  onBlur={(e) => mudar({ prazoDoLinkMinutos: prazoDoLinkEmMinutos(e.target.value) })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("De 10 a 1440. O padrão é 10: passado esse tempo, o link vence e o cliente precisa pedir outro.")}
+                </p>
               </div>
 
               <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">

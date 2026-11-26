@@ -57,6 +57,13 @@ export const ApiErrorCodes = {
   agenda_horario_indisponivel: "agenda_horario_indisponivel",
   agenda_fora_da_jornada: "agenda_fora_da_jornada",
   agenda_tipo_desativado: "agenda_tipo_desativado",
+  agenda_responsaveis_teto: "agenda_responsaveis_teto", // 422: excedeu o teto de responsáveis adicionais
+  agenda_responsaveis_invalidos: "agenda_responsaveis_invalidos", // 422: responsável adicional inválido
+  agenda_tipo_invalido: "agenda_tipo_invalido", // 422: tipo de compromisso fora da organização
+  agenda_contato_invalido: "agenda_contato_invalido", // 422: contato fora da organização
+  agenda_dono_invalido: "agenda_dono_invalido", // 422: responsável principal fora da organização
+  agenda_conversa_invalida: "agenda_conversa_invalida", // 422: conversa fora da organização
+  agenda_equipe_invalida: "agenda_equipe_invalida", // 422: convidado da equipe fora da organização
   agenda_sem_responsavel: "agenda_sem_responsavel",
   agenda_disponibilidade_invalida: "agenda_disponibilidade_invalida",
   agenda_ja_cancelado: "agenda_ja_cancelado",
@@ -164,6 +171,7 @@ export const ApiErrorCodes = {
   // POST/PATCH /api/v1/attendants/sectors com nome que já existe na organização
   // (índice attendant_sectors_org_name_unique, migration 0801).
   sector_name_taken: "sector_name_taken",
+  responsavel_indisponivel: "responsavel_indisponivel",
   // POST /api/v1/ai/agents e PATCH .../agents/[id] com nome que a organização já
   // usa (índice ai_agents_name_unique, composto `(organization_id, name)` —
   // baseline.sql:1963). Era 500 "Erro ao criar agent."; #3952. A régua que separa
