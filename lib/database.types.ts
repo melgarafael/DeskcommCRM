@@ -3416,6 +3416,43 @@ export type Database = {
           },
         ];
       };
+      calendar_appointment_responsibles: {
+        Row: {
+          appointment_id: string;
+          created_at: string;
+          organization_id: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          appointment_id: string;
+          created_at?: string;
+          organization_id: string;
+          user_id: string;
+        };
+        Update: {
+          appointment_id?: string;
+          created_at?: string;
+          organization_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointment_responsibles_appointment_fk";
+            columns: ["organization_id", "appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "calendar_appointments";
+            referencedColumns: ["organization_id", "id"];
+          },
+          {
+            foreignKeyName: "calendar_appointment_responsibles_member_fk";
+            columns: ["organization_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "user_organizations";
+            referencedColumns: ["organization_id", "user_id"];
+          },
+        ];
+      };
       calendar_availability_exceptions: {
         Row: {
           created_at: string;
@@ -15777,6 +15814,10 @@ export type Database = {
         Args: { p_id: string; p_node?: string; p_org: string };
         Returns: boolean;
       };
+      fn_appointment_insert_with_responsibles: {
+        Args: { p_f: Json; p_org: string; p_responsibles: string[] };
+        Returns: Json;
+      };
       fn_appointment_recover: { Args: { p_event: string; p_org: string }; Returns: Json };
       fn_appointment_record_attendance: {
         Args: {
@@ -15787,6 +15828,10 @@ export type Database = {
           p_revision: number;
         };
         Returns: Json;
+      };
+      fn_appointment_responsible_ids: {
+        Args: { p_id: string; p_org: string };
+        Returns: string[];
       };
       fn_arquivos_da_organizacao: {
         Args: { p_apos_bucket?: string; p_apos_nome?: string; p_limite?: number; p_org: string };
