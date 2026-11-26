@@ -1,9 +1,9 @@
 # ADR-0008 — Fila como dono da conversa e como destino de entrada
 
-- **Status:** proposto
+- **Status:** aceito em 2026-11-26 pelo mantenedor (@melgarafael), na resposta ao documento de decisão do PR #4952, com as quatro respostas recomendadas (ver §Respostas do mantenedor); proposto por @webtecnica em 2026-11-18, na issue #4950
 - **Data:** 2026-11-18
-- **Contexto medido em:** `11c0206ba` (`main`, release 1.118.0)
-- **Relacionado:** #3817 (setores como destino, fatia 1), #3876 (fila no ⋯), #3881 (setor pela IA e pela automação), #4060 (atendente vê o próprio setor)
+- **Contexto medido em:** `11c0206ba` (`main`, release 1.118.0); os caminhos de código citados foram reconferidos em `ea624436b` (`main`, 26/11/2026)
+- **Relacionado:** #3817 (setores como destino, fatia 1), #3876 (fila no ⋯), #3881 (setor pela IA e pela automação), #4060 (atendente vê o próprio setor), #4953 (fatia 1 desta ADR: aba Fila na transferência)
 - **Origem:** operação real de escola e de clínica (ver §Motivação)
 
 ---
@@ -67,7 +67,10 @@ N:N com grupo padrão, e a atribuição pode parar no grupo (dono-fila) antes de
 Deskcomm é o único da lista em que a fila não pode possuir nada — e o substrato já está pago
 (`conversations.sector_id`, claim com escopo, RLS por setor, automação `define_sector`).
 
-## Decisões propostas
+## Decisões
+
+As decisões abaixo foram propostas em 18/11 e aceitas em 26/11. Onde a resposta do mantenedor
+fixou um ponto que o texto deixava aberto, a decisão já está escrita com a resposta.
 
 ### D1 — Fila de entrada por canal (opt-in, NULL = hoje)
 
@@ -91,7 +94,9 @@ Duas palavras, duas coisas — e misturá-las é o que faz a operação perder o
 
 Consequência de desenho: **`assigned_to_user_id IS NULL` deixa de ser "conversa de ninguém"** e passa a
 ser "conversa da fila, aguardando alguém do setor assumir". Não é coluna nova: o estado já existe; o
-que muda é a leitura que o produto faz dele.
+que muda é a leitura que o produto faz dele. **Decidido (resposta 1): não entra `owner_kind` nem outra
+coluna de dona.** "Tem fila e não tem pessoa" já diz que a conversa é da fila; uma coluna a mais seria
+a mesma informação em dois lugares, e um dia os dois discordariam.
 
 E o limite de permissão vem do que **já existe**, não de um degrau novo: transferir conversa é gesto de
 quem atende. `PUT /api/v1/conversations/[id]/sector` exige papel mínimo `agent`, e o diálogo de
@@ -117,10 +122,22 @@ régua do `PUT /conversations/[id]/sector` (papel mínimo `agent`). Escolher fil
 (`release`) — as duas rotas já existem e já auditam (`conversation.sector_changed`,
 `conversation.released`). O motivo continua sendo campo único para as três abas.
 
+**Decidido (resposta 2): ao transferir para a fila, a pessoa sai por padrão, com um interruptor para
+ficar.** O motivo é o `claim`: ele só vence quando a conversa está sem pessoa
+(`app/api/v1/conversations/[id]/claim/route.ts`), então, se quem transferiu continuasse responsável,
+a próxima pedagoga não assumiria com um clique e o caso da escola não se resolveria. O interruptor só
+existe quando a conversa está com quem transfere — o `release` recusa quem não é o responsável
+atual —, e conversa que já estava sem pessoa volta para a distribuição ao mudar de fila. É o que o
+#4953 implementa.
+
 Isso resolve o caso da escola em **um gesto**: Secretaria atendeu, pai pediu Pedagogia → transferir
 para a fila Pedagogia; a próxima pedagoga disponível assume.
 
-### D4 — Rodízio dentro da fila
+### D4 — Rodízio dentro da fila (já existe desde o #3817)
+
+**Esta decisão já está na `main`:** `lib/routing/eligibles.ts`, no ramo `scope.kind === "sector"`
+(migração 9062, PR #3817), faz exatamente a interseção descrita abaixo — e a pergunta 3 ficou
+respondida pelo código, do jeito que este texto propunha. Fica registrada aqui como parte do desenho.
 
 Com fila definida na conversa, os elegíveis são **membros do setor** ∩ abertura ∩ disponibilidade ∩
 folga (o mesmo `loadEligibleAttendants` de hoje). `channel_routing_responsibles` continua valendo
@@ -131,7 +148,7 @@ lista do canal não recebe conversa de fila.
 
 `own_and_sector` (migração 9214, #4022) já entrega a resposta para "usuários de um setor não veem as
 mensagens de outro": o atendente vê o que é dele **e** o que é do setor dele, e mais nada; gestor
-(viewer/manager/admin) continua org-wide. **Esta proposta não cria modo novo.**
+(viewer/manager/admin) continua org-wide. **Esta ADR não cria modo novo.**
 
 O que falta não é permissão — é o par dela:
 
@@ -139,16 +156,18 @@ O que falta não é permissão — é o par dela:
    dar fila de entrada a toda conversa nova;
 2. a tela de Distribuição passa a dizer o que o modo faz, inclusive esse caso — hoje o texto do
    "Atendente só vê o setor" não menciona a conversa órfã;
-3. pergunta aberta ao mantenedor: a restrição vale por **organização** (como os outros modos) ou pode
-   ser por **setor** (`attendant_sectors.restrito`), permitindo um setor fechado e outro aberto na
-   mesma empresa?
+3. **Decidido (resposta 3): a restrição continua valendo só por organização, por agora**, como os
+   outros modos. A opção por **setor** (`attendant_sectors.restrito`, um setor fechado e outro aberto
+   na mesma empresa) é mais uma regra de quem vê o quê, e ninguém pediu ainda; se pedirem, vira
+   pedido próprio.
 
-### D6 — (fora desta fatia) fila padrão por pessoa
+### D6 — (fora desta ADR) fila padrão por pessoa
 
 O Zendesk tem *default group por agente*. Aqui isso vira `user_organizations` → setor padrão, útil
-para orientar o "Assumir" de quem está em três setores. Fica registrado, não implementado.
+para orientar o "Assumir" de quem está em três setores. **Decidido (resposta 4): fica só anotado**,
+sem fatia nem implementação prevista.
 
-## Quem pode o quê (proposta)
+## Quem pode o quê
 
 | Gesto | viewer | agent | manager | admin |
 |---|---|---|---|---|
@@ -156,13 +175,19 @@ para orientar o "Assumir" de quem está em três setores. Fica registrado, não 
 | Devolver para a fila (release) | — | ✅ | ✅ | ✅ |
 | **Mover a conversa para qualquer fila** | — | ✅ | ✅ | ✅ |
 | Definir a **fila de entrada** do canal | — | — | — | ✅ |
-| Trocar o responsável por outra pessoa | — | — | ✅ | ✅ |
+| Transferir a conversa para outra pessoa | — | ✅ | ✅ | ✅ |
 | Ver conversas dos setores a que **pertence** (N:N) | — | ✅ | ✅ | ✅ |
 | Ver conversas de setor em que **não** é membro | — | — | ✅ (org-wide) | ✅ |
 
-Leitura: quanto mais a fila vira dono, mais o "assumir/devolver" é do atendente e menos o "classificar"
-é dele. É o inverso do que acontece hoje, em que qualquer `agent` move a fila pelo ⋯ e nenhum gestor
-define qual fila recebe o quê — e em que o multi-setor não muda nada, porque a fila nunca foi dono.
+Nenhuma linha desta tabela muda permissão: transferir para pessoa já é `agent`
+(`POST /api/v1/conversations/[id]/transfer`, `requireRole("agent")`), e mover de fila também
+(`PUT /conversations/[id]/sector`). A única linha nova é a fila de entrada do canal, que é
+configuração e fica com `admin`, como o resto da tela de Distribuição.
+
+Leitura: quanto mais a fila vira dono, mais o "assumir/devolver" é do atendente, e o "classificar" —
+qual fila recebe o quê na entrada — passa a ter dono na administração. Hoje qualquer `agent` move a
+fila pelo ⋯, e isso continua; o que falta é alguém definir a fila de entrada, e o multi-setor não muda
+nada porque a fila nunca foi dono.
 
 Quem pertence a vários setores vê e assume em todos eles — e pode mover a conversa para qualquer
 fila, como já pode transferir para qualquer colega. A diferença que a fila como dono introduz não é
@@ -191,33 +216,33 @@ motivo, em vez de sumir num acordo entre duas pessoas.
 
 ## Fatiamento
 
-| Fatia | Entrega | Muda política? |
-|---|---|---|
-| **1** | `ReassignDialog` com aba **Fila** (setor + liberar responsável) e o cabeçalho mostrando `Fila: Pedagogia · sem responsável` | não — usa rotas existentes |
-| **2** | `channel_routing_policies.sector_id` + tela de Distribuição + claim/rodízio por fila + invariante de banco | sim, opt-in |
-| **3** | texto e guarda do `own_and_sector` (9214 já implementado): aviso da conversa órfã + opção por setor, se o mantenedor quiser | sim, opt-in |
-| **4** | Fila padrão por pessoa (D6) | opt-in |
+**Decidido (resposta 4): um pedido por parte**, cada um com a sua própria medição.
+
+| Fatia | Entrega | Muda política? | Onde está |
+|---|---|---|---|
+| **1** | `ReassignDialog` com aba **Fila** (setor + liberar responsável) e o cabeçalho mostrando `Fila: Pedagogia · sem responsável` | não — usa rotas existentes | PR #4953 |
+| **2** | `channel_routing_policies.sector_id` + tela de Distribuição + claim por fila + invariante de banco (o rodízio por fila já existe, D4) | sim, opt-in | pedido próprio, com migração e prova pela tela |
+| **3** | texto e guarda do `own_and_sector` (9214 já implementado): aviso da conversa órfã | sim, opt-in | pedido próprio; a opção por setor fica de fora (resposta 3) |
+| **4** | Fila padrão por pessoa (D6) | opt-in | só anotada |
 
 A fatia 1 é a que fecha a dor relatada e não decide nada no núcleo; as fatias 2 e 3 são as que
-mexem em **disparo e fila** — e por isso estão aqui como proposta, não como código.
+mexem em **disparo e fila** — e por isso estão aqui como decisão, não como código.
 
-## Perguntas numeradas (para o mantenedor)
+## Respostas do mantenedor (26/11/2026)
 
-1. **Dono-fila sem coluna nova**: `assigned_to_user_id IS NULL` + `sector_id` preenchido é estado
-   suficiente para "a conversa é da fila", ou você prefere um `owner_kind` explícito
-   (`user` | `sector`)?
-2. **Transferir para fila**: mantém o responsável anterior até alguém do setor assumir (proposta —
-   evita conversa "solta" e o histórico diz quem entregou) ou libera na hora? E o atendente move para
-   **qualquer** fila (proposta, igual à transferência para pessoa), certo?
-3. **Rodízio**: `channel_routing_responsibles` vira subconjunto da fila (proposta) ou é ignorado
-   quando há fila definida?
-4. **Privacidade**: `own_and_sector` já existe por organização. Vale abrir a opção **por setor**
-   (`attendant_sectors.restrito`), para um setor fechado e outro aberto na mesma empresa, ou manter
-   só o modo da organização?
-5. **Nome de produto**: manter **Setor** (o que já está em tela, módulo e endpoints), ou renomear
-   para **Fila**/**Departamento** como o mercado? É PR de rótulo, sem migração.
-6. **Escopo desta proposta**: seguir o fatiamento acima (1 já como código, 2–3 depois da sua
-   decisão) ou você prefere uma fatia só com as quatro decisões juntas?
+As seis perguntas que esta ADR fazia, com o que as respondeu:
+
+1. **Dono-fila sem coluna nova** — `assigned_to_user_id IS NULL` + `sector_id` preenchido basta, ou
+   um `owner_kind` explícito? **Basta; sem coluna nova** (resposta 1, em D2).
+2. **Transferir para fila** — o responsável anterior fica ou sai? **Sai por padrão, com interruptor
+   para ficar** (resposta 2, em D3). E o atendente move para **qualquer** fila: **sim**, já decidido
+   na aprovação do #3817.
+3. **Rodízio** — `channel_routing_responsibles` vira subconjunto da fila? **Sim, e já é assim na
+   `main`** desde o #3817 (D4).
+4. **Privacidade** — opção **por setor** ou só o modo da organização? **Só o da organização, por
+   agora** (resposta 3, em D5).
+5. **Nome de produto** — **Setor** continua, já decidido na aprovação do #3817.
+6. **Escopo** — fatiamento ou fatia única? **Um pedido por parte** (resposta 4, em §Fatiamento).
 
 ## O que este ADR NÃO propõe
 
