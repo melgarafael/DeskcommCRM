@@ -366,7 +366,7 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   `teto_do_visitante_anonimo` segue a escolta do teto de gasto: a frase ao visitante sai antes da
   passagem, aviso que falha não impede a passagem, e passagem que falha encerra o turno sem chamar
   o modelo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
-  'teto_do_visitante_anonimo'` (migration 9470). Depois dela, o `force_human` veta a IA antes do
+  'teto_do_visitante_anonimo'` (migration 9493). Depois dela, o `force_human` veta a IA antes do
   teto, então a frase sai uma vez por conversa. **Não coberto:** o worker de quem ainda não
   publicou agente (`workers/ai-response-worker.ts`) continua só parando a IA no teto, sem frase nem
   passagem: ali o veto acontece antes de existir a fronteira do atendimento que a passagem exige.
