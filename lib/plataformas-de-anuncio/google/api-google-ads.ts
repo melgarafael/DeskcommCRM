@@ -49,10 +49,7 @@ export async function lerConexaoGoogleParaApi(
   organizationId: string,
   somenteCustomerId?: string,
 ): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
-  const leitura = await lerConexaoNativaParaDestinoGoogle(admin, organizationId);
-  if (leitura.ok && somenteCustomerId && leitura.dados.customerId !== somenteCustomerId)
-    return { ok: false, falha: "sem_conexao", detalhe: "Conecte a conta escolhida primeiro." };
-  return leitura;
+  return lerConexaoGoogle(admin, organizationId, undefined, somenteCustomerId);
 }
 
 /**
@@ -63,6 +60,15 @@ export async function lerConexaoNativaParaDestinoGoogle(
   admin: SupabaseClient,
   organizationId: string,
   destino?: DestinoGoogle,
+): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
+  return lerConexaoGoogle(admin, organizationId, destino);
+}
+
+async function lerConexaoGoogle(
+  admin: SupabaseClient,
+  organizationId: string,
+  destino?: DestinoGoogle,
+  somenteCustomerId?: string,
 ): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
   const { data, error } = await admin
     .from("ad_platform_connections")
@@ -77,7 +83,13 @@ export async function lerConexaoNativaParaDestinoGoogle(
     google_login_customer_id: string | null;
   } | null;
   const customerId = destino?.customerId ?? normalizarIdLegado(linha?.google_customer_id ?? "");
-  if (!linha?.google_refresh_token_encrypted || !customerId)
+  // O fallback de relatório só abre a credencial depois de provar, no mesmo
+  // SELECT da organização, que ela pertence à conta solicitada.
+  if (
+    !linha?.google_refresh_token_encrypted ||
+    !customerId ||
+    (somenteCustomerId && somenteCustomerId !== customerId)
+  )
     return {
       ok: false,
       falha: "sem_conexao",
