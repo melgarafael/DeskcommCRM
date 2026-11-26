@@ -117,7 +117,11 @@ export async function enviarSms(
   if (input.texto.trim().length === 0) throw new Error("sms_empty_body: mensagem de texto sem corpo.");
 
   const form = new URLSearchParams({ From: input.de, To: input.para, Body: input.texto });
-  if (input.avisoDeStatusUrl) form.set("StatusCallback", input.avisoDeStatusUrl);
+  // O aviso de status vai para a mesma URL do recebimento (mesma assinatura).
+  // Só https: o fornecedor recusa o envio inteiro por um callback inválido.
+  if (input.avisoDeStatusUrl && /^https:\/\//.test(input.avisoDeStatusUrl)) {
+    form.set("StatusCallback", input.avisoDeStatusUrl);
+  }
 
   const res = await fetchImpl(`${API_BASE}/Accounts/${creds.accountSid}/Messages.json`, {
     method: "POST",
@@ -358,11 +362,29 @@ export type LeituraDoSms =
   | { ok: false; campos: string[] };
 
 /**
+ * O webhook é um AVISO DE STATUS de uma mensagem que nós enviamos, e não um SMS
+ * que chegou? O fornecedor manda os dois para a mesma URL, com a mesma
+ * assinatura e quase os mesmos campos (`MessageSid`, `AccountSid`, `From`,
+ * `To`); o que separa é o `MessageStatus`, que só o aviso de status traz.
+ * `received`/`receiving` são o estado de um SMS que CHEGOU: se um dia vierem
+ * no recebimento, continuam sendo mensagem.
+ */
+export function ehAvisoDeStatus(params: Record<string, string>): boolean {
+  const estado = params.MessageStatus;
+  return typeof estado === "string" && estado.length > 0 && estado !== "received" && estado !== "receiving";
+}
+
+/**
  * Lê o webhook de mensagem recebida. Todo dado de fora passa pelo Zod antes
  * de virar contato e mensagem; o que não bate devolve os campos culpados,
  * para o log dizer o que veio errado em vez de "payload inválido".
+ *
+ * Aviso de status é recusado aqui também, e não só em quem chama: ele passa
+ * pelo schema de SMS recebido (o `Body` tem default) e viraria uma mensagem
+ * `inbound` vazia na conversa do contato.
  */
 export function lerSmsRecebido(params: Record<string, string>): LeituraDoSms {
+  if (ehAvisoDeStatus(params)) return { ok: false, campos: ["MessageStatus"] };
   const r = SmsRecebidoSchema.safeParse(params);
   if (!r.success) {
     return { ok: false, campos: [...new Set(r.error.issues.map((i) => String(i.path[0] ?? "?")))] };
@@ -376,6 +398,67 @@ export function lerSmsRecebido(params: Record<string, string>): LeituraDoSms {
       para: r.data.To,
       texto: r.data.Body,
       quantidadeDeMidias: r.data.NumMedia,
+    },
+  };
+}
+
+const AvisoDeStatusSchema = z.object({
+  MessageSid: z.string().regex(/^(SM|MM)[0-9a-f]{32}$/i),
+  AccountSid: z.string().regex(ACCOUNT_SID),
+  // No aviso de status o remetente é o número DA EMPRESA (quem enviou).
+  From: z.string().regex(E164),
+  MessageStatus: z.string().min(1),
+  ErrorCode: z.coerce.number().int().optional(),
+});
+
+/** O desfecho de um envio, já no vocabulário de `messages.status`. */
+export type DesfechoDoEnvio = "sent" | "delivered" | "failed";
+
+/** O aviso de status, já no vocabulário do CRM. */
+export interface AvisoDeStatus {
+  /** Id do fornecedor da mensagem que NÓS enviamos (`messages.external_id`). */
+  externalId: string;
+  contaId: string;
+  /** O número da empresa que enviou — tem de ser o da conexão. */
+  de: string;
+  /** `null` = estado intermediário (na fila, enviando): nada a gravar. */
+  desfecho: DesfechoDoEnvio | null;
+  /** Só no `failed`: a categoria da recusa e o código do fornecedor. */
+  motivo: MotivoDaRecusa | null;
+  codigo: number | null;
+}
+
+/**
+ * Estado do fornecedor → desfecho. `queued`, `accepted`, `sending` e
+ * `scheduled` são caminho, não desfecho; `read` só existe no WhatsApp do
+ * fornecedor, que este canal não usa.
+ */
+function desfechoDoEstado(estado: string): DesfechoDoEnvio | null {
+  if (estado === "sent") return "sent";
+  if (estado === "delivered") return "delivered";
+  if (estado === "undelivered" || estado === "failed" || estado === "canceled") return "failed";
+  return null;
+}
+
+export type LeituraDoAviso = { ok: true; aviso: AvisoDeStatus } | { ok: false; campos: string[] };
+
+/** Lê o aviso de status pelo Zod, como `lerSmsRecebido` faz com o SMS recebido. */
+export function lerAvisoDeStatus(params: Record<string, string>): LeituraDoAviso {
+  const r = AvisoDeStatusSchema.safeParse(params);
+  if (!r.success) {
+    return { ok: false, campos: [...new Set(r.error.issues.map((i) => String(i.path[0] ?? "?")))] };
+  }
+  const desfecho = desfechoDoEstado(r.data.MessageStatus);
+  const codigo = r.data.ErrorCode ?? null;
+  return {
+    ok: true,
+    aviso: {
+      externalId: r.data.MessageSid,
+      contaId: r.data.AccountSid,
+      de: r.data.From,
+      desfecho,
+      motivo: desfecho === "failed" ? motivoDaRecusa(codigo, 0) : null,
+      codigo: desfecho === "failed" ? codigo : null,
     },
   };
 }

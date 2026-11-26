@@ -6,6 +6,10 @@ const ingerirSmsRecebido = vi.fn();
 vi.mock("@/lib/channels/sms/ingest", () => ({
   ingerirSmsRecebido: (...a: unknown[]) => ingerirSmsRecebido(...a),
 }));
+const aplicarAvisoDeStatus = vi.fn();
+vi.mock("@/lib/channels/sms/status", () => ({
+  aplicarAvisoDeStatus: (...a: unknown[]) => aplicarAvisoDeStatus(...a),
+}));
 
 import {
   acceptsInboundWebhook,
@@ -58,6 +62,8 @@ describe("entrada do SMS", () => {
   beforeEach(() => {
     ingerirSmsRecebido.mockReset();
     ingerirSmsRecebido.mockResolvedValue({ status: "ingested", conversationId: "conv-1", messageId: "msg-1" });
+    aplicarAvisoDeStatus.mockReset();
+    aplicarAvisoDeStatus.mockResolvedValue({ status: "ingested", reason: "status_failed" });
   });
 
   it("a rota genérica aceita o canal de SMS", () => {
@@ -144,5 +150,60 @@ describe("entrada do SMS", () => {
     for (const outro of ["waha", "meta_cloud", "zernio", "zernio_social", "datafy"]) {
       expect(respostaDeRecebimentoDoCanal(outro)).toBeNull();
     }
+  });
+  describe("aviso de status (o recibo de entrega) na mesma URL", () => {
+    // No aviso, o número da conexão é o REMETENTE: quem enviou fomos nós.
+    const AVISO = {
+      MessageSid: "SM" + "b".repeat(32),
+      AccountSid: CONTA,
+      From: "+14155550199",
+      To: "+14155550100",
+      MessageStatus: "undelivered",
+      ErrorCode: "30003",
+    };
+    const entrada = (form: Record<string, string>) => ({
+      session: SESSAO,
+      rawBody: new URLSearchParams(form).toString(),
+      headers: headers(assinar(CHAVE, URL_PUBLICA, form)),
+      secret: CHAVE,
+      urlPublica: URL_PUBLICA,
+    });
+
+    it("vai para o desfecho da mensagem e NUNCA vira SMS recebido", async () => {
+      const r = await handleInboundWebhook(
+        adminComSessao({ twilio_account_sid: CONTA, phone_number: "+14155550199" }),
+        entrada(AVISO),
+      );
+      expect(r).toEqual({ ok: true, body: { status: "ingested", reason: "status_failed" } });
+      expect(ingerirSmsRecebido).not.toHaveBeenCalled();
+      expect(aplicarAvisoDeStatus).toHaveBeenCalledWith(expect.anything(), {
+        organizationId: "org-1",
+        channelSessionId: "sess-1",
+        aviso: expect.objectContaining({ externalId: AVISO.MessageSid, desfecho: "failed", codigo: 30003 }),
+      });
+    });
+
+    it("assinatura ruim continua 401, antes de olhar o tipo do evento", async () => {
+      const r = await handleInboundWebhook(
+        adminComSessao({ twilio_account_sid: CONTA, phone_number: "+14155550199" }),
+        { ...entrada(AVISO), headers: headers("assinatura-falsa") },
+      );
+      expect(r).toMatchObject({ ok: false, code: "unauthorized" });
+      expect(aplicarAvisoDeStatus).not.toHaveBeenCalled();
+    });
+
+    it("aviso de outra conta ou de outro número remetente é ignorado", async () => {
+      const outraConta = await handleInboundWebhook(
+        adminComSessao({ twilio_account_sid: "AC" + "f".repeat(32), phone_number: "+14155550199" }),
+        entrada(AVISO),
+      );
+      expect(outraConta).toEqual({ ok: true, body: { status: "ignored", reason: "outra_conta" } });
+      const outroNumero = await handleInboundWebhook(
+        adminComSessao({ twilio_account_sid: CONTA, phone_number: "+14155550111" }),
+        entrada(AVISO),
+      );
+      expect(outroNumero).toEqual({ ok: true, body: { status: "ignored", reason: "outro_numero" } });
+      expect(aplicarAvisoDeStatus).not.toHaveBeenCalled();
+    });
   });
 });

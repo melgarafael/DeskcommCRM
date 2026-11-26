@@ -52,7 +52,14 @@ import {
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import { ingerirSmsRecebido } from "./sms/ingest";
-import { assinaturaDoSmsValida, formularioDoWebhook, lerSmsRecebido } from "./sms/twilio";
+import { aplicarAvisoDeStatus } from "./sms/status";
+import {
+  assinaturaDoSmsValida,
+  ehAvisoDeStatus,
+  formularioDoWebhook,
+  lerAvisoDeStatus,
+  lerSmsRecebido,
+} from "./sms/twilio";
 import {
   atualizarEspelhoDoTemplate,
   avisoDoEvento,
@@ -717,7 +724,10 @@ async function smsInbound(admin: SupabaseClient, input: InboundWebhookInput): Pr
     return { ok: false, code: "unauthorized", message: "bad_signature" };
   }
 
-  const leitura = lerSmsRecebido(formularioDoWebhook(input.rawBody));
+  const params = formularioDoWebhook(input.rawBody);
+  if (ehAvisoDeStatus(params)) return smsStatusInbound(admin, input, params);
+
+  const leitura = lerSmsRecebido(params);
   if (!leitura.ok) {
     return {
       ok: false,
@@ -750,6 +760,50 @@ async function smsInbound(admin: SupabaseClient, input: InboundWebhookInput): Pr
     organizationId: input.session.organization_id,
     channelSessionId: input.session.id,
     sms,
+  });
+  return { ok: true, body: { ...r } };
+}
+
+/**
+ * Aviso de status de um SMS que enviamos (o recibo de entrega). Chega na mesma
+ * URL e com a mesma assinatura do SMS recebido, já conferida por quem chama.
+ * A mesma guarda de conta e número vale aqui, com o número da conexão no
+ * `From`: no aviso, quem enviou fomos nós.
+ */
+async function smsStatusInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+  params: Record<string, string>,
+): Promise<InboundWebhookOutcome> {
+  const leitura = lerAvisoDeStatus(params);
+  if (!leitura.ok) {
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `aviso de status fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+  const { aviso } = leitura;
+
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("twilio_account_sid, phone_number")
+    .eq("organization_id", input.session.organization_id)
+    .eq("id", input.session.id)
+    .maybeSingle();
+  if (error) throw new Error("sms_session_lookup_failed");
+  const sessao = data as { twilio_account_sid: string | null; phone_number: string | null } | null;
+  if (!sessao || sessao.twilio_account_sid !== aviso.contaId) {
+    return { ok: true, body: { status: "ignored", reason: "outra_conta" } };
+  }
+  if (!sessao.phone_number || !samePhone(sessao.phone_number, aviso.de)) {
+    return { ok: true, body: { status: "ignored", reason: "outro_numero" } };
+  }
+
+  const r = await aplicarAvisoDeStatus(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    aviso,
   });
   return { ok: true, body: { ...r } };
 }

@@ -12,7 +12,12 @@ import { CHANNEL_PROVIDER_TWILIO } from "../capabilities";
 export { acharNumeroNaConta, apontarRecebimentoDoNumero, type AchadoDoNumero } from "./twilio";
 export { ROTULO_DO_CANAL_SMS } from "./credentials";
 export { acharSessaoDeSms, salvarSessaoDeSms, type SessaoDeSms } from "./session";
-export { encerrarConexaoDeSms, type EncerramentoDoSms } from "./desconectar";
+export {
+  encerrarConexaoDeSms,
+  soltarNumeroAnterior,
+  type EncerramentoDoSms,
+  type SolturaDoNumeroAnterior,
+} from "./desconectar";
 
 /** O provider do canal de SMS, pelo nome do canal — para a rota de exclusão comparar sem nomear o fornecedor. */
 export const PROVEDOR_DO_CANAL_SMS = CHANNEL_PROVIDER_TWILIO;

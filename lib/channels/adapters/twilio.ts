@@ -20,6 +20,7 @@
  */
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { basePublicaConfiguradaDaInstalacao } from "@/lib/webhooks/url-publica";
 
 import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { conexaoDeSms } from "../sms/credentials";
@@ -75,6 +76,7 @@ export const twilioAdapter: ChannelAdapter = {
         de: conexao.numero,
         para: `+${toE164Digits(envelope.to)}`,
         texto,
+        avisoDeStatusUrl: urlDoAvisoDeStatus(conexao.webhookPathToken),
       });
       return { externalId: enviado.sid };
     } catch (err) {
@@ -111,6 +113,21 @@ export const twilioAdapter: ChannelAdapter = {
 
   codes: CODES,
 };
+
+/**
+ * Para onde o fornecedor manda o recibo de entrega deste envio: a URL de
+ * recebimento da própria conexão, que já confere a assinatura e separa o aviso
+ * de status do SMS recebido (`lib/channels/inbound.ts`).
+ *
+ * Só com a base PÚBLICA CONFIGURADA: o envio não tem requisição de onde tirar o
+ * endereço, e a própria máquina não é alcançável pelo fornecedor. Sem ela, o
+ * envio sai sem recibo, como antes, e a linha fica `sent`.
+ */
+function urlDoAvisoDeStatus(token: string | null): string | null {
+  if (!token) return null;
+  const base = basePublicaConfiguradaDaInstalacao({ aceitarMaquinaLocal: false });
+  return base ? `${base}/api/v1/webhooks/channel/${token}` : null;
+}
 
 /**
  * O fornecedor recusou porque o destinatário respondeu STOP na operadora. O

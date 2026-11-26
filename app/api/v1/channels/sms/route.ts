@@ -27,6 +27,8 @@ import {
   apontarRecebimentoDoNumero,
   ROTULO_DO_CANAL_SMS,
   salvarSessaoDeSms,
+  soltarNumeroAnterior,
+  type SolturaDoNumeroAnterior,
 } from "@/lib/channels/sms";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -115,7 +117,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const existente = await acharSessaoDeSms(admin, orgId);
-  const displayName = existente?.displayName || achado.nome || `${ROTULO_DO_CANAL_SMS} ${achado.numero}`;
+  const trocouDeNumero = Boolean(existente?.numeroId && existente.numeroId !== achado.numeroId);
+
+  // Outro número na mesma conexão: o anterior para de apontar para cá ANTES de
+  // a linha passar a ser do novo (a chave da conta antiga mora nela). Sem isso
+  // o SMS que ainda chega no número antigo é aceito com 200 e some. Conexão
+  // arquivada já devolveu o recebimento ao desconectar (e a chave dela virou
+  // lixo aleatório), então não há o que soltar.
+  let numeroAnterior: SolturaDoNumeroAnterior | null = null;
+  if (existente && trocouDeNumero && !existente.archivedAt) {
+    numeroAnterior = await soltarNumeroAnterior(admin, {
+      organizationId: orgId,
+      channelSessionId: existente.id,
+      numeroIdAnterior: existente.numeroId as string,
+      contaAnterior: existente.contaId,
+      credenciaisNovas: creds,
+    });
+    if (numeroAnterior !== "desfeito") {
+      logger.warn("[sms] troca de número: o recebimento do número anterior não foi devolvido", {
+        organization_id: orgId,
+        channel_session_id: existente.id,
+        resultado: numeroAnterior,
+        request_id: requestId,
+      });
+    }
+  }
+
+  // O nome gravado é o do número de antes ("SMS +1…" ou o apelido dele no
+  // fornecedor): com outro número, o rótulo nasce de novo.
+  const displayName =
+    (!trocouDeNumero && existente?.displayName) || achado.nome || `${ROTULO_DO_CANAL_SMS} ${achado.numero}`;
   const salvo = await salvarSessaoDeSms(admin, {
     organizationId: orgId,
     existente,
@@ -156,7 +187,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     resourceType: "channel_session",
     resourceId: salvo.channelSessionId,
     requestId,
-    metadata: { canal: "sms", phone_number: achado.numero, recebimento_apontado: apontado.ok },
+    metadata: {
+      canal: "sms",
+      phone_number: achado.numero,
+      recebimento_apontado: apontado.ok,
+      ...(numeroAnterior ? { numero_anterior: existente?.numero ?? null, recebimento_anterior: numeroAnterior } : {}),
+    },
   });
 
   return ok(

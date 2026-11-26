@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const conexaoDeSms = vi.fn();
 vi.mock("@/lib/channels/sms/credentials", () => ({ conexaoDeSms: (...a: unknown[]) => conexaoDeSms(...a) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+const base = vi.hoisted(() => ({ publica: null as string | null }));
+vi.mock("@/lib/webhooks/url-publica", () => ({ basePublicaConfiguradaDaInstalacao: () => base.publica }));
 const encontrarContatoPorTelefone = vi.fn();
 vi.mock("@/lib/channels/contato-por-telefone", () => ({
   encontrarContatoPorTelefone: (...a: unknown[]) => encontrarContatoPorTelefone(...a),
@@ -27,6 +29,7 @@ const CONEXAO = {
   numero: "+14155550199",
   accountSid: CONTA,
   authToken: "chave_de_teste",
+  webhookPathToken: "tok-da-conexao",
 };
 
 const ENVELOPE = {
@@ -52,8 +55,32 @@ describe("adapter do SMS", () => {
     encontrarContatoPorTelefone.mockReset();
     encontrarContatoPorTelefone.mockResolvedValue({ id: "contato-1", phone_number: "+14155550100" });
     aplicarOptOutPendente.mockReset();
+    base.publica = null;
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("com a base pública configurada, o envio pede o recibo na URL de recebimento da conexão", async () => {
+    base.publica = "https://crm.exemplo.com";
+    const f = responder(201, { sid: "SM" + "3".repeat(32) });
+    await adapter.send(ENVELOPE);
+    const form = new URLSearchParams(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(form.get("StatusCallback")).toBe("https://crm.exemplo.com/api/v1/webhooks/channel/tok-da-conexao");
+  });
+
+  it("sem base pública configurada (ou sem token), sai sem recibo, como antes", async () => {
+    let f = responder(201, { sid: "SM" + "4".repeat(32) });
+    await adapter.send(ENVELOPE);
+    expect(new URLSearchParams(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)).has("StatusCallback")).toBe(
+      false,
+    );
+    base.publica = "https://crm.exemplo.com";
+    conexaoDeSms.mockResolvedValue({ ...CONEXAO, webhookPathToken: null });
+    f = responder(201, { sid: "SM" + "5".repeat(32) });
+    await adapter.send(ENVELOPE);
+    expect(new URLSearchParams(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)).has("StatusCallback")).toBe(
+      false,
+    );
+  });
 
   it("está registrado e é canal por telefone", () => {
     expect(adapter.provider).toBe("twilio");

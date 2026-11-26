@@ -24,6 +24,8 @@ export interface SmsConexao extends SmsCredentials {
   numeroId: string;
   /** O número da empresa, E.164 com `+`. É o remetente de todo envio. */
   numero: string;
+  /** O token da URL de recebimento — a mesma URL recebe o aviso de status de cada envio. */
+  webhookPathToken: string | null;
 }
 
 /**
@@ -44,7 +46,7 @@ export async function conexaoDeSms(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("id, phone_number, twilio_phone_number_sid, twilio_account_sid, webhook_secret_encrypted")
+      .select("id, phone_number, twilio_phone_number_sid, twilio_account_sid, webhook_secret_encrypted, webhook_path_token")
       .eq("organization_id", organizationId)
       .eq("twilio_phone_number_sid", numeroId);
 
@@ -62,6 +64,7 @@ export async function conexaoDeSms(
     twilio_phone_number_sid: string;
     twilio_account_sid: string | null;
     webhook_secret_encrypted: unknown;
+    webhook_path_token: string | null;
   } | null;
   if (!linha || !linha.webhook_secret_encrypted || !linha.twilio_account_sid || !linha.phone_number) {
     return null;
@@ -76,5 +79,6 @@ export async function conexaoDeSms(
     numero: linha.phone_number.startsWith("+") ? linha.phone_number : `+${linha.phone_number}`,
     accountSid: linha.twilio_account_sid,
     authToken,
+    webhookPathToken: linha.webhook_path_token ?? null,
   };
 }
