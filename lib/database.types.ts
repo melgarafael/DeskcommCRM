@@ -9215,6 +9215,55 @@ export type Database = {
           },
         ];
       };
+      followup_delivery_events: {
+        Row: {
+          created_at: string;
+          enrollment_id: string;
+          event_type: string;
+          id: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          enrollment_id: string;
+          event_type: string;
+          id?: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        Update: {
+          created_at?: string;
+          enrollment_id?: string;
+          event_type?: string;
+          id?: string;
+          idempotency_key?: string;
+          node_id?: string;
+          organization_id?: string;
+          payload?: NonNullable<Json>;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "followup_delivery_events_enrollment_id_fkey";
+            columns: ["enrollment_id"];
+            isOneToOne: false;
+            referencedRelation: "followup_enrollments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "followup_delivery_events_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       followup_enrollment_events: {
         Row: {
           created_at: string;
@@ -10864,6 +10913,7 @@ export type Database = {
         Row: {
           agent_id: string | null;
           cache_read_tokens: number;
+          cache_write_1h_tokens: number | null;
           cache_write_tokens: number;
           chars_ferramentas: number | null;
           chars_mensagens: number | null;
@@ -10897,6 +10947,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -10929,6 +10980,7 @@ export type Database = {
         Update: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -16553,6 +16605,18 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_levar_negocio_para_funil: {
+        Args: {
+          p_destino: string
+          p_fechamento: Json
+          p_linha: Json
+          p_org: string
+          p_origem: string
+          p_origem_atualizada_em: string
+          p_sessao: Json
+        }
+        Returns: Json
+      }
       fn_lgpd_anonymize_contact: {
         Args: { p_contact_id: string; p_organization_id: string };
         Returns: Json;

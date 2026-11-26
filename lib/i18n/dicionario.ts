@@ -9906,6 +9906,7 @@ export const DICIONARIO: Traducoes = {
   "Este follow-up ainda não deu nenhum passo.": {
     es: "Este seguimiento todavía no dio ningún paso.",
   },
+  "Mostrando os eventos mais recentes deste follow-up.": { es: "Mostrando los eventos más recientes de este seguimiento." },
   "Mostrando os primeiros passos — este follow-up tem histórico maior que o desta tela.": {
     es: "Se muestran los primeros pasos. Este seguimiento tiene más historial del que cabe en esta pantalla.",
   },
@@ -11331,6 +11332,13 @@ export const DICIONARIO: Traducoes = {
     es: "El envío de este paso se descartó porque la inscripción está pausada",
   },
   "sai num envio novo quando a inscrição for retomada": { es: "sale en un envío nuevo cuando se reanude la inscripción" },
+  "Tarefa de envio enfileirada": { es: "Tarea de envío en cola" },
+  "Mensagem gerada": { es: "Mensaje generado" },
+  "Rascunho de mensagem gerado para aprovação": { es: "Borrador de mensaje generado para aprobación" },
+  "Mensagem aguardando o canal": { es: "Mensaje en espera del canal" },
+  "Falha ao enviar a mensagem": { es: "Error al enviar el mensaje" },
+  "Apenas parte da mensagem foi enviada": { es: "Solo se envió una parte del mensaje" },
+  "Solicitou o envio da mensagem": { es: "Solicitó el envío del mensaje" },
   "Mensagem enviada": { es: "Mensaje enviado" },
   "Segurou o fluxo por causa de um retorno agendado": {
     es: "Frenó el flujo por un regreso programado",

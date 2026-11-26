@@ -2162,6 +2162,10 @@ const ERRO_HANDOFF_APOS_VETO_COMERCIAL =
  * no SUFIXO — depois do prefixo cacheável, sem invalidar o cache F2-17).
  */
 export interface AgentTurnInput {
+  historicoDoFollowup?: {
+    jobId: string;
+    registrar: (fase: "gerada" | "parcial", candidata: number) => Promise<void>;
+  };
   resolvedAgent?: TurnAgentResolution;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
@@ -3221,6 +3225,7 @@ async function executarTurnoDoAgente(
       channelId: input.channelSessionId,
       boundary: currentExecutionBoundary() ?? undefined,
       agent: agentConfig,
+      followupJobId: input.historicoDoFollowup?.jobId,
     });
     if (job.kind === 'followup_turn') {
       // #1648 (3): o follow-up do assistido caía no `return` genérico de baixo
@@ -5125,7 +5130,7 @@ async function executarTurnoDoAgente(
         cliente_pediu,
         imagem_url,
       }) => {
-        tentativasDeEnvio += 1;
+        const numeroDaCandidata = ++tentativasDeEnvio;
         // Recusa definitiva já neste turno: nem chama a cadeia (ver a declaração da flag).
         if (falhaPermanenteNoTurno) return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
@@ -5133,6 +5138,10 @@ async function executarTurnoDoAgente(
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
         const body = formatarParaWhatsApp(corpoDoModelo);
+        // O texto já existe mesmo se uma guarda barrar a candidata.
+        if (input.historicoDoFollowup && !semConteudoVisivel(body)) {
+          await input.historicoDoFollowup.registrar("gerada", numeroDaCandidata);
+        }
         // Segundo texto com preço depois de um veto comercial sem cliente esperando:
         // nem chama a cadeia — o agente já foi avisado e insistir só gasta o turno.
         if (vetosComerciaisSemPendencia >= 2 && contemAssuntoComercialNaSaida(body)) {
@@ -5723,7 +5732,8 @@ async function executarTurnoDoAgente(
               // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
               // por ele e não mistura o envio seguinte.
               const seqDoEnvio = seq + 1;
-              const enviar = async (
+              let parteAceita = false;
+              const enviarAoCanal = async (
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
@@ -5744,6 +5754,18 @@ async function executarTurnoDoAgente(
                   // metadata que faz os freios de reenvio contarem uma vez.
                   ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
                 });
+              };
+              // O histórico do follow-up fica fora da guarda, para ela seguir em uma linha.
+              const enviar = async (
+                corpo: string,
+                media?: FotoParaEnvio,
+              ): Promise<ChannelSendResult> => {
+                const resultado = await enviarAoCanal(corpo, media);
+                if (resultado === ENVIO_ABORTADO_PELA_PESSOA && parteAceita) {
+                  await input.historicoDoFollowup?.registrar("parcial", numeroDaCandidata);
+                }
+                parteAceita ||= resultado.kind === "sent" || resultado.kind === "already_sent";
+                return resultado;
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };

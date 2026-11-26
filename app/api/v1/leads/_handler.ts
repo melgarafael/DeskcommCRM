@@ -667,6 +667,11 @@ export async function getLeadHandler(
 // create
 // ---------------------------------------------------------------------------
 
+export type PersistirCriacaoDeLead = (linha: Record<string, unknown>) => Promise<{
+  data: Record<string, unknown> | null;
+  error: { code?: string; message: string } | null;
+}>;
+
 export async function createLeadHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -744,6 +749,8 @@ export async function createLeadHandler(
      * do formulário (a mesma decisão do #2295 e do #2730).
      */
     manterForaDaLista?: boolean;
+    /** O clone usa a mesma linha preparada aqui, na transação da transferência. */
+    persistir?: PersistirCriacaoDeLead;
   } = {},
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -963,40 +970,39 @@ export async function createLeadHandler(
       input.contact_id ?? null,
     ));
   await guardServiceEffect();
-  const { data: lead, error: insErr } = await supabase
-    .from("crm_leads")
-    .insert({
-      organization_id: ctx.organization_id,
-      pipeline_id: input.pipeline_id,
-      stage_id: input.stage_id,
-      title: input.title,
-      description: input.description ?? null,
-      contact_id: input.contact_id ?? null,
-      value_cents: input.value_cents ?? null,
-      // O VALOR RECORRENTE — as três colunas da fatia 1 da #3602, SEMPRE
-      // nomeadas (nulas quando o negócio não tem recorrência). `value_cents`
-      // acima segue sendo o valor ÚNICO: nada é somado, e é por isso que o card
-      // consegue escrever "R$ 3.000 + R$ 500/mês". A coerência do trio
-      // (recorrente nulo ⇒ periodicidade e duração nulas; recorrente sem
-      // periodicidade ⇒ mensal) é da régua pura, a MESMA que o PATCH usa.
-      ...recorrenciaParaGravar(input),
-      currency,
-      ...ownerPatch,
-      assigned_at: ownerPatch.owner_kind === null ? null : new Date().toISOString(),
-      expected_close_date: input.expected_close_date ?? null,
-      tags: input.tags ?? [],
-      source: input.source,
-      source_metadata: removerProvaMetaLeadSubmitted(input.source_metadata),
-      external_id: input.external_id ?? null,
-      webhook_source_id: input.webhook_source_id ?? null,
-      custom_fields: input.custom_fields ?? {},
-      retomado_de_lead_id: input.retomado_de_lead_id ?? null,
-      status: "open",
-      position_in_stage: nextPos,
-      created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
-    })
-    .select(LEAD_COLS)
-    .single();
+  const linha = {
+    organization_id: ctx.organization_id,
+    pipeline_id: input.pipeline_id,
+    stage_id: input.stage_id,
+    title: input.title,
+    description: input.description ?? null,
+    contact_id: input.contact_id ?? null,
+    value_cents: input.value_cents ?? null,
+    // O VALOR RECORRENTE — as três colunas da fatia 1 da #3602, SEMPRE
+    // nomeadas (nulas quando o negócio não tem recorrência). `value_cents`
+    // acima segue sendo o valor ÚNICO: nada é somado, e é por isso que o card
+    // consegue escrever "R$ 3.000 + R$ 500/mês". A coerência do trio
+    // (recorrente nulo ⇒ periodicidade e duração nulas; recorrente sem
+    // periodicidade ⇒ mensal) é da régua pura, a MESMA que o PATCH usa.
+    ...recorrenciaParaGravar(input),
+    currency,
+    ...ownerPatch,
+    assigned_at: ownerPatch.owner_kind === null ? null : new Date().toISOString(),
+    expected_close_date: input.expected_close_date ?? null,
+    tags: input.tags ?? [],
+    source: input.source,
+    source_metadata: removerProvaMetaLeadSubmitted(input.source_metadata),
+    external_id: input.external_id ?? null,
+    webhook_source_id: input.webhook_source_id ?? null,
+    custom_fields: input.custom_fields ?? {},
+    retomado_de_lead_id: input.retomado_de_lead_id ?? null,
+    status: "open",
+    position_in_stage: nextPos,
+    created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+  };
+  const { data: lead, error: insErr } = opcoes.persistir
+    ? await opcoes.persistir(linha)
+    : await supabase.from("crm_leads").insert(linha).select(LEAD_COLS).single();
 
   const recusaNoInsert = recusaDaGuardaDoBanco(ctx, insErr);
   if (recusaNoInsert) throw recusaNoInsert;

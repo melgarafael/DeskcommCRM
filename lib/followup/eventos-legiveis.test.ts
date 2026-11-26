@@ -490,3 +490,25 @@ describe("os eventos que o plano de tempo trouxe", () => {
     expect(r.autor).toBe("motor");
   });
 });
+
+it("descreve o marco de geração sem confundi-lo com envio", () => {
+  const resultado = descreveEvento(
+    evento({ node_id: "action-1", event_type: "followup_message_generated" }),
+    nos,
+    "pt-BR",
+  );
+  expect(resultado.titulo).toBe("Mensagem gerada");
+});
+
+it("descreve o recibo de uma mensagem sem sugerir que ainda há outra parte", () => {
+  expect(descreveEvento(evento({
+    node_id: "action-1",
+    event_type: "followup_message_sent",
+    payload: { seq: 1 },
+  }), nos, "pt-BR")).toEqual({
+    titulo: "Mensagem enviada",
+    onde: "Primeira cutucada",
+    detalhe: null,
+    autor: "motor",
+  });
+});
