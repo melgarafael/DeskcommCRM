@@ -23054,6 +23054,7 @@ export const DICIONARIO: Traducoes = {
   "Use um número inteiro de 0 a 120 segundos.": { es: "Usa un número entero de 0 a 120 segundos." },
   "Tocar som ao chegar resposta": { es: "Reproducir sonido al llegar una respuesta" },
   "Respostas rápidas do chat": { es: "Respuestas rápidas del chat" },
+  "Ex.: Sim": { es: "Ej.: Sí" },
   "Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.": { es: "Una respuesta rápida por línea, hasta 5, de 1 a 80 caracteres." },
   "Use até 5 respostas rápidas, de 1 a 80 caracteres cada.": { es: "Usa hasta 5 respuestas rápidas, de 1 a 80 caracteres cada una." },
   "Salvar ajustes": { es: "Guardar ajustes" },
