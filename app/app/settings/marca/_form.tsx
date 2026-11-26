@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { updateMarcaDaOrganizacao } from "@/app/actions/settings/updateMarcaDaOrganizacao";
+import { TEMA_FIXO } from "@/lib/anima/tema-fixo";
 import {
   conectarContaResendDaOrganizacao,
   desconectarContaResendDaOrganizacao,
@@ -438,7 +439,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
           </p>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2" hidden={TEMA_FIXO}>
           <Label htmlFor="org_accent_hex">{t("Cor da sua marca")}</Label>
           <div className="flex items-center gap-3">
             {/* Atalho, nunca o controle principal: o seletor do navegador escolhe
@@ -486,7 +487,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
           O PAR da cor (#2482), mesmo desenho do campo de cima e do par de
           logo: só muda para qual tema a semente vale.
         */}
-        <div className="space-y-2">
+        <div className="space-y-2" hidden={TEMA_FIXO}>
           <Label htmlFor="org_accent_dark_hex">
             {t("Cor da sua marca no tema escuro (opcional)")}
           </Label>
@@ -533,7 +534,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
           </p>
         </div>
 
-        {derivada ? (
+        {derivada && !TEMA_FIXO ? (
           <div className="space-y-2">
             <p className="text-sm text-text-muted">
               {t(
@@ -741,7 +742,9 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
 
         <div>
           <LinhaDeOrigem campo={t("Nome")} valor={origemEmPortugues(resolvida.origens.nome, t)} />
-          <LinhaDeOrigem campo={t("Cor")} valor={origemEmPortugues(resolvida.origens.cor, t)} />
+          {TEMA_FIXO ? null : (
+            <LinhaDeOrigem campo={t("Cor")} valor={origemEmPortugues(resolvida.origens.cor, t)} />
+          )}
           <LinhaDeOrigem
             campo={t("Logo")}
             valor={origemEmPortugues(resolvida.origens.logoUrl, t)}
@@ -758,7 +761,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, contaResend, instalaca
           </ul>
         ) : null}
 
-        {!serializacao.css && resolvida.cor ? (
+        {!serializacao.css && resolvida.cor && !TEMA_FIXO ? (
           <p className="text-sm text-error-fg">
             {t(
               "Do jeito que está, esta cor não chegaria à tela: o sistema continuaria com a cor que já usa.",

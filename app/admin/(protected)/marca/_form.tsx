@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { updateBranding } from "@/app/actions/settings/updateBranding";
+import { TEMA_FIXO } from "@/lib/anima/tema-fixo";
 import { CampoDeLogo } from "@/components/branding/CampoDeLogo";
 import { CampoDoIconeDaAba } from "@/components/branding/CampoDoIconeDaAba";
 import { Button } from "@/components/ui/button";
@@ -132,12 +133,13 @@ export function FormularioDaMarca({
   // salvar, em vez de o operador descobrir pelo alarme de fallback depois.
   const serializacao = useMemo(() => cssDaMarca(resolvida.cor), [resolvida.cor]);
 
-  const derivada = resolvida.cor?.derivada ?? null;
+  // Fork Ânima (tema fixo): a cor gravada não pinta, então não há o que medir.
+  const derivada = TEMA_FIXO ? null : (resolvida.cor?.derivada ?? null);
   /**
    * A derivação do TEMA ESCURO (#2482): com a segunda cor, é OUTRA — e a
    * prévia tem de marcar o tom que o escuro vai usar, não o da primeira.
    */
-  const derivadaEscura = resolvida.cor?.corEscura?.derivada ?? derivada;
+  const derivadaEscura = TEMA_FIXO ? null : (resolvida.cor?.corEscura?.derivada ?? derivada);
 
   /**
    * Em que degrau da escada cada papel pousou.
@@ -296,7 +298,7 @@ export function FormularioDaMarca({
         </p>
       </Card>
 
-      <Card className="space-y-4 p-6">
+      <Card className="space-y-4 p-6" hidden={TEMA_FIXO}>
         <div className="space-y-2">
           <Label htmlFor="accent_hex">{t("Cor da marca")}</Label>
           <div className="flex items-center gap-3">

@@ -43,6 +43,7 @@
  * `/admin/marca` mostra ao operador.
  */
 
+import { semCorPropria } from "@/lib/anima/tema-fixo";
 import { DEFAULT_APP_NAME } from "@/lib/branding";
 import { env } from "@/lib/env";
 import { valorDaInstalacao } from "@/lib/instalacao/config";
@@ -189,10 +190,12 @@ export async function marcaDaSaida(
 ): Promise<MarcaDeSaida> {
   try {
     const linha = await marcaDaInstalacao({ semMemo: opcoes.semMemo });
-    const marca =
+    // Fork Ânima (tema fixo): a cor de saída é sempre a do produto.
+    const marca = semCorPropria(
       organizationId === null
         ? resolverMarca([camadaDaInstalacao(linha), camadaDoAmbiente(env)], REGUA_DO_PRODUTO)
-        : resolverMarcaDaOrganizacao(await settingsDaOrganizacao(organizationId), linha, env);
+        : resolverMarcaDaOrganizacao(await settingsDaOrganizacao(organizationId), linha, env),
+    );
 
     // `claro`, sempre — ver o cabeçalho. `derivada` é `null` quando a semente
     // não pinta (cor acromática, papel só de identidade, hex recusado): aí o

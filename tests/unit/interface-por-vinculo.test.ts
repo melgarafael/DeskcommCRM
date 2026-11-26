@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/anima/tema-fixo", () => import("@/tests/fixtures/anima/tema-livre")); // Fork Ânima: o upstream com cor de marca
 import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 import {
   destinosDaInterface,

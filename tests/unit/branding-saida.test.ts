@@ -20,6 +20,7 @@
  * está certa.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/anima/tema-fixo", () => import("@/tests/fixtures/anima/tema-livre")); // Fork Ânima: o upstream com cor de marca
 
 import { melhorFrenteSobre } from "@/lib/branding/contraste";
 import { stop } from "@/lib/branding/rampa";

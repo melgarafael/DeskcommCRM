@@ -24,6 +24,7 @@ import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
 import { AJUSTES_PADRAO, aparenciaDeSettings, atributosDaAparencia, type Aparencia } from "@/lib/aparencia/ajustes";
 import { cssDaAparenciaDaOrganizacao } from "@/lib/aparencia/css";
+import { aparenciaFixa, semCorPropria, temaDeExtensaoFixo } from "@/lib/anima/tema-fixo";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -279,10 +280,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // instalacao.ts`), e a derivação da cor é cacheada por régua+semente em
     // `resolve.ts` — a marca custa uma consulta a cada 30s e um lookup de Map
     // por render, não uma derivação de rampa por requisição.
-    const marca = resolverMarcaDaOrganizacao(
-      orgRow?.settings ?? null,
-      await marcaDaInstalacao(),
-      env,
+    // Fork Ânima (tema fixo): nem a cor da organização nem a da instalação pintam a tela.
+    const marca = semCorPropria(
+      resolverMarcaDaOrganizacao(orgRow?.settings ?? null, await marcaDaInstalacao(), env),
     );
 
     // SÓ quando a cor veio mesmo da organização. Se ela não configurou nada, a
@@ -299,10 +299,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
 
     // A cor que a empresa definiu na tela Marca vence a cor de ação do template.
-    aparencia = aparenciaDeSettings(orgRow?.settings);
+    aparencia = aparenciaFixa(aparenciaDeSettings(orgRow?.settings));
     cssDaAparencia = cssDaAparenciaDaOrganizacao(aparencia, marca.origens.cor === "organizacao");
 
-    cssDoTemaDaExtensao = await temaDaExtensao;
+    cssDoTemaDaExtensao = temaDeExtensaoFixo(await temaDaExtensao);
 
     // Desce para o menu CAMPO A CAMPO, e só o campo que a organização definiu.
     // Sem a condição por campo, `marca.name` seria o nome da instalação (ou o

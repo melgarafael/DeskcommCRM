@@ -25,6 +25,7 @@
 import { redirect } from "next/navigation";
 
 import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
+import { TEMA_FIXO } from "@/lib/anima/tema-fixo";
 import { aparenciaDeSettings } from "@/lib/aparencia/ajustes";
 import { TEMPLATES } from "@/lib/aparencia/catalogo";
 import { cssDoTemplate, escopoDaAmostra, escopoDoTemplate } from "@/lib/aparencia/css";
@@ -42,6 +43,8 @@ export const metadata = { title: "Aparência" };
 export const dynamic = "force-dynamic";
 
 export default async function AparenciaDaOrganizacaoPage() {
+  // Fork Ânima (tema fixo): a aparência é a do DS; a tela não existe para as organizações.
+  if (TEMA_FIXO) redirect("/app/settings/marca");
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");

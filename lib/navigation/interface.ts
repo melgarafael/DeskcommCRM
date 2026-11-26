@@ -1,5 +1,6 @@
 /** Apresentação por vínculo. Nunca é autorização de página, API ou ação. */
 import { z } from "zod";
+import { rotaOcultaPeloTemaFixo } from "@/lib/anima/tema-fixo";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -147,6 +148,7 @@ export function permitidos(
   return (NAV_CATALOG as readonly NavMetadata[]).filter(
     (d) =>
       !d.agenciaOnly && canSee(d, platform, role) &&
+      !rotaOcultaPeloTemaFixo(d.href) && // Fork Ânima: tema fixo
       (!modulos || !d.modulo || modulos.includes(d.modulo)) &&
       (!capacidades || !d.capacidade || capacidades.includes(d.capacidade)),
   );

@@ -26,6 +26,7 @@
 
 import type { Marca, TokensDoTema } from "@/lib/branding/contraste";
 import { Card } from "@/components/ui/card";
+import { TEMA_FIXO } from "@/lib/anima/tema-fixo";
 
 import { motivosDoFallback, type Aviso, type Tom } from "@/lib/branding/linguagem";
 import { useT } from "@/hooks/i18n/useT";
@@ -170,10 +171,12 @@ export function EstadoDaMarca({
             campo={t("Logo")}
             valor={origemEmPortugues(origens.logoUrl, definidoNestaTela, t)}
           />
-          <LinhaDeOrigem
-            campo={t("Cor")}
-            valor={origemEmPortugues(origens.cor, definidoNestaTela, t)}
-          />
+          {TEMA_FIXO ? null : (
+            <LinhaDeOrigem
+              campo={t("Cor")}
+              valor={origemEmPortugues(origens.cor, definidoNestaTela, t)}
+            />
+          )}
         </div>
         <p className="mt-3 text-xs text-text-muted">
           {t(

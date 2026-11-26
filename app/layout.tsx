@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { semCorPropria } from "@/lib/anima/tema-fixo";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -97,7 +98,10 @@ async function marcaResolvida(): Promise<{
   readonly marca: MarcaResolvida;
 }> {
   const linha = await marcaDaInstalacao();
-  const marca = resolverMarca([camadaDaInstalacao(linha), camadaDoAmbiente(env)], REGUA_DO_PRODUTO);
+  // Fork Ânima (tema fixo): a cor da instalação não pinta a tela.
+  const marca = semCorPropria(
+    resolverMarca([camadaDaInstalacao(linha), camadaDoAmbiente(env)], REGUA_DO_PRODUTO),
+  );
   return { linha, marca };
 }
 

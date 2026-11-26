@@ -14,6 +14,7 @@
  * da mesma cor cujo degrau ela marca.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/anima/tema-fixo", () => import("@/tests/fixtures/anima/tema-livre")); // Fork Ânima: o upstream com cor de marca
 import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
