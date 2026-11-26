@@ -24,6 +24,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { tetoDoAnonimoDoCanal } from "@/lib/channels/teto-do-anonimo";
+import { logger } from "@/lib/logger";
 import type { Logger } from "../../agent-engine/obs/logger";
 
 import {
@@ -101,9 +102,12 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
       .eq("sent_via", "ai")
       .neq("status", "failed");
     if (contagemErro) {
-      input.log?.warn("teto do visitante anônimo: contagem não lida — gate passa", {
+      // Nenhum chamador passa `log`: o logger do projeto é a reserva, senão a
+      // falha da contagem abriria a guarda sem deixar linha nenhuma.
+      (input.log ?? logger).warn("teto do visitante anônimo: contagem não lida — gate passa", {
         organization_id: input.organizationId,
         conversation_id: input.conversationId,
+        erro: contagemErro.message,
       });
       respostasDaIa = null;
     } else {

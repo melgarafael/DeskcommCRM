@@ -12,7 +12,9 @@
  *  - isolamento: a query de contagem filtra por `organization_id` (conversa de
  *    outra organização com 25 respostas da IA não afeta esta).
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { logger } from "@/lib/logger";
 
 import { decidirElegibilidadeDaConversa } from "./consulta-pg";
 
@@ -56,6 +58,10 @@ function poolStub(
 }
 
 describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const input = {
     organizationId: ORG,
     conversationId: CONV,
@@ -115,8 +121,34 @@ describe("decidirElegibilidadeDaConversa (pg) — teto do visitante anônimo", (
         ? Promise.reject(new Error("banco fora"))
         : Promise.resolve({ rows: [linhaConversa()] }),
     );
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const d = await decidirElegibilidadeDaConversa({ query } as unknown as never, input);
     expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
+    // Nenhum chamador passa `log`: a guarda que abre precisa deixar a linha no
+    // logger do projeto, com o erro que a abriu.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      organization_id: ORG,
+      conversation_id: CONV,
+      erro: "banco fora",
+    });
+  });
+
+  it("falha na contagem com `log` do chamador: o aviso vai para ele", async () => {
+    const query = vi.fn((sql: string) =>
+      sql.includes("from messages")
+        ? Promise.reject(new Error("banco fora"))
+        : Promise.resolve({ rows: [linhaConversa()] }),
+    );
+    const global = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+    await decidirElegibilidadeDaConversa({ query } as unknown as never, { ...input, log });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn.mock.calls[0]?.[1]).toMatchObject({
+      organization_id: ORG,
+      conversation_id: CONV,
+    });
+    expect(global).not.toHaveBeenCalled();
   });
 
   it("outro provedor (whatsapp): não se aplica o teto do anônimo", async () => {

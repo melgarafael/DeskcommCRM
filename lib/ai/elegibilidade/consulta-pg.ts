@@ -9,6 +9,7 @@
 import type pg from "pg";
 
 import { tetoDoAnonimoDoCanal } from "@/lib/channels/teto-do-anonimo";
+import { logger } from "@/lib/logger";
 import type { Logger } from "../../agent-engine/obs/logger";
 
 import {
@@ -90,20 +91,14 @@ export async function decidirElegibilidadeDaConversa(
   // Só conta quando o canal declara teto E o contato é anônimo (sem telefone
   // nem e-mail). Quem deixou um dos dois sai do teto do anônimo.
   if (teto !== null && !r.phone_number && !r.email) {
-    const contagem = await contarRespostasDaConversa(
+    respostasDaIa = await contarRespostasDaConversa(
       pool,
       input.organizationId,
       input.conversationId,
+      // Nenhum chamador passa `log`: sem o projeto como reserva, a falha da
+      // contagem abriria a guarda sem deixar linha nenhuma.
+      input.log ?? logger,
     );
-    if (contagem === null) {
-      input.log?.warn("teto do visitante anônimo: contagem não lida — gate passa", {
-        organization_id: input.organizationId,
-        conversation_id: input.conversationId,
-      });
-      respostasDaIa = null;
-    } else {
-      respostasDaIa = contagem;
-    }
   }
 
   const estado = montarEstadoDeElegibilidade({
@@ -140,13 +135,14 @@ export async function decidirElegibilidadeDaConversa(
  * por `organization_id` e `conversation_id` — a mesma régua de
  * `teto-de-respostas.ts`, aplicada ao teto do anônimo.
  *
- * Nunca lança: falha devolve `null` (o chamador transforma em
- * `respostasDaIa = null` + log, e o gate passa).
+ * Nunca lança: falha registra o aviso e devolve `null` (`respostasDaIa = null`,
+ * e o gate passa).
  */
 async function contarRespostasDaConversa(
   pool: pg.Pool,
   organizationId: string,
   conversationId: string,
+  log: Pick<Logger, "warn">,
 ): Promise<number | null> {
   try {
     const { rows } = await pool.query<{ total: number }>(
@@ -160,7 +156,12 @@ async function contarRespostasDaConversa(
       [organizationId, conversationId],
     );
     return rows[0]?.total ?? 0;
-  } catch {
+  } catch (err) {
+    log.warn("teto do visitante anônimo: contagem não lida — gate passa", {
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
