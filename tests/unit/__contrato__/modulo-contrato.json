@@ -548,7 +548,7 @@
         {
           "nome": "alterarSchema",
           "origem": "@/lib/agenda/tipos-de-agendamento",
-          "hash": "6245f5adcb258277"
+          "hash": "8b29d78104f1e902"
         },
         {
           "nome": "criarComRascunhoSchema",

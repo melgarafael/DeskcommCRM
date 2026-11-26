@@ -153,7 +153,7 @@ import {
   type ModeloDoLembrete,
 } from "@/lib/agenda/lembrete-por-modelo";
 import { atualizarAvisoDeRemetente } from "@/lib/agenda/aviso-de-remetente";
-import { moldeDoDegrau } from "@/lib/agenda/lembretes";
+import { levaOLinkNoLembrete, moldeDoDegrau } from "@/lib/agenda/lembretes";
 import {
   esperaPeloLink,
   estaNaHora,
@@ -194,6 +194,8 @@ interface TipoDoCompromisso {
   reminder_template_name: string | null;
   reminder_body: string | null;
   reminder_bodies: Record<string, string> | null;
+  /** #5154: degraus (minutos) cujo lembrete sai SEM a linha do link. Vazio = todos levam. */
+  reminder_sem_link_offsets_minutes: number[] | null;
   location_details: string | null;
 }
 
@@ -359,6 +361,14 @@ export function montarLembrete(input: {
    * link ainda a caminho, a mensagem diz que ele chega pela conversa.
    */
   linkDaReuniao?: LinkDaReuniao | null;
+  /**
+   * A opção POR DEGRAU da issue #5154: este lembrete leva a linha automática do
+   * link? Desligada, a mensagem sai sem a linha do link E sem a frase de que ele
+   * chega pela conversa. Um `{{link}}` escrito no próprio texto continua sendo
+   * substituído: o interruptor governa o que o sistema ACRESCENTA, não o que a
+   * pessoa escreveu (ver `lib/agenda/lembretes.ts`).
+   */
+  incluirLink?: boolean;
   /** Ordem de chegada (módulo `amigo`); ver `pecasDoLembrete`. */
   horarioLivre?: string;
 }): string {
@@ -367,11 +377,14 @@ export function montarLembrete(input: {
   const link = input.linkDaReuniao ?? null;
   const pecas = pecasDoLembrete({ ...input, link: link?.url ?? null });
   const { nome = "", dia = "", hora = "" } = pecas;
-  const linhaDoLink = link?.url
-    ? `${t("Link da reunião:")} ${link.url}`
-    : link?.estado === "pendente"
-      ? t("O link da reunião chega por aqui assim que estiver pronto.")
-      : "";
+  const incluirLink = input.incluirLink !== false;
+  const linhaDoLink = !incluirLink
+    ? ""
+    : link?.url
+      ? `${t("Link da reunião:")} ${link.url}`
+      : link?.estado === "pendente"
+        ? t("O link da reunião chega por aqui assim que estiver pronto.")
+        : "";
 
   const molde = input.molde?.trim();
   if (molde) {
@@ -633,7 +646,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select(
       "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, service_space_id, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
-        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), calendar_resources!calendar_appointments_service_space_fk(name), organizations:organization_id!inner(status)",
+        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, reminder_sem_link_offsets_minutes, location_details), calendar_resources!calendar_appointments_service_space_fk(name), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed"),
     // Compromisso de um sistema externo (9392) só recebe lembrete quando o
@@ -738,8 +751,28 @@ async function handle(req: NextRequest): Promise<Response> {
     // seguinte o encontra pendente de novo. A 15 min do início ele sai mesmo
     // sem link (`esperaPeloLink`), para o aviso curto não sumir numa reunião
     // cujo link travou.
+    //
+    // #5154: só espera se ESTA mensagem vai levar o link. Com todos os degraus
+    // da rodada desligados, esperar seguraria o aviso até 15 min do início por
+    // um link que ele não vai levar — a espera existe para o cliente receber
+    // como entrar, e quem desligou não pediu isso.
+    //
+    // Mas o interruptor desligado só tira a linha AUTOMÁTICA. Se o texto deste
+    // degrau pede `{{link}}` por conta própria, a mensagem precisa do link do
+    // mesmo jeito: mandá-la antes de o link existir entrega "Entre por aqui: "
+    // e nada. Por isso o texto manda na decisão de esperar.
+    const degrauDaVez = Math.min(...pendentes);
+    const moldeDoDegrauDaVez = moldeDoDegrau(tipo, degrauDaVez);
+    // Texto vindo de `message_templates` (por `reminder_template_name`) só se
+    // sabe lendo o banco: sem essa leitura aqui, espera como antes. Esperar a
+    // mais atrasa; esperar de menos manda mensagem quebrada.
+    const textoPedeOLink =
+      moldeDoDegrauDaVez !== null
+        ? /\{\{\s*link\s*\}\}/i.test(moldeDoDegrauDaVez)
+        : Boolean(tipo.reminder_template_name);
+    const incluirLink = levaOLinkNoLembrete(tipo, pendentes);
     const link = linkDaReuniao(linha);
-    if (esperaPeloLink(link, new Date(linha.starts_at), agora)) {
+    if ((incluirLink || textoPedeOLink) && esperaPeloLink(link, new Date(linha.starts_at), agora)) {
       pular("link_da_reuniao_pendente");
       continue;
     }
@@ -849,7 +882,7 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    let molde = moldeDoDegrau(tipo, Math.min(...pendentes));
+    let molde = moldeDoDegrauDaVez;
     if (!molde && tipo.reminder_template_name) {
       const { data: modeloDeTexto } = await admin
         .from("message_templates")
@@ -861,7 +894,23 @@ async function handle(req: NextRequest): Promise<Response> {
       if (modeloDeTexto?.body) molde = modeloDeTexto.body;
     }
 
-    const corpo = montarLembrete({ ...dadosDoLembrete, molde, linkDaReuniao: link });
+    // #5154: uma mensagem pode cobrir mais de um degrau; ela leva o link se
+    // QUALQUER um dos degraus vencidos pedir (a união está em
+    // `levaOLinkNoLembrete`). O texto continua vindo do degrau mais próximo.
+    //
+    // O molde pode PEDIR o link por conta própria (`{{link}}`). Aí a mensagem
+    // não pode sair antes de o link existir: com o interruptor desligado, o
+    // `{{link}}` continua sendo substituído, então o "chega por aqui" também é
+    // necessário para a frase não ficar pela metade. Isso é decidido com o
+    // molde FINAL (o do banco, quando houver) — usar `textoPedeOLink` aqui
+    // acrescentaria a linha automática a um texto que não pediu link.
+    const moldeUsaOLink = /\{\{\s*link\s*\}\}/i.test(molde ?? "");
+    const corpo = montarLembrete({
+      ...dadosDoLembrete,
+      molde,
+      linkDaReuniao: link,
+      incluirLink: incluirLink || moldeUsaOLink,
+    });
 
     // ─── O CARIMBO ANTES DO ENVIO (issue #2223) ────────────────────────────
     //
