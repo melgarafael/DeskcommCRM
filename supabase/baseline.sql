@@ -88889,7 +88889,7 @@ notify pgrst, 'reload schema';
 -- `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
 -- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO` em `lib/escalacao/passagem.ts`.
 
--- ---- motivo `teto_do_visitante_anonimo` e origem `teto_do_anonimo` na passagem (migration 9495) ----
+-- ---- motivo `teto_do_visitante_anonimo` e origem `teto_do_anonimo` na passagem (migration 9496) ----
 -- Mesmo desenho do `restricao_comercial` abaixo: os valores entraram nos blocos ÚNICOS de
 -- `passagens_de_atendimento_motivo_codigo_check` e `passagens_de_atendimento_origem_check`
 -- e nos CHECKs inline do `create table`, e não aqui — reconstruir a constraint num segundo
