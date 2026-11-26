@@ -217,7 +217,10 @@ class FakeQuery implements PromiseLike<QResult> {
       }
       if (f.op === "gt") return `${prefix}${f.col} > ${sqlLiteral(f.val)}`;
       if (f.op === "gte") return `${prefix}${f.col} >= ${sqlLiteral(f.val)}`;
-      return `${prefix}${f.col} = ${sqlLiteral(f.val)}`;
+      const coluna = f.col === "actions_result->0->detail->>reason"
+        ? "actions_result->0->'detail'->>'reason'"
+        : f.col;
+      return `${prefix}${coluna} = ${sqlLiteral(f.val)}`;
     });
     return ` where ${clauses.join(" and ")}`;
   }
