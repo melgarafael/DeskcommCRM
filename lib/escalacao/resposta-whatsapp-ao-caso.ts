@@ -94,14 +94,20 @@ async function comandoPelaCitacao(
   const formas = entrada.citacao.idsDoAviso;
   const { data, error } = await admin
     .from("entregas_de_aviso_de_caso")
-    .select("case_id")
+    .select("case_id, update_event_id")
     .eq("organization_id", entrada.organizationId)
     .eq("channel_session_id", entrada.channelSessionId)
     .in("external_id", formas)
     .limit(1)
     .maybeSingle();
-  const caseId = (data as { case_id?: string } | null)?.case_id;
+  const linha = data as { case_id?: string; update_event_id?: string | null } | null;
+  const caseId = linha?.case_id;
   if (error || !caseId || !CasoId.safeParse(caseId).success) return null;
+  // O aviso de ATUALIZAÇÃO é uma entrega com `update_event_id`, e a RPC só
+  // aceita a resposta quando ele vem junto (é o `ATUALIZACAO <id>` do comando
+  // escrito à mão). Sem isto, citar esse aviso devolvia "caso indisponível".
+  const updateEventId = linha?.update_event_id ?? null;
+  if (updateEventId !== null && !CasoId.safeParse(updateEventId).success) return null;
   const pergunta = /^(\?|PERGUNTAR\b)/i.exec(texto);
   const body = (pergunta ? texto.slice(pergunta[0].length) : texto).trim();
   if (body.length === 0 || body.length > 4000) return null;
@@ -109,6 +115,7 @@ async function comandoPelaCitacao(
     caseId,
     action: pergunta ? "need_lead_info" : "resolved",
     body,
+    ...(updateEventId ? { updateEventId } : {}),
   };
 }
 
@@ -147,7 +154,10 @@ export async function consumirComResultado(
   // checagem de sessão abaixo continua sendo quem decide se a mensagem conta.
   const comando = entrada.direction === "inbound"
     ? (parseComandoDeRespostaDoSuporte(entrada.texto) ??
-       (entrada.channelSessionId === config.sessaoId
+       // Com a resposta pelo WhatsApp desligada a citação não é comando: sem
+       // esta guarda, o membro da equipe que também é cliente (#3900) teria a
+       // mensagem que cita o aviso cortada em vez de seguir como de cliente.
+       (config.respostaWhatsappHabilitada && entrada.channelSessionId === config.sessaoId
          ? await comandoPelaCitacao(admin, entrada)
          : null))
     : null;

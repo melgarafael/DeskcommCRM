@@ -260,7 +260,7 @@ describe("resposta citando o aviso de caso (#5257)", () => {
   // Banco com UMA entrega: o aviso `AVISO_ID` foi enviado pela conexão SESSION
   // para o caso CASE. O `in` do filtro é guardado para provar que a busca usa o
   // id citado e as variantes de id do WAHA, e que vem junto com a org e a sessão.
-  function dbComAviso(options: { result?: string } = {}) {
+  function dbComAviso(options: { result?: string; updateEventId?: string } = {}) {
     const base = db(options);
     const filtros: Array<{ coluna: string; valores: unknown }> = [];
     const entregas: Array<Record<string, unknown>> = [];
@@ -293,7 +293,9 @@ describe("resposta citando o aviso de caso (#5257)", () => {
           };
         }
         if (table === "entregas_de_aviso_de_caso") {
-          const linha = citadoNoFiltro ? { case_id: CASE } : null;
+          const linha = citadoNoFiltro
+            ? { case_id: CASE, update_event_id: options.updateEventId ?? null }
+            : null;
           if (linha) entregas.push(linha);
           return { data: linha, error: null };
         }
@@ -342,6 +344,22 @@ describe("resposta citando o aviso de caso (#5257)", () => {
       expect.objectContaining({ coluna: "external_id" }),
     ]));
     expect(mocks.send).toHaveBeenCalledWith(ORG, expect.objectContaining({ id: SESSION }), { to: PHONE }, "Recebido. A IA vai seguir com o cliente.");
+  });
+
+  it("citar o aviso de ATUALIZAÇÃO leva o id da atualização até a RPC (#5288)", async () => {
+    // A entrega do aviso de atualização grava `update_event_id`, e a RPC só
+    // aceita a resposta com ele — é o `ATUALIZACAO <id>` do comando à mão. Sem
+    // o id, quem cita esse aviso, como ele mesmo manda, ouvia "caso indisponível".
+    const EVENTO = "02920000-5555-4000-8000-0000000000e1";
+    const { db: client, rpc } = dbComAviso({ updateEventId: EVENTO });
+    await consumirComResultado(client, citado("Pode remarcar para sexta"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_case: CASE, p_update_event: EVENTO });
+  });
+
+  it("citar o aviso do caso NOVO segue sem id de atualização", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado("Pode vir amanhã"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_case: CASE, p_update_event: null });
   });
 
   it("começar com ? vira pergunta ao cliente, sem o ? no texto", async () => {
