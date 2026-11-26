@@ -362,8 +362,10 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   pelos dois caminhos de leitura (pg e supabase), com o mesmo resultado. O código mora em
   `lib/channels/teto-do-anonimo.ts` (`tetoDoAnonimoDoCanal`) e no gate de elegibilidade
   (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
-- **Frase e passagem no teto (F4-A).** No turno do agente (`inbound-turn.ts`), o veto
-  `teto_do_visitante_anonimo` segue a escolta do teto de gasto: a frase ao visitante sai antes da
+- **Frase e passagem no teto (F4-A).** O drain (`lib/agent-engine/edge/crm/drain.ts`) deixa o
+  veto `teto_do_visitante_anonimo` virar turno, porque é o turno que avisa e passa, e o handler do
+  job deixa esse veto seguir (no agente assistido ele para ali, sem rascunho). No turno do
+  agente (`inbound-turn.ts`), esse veto segue a escolta do teto de gasto: a frase ao visitante sai antes da
   passagem, aviso que falha não impede a passagem, e passagem que falha encerra o turno sem chamar
   o modelo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
   'teto_do_visitante_anonimo'` (migration 9493). Depois dela, o `force_human` veta a IA antes do

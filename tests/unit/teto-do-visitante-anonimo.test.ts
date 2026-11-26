@@ -14,8 +14,6 @@
  *  3. RASTRO (ponto 3): a passagem grava a linha em `passagens_de_atendimento`
  *     com `origem = 'teto_do_anonimo'` e `motivo_codigo = 'teto_do_visitante_anonimo'`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   emHandoff: vi.fn(),
   aviso: vi.fn(),
   cancel: vi.fn(),
+  resolve: vi.fn(),
+  rascunho: vi.fn(),
+  retomada: vi.fn(),
 }));
 
 // Só os EFEITOS do handoff são dublados. As detecções seguem as REAIS.
@@ -41,13 +42,33 @@ vi.mock("@/lib/agent-engine/cron/scheduler", async (importOriginal) => ({
   cancelPendingCronsForLead: mocks.cancel,
 }));
 
+vi.mock("@/lib/agent-engine/agent/resolve-turn-agent", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveConversationTurn: mocks.resolve,
+}));
+vi.mock("@/lib/agent-engine/agent/turno-ja-respondido", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ultimaInboundJaRespondida: vi.fn(async () => false),
+  anotarUltimaInboundVista: vi.fn(async () => undefined),
+}));
+vi.mock("@/lib/agent-engine/agent/reply-drafts", () => ({ generateReplyDraft: mocks.rascunho }));
+vi.mock("@/lib/escalacao/assunto-comercial", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  comercialExigeHumano: vi.fn(async () => false),
+}));
+
+vi.mock("@/lib/catalogo/retomada-de-apresentacao", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resumePersistedCatalogPresentation: mocks.retomada,
+}));
+
 // O gate de elegibilidade é o transporte do agent-engine (pg). Dublá-lo aqui
 // é o que permite medir o ramo do teto do visitante anônimo sem banco real.
 vi.mock("@/lib/ai/elegibilidade/consulta-pg", () => ({
   decidirElegibilidadeDaConversa: vi.fn(),
 }));
 
-import { runAgentTurn } from "@/lib/agent-engine/agent/inbound-turn";
+import { createInboundTurnHandler, runAgentTurn } from "@/lib/agent-engine/agent/inbound-turn";
 import { decidirElegibilidadeDaConversa } from "@/lib/ai/elegibilidade/consulta-pg";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -59,7 +80,7 @@ const MENSAGEM = "66666666-6666-4666-8666-666666666666";
 
 function poolCom(
   historico: Array<{ direction: "inbound" | "outbound"; body: string; sent_at: Date }>,
-  fixada: { direction: "inbound" | "outbound"; body: string; sent_at: Date },
+  _fixada: { direction: "inbound" | "outbound"; body: string; sent_at: Date },
 ): never {
   return {
     query: vi.fn(async (sql: string) => {
@@ -252,6 +273,69 @@ describe("turno REAL — o teto do visitante anônimo pede contato e passa para 
     expect(mocks.passagem.mock.calls[0]?.[2]).not.toEqual(
       expect.objectContaining({ reason: "orcamento_de_ia" }),
     );
+  });
+});
+
+// O CAMINHO QUE O WORKER USA: o handler do job. Ele tem a sua própria checagem
+// de elegibilidade, antes de `runAgentTurn`; se ela descartar o teto, o aviso e
+// a passagem nunca rodam em produção.
+describe("handler REAL do job — o teto chega à escolta", () => {
+  async function peloHandler(
+    operationMode: "automatic" | "assisted",
+    extra: Record<string, unknown> = {},
+  ): Promise<void> {
+    (decidirElegibilidadeDaConversa as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      permite: false,
+      motivo: "teto_do_visitante_anonimo",
+      bloqueioPorAllowlist: false,
+      contatoDaEquipe: false,
+    });
+    mocks.resolve.mockResolvedValue({
+      config: {
+        agentId: "agente-1", versionId: "v1", operationMode, pausedAt: null,
+        systemPrompt: "persona", toolIds: [], casesEnabled: false,
+        historyMessageWindow: 20, historyTokenWindow: 1000,
+        handoffKeywords: [], filtroDePalavraChave: null,
+      },
+      routerId: null, intentName: null, confidence: null, outcome: "fallback",
+    });
+    const job = {
+      id: JOB, organization_id: ORG, contact_id: CONTATO, kind: "inbound_turn",
+      payload: {
+        conversation_id: CONVERSA, contact_id: CONTATO, channel_session_id: CANAL,
+        inbound_message_id: MENSAGEM, crm_event_id: "77777777-7777-4777-8777-777777777777",
+      },
+      attempts: 1, claimed_by: "w", claimed_at: new Date(),
+      ...extra,
+    };
+    const deps = {
+      log: logFalso(), llmCfg: {}, crmCfg: {},
+      knobs: { maxSteps: 1, allowlistTtlMs: 21 * 24 * 60 * 60 * 1000 },
+      clock: () => new Date("2026-10-06T15:00:00Z"),
+      channel: () => ({ send: vi.fn(async () => ({ kind: "sent" })) }),
+    };
+    const pool = poolCom([texto("inbound", "e quanto custa?", 3)], texto("inbound", "e quanto custa?", 3));
+    await createInboundTurnHandler(deps as never)(job as never, pool, { workerId: "w" });
+  }
+
+  it("agente automático: avisa o visitante e passa a conversa para a equipe", async () => {
+    await peloHandler("automatic");
+    expect(mocks.aviso).toHaveBeenCalledTimes(1);
+    expect(mocks.passagem).toHaveBeenCalledTimes(1);
+  });
+
+  it("envio de catálogo interrompido não é retomado depois do teto", async () => {
+    mocks.retomada.mockResolvedValue({ handled: true, disposition: "done" });
+    await peloHandler("automatic", { catalog_presentation_snapshot: {} });
+    expect(mocks.retomada).not.toHaveBeenCalled();
+    expect(mocks.passagem).toHaveBeenCalledTimes(1);
+  });
+
+  it("agente assistido: no teto não rascunha, não avisa e não passa", async () => {
+    await peloHandler("assisted");
+    expect(mocks.rascunho).not.toHaveBeenCalled();
+    expect(mocks.aviso).not.toHaveBeenCalled();
+    expect(mocks.passagem).not.toHaveBeenCalled();
   });
 });
 

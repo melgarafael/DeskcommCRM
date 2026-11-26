@@ -8518,6 +8518,10 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       });
       return;
     }
+    // O teto do visitante anônimo (Spec 36, F4) atravessa este veto: a escolta
+    // (frase e passagem) mora dentro de `runAgentTurn`. No assistido ele para
+    // mais abaixo, sem rascunho.
+    let tetoDoAnonimo = false;
     try {
       const elegib = await decidirElegibilidadeDaConversa(pool, {
         organizationId: job.organization_id,
@@ -8525,7 +8529,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         agora: deps.clock?.() ?? new Date(),
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
-      if (elegib !== null && !elegib.permite) {
+      tetoDoAnonimo = elegib?.motivo === 'teto_do_visitante_anonimo';
+      if (elegib !== null && !elegib.permite && !tetoDoAnonimo) {
         deps.log.info('turno pulado — conversa não elegível para IA', {
           job_id: job.id,
           conversation_id: payload.conversation_id,
@@ -8551,7 +8556,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     // A coluna interna conserva plano e operação originais; não é uma nova
     // escolha de agente. O payload legado nunca autoriza nem controla replay.
     let apresentacaoVetada: { proximaSeq: number } | undefined;
-    if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
+    if (!tetoDoAnonimo && job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
       // O envio retomado credita o agente do turno que gravou o snapshot, como o
       // envio original; sem isto ele sairia com o ator de fallback.
       const agenteDoSnapshot = readCatalogPresentationSnapshot(
@@ -8622,6 +8627,13 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           inboundMessageId: payload.inbound_message_id,
         })
       ) {
+        return;
+      }
+      if (tetoDoAnonimo) {
+        deps.log.info('turno pulado — teto do visitante anônimo no modo assistido, sem rascunho', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
         return;
       }
       const { generateReplyDraft } = await import('./reply-drafts');
