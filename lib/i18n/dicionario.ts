@@ -13017,6 +13017,10 @@ export const DICIONARIO: Traducoes = {
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },
+  "Incluir o link da reunião neste lembrete": { es: "Incluir el enlace de la reunión en este recordatorio" },
+  "Desligado, este aviso sai sem a linha do link e sem a frase de que ele chega pela conversa.": {
+    es: "Desactivado, este aviso sale sin la línea del enlace y sin la frase de que llega por la conversación.",
+  },
   "Adicionar lembrete": { es: "Agregar recordatorio" },
   "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
     es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
