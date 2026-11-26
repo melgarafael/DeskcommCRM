@@ -373,7 +373,7 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   tentativa só recupera a falha anterior ao `force_human` (a passagem não é uma transação: depois
   dele, o job termina no veto de handoff). Contato fora do público do agente segue em silêncio, e
   a restrição comercial não passa na frente da escolta. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
-  'teto_do_visitante_anonimo'` (migration 9496). Depois dela, o `force_human` veta a IA antes do
+  'teto_do_visitante_anonimo'` (migration 9499). Depois dela, o `force_human` veta a IA antes do
   teto, então a frase não se repete enquanto a conversa está com a equipe; quem a devolve ao
   automático, com o visitante ainda anônimo e no limite, volta a receber a frase e a passagem.
   **Não coberto:** o worker de quem ainda não publicou agente (`workers/ai-response-worker.ts`)
