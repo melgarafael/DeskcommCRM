@@ -159,14 +159,15 @@ describe("a instalação é TETO", () => {
   });
 });
 
-describe("módulo que ainda não liga (MODULOS_AINDA_NAO_LIGAVEIS)", () => {
-  it("ligar o chat no site para a empresa é recusado mesmo com a instalação ligada, e nada é gravado", async () => {
-    // A instalação ligada por fixture: a recusa tem de vir da lista, não do teto.
+describe("chat no site agora pode ser ligado pela empresa (saiu de MODULOS_AINDA_NAO_LIGAVEIS)", () => {
+  it("com a instalação ligada, ligar o chat no site para a empresa é permitido e grava a linha", async () => {
     deps.flagsLigadas = ["MODULO_CANAL_WEBCHAT"];
     const r = await updateModuloDaEmpresa({ organizationId: ORG, modulo: "canal_webchat", estado: "ligado" });
-    expect(r).toEqual({ ok: false, error: "modulo_ainda_nao_disponivel" });
-    expect(deps.upsert).not.toHaveBeenCalled();
-    expect(deps.tabelas).toEqual([]);
+    expect(r).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ organization_id: ORG, modulo: "canal_webchat", estado: "ligado" }),
+      { onConflict: "organization_id,modulo" },
+    );
   });
 
   it("desligar o chat no site para a empresa continua permitido", async () => {
