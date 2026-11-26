@@ -502,6 +502,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "e o usuário semeado em rls-isolation.test.ts é `agent` — o controle " +
       "positivo falharia por ACERTO ali.",
   },
+  {
+    tabela: "calendar_appointment_responsibles",
+    razao:
+      "tests/invariants/agenda-responsaveis.test.ts — F.12 (migration 9494, #3067): JWT " +
+      "authenticated de duas organizações; o membro de A lê as linhas da própria organização " +
+      "(controle positivo, pelo menos 1) e o membro de B lê ZERO das de A. A tabela só tem " +
+      "SELECT para authenticated (a escrita é das funções security definer) e a policy é de " +
+      "leitura por organização.",
+  },
 ];
 
 /**
