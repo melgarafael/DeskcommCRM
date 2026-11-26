@@ -149,6 +149,7 @@ export function montarAvisoDeCaso(aviso: AvisoDeCaso): string {
     linhas.push(`RESPONDER ${aviso.caseId} ${ciclo}<resposta ou decisão>`);
     linhas.push(t("Para pedir que a IA esclareça algo com o cliente, envie:"));
     linhas.push(`PERGUNTAR ${aviso.caseId} ${ciclo}<pergunta ao cliente>`);
+    linhas.push(t("Ou cite esta mensagem e escreva só a resposta; para perguntar ao cliente, comece com ?."));
     linhas.push(t("A IA usa sua orientação e o histórico para continuar o atendimento."));
   } else {
     linhas.push(t("Responder aqui não chega ao cliente — abra o link para responder."));

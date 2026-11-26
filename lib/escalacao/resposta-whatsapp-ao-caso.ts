@@ -63,10 +63,53 @@ export async function consumirRespostaDoSuporteNoWhatsApp(
     direction: "inbound" | "outbound";
     texto: string | null;
     externalId: string;
+    citacao?: { idsDoAviso: string[] } | null;
   },
 ): Promise<boolean> {
   const { consumed } = await consumirComResultado(admin, entrada);
   return consumed;
+}
+
+/**
+ * A RESPOSTA CITANDO O AVISO (issue #5257). Quem responde segura a mensagem do
+ * aviso › "Responder" e escreve só o texto. A citação chega como uma lista de
+ * ids candidatos já normalizada pela camada do canal, e é o `external_id` da
+ * entrega que diz qual caso é. Sem entrega casada, devolve `null` e a mensagem
+ * segue como qualquer outra da mesma conexão — nada de adivinhar o caso pelo
+ * texto.
+ *
+ * Convenção para pergunta: o texto começar com `?` ou com `PERGUNTAR`.
+ */
+async function comandoPelaCitacao(
+  admin: SupabaseClient,
+  entrada: {
+    organizationId: string;
+    channelSessionId: string;
+    texto: string | null;
+    citacao?: { idsDoAviso: string[] } | null;
+  },
+): Promise<ComandoDeRespostaDoSuporte | null> {
+  const texto = entrada.texto?.trim() ?? "";
+  if (!entrada.citacao || entrada.citacao.idsDoAviso.length === 0 || !texto) return null;
+  const formas = entrada.citacao.idsDoAviso;
+  const { data, error } = await admin
+    .from("entregas_de_aviso_de_caso")
+    .select("case_id")
+    .eq("organization_id", entrada.organizationId)
+    .eq("channel_session_id", entrada.channelSessionId)
+    .in("external_id", formas)
+    .limit(1)
+    .maybeSingle();
+  const caseId = (data as { case_id?: string } | null)?.case_id;
+  if (error || !caseId || !CasoId.safeParse(caseId).success) return null;
+  const pergunta = /^(\?|PERGUNTAR\b)/i.exec(texto);
+  const body = (pergunta ? texto.slice(pergunta[0].length) : texto).trim();
+  if (body.length === 0 || body.length > 4000) return null;
+  return {
+    caseId,
+    action: pergunta ? "need_lead_info" : "resolved",
+    body,
+  };
 }
 
 export async function consumirComResultado(
@@ -78,6 +121,7 @@ export async function consumirComResultado(
     direction: "inbound" | "outbound";
     texto: string | null;
     externalId: string;
+    citacao?: { idsDoAviso: string[] } | null;
   },
 ): Promise<{ consumed: boolean; result: ResultadoDeRespostaWhatsApp }> {
   const interno = await ehNumeroInternoDeAviso(
@@ -98,8 +142,14 @@ export async function consumirComResultado(
   const phone = entrada.identidade.phone ??
     (entrada.identidade.kind === "lid" ? config.destino : null);
 
+  // Ordem: o comando com UUID manda; sem ele, a citação do aviso. Só a entrada
+  // pode trazer citação, e só quando a conexão é a que envia os avisos — a
+  // checagem de sessão abaixo continua sendo quem decide se a mensagem conta.
   const comando = entrada.direction === "inbound"
-    ? parseComandoDeRespostaDoSuporte(entrada.texto)
+    ? (parseComandoDeRespostaDoSuporte(entrada.texto) ??
+       (entrada.channelSessionId === config.sessaoId
+         ? await comandoPelaCitacao(admin, entrada)
+         : null))
     : null;
 
   // ── O MEMBRO DA EQUIPE QUE TAMBÉM É CLIENTE (#3900) ─────────────────────
