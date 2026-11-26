@@ -16,7 +16,7 @@ no sync:
 
 | Arquivo | Motivo | Aprovado por / data | Como reaplicar |
 |---|---|---|---|
-| — | — | — | — |
+| `lib/theme.tsx` (🚧 ainda não alterado) | Tema escuro como padrão: o fallback do upstream é `"system"` → claro | Responsável pelo fork, 2026-11-26 | A definir quando o patch for feito |
 
 **Valores copiados à mão do DS** (o pacote não exporta a variável):
 
@@ -26,6 +26,5 @@ no sync:
 
 ## Pendências conhecidas
 
-- **Tema escuro como padrão:** o padrão também é decidido em `lib/theme.tsx` (fallback `"system"` →
-  claro), fora da superfície permitida. Antes de alterar, é preciso aprovar e conferir o
-  `lib/theme.test.tsx`.
+- **Tema escuro como padrão:** alteração em `lib/theme.tsx` aprovada em 2026-11-26. Antes de
+  alterar, conferir o que o `lib/theme.test.tsx` mede: o teste do upstream não se altera.

@@ -26,6 +26,10 @@ da Ânima. O fork vive em `Anima-Solutions/anima-hub` e recebe o upstream por ta
 
 **Estado em 2026-11-26:** só existe a documentação. Nenhum token foi trocado ainda.
 
+**Decisões tomadas (2026-11-26):** imagem `ghcr.io/anima-solutions/anima-hub`; worker e scheduler
+com as imagens oficiais do upstream; Supabase self-hosted no mesmo servidor; tema escuro como
+padrão (com patch aprovado em `lib/theme.tsx`).
+
 **Ponto de partida do fork:** um commit da `main` do upstream posterior à **v1.125.0** e anterior à
 **v1.126.0** (`7ef344257`). O primeiro sync recomendado é para a `v1.126.0`.
 
@@ -76,14 +80,14 @@ O `.npmrc` do projeto (🚧, entra junto com a dependência do DS) terá somente
 
 O ponto de partida é o kit do upstream (`hostgator-setup-kit/`), com três diferenças:
 
-1. **Imagem do app:** usa a imagem Ânima em vez de `ghcr.io/melgarafael/deskcommcrm`. ❓ O
-   registro e o nome da imagem ainda não foram decididos. A sugestão é
-   `ghcr.io/anima-solutions/anima-hub:<versão>`.
-2. **Worker e scheduler continuam com as imagens oficiais** do upstream, na mesma tag de versão.
-   O Nível 1 não altera nada que eles executam. ❓ Confirmar essa decisão quando o workflow de
-   imagem for escrito.
+1. **Imagem do app:** `ghcr.io/anima-solutions/anima-hub:<versão>` em vez de
+   `ghcr.io/melgarafael/deskcommcrm` (decidido em 2026-11-26).
+2. **Worker e scheduler usam as imagens oficiais** do upstream (`ghcr.io/melgarafael/deskcomm-worker`
+   e `deskcomm-scheduler`), na mesma tag de versão do upstream em que o fork se baseia. O Nível 1
+   não altera nada que eles executam (decidido em 2026-11-26).
 3. **Proxy e pastas:** o Caddy do projeto não sobe. Na frente fica o **Nginx Proxy Manager**, na
    rede `anima_proxymanager_shared_network`, e os dados vão para `/srv/...` (seção 11).
+4. **Supabase self-hosted no mesmo servidor** (decidido em 2026-11-26). Veja a seção 4.1.
 
 Comando de subida (encapsulado pelo `make up`, 🚧):
 
@@ -106,10 +110,41 @@ no NPM apontando para `PROXY_NETWORK_APP_IP:3000` → `make health`.
 **Verificação depois de qualquer deploy:** `/` responde `200` e `/app` responde `307` (redireciona
 para o login). Um `200` sozinho não prova que quem respondeu foi o app.
 
-❓ **Supabase:** Cloud ou self-hosted no mesmo servidor? Se for self-hosted, o Postgres vai em
-`/srv/appdata/deskcomm/supabase-db/` e o storage em `/srv/storage/deskcomm/`.
+### 4.1 Supabase self-hosted
 
-❓ **Recursos mínimos:** serão medidos no stack real antes do primeiro deploy.
+O upstream tem um modo que instala o Supabase no mesmo servidor
+(`hostgator-setup-kit/install-single-server.sh` + `docker-compose.single-server.yml`). Ele roda o
+instalador oficial do Supabase (versão fixa em `SUPABASE_REF`, com checagem SHA-256) em
+`.runtime/supabase/` e liga o CRM e o Supabase por uma rede privada.
+
+> ⚠️ **Esse modo só suporta Caddy ou Traefik na frente, não o Nginx Proxy Manager.** O roteamento
+> que o Caddy faz no `Caddyfile.single-server` precisa ser reproduzido no NPM. 🚧 O desenho abaixo
+> ainda não foi testado.
+
+Roteamento no mesmo domínio (um Proxy Host no NPM com *Custom locations*):
+
+| Caminho | Destino |
+|---|---|
+| `/auth/v1`, `/rest/v1`, `/realtime/v1` (WebSocket), `/storage/v1`, `/functions/v1`, `/graphql/v1` | gateway do Supabase (`api-gw`, porta `8000`) |
+| `/api/v1/webhooks/waha` | **403** (o webhook global do WAHA não pode vir de fora) |
+| todo o resto | `app:3000` |
+
+Para isso, o `docker-compose.anima.yml` (🚧) também precisa colocar o `api-gw` do Supabase na rede
+`anima_proxymanager_shared_network`, com IP fixo próprio.
+
+Dados (🚧, via override do compose do Supabase):
+
+| Dado | Pasta |
+|---|---|
+| Postgres | `/srv/appdata/deskcomm/supabase-db/` |
+| Storage (bucket `whatsapp-media` e demais) | `/srv/storage/deskcomm/` |
+| Chaves geradas (`.runtime/supabase/.env`, `admin-credentials`) | `/srv/stacks/deskcomm/.runtime/` (permissão `700`, entra no backup) |
+
+### 4.2 Recursos
+
+O instalador do upstream recusa servidor com menos de **4 GB de RAM** e recomenda **8 GB** para o
+CRM com o Supabase no mesmo servidor. ❓ O consumo real do stack Ânima será medido antes do primeiro
+deploy e registrado aqui.
 
 ## 5. Atualização (update)
 
