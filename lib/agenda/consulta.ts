@@ -513,7 +513,7 @@ export interface ParametrosDaOcupacao {
 /**
  * O QUE OCUPA a agenda de um dono numa janela — a coleta, num lugar só.
  *
- * Agendamentos do CRM e eventos do Google Agenda SELECIONADOS, classificados por
+ * Agendamentos do CRM (como dono OU como responsável adicional, #3067) e eventos do Google Agenda SELECIONADOS, classificados por
  * `ocupadosDoDono` (que decide status que libera, evento transparente, conexão
  * caída). Nada de jornada, exceção de data, buffer ou aviso mínimo: isso é regra
  * da GRADE, e mora em `horariosLivres`.
@@ -542,8 +542,25 @@ export async function coletaOQueOcupa(
     .gt("ends_at", params.de.toISOString());
   if (params.ignorarAgendamentoId) agendamentos = agendamentos.neq("id", params.ignorarAgendamentoId);
 
-  const [{ data: agendaRaw, error: erroAg }, { data: externosRaw, error: erroExt }] = await Promise.all([
+  // #3067: quem é responsável ADICIONAL também está ocupado. Consulta à parte, pela
+  // tabela de ligação com o compromisso embutido — a mesma janela e o mesmo
+  // compromisso ignorado da consulta do dono.
+  let comoAdicional = supabase
+    .from("calendar_appointment_responsibles")
+    .select("calendar_appointments!inner(starts_at, ends_at, status)")
+    .eq("organization_id", organizationId)
+    .eq("user_id", params.donoId)
+    .lt("calendar_appointments.starts_at", params.ate.toISOString())
+    .gt("calendar_appointments.ends_at", params.de.toISOString());
+  if (params.ignorarAgendamentoId) comoAdicional = comoAdicional.neq("appointment_id", params.ignorarAgendamentoId);
+
+  const [
+    { data: agendaRaw, error: erroAg },
+    { data: adicionalRaw, error: erroAdicional },
+    { data: externosRaw, error: erroExt },
+  ] = await Promise.all([
     agendamentos,
+    comoAdicional,
     // `calendar_external_events` NÃO tem `user_id`: o dono vem por
     // `connection_id → calendar_connections.user_id`, e a situação da conexão
     // decide se o horário sai com aviso de defasagem.
@@ -560,13 +577,21 @@ export async function coletaOQueOcupa(
     }),
   ]);
 
-  const erro = erroAg ?? erroExt;
+  // Falha em qualquer uma das três leituras recusa: sem saber o que ocupa, nada é livre.
+  const erro = erroAg ?? erroAdicional ?? erroExt;
   if (erro) return { ok: false, erro: erro.message };
+
+  // O embed de uma FK chega como objeto; `flatMap` aceita também a forma de lista.
+  const deAdicional = (
+    (adicionalRaw ?? []) as unknown as {
+      calendar_appointments: LinhaDeAgendamento | LinhaDeAgendamento[] | null;
+    }[]
+  ).flatMap((linha) => linha.calendar_appointments ?? []);
 
   return {
     ok: true,
     ...ocupadosDoDono(
-      (agendaRaw ?? []) as LinhaDeAgendamento[],
+      [...((agendaRaw ?? []) as LinhaDeAgendamento[]), ...deAdicional],
       ((externosRaw ?? []) as LinhaDaOcupacaoDoGoogle[]).map(
         (linha) =>
           ({
