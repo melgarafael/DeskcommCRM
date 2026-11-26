@@ -62,6 +62,8 @@ interface Estado {
   erroReleitura?: boolean;
   /** Corpo que a RPC devolve como linha salva. */
   linhaSalva?: Record<string, unknown>;
+  /** O que `fn_colegas_podem_mexer_na_agenda` devolve (ausente = ligada). */
+  chaveDosColegas?: boolean;
 }
 
 let estado: Estado;
@@ -122,6 +124,7 @@ function supabaseFake(): SupabaseClient {
     from: (tabela: string) => cadeia(tabela),
     rpc: async (fn: string, args: Record<string, unknown>) => {
       chamadasRpc.push({ fn, args });
+      if (fn === "fn_colegas_podem_mexer_na_agenda") return { data: estado.chaveDosColegas ?? true, error: null };
       if (estado.erroRpc) return { data: null, error: estado.erroRpc };
       const patch = (args.p_patch ?? {}) as Record<string, unknown>;
       return {
@@ -226,6 +229,7 @@ describe("criação sem serviço — o ramo depende de haver responsáveis", () 
   const chamadasInsert: Array<Record<string, unknown>> = [];
   const chamadasRpcCriacao: Array<{ fn: string; args: Record<string, unknown> }> = [];
   let erroRpcCriacao: { message: string; code?: string; details?: string | null } | null = null;
+  let chaveDosColegasCriacao = true;
 
   function supabaseCriacao(): SupabaseClient {
     const cadeia = (tabela: string) => {
@@ -282,6 +286,7 @@ describe("criação sem serviço — o ramo depende de haver responsáveis", () 
       }),
       rpc: async (fn: string, args: Record<string, unknown>) => {
         chamadasRpcCriacao.push({ fn, args });
+        if (fn === "fn_colegas_podem_mexer_na_agenda") return { data: chaveDosColegasCriacao, error: null };
         if (fn !== "fn_appointment_insert_with_responsibles") return { data: [], error: null };
         if (erroRpcCriacao) return { data: null, error: erroRpcCriacao };
         return { data: { id: COMPROMISSO }, error: null };
@@ -295,6 +300,27 @@ describe("criação sem serviço — o ramo depende de haver responsáveis", () 
     chamadasInsert.length = 0;
     chamadasRpcCriacao.length = 0;
     erroRpcCriacao = null;
+    chaveDosColegasCriacao = true;
+  });
+
+  // #5280: o adicional ocupa a agenda do colega, então segue a opção do principal.
+  const atendenteDono = { ...ctx, actor: { type: "user", id: PRINCIPAL, role: "agent" } } as unknown as HandlerCtx;
+
+  it("(c) atendente com a opção desligada incluindo um colega: 403 appointment_do_colega e nada gravado", async () => {
+    chaveDosColegasCriacao = false;
+    const erro = await marcarAgendamentoHandler(supabaseCriacao(), atendenteDono, {
+      ...entrada,
+      responsible_user_ids: [X],
+    } as never).catch((e) => e);
+    expect(erro).toBeInstanceOf(ApiError);
+    expect(erro).toMatchObject({ status: 403, code: "appointment_do_colega" });
+    expect(chamadasInsert).toHaveLength(0);
+    expect(chamadasRpcCriacao.filter((c) => c.fn === "fn_appointment_insert_with_responsibles")).toHaveLength(0);
+  });
+
+  it("(d) controle: com a opção ligada, o mesmo pedido chega ao RPC", async () => {
+    await marcarAgendamentoHandler(supabaseCriacao(), atendenteDono, { ...entrada, responsible_user_ids: [X] } as never).catch(() => null);
+    expect(chamadasRpcCriacao.filter((c) => c.fn === "fn_appointment_insert_with_responsibles")).toHaveLength(1);
   });
 
   it("(a) SEM responsible_user_ids: chama o INSERT de sempre e NÃO chama o RPC", async () => {
@@ -320,5 +346,34 @@ describe("criação sem serviço — o ramo depende de haver responsáveis", () 
     expect(pF.id).not.toBe("");
     expect(erro).toBeInstanceOf(ApiError);
     expect(erro).toMatchObject({ status: 409, code: "responsavel_indisponivel", details: { user_id: X } });
+  });
+});
+
+describe("PATCH de responsáveis — a opção de agenda dos colegas vale para os adicionais (#5280)", () => {
+  // O atendente é o DONO do compromisso: a recusa que se mede é a do adicional, não a do principal.
+  const atendenteDono = { ...ctx, actor: { type: "user", id: PRINCIPAL, role: "agent" } } as unknown as HandlerCtx;
+  const gerente = { ...ctx, actor: { type: "user", id: USUARIO, role: "manager" } } as unknown as HandlerCtx;
+
+  it("opção desligada: o atendente que põe um colega na lista recebe 403 appointment_do_colega e a RPC de mudança não é chamada", async () => {
+    estado.chaveDosColegas = false;
+    const erro = await alterarAgendamentoHandler(supabaseFake(), atendenteDono, { id: COMPROMISSO, responsible_user_ids: [X] } as never).catch((e) => e);
+    expect(erro).toBeInstanceOf(ApiError);
+    expect(erro).toMatchObject({ status: 403, code: "appointment_do_colega" });
+    expect(chamadasRpc.some((c) => c.fn === "fn_appointment_change")).toBe(false);
+  });
+
+  it("opção desligada: tirar todos os adicionais ([]) segue permitido", async () => {
+    estado.chaveDosColegas = false;
+    estado.antes = [X];
+    await alterarAgendamentoHandler(supabaseFake(), atendenteDono, { id: COMPROMISSO, responsible_user_ids: [] } as never);
+    expect(chamadasRpc.some((c) => c.fn === "fn_appointment_change")).toBe(true);
+  });
+
+  it("controles: com a opção ligada o atendente passa; o gerente passa com ela desligada", async () => {
+    await alterarAgendamentoHandler(supabaseFake(), atendenteDono, { id: COMPROMISSO, responsible_user_ids: [X] } as never);
+    expect(chamadasRpc.filter((c) => c.fn === "fn_appointment_change")).toHaveLength(1);
+    estado.chaveDosColegas = false;
+    await alterarAgendamentoHandler(supabaseFake(), gerente, { id: COMPROMISSO, responsible_user_ids: [X] } as never);
+    expect(chamadasRpc.filter((c) => c.fn === "fn_appointment_change")).toHaveLength(2);
   });
 });
