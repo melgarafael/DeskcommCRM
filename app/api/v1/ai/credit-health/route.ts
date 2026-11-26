@@ -12,7 +12,7 @@ export async function GET() {
 
   try {
     const avisos = await avisosDeSaldoDaIa(getRequestPool(), authz.org.orgId);
-    return ok({ avisos }, { headers: { "Cache-Control": "private, no-store" } });
+    return ok({ orgId: authz.org.orgId, avisos }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return fail(
       "internal_error",

@@ -16,10 +16,18 @@ export async function avisosDeSaldoDaIa(
 ): Promise<AvisoDeSaldoDaIa[]> {
   const { rows } = await db.query<AvisoDeSaldoDaIa>(
     `with credenciais as materialized (
-       select id, provider, created_at,
-              count(*) over (partition by provider) = 1 as unica
-       from ai_provider_credentials
-       where organization_id = $1 and is_active and validated_at is not null
+       select ch.id, ch.provider, ch.created_at, rot.data as rotacionada_em,
+              count(*) over (partition by ch.provider) = 1 as unica
+       from ai_provider_credentials ch
+       left join (
+         select al.resource_id, max(al.created_at) as data
+         from api_audit_log al
+         where al.organization_id = $1
+           and al.created_at >= now() - interval '7 days'
+           and al.action = 'ai.credential_updated' and al.metadata->>'trocou_chave' = 'true'
+         group by al.resource_id
+       ) rot on rot.resource_id = ch.id
+       where ch.organization_id = $1 and ch.is_active and ch.validated_at is not null
      ), eventos as (
        select l.provider, l.purpose, l.job_id, l.created_at, l.status,
               l.purpose = 'agent_turn' and j.kind = 'inbound_turn' as atendimento,
@@ -28,7 +36,7 @@ export async function avisosDeSaldoDaIa(
        join organizations o on o.id = l.organization_id
        left join job_queue j on j.organization_id = l.organization_id and j.id = l.job_id
        left join ai_agents a on a.organization_id = l.organization_id and a.id = l.agent_id
-         and a.is_active and a.archived_at is null
+         and a.is_active and a.archived_at is null and a.paused_at is null
        left join ai_agent_versions v on v.organization_id = a.organization_id
          and v.id = a.published_version_id and v.provider = l.provider
          and l.origem_da_escolha in ('agente_publicado', 'herdado_de_quem_chamou')
@@ -36,11 +44,17 @@ export async function avisosDeSaldoDaIa(
          and b.purpose = l.purpose and b.is_enabled
          and (l.origem_da_escolha in ('binding', 'padrao_da_organizacao', 'variavel_de_ambiente')
            or (l.origem_da_escolha = 'reserva_do_jev' and b.provider = l.provider))
-       left join credenciais c on c.provider = l.provider and c.created_at <= l.created_at
+       left join credenciais c on c.provider = l.provider
          and (c.id = coalesce(v.credential_id, b.credential_id)
            or (c.unica and coalesce(v.credential_id, b.credential_id) is null))
        where l.organization_id = $1 and l.created_at >= now() - interval '7 days'
          and l.purpose <> 'agent_preview'
+         and (l.agent_id is null or a.id is not null)
+         and (l.purpose <> 'agent_turn' or j.kind is distinct from 'inbound_turn'
+           or a.operation_mode is distinct from 'assisted')
+         and (l.provider <> 'typesafe' or o.settings #> '{jev,ligado}' = 'true'::jsonb)
+         and (coalesce(v.credential_id, b.credential_id) is null or c.id is not null)
+         and (c.id is null or l.created_at >= greatest(c.created_at, c.rotacionada_em))
          and (j.kind is not null or l.purpose in (
            'transcricao_de_audio', 'visao_de_imagem', 'sentiment_classify',
            'afirmacao_de_fato', 'jev_pedidos'

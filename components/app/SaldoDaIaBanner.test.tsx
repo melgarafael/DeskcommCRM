@@ -6,15 +6,23 @@ import { SaldoDaIaBanner } from "./SaldoDaIaBanner";
 
 const estado = vi.hoisted(() => ({
   role: "agent",
+  orgId: "org",
+  orgConsultada: "org",
+  isError: false,
+  isPaused: false,
   avisos: [{ provider: "openai", atendimento: true }],
 }));
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useAuth: () => ({ activeOrg: { orgId: "org", role: estado.role } }),
+  useAuth: () => ({ activeOrg: { orgId: estado.orgId, role: estado.role } }),
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { avisos: estado.avisos } }),
+  useQuery: () => ({
+    data: { orgId: estado.orgConsultada, avisos: estado.avisos },
+    isError: estado.isError,
+    isPaused: estado.isPaused,
+  }),
 }));
 
 afterEach(cleanup);
@@ -43,6 +51,27 @@ describe("aviso de saldo da IA", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/app/ai/providers");
 
     estado.role = "viewer";
+    tela.rerender(<SaldoDaIaBanner />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("oculta o último aviso se a consulta falhar, pausar ou vier de outra organização", () => {
+    estado.role = "agent";
+    estado.avisos = [{ provider: "openai", atendimento: true }];
+    const tela = render(<SaldoDaIaBanner />);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    estado.isError = true;
+    tela.rerender(<SaldoDaIaBanner />);
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    estado.isError = false;
+    estado.isPaused = true;
+    tela.rerender(<SaldoDaIaBanner />);
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    estado.isPaused = false;
+    estado.orgConsultada = "outra-org";
     tela.rerender(<SaldoDaIaBanner />);
     expect(screen.queryByRole("alert")).toBeNull();
   });

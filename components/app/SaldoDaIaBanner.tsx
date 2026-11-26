@@ -16,16 +16,18 @@ export function SaldoDaIaBanner() {
   const t = useT();
   const { activeOrg } = useAuth();
   const podeVerAviso = Boolean(activeOrg && roleAtLeast(activeOrg.role, "agent"));
-  const { data } = useQuery({
+  const { data, isError, isPaused } = useQuery({
     queryKey: ["ai-credit-health", activeOrg?.orgId],
     enabled: podeVerAviso,
     staleTime: 30_000,
     refetchInterval: 60_000,
+    retry: false,
     queryFn: async () =>
-      (await apiClient.get<{ data: { avisos: AvisoDeSaldoDaIa[] } }>("/api/v1/ai/credit-health")).data,
+      (await apiClient.get<{ data: { orgId: string; avisos: AvisoDeSaldoDaIa[] } }>("/api/v1/ai/credit-health")).data,
   });
 
-  if (!activeOrg || !podeVerAviso || !data?.avisos.length) return null;
+  if (!activeOrg || !podeVerAviso || isError || isPaused
+      || data?.orgId !== activeOrg.orgId || !data.avisos.length) return null;
 
   const nomes = data.avisos.map(({ provider }) => rotuloDoProvedor(provider) ?? provider);
   const atendimento = data.avisos.some((aviso) => aviso.atendimento);
