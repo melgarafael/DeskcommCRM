@@ -51,6 +51,13 @@ import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Saldo insuficiente para o atendimento automático": { es: "Saldo insuficiente para la atención automática" },
+  "Saldo insuficiente em uma etapa da IA": { es: "Saldo insuficiente en una etapa de la IA" },
+  "Enquanto isso, responda pelo Inbox.": { es: "Mientras tanto, responde desde la bandeja de entrada." },
+  "Recarregue o saldo na conta do provedor.": { es: "Recarga el saldo en la cuenta del proveedor." },
+  "Avise quem administra o CRM.": { es: "Avisa a quien administra el CRM." },
+  "Ver provedores de IA": { es: "Ver proveedores de IA" },
+  "Não foi possível consultar o saldo da IA.": { es: "No se pudo consultar el saldo de la IA." },
   // Repetição das mensagens agendadas (segunda parte da #3118).
   "repetição": { es: "repetición" },
   "Recorrência": { es: "Repetición" },
