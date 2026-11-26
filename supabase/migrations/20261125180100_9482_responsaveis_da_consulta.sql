@@ -344,6 +344,7 @@ begin
   if auth.uid() is not null and (not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org)) then raise exception 'appointment_forbidden' using errcode='42501';end if;
   if auth.uid() is not null and not public.fn_session_mfa_proven() then raise exception 'appointment_mfa_required' using errcode='42501';end if;
   if auth.uid() is not null and not public.fn_role_at_least(p_org,'manager') and not public.fn_colegas_podem_mexer_na_agenda(p_org) and owner is distinct from auth.uid() then raise exception 'appointment_do_colega' using errcode='42501';end if;
+  if owner is not null and not exists(select 1 from public.user_organizations m where m.organization_id=p_org and m.user_id=owner and m.revoked_at is null) then raise exception 'appointment_owner_invalid' using errcode='22023';end if;
   if not exists(select 1 from public.calendar_event_types e where e.organization_id=p_org and e.id=t_id) then raise exception 'appointment_event_type_invalid' using errcode='22023';end if;
   if nullif(p_f->>'contact_id','') is not null and not exists(select 1 from public.contacts c where c.organization_id=p_org and c.id=(p_f->>'contact_id')::uuid) then raise exception 'appointment_contact_invalid' using errcode='22023';end if;
   if nullif(p_f->>'conversation_id','') is not null and not exists(select 1 from public.conversations v where v.organization_id=p_org and v.id=(p_f->>'conversation_id')::uuid) then raise exception 'appointment_conversation_invalid' using errcode='22023';end if;
