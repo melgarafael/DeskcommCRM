@@ -133,6 +133,15 @@ test.describe("número sem WhatsApp não some em um tique", () => {
     expect(noConversation.error).toBeNull();
     expect(noConversation.count).toBe(0);
     expect(sends).toBe(0);
+    const refusedByPhone = await page.request.post("/api/v1/messages", {
+      data: { phone_number: "+12025550123", type: "text", body: "Teste pela porta de telefone" },
+    });
+    expect(refusedByPhone.status()).toBe(422);
+    expect((await refusedByPhone.json()).error).toMatchObject({
+      code: "numero_sem_whatsapp",
+      message: "Este número não tem WhatsApp.",
+    });
+    expect(sends).toBe(0);
     await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
     // Conversa legada: não passou pela abertura nova. O envio precisa proteger também este caminho.
     const conversation = await insert("conversations", {
