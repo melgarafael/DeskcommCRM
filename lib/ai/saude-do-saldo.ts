@@ -25,6 +25,7 @@ export async function avisosDeSaldoDaIa(
               l.purpose = 'agent_turn' and j.kind = 'inbound_turn' as atendimento,
               coalesce(c.id::text, concat('ponto:', l.purpose, ':', l.agent_id, ':', l.origem_da_escolha)) as conta
        from llm_calls l
+       join organizations o on o.id = l.organization_id
        left join job_queue j on j.organization_id = l.organization_id and j.id = l.job_id
        left join ai_agents a on a.organization_id = l.organization_id and a.id = l.agent_id
          and a.is_active and a.archived_at is null
@@ -32,8 +33,9 @@ export async function avisosDeSaldoDaIa(
          and v.id = a.published_version_id and v.provider = l.provider
          and l.origem_da_escolha in ('agente_publicado', 'herdado_de_quem_chamou')
        left join ai_purpose_bindings b on b.organization_id = l.organization_id
-         and b.purpose = l.purpose and b.provider = l.provider and b.is_enabled
-         and l.origem_da_escolha in ('binding', 'reserva_do_jev')
+         and b.purpose = l.purpose and b.is_enabled
+         and (l.origem_da_escolha in ('binding', 'padrao_da_organizacao', 'variavel_de_ambiente')
+           or (l.origem_da_escolha = 'reserva_do_jev' and b.provider = l.provider))
        left join credenciais c on c.provider = l.provider and c.created_at <= l.created_at
          and (c.id = coalesce(v.credential_id, b.credential_id)
            or (c.unica and coalesce(v.credential_id, b.credential_id) is null))
@@ -43,7 +45,15 @@ export async function avisosDeSaldoDaIa(
            'transcricao_de_audio', 'visao_de_imagem', 'sentiment_classify',
            'afirmacao_de_fato', 'jev_pedidos'
          ))
-         and (l.origem_da_escolha is distinct from 'agente_publicado' or v.id is not null)
+         -- Falha antiga continua no histórico, mas deixa de avisar se aquele ponto trocou de provedor.
+         and case
+           when l.origem_da_escolha = 'agente_publicado' then v.id is not null
+           when l.origem_da_escolha = 'herdado_de_quem_chamou' and l.agent_id is not null then v.id is not null
+           when l.origem_da_escolha = 'binding' then b.provider = l.provider
+           when l.origem_da_escolha in ('padrao_da_organizacao', 'variavel_de_ambiente') then
+             b.purpose is null and l.provider = coalesce(nullif(o.settings->'llm'->>'provider', ''), 'anthropic')
+           else true
+         end
          and (v.published_at is null or l.created_at >= v.published_at)
          and (b.updated_at is null or l.created_at >= b.updated_at)
          and (l.status = 'ok' or (l.status = 'erro' and (
