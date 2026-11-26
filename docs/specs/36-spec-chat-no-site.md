@@ -364,14 +364,19 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
 - **Frase e passagem no teto (F4-A).** O drain (`lib/agent-engine/edge/crm/drain.ts`) deixa o
   veto `teto_do_visitante_anonimo` virar turno, porque é o turno que avisa e passa, e o handler do
-  job deixa esse veto seguir (no agente assistido ele para ali, sem rascunho). No turno do
-  agente (`inbound-turn.ts`), esse veto segue a escolta do teto de gasto: a frase ao visitante sai antes da
-  passagem, aviso que falha não impede a passagem, e passagem que falha encerra o turno sem chamar
-  o modelo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
+  job deixa esse veto seguir, com o roteador escolhendo o agente sem classificar (sem gasto de
+  modelo); no agente assistido ele para ali, sem rascunho. No turno do agente (`inbound-turn.ts`),
+  a escolta respeita a janela de envio do canal (fora dela o turno é adiado para a abertura, como
+  qualquer resposta); pedido de parar e pedido de uma pessoa vencem o teto (nos dois modos eles
+  seguem as detecções de sempre, com o aviso delas); a frase ao visitante sai antes da passagem, e
+  aviso que falha não impede a passagem. Passagem que falha derruba o turno, sem chamar o modelo, e
+  o job tenta de novo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
   'teto_do_visitante_anonimo'` (migration 9493). Depois dela, o `force_human` veta a IA antes do
-  teto, então a frase sai uma vez por conversa. **Não coberto:** o worker de quem ainda não
-  publicou agente (`workers/ai-response-worker.ts`) continua só parando a IA no teto, sem frase nem
-  passagem: ali o veto acontece antes de existir a fronteira do atendimento que a passagem exige.
+  teto, então a frase não se repete enquanto a conversa está com a equipe; quem a devolve ao
+  automático, com o visitante ainda anônimo e no limite, volta a receber a frase e a passagem.
+  **Não coberto:** o worker de quem ainda não publicou agente (`workers/ai-response-worker.ts`)
+  continua só parando a IA no teto, sem frase nem passagem: ali o veto acontece antes de existir a
+  fronteira do atendimento que a passagem exige.
 - **Pendente (F4-B):** "pode ser o mesmo contato" e "Continuar no WhatsApp": se o telefone ou
   e-mail digitado no chat já é de outra ficha, a tela de Duplicados mostra o par para conferir
   (nunca junta sozinho), e a janela ganha o botão opcional "Continuar no WhatsApp" com o código

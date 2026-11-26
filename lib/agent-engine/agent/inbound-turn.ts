@@ -1041,6 +1041,10 @@ export const RESUMO_DO_HANDOFF_POR_ORCAMENTO =
 /** Título do item da Central que este handoff abre — rótulo visível, logo constante. */
 export const TITULO_DO_HANDOFF_POR_ORCAMENTO = 'Teto de gasto com IA atingido — assumir a conversa';
 
+/** Título do item da Central do teto do visitante anônimo (Spec 36, F4): ninguém pediu uma pessoa. */
+export const TITULO_DO_HANDOFF_POR_TETO_DO_ANONIMO =
+  'Visitante do chat no site chegou ao limite da IA — assumir a conversa';
+
 /**
  * Título do item da Central do handoff por SUSPEITA de opt-out (#1713).
  *
@@ -2920,6 +2924,7 @@ async function executarTurnoDoAgente(
   // mudou. Canal 'open' (default) → `permite:true`, nada muda. NO-OP no início do
   // turno, antes de qualquer chamada de modelo — mesmo lugar e mesmo custo do
   // veto de handoff acima.
+  let escoltarTetoDoAnonimo = false;
   if (!preview) {
     try {
       const elegib = await decidirElegibilidadeDaConversa(pool, {
@@ -2929,83 +2934,18 @@ async function executarTurnoDoAgente(
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
       if (elegib !== null && !elegib.permite) {
-        // TETO DO VISITANTE ANÔNIMO (Spec 36, F4): em vez de silêncio, a mesma
-        // escolta do teto de gasto — o aviso ao visitante ANTES da passagem (que
-        // arma o `force_human` e vetaria o envio), e aviso que falha não impede a
-        // passagem. Nenhum modelo é chamado. Depois da passagem, o `force_human`
-        // veta a IA antes do teto, então a frase sai uma vez por conversa.
+        // TETO DO VISITANTE ANÔNIMO (Spec 36, F4): em vez de silêncio, o turno
+        // segue até a escolta, depois da janela de envio — fora do `try`, para a
+        // falha dela não seguir o turno até o modelo.
         if (elegib.motivo === 'teto_do_visitante_anonimo' && liveJob().kind === 'inbound_turn') {
-          let aviso: DesfechoDoAviso;
-          try {
-            aviso = await avisarLeadLendoOContato(
-              pool,
-              {
-                tenantId,
-                leadId,
-                conversationId: input.conversationId,
-                channelSessionId: input.channelSessionId,
-                jobId: liveJob().id,
-              },
-              {
-                motivo: 'teto_do_visitante_anonimo',
-                channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
-                origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
-                now: deps.clock?.() ?? new Date(),
-                log: runLog,
-                ...(deps.knobs.disclosureMode !== undefined
-                  ? { disclosureMode: deps.knobs.disclosureMode }
-                  : {}),
-                ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
-              },
-            );
-          } catch (erroDoAviso) {
-            runLog.warn('aviso ao visitante falhou antes da passagem pelo teto do anônimo', {
-              error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 160),
-            });
-            aviso = { avisado: false, porque: 'erro_no_envio' };
-          }
-          const briefing = await briefingDoCheckpointDuravel(
-            pool,
-            tenantId,
-            leadId,
-            runLog,
-            'teto_do_visitante_anonimo',
-          );
-          // A passagem que falha NÃO pode cair no `catch` de fora, que segue o turno
-          // e chamaria o modelo além do teto: falhou, o turno para aqui.
-          try {
-            await performHumanHandoff(
-              pool,
-              { tenantId, leadId, conversationId: input.conversationId },
-              {
-                reason: 'teto_do_visitante_anonimo',
-                conversationSummary: briefing.body,
-                passagem: {
-                  origem: 'teto_do_anonimo',
-                  motivoCodigo: 'teto_do_visitante_anonimo',
-                  briefing,
-                },
-                avisoAoLead: aviso,
-                log: runLog,
-              },
-            );
-          } catch (erroDaPassagem) {
-            runLog.error('passagem pelo teto do anônimo falhou — turno encerrado sem chamar o modelo', {
-              error: (erroDaPassagem instanceof Error ? erroDaPassagem.message : String(erroDaPassagem)).slice(0, 160),
-            });
-            return;
-          }
-          runLog.info('turno pulado — teto do visitante anônimo, conversa devolvida à fila humana', {
+          escoltarTetoDoAnonimo = true;
+        } else {
+          runLog.info('turno pulado — conversa não elegível para IA', {
             kind: liveJob().kind,
-            lead_avisado: aviso.avisado,
+            motivo: elegib.motivo,
           });
           return;
         }
-        runLog.info('turno pulado — conversa não elegível para IA', {
-          kind: liveJob().kind,
-          motivo: elegib.motivo,
-        });
-        return;
       }
       // KEEP-ALIVE: enquanto a conversa autorizada está viva, renova o carimbo —
       // assim uma negociação de semanas não expira pela janela de validade, mas um
@@ -3123,6 +3063,84 @@ async function executarTurnoDoAgente(
         error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
       });
     }
+  }
+
+  // A escolta do teto do visitante anônimo: o aviso ANTES da passagem (que arma o
+  // `force_human` e vetaria o envio), e aviso que falha não impede a passagem.
+  // Nenhum modelo é chamado. Passagem que falha derruba o turno: o job tenta de
+  // novo e o aviso não se repete (o envio é idempotente por job).
+  if (escoltarTetoDoAnonimo) {
+    // Pedido de parar e pedido de uma pessoa vencem o teto.
+    const agente = input.resolvedAgent?.config;
+    if (
+      agente &&
+      (await deteccoesDeterministicasDoAssistido(pool, deps, {
+        job: liveJob(),
+        tenantId,
+        conversationId: input.conversationId,
+        channelSessionId: input.channelSessionId,
+        leadId,
+        agent: agente,
+        log: runLog,
+        inboundMessageId: input.inboundMessageId,
+      }))
+    ) {
+      return;
+    }
+    let aviso: DesfechoDoAviso;
+    try {
+      aviso = await avisarLeadLendoOContato(
+        pool,
+        {
+          tenantId,
+          leadId,
+          conversationId: input.conversationId,
+          channelSessionId: input.channelSessionId,
+          jobId: liveJob().id,
+          jobClaim: claimOfJob(liveJob()),
+        },
+        {
+          motivo: 'teto_do_visitante_anonimo',
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+          origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
+          now: clock(),
+          log: runLog,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+        },
+      );
+    } catch (erroDoAviso) {
+      runLog.warn('aviso ao visitante falhou antes da passagem pelo teto do anônimo', {
+        error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 160),
+      });
+      aviso = { avisado: false, porque: 'erro_no_envio' };
+    }
+    const briefing = await briefingDoCheckpointDuravel(
+      pool,
+      tenantId,
+      leadId,
+      runLog,
+      'teto_do_visitante_anonimo',
+    );
+    await performHumanHandoff(
+      pool,
+      { tenantId, leadId, conversationId: input.conversationId },
+      {
+        reason: 'teto_do_visitante_anonimo',
+        conversationSummary: briefing.body,
+        inboxTitle: TITULO_DO_HANDOFF_POR_TETO_DO_ANONIMO,
+        passagem: { origem: 'teto_do_anonimo', motivoCodigo: 'teto_do_visitante_anonimo', briefing },
+        avisoAoLead: aviso,
+        log: runLog,
+      },
+    );
+    runLog.info('turno pulado — teto do visitante anônimo, conversa devolvida à fila humana', {
+      kind: liveJob().kind,
+      lead_avisado: aviso.avisado,
+    });
+    return;
   }
 
   // A prévia faz a mesma passagem do handler (`escalarComercialAntesDoModelo`), mas
@@ -8602,7 +8620,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       jobId: job.id,
       conversationId: payload.conversation_id,
       channelSessionId: payload.channel_session_id,
-      inbound: true,
+      // No teto do visitante anônimo não há sinal: o roteador escolhe sem classificar (sem gasto).
+      inbound: !tetoDoAnonimo,
     }, { log: deps.log, jev: deps.jev });
     const operationAgent = resolvedAgent.config;
     if (operationAgent?.operationMode === 'assisted') {

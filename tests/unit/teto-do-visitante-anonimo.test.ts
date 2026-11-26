@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
   rascunho: vi.fn(),
   retomada: vi.fn(),
+  avisoComContexto: vi.fn(),
+  contexto: vi.fn(),
+  adiar: vi.fn(),
 }));
 
 // Só os EFEITOS do handoff são dublados. As detecções seguem as REAIS.
@@ -36,6 +39,15 @@ vi.mock("@/lib/agent-engine/agent/human-handoff", async (importOriginal) => ({
 vi.mock("@/lib/agent-engine/agent/aviso-de-escalacao", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   avisarLeadLendoOContato: mocks.aviso,
+  avisarLeadDaEscalacao: mocks.avisoComContexto,
+}));
+vi.mock("@/lib/agent-engine/edge/crm/get-lead-context", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getLeadContext: mocks.contexto,
+}));
+vi.mock("@/lib/agent-engine/queue/queue", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  rescheduleJob: mocks.adiar,
 }));
 vi.mock("@/lib/agent-engine/cron/scheduler", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -133,8 +145,8 @@ async function turno(
     kind: "inbound_turn",
     payload: {},
     attempts: 1,
-    claimed_by: "w",
-    claimed_at: new Date(),
+    locked_by: "w",
+    claim_acquired_at: "2026-10-06T15:00:00.000001Z",
   };
   const deps = {
     log,
@@ -180,6 +192,9 @@ beforeEach(() => {
   mocks.aviso.mockResolvedValue({ avisado: true });
   mocks.passagem.mockResolvedValue(undefined);
   mocks.cancel.mockResolvedValue(0);
+  mocks.avisoComContexto.mockResolvedValue({ avisado: true });
+  mocks.contexto.mockResolvedValue({ ok: false, error: { code: "indisponivel" } });
+  mocks.adiar.mockResolvedValue(undefined);
 });
 
 describe("turno REAL — o teto do visitante anônimo pede contato e passa para a equipe", () => {
@@ -283,6 +298,7 @@ describe("handler REAL do job — o teto chega à escolta", () => {
   async function peloHandler(
     operationMode: "automatic" | "assisted",
     extra: Record<string, unknown> = {},
+    agora = "2026-10-06T15:00:00Z",
   ): Promise<void> {
     (decidirElegibilidadeDaConversa as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       permite: false,
@@ -305,13 +321,13 @@ describe("handler REAL do job — o teto chega à escolta", () => {
         conversation_id: CONVERSA, contact_id: CONTATO, channel_session_id: CANAL,
         inbound_message_id: MENSAGEM, crm_event_id: "77777777-7777-4777-8777-777777777777",
       },
-      attempts: 1, claimed_by: "w", claimed_at: new Date(),
+      attempts: 1, locked_by: "w", claim_acquired_at: "2026-10-06T15:00:00.000001Z",
       ...extra,
     };
     const deps = {
       log: logFalso(), llmCfg: {}, crmCfg: {},
       knobs: { maxSteps: 1, allowlistTtlMs: 21 * 24 * 60 * 60 * 1000 },
-      clock: () => new Date("2026-10-06T15:00:00Z"),
+      clock: () => new Date(agora),
       channel: () => ({ send: vi.fn(async () => ({ kind: "sent" })) }),
     };
     const pool = poolCom([texto("inbound", "e quanto custa?", 3)], texto("inbound", "e quanto custa?", 3));
@@ -329,6 +345,52 @@ describe("handler REAL do job — o teto chega à escolta", () => {
     await peloHandler("automatic", { catalog_presentation_snapshot: {} });
     expect(mocks.retomada).not.toHaveBeenCalled();
     expect(mocks.passagem).toHaveBeenCalledTimes(1);
+  });
+
+  it("o aviso leva o claim do job — sem ele o envio recusa a frase", async () => {
+    await peloHandler("automatic");
+    expect(mocks.aviso.mock.calls[0]?.[1]).toMatchObject({
+      jobClaim: { worker_id: "w", acquired_at: "2026-10-06T15:00:00.000001Z" },
+    });
+  });
+
+  it("fora da janela de envio: adia o job, sem frase nem passagem ainda", async () => {
+    // 02h UTC = 23h em São Paulo.
+    await expect(peloHandler("automatic", {}, "2026-10-07T02:00:00Z")).rejects.toThrow(/janela/);
+    expect(mocks.adiar).toHaveBeenCalledTimes(1);
+    expect(mocks.aviso).not.toHaveBeenCalled();
+    expect(mocks.passagem).not.toHaveBeenCalled();
+  });
+
+  it("passagem que falha derruba o turno, para o job tentar de novo", async () => {
+    mocks.passagem.mockRejectedValueOnce(new Error("banco fora do ar"));
+    await expect(peloHandler("automatic")).rejects.toThrow("banco fora do ar");
+  });
+
+  it("no teto o roteador não chama o classificador", async () => {
+    await peloHandler("automatic");
+    expect(mocks.resolve.mock.calls[0]?.[2]).toMatchObject({ inbound: false });
+  });
+
+  it("pedido de parar vence o teto: a passagem é a de opt-out", async () => {
+    mocks.contexto.mockResolvedValue({
+      ok: true,
+      context: {
+        messages: [texto("inbound", "para de me mandar mensagem", 3)],
+        contact: { is_blocked: false },
+      },
+    });
+    await peloHandler("automatic");
+    expect(mocks.passagem).toHaveBeenCalledTimes(1);
+    expect(mocks.passagem.mock.calls[0]?.[2]).toMatchObject({ reason: "suspected_optout" });
+    expect(mocks.aviso).not.toHaveBeenCalled();
+  });
+
+  it("o item da Central diz que foi o limite, não que alguém pediu uma pessoa", async () => {
+    await peloHandler("automatic");
+    expect(mocks.passagem.mock.calls[0]?.[2]).toMatchObject({
+      inboxTitle: "Visitante do chat no site chegou ao limite da IA — assumir a conversa",
+    });
   });
 
   it("agente assistido: no teto não rascunha, não avisa e não passa", async () => {
