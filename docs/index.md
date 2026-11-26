@@ -150,6 +150,7 @@ acessibilidade).
 | [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — qual das cotas estourou e o que aparece na tela e no log (**§0**: banco, storage, MAU, egress e log, com `arquivo:linha` do código), como medir a origem do consumo, os dois intervalos da fila, as duas tabelas que só crescem, o aviso “Log Ingestion Exceeded” (1 GB de log no free) e as saídas em ordem de custo (limpar, plano pago, Supabase local) |
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
 | [`runbooks/cloudpanel.md`](runbooks/cloudpanel.md) | **VPS que já tem CloudPanel/Nginx nas portas 80/443** — o modo proxy externo do kit, o endereço fixo para o Nginx do host e o 403 do webhook global |
+| [`runbooks/agenda-outlook.md`](runbooks/agenda-outlook.md) | **Agenda do Outlook** — registrar o aplicativo na Microsoft, o que a leitura faz e não faz, e o que olhar quando não conecta |
 | [`saas/README.md`](saas/README.md) | **Revender como SaaS** — a jornada do dono da instalação, do servidor ao primeiro cliente pagando; modelo, painel do dono, primeiro cliente, custo por cliente |
 | [`saas/cobranca.md`](saas/cobranca.md) | **Cobrar os clientes** — Stripe × Asaas, planos, teste e publicação, régua de atraso, troca de plano, nota fiscal, caminho manual |
 | [`saas/contrato-e-lgpd.md`](saas/contrato-e-lgpd.md) | **Contrato e LGPD com o cliente final** — controlador × operador, cláusulas para o advogado revisar, transferência internacional pela IA |

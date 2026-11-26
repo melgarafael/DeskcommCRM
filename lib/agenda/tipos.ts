@@ -234,7 +234,7 @@ export const CONEXOES_QUE_NAO_CONTAM: readonly SituacaoDaConexao[] =
   SITUACOES_DA_CONEXAO.filter((s) => !CONEXAO_CONTA_COMO_OCUPACAO[s]);
 
 /** Quem fornece a agenda conectada. */
-export const PROVEDORES_DE_AGENDA = ["google_calendar"] as const;
+export const PROVEDORES_DE_AGENDA = ["google_calendar", "microsoft_calendar"] as const;
 export type ProvedorDeAgenda = (typeof PROVEDORES_DE_AGENDA)[number];
 
 /**
@@ -256,6 +256,7 @@ export type ProvedorDeAgenda = (typeof PROVEDORES_DE_AGENDA)[number];
  * não estava em nenhum dos dois — estava no literal dentro do `.eq()`.
  */
 export const PROVEDOR_GOOGLE: ProvedorDeAgenda = "google_calendar";
+export const PROVEDOR_MICROSOFT: ProvedorDeAgenda = "microsoft_calendar";
 
 /** O que o Google diz sobre um evento ocupar ou não a hora. */
 export const TRANSPARENCIAS_EXTERNAS = ["opaque", "transparent"] as const;
