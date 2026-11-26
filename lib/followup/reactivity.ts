@@ -133,6 +133,12 @@ export interface ReactivityAdminClient {
    */
   loadContactPersonal?(orgId: string, contactId: string): Promise<boolean>;
   /**
+   * Lê o corpo completo da mensagem pelo `message_id` do payload, porque
+   * `body_preview` vem truncado em 280 caracteres pelo gatilho do banco.
+   * Opcional para não quebrar mocks existentes.
+   */
+  loadMessageBody?(orgId: string, messageId: string): Promise<string | null>;
+  /**
    * `statuses` existe só para o ramo de opt-out, que precisa alcançar o
    * `dormente`. As demais reações usam o default e seguem sem enxergá-lo — em
    * especial o handoff, que se pausasse um dormente o devolveria com a graça de
@@ -236,15 +242,42 @@ export const EVENTO_DE_MUDANCA_FALHOU = "move_to_stage_on_reply_failed";
 /** A linha de trilha quando um inbound de robô não cancelou/despertou `cancel_on_reply`. */
 export const EVENTO_DE_ROBO_IGNORADO = "inbound_de_robo_ignorado";
 
-function textoInboundEhDeRobo(payload: Record<string, unknown>): boolean {
+async function textoInboundEhDeRobo(
+  db: ReactivityAdminClient,
+  row: EventRow,
+): Promise<boolean> {
+  const payload = row.payload;
+  const messageId = strOrNull(payload.message_id);
+  const fullBody =
+    messageId && db.loadMessageBody
+      ? await db.loadMessageBody(row.organization_id, messageId)
+      : null;
   const raw =
-    typeof payload.body_preview === "string" && payload.body_preview.trim()
-      ? payload.body_preview.trim()
-      : typeof payload.body === "string" && payload.body.trim()
-        ? payload.body.trim()
-        : "";
+    typeof fullBody === "string" && fullBody.trim()
+      ? fullBody.trim()
+      : typeof payload.body_preview === "string" && payload.body_preview.trim()
+        ? payload.body_preview.trim()
+        : typeof payload.body === "string" && payload.body.trim()
+          ? payload.body.trim()
+          : "";
   if (!raw) return false;
   return ehMenuDeOpcoesNumeradas(raw) || ehMensagemDeRobo(raw);
+}
+
+async function registrarRoboIgnorado(
+  db: ReactivityAdminClient,
+  row: EventRow,
+  e: LiveEnrollmentRef,
+): Promise<void> {
+  const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
+  await db.insertEnrollmentEvent({
+    organization_id: row.organization_id,
+    enrollment_id: e.id,
+    node_id: e.current_node_id,
+    event_type: EVENTO_DE_ROBO_IGNORADO,
+    payload: { reason: "bot_reply" },
+    idempotency_key: roboKey,
+  });
 }
 
 /**
@@ -444,9 +477,15 @@ async function reactToInbound(
   // no conjunto que reage.
   const waitingReply = live.filter((e) => e.status === "waiting_reply");
   const esperaAtiva = live.filter((e) => e.status === "active");
-  const inboundDeRobo = textoInboundEhDeRobo(row.payload);
+  const inboundDeRobo = await textoInboundEhDeRobo(db, row);
   let reacted = 0;
   for (const e of waitingReply) {
+    const cancelOnReply = parseCancelOnReply(e.trigger_config);
+    if (cancelOnReply && inboundDeRobo) {
+      await registrarRoboIgnorado(db, row, e);
+      continue;
+    }
+
     // #3974 — "quando o cliente responder, mover o card para a etapa X": irmã
     // de `cancel_on_reply`, e ortogonal a ela. Vem ANTES do ramo de
     // cancelamento porque as duas podem estar ligadas: o card anda e a
@@ -460,19 +499,7 @@ async function reactToInbound(
       if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
     }
 
-    if (parseCancelOnReply(e.trigger_config)) {
-      if (inboundDeRobo) {
-        const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
-        await db.insertEnrollmentEvent({
-          organization_id: row.organization_id,
-          enrollment_id: e.id,
-          node_id: e.current_node_id,
-          event_type: EVENTO_DE_ROBO_IGNORADO,
-          payload: { reason: "bot_reply" },
-          idempotency_key: roboKey,
-        });
-        continue;
-      }
+    if (cancelOnReply) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
@@ -497,6 +524,12 @@ async function reactToInbound(
   // acordar o próximo nó e disparar a próxima mensagem imediatamente. Sem a
   // verificação abaixo, a opção funcionava apenas para nós `waiting_reply`.
   for (const e of esperaAtiva) {
+    const cancelOnReply = parseCancelOnReply(e.trigger_config);
+    if (cancelOnReply && inboundDeRobo) {
+      await registrarRoboIgnorado(db, row, e);
+      continue;
+    }
+
     // Mesma opção do laço acima, e pelo mesmo motivo: a espera por tempo fixo
     // fica `active`, e a resposta do cliente também tira o card da etapa.
     if (!opcoes.semAcordar) {
@@ -504,19 +537,7 @@ async function reactToInbound(
       if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
     }
 
-    if (parseCancelOnReply(e.trigger_config)) {
-      if (inboundDeRobo) {
-        const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
-        await db.insertEnrollmentEvent({
-          organization_id: row.organization_id,
-          enrollment_id: e.id,
-          node_id: e.current_node_id,
-          event_type: EVENTO_DE_ROBO_IGNORADO,
-          payload: { reason: "bot_reply" },
-          idempotency_key: roboKey,
-        });
-        continue;
-      }
+    if (cancelOnReply) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
@@ -722,6 +743,16 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
         .maybeSingle();
       if (error) throw new Error(error.message);
       return (data as { is_personal?: boolean } | null)?.is_personal ?? false;
+    },
+    async loadMessageBody(orgId, messageId) {
+      const { data, error } = await admin
+        .from("messages")
+        .select("body")
+        .eq("id", messageId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return (data as { body?: string | null } | null)?.body ?? null;
     },
     async loadLiveEnrollmentsForContact(orgId, contactId, statuses = LIVE_STATUSES) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);

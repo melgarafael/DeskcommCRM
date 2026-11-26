@@ -125,4 +125,44 @@ describe("reatividade — resposta automática de robô em cancel_on_reply (#526
     expect(espiao.patches[0]?.patch.outcome).toBe("replied");
     expect(espiao.eventos.map((e) => e.event_type)).toContain("reactivity_replied");
   });
+
+  it("lê o corpo completo via message_id quando body_preview vem truncado em 280 chars", async () => {
+    const cabecalhoLongo = "A".repeat(300);
+    const corpoCompleto = `${cabecalhoLongo}\n1 - Serviços\n2 - Valores`;
+    const { db, espiao } = montarDb([inscricao({ status: "waiting_reply" })]);
+    db.loadMessageBody = async () => corpoCompleto;
+
+    const ev = eventoInbound(corpoCompleto.slice(0, 280));
+    ev.payload.message_id = "44444444-4444-4444-8444-444444444444";
+
+    const res = await applyReactivityEvent(db, () => new Date(AGORA), ev);
+
+    expect(res.reacted).toBe(0);
+    expect(espiao.patches).toEqual([]);
+    expect(espiao.eventos.map((e) => e.event_type)).toEqual([EVENTO_DE_ROBO_IGNORADO]);
+  });
+
+  it("não move o card de etapa (move_to_stage_on_reply) quando a resposta é de robô", async () => {
+    const { db, espiao } = montarDb([
+      inscricao({
+        status: "waiting_reply",
+        trigger_config: {
+          kind: "stage_change",
+          params: { stage_id: "55555555-5555-4555-8555-555555555555" },
+          cancel_on_reply: true,
+          move_to_stage_on_reply: "66666666-6666-4666-8666-666666666666",
+        } as LiveEnrollmentRef["trigger_config"],
+      }),
+    ]);
+
+    const res = await applyReactivityEvent(
+      db,
+      () => new Date(AGORA),
+      eventoInbound("1 - Serviços\n2 - Valores"),
+    );
+
+    expect(res.reacted).toBe(0);
+    expect(espiao.patches).toEqual([]);
+    expect(espiao.eventos.map((e) => e.event_type)).toEqual([EVENTO_DE_ROBO_IGNORADO]);
+  });
 });
