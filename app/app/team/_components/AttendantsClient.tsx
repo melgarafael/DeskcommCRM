@@ -632,7 +632,7 @@ export function RoutingCard({ canManage }: { canManage: boolean }) {
               onClick={() => update.mutate(current, { onSuccess: () => setDraft(null) })}
               className="w-full sm:w-auto"
             >
-              Salvar
+              {t("Salvar")}
             </Button>
           </div>
         ) : null}

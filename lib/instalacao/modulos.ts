@@ -553,13 +553,8 @@ export function esquecerMemoDosModulos(): void {
  * público, mas não envia. Ligar hoje levaria a pessoa a criar uma campanha que
  * não sai. Sai desta lista quando existir o envio com descadastro em um clique
  * e a lista de quem pediu para não receber.
- *
- * `canal_webchat` (chat no site, #1333): a janela, a bolha e a aba de Conexões já
- * existem, mas a resposta da IA a visitante anônimo ainda não tem teto próprio.
- * Sai desta lista quando esse teto e os pré-requisitos de abrir o canal ao
- * público entrarem. As provas ligam o módulo por fixture.
  */
-export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["campanha_por_email", "canal_webchat"];
+export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["campanha_por_email"];
 
 /**
  * Módulos que são decisão SÓ de quem administra o servidor e não aparecem para a

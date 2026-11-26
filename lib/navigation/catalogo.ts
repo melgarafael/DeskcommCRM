@@ -973,7 +973,7 @@ export const NAV_CATALOG = [
   {
     href: "/app/metrics",
     label: "Desempenho",
-    description: "Funil e performance por atendente nos últimos 30 dias.",
+    description: "Atrito, funil e desempenho por atendente.",
     icon: "ChartBar",
     group: "analise",
     section: "Os números do período",

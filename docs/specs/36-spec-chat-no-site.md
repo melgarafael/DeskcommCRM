@@ -352,10 +352,19 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
 
 - O agente atende o canal pela regra de elegibilidade que já existe, e a passagem para a equipe é a
   de hoje.
-- **Teto do visitante anônimo.** Enquanto o visitante não deixou telefone nem e-mail, a IA responde
-  até um número de vezes por conversa: padrão 20, configurável na tela. Passado o teto, o agente
-  pede o contato e para, e a conversa segue para a equipe. O motivo: cada mensagem anônima pode
-  custar uma chamada à IA, e o teto mensal da organização (`ai_budgets`) vem desligado de fábrica.
+- **Teto do visitante anônimo (entregue na F4, Tarefa 2).** Enquanto o visitante não deixou telefone
+  nem e-mail, a IA responde até um número de vezes por conversa: padrão 20, configurável na aba
+  "Chat no site" em Conexões. Passado o teto, a IA para de responder e a conversa segue para a
+  equipe. O motivo: cada mensagem anônima pode custar uma chamada à IA, e o teto mensal da
+  organização (`ai_budgets`) vem desligado de fábrica. Quem deixa telefone ou e-mail sai deste
+  teto (segue o teto por conversa que já existe, `teto-de-respostas.ts`, que continua valendo para
+  todos). O teto chega ao motor pelos dois caminhos de leitura (pg e supabase), com o mesmo
+  resultado. O código mora em `lib/channels/teto-do-anonimo.ts` (`tetoDoAnonimoDoCanal`) e no
+  gate de elegibilidade (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
+- **Pendente (F4 completa):** o visitante não pode pedir o contato pelo chat quando bate o teto;
+  essa mensagem e o aviso na Central ficam para a F4 completa. O horário de atendimento (janela
+  por dia, feriado, fora do expediente) fica para a F3. A origem e o relatório por canal ficam
+  para a F5.
 - **Contato deixado no chat.** O telefone e o e-mail que o visitante digita entram na ficha do
   contato do chat. O CRM **nunca** junta fichas sozinho, porque qualquer um pode digitar o telefone
   de outra pessoa. Se o dado bater com outra ficha, a tela de Duplicados mostra o par como motivo

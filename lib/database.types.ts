@@ -3660,6 +3660,7 @@ export type Database = {
           reminder_channel_session_id: string | null;
           reminder_enabled: boolean;
           reminder_extra_offsets_minutes: number[];
+          reminder_sem_link_offsets_minutes: number[];
           reminder_meta_template_id: string | null;
           reminder_minutes_before: number;
           reminder_template_name: string | null;
@@ -3703,6 +3704,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
@@ -3745,6 +3747,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
@@ -10861,6 +10864,7 @@ export type Database = {
         Row: {
           agent_id: string | null;
           cache_read_tokens: number;
+          cache_write_1h_tokens: number | null;
           cache_write_tokens: number;
           chars_ferramentas: number | null;
           chars_mensagens: number | null;
@@ -10894,6 +10898,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -10926,6 +10931,7 @@ export type Database = {
         Update: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;

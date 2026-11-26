@@ -1883,9 +1883,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
         status, origem_da_escolha, agent_id,
         passos, entrada_do_primeiro_passo, chars_sistema, chars_ferramentas, chars_mensagens,
-        partes_de_midia, prefixo_hash, preview_run_id)
+        partes_de_midia, prefixo_hash, cache_write_1h_tokens, preview_run_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15,
-        $16, $17, $18, $19, $20, $21, $22, $23)
+        $16, $17, $18, $19, $20, $21, $22, $23, $24)
      returning id`,
     [
       input.tenantId,
@@ -1910,6 +1910,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       composicao?.charsMensagens ?? null,
       composicao?.partesDeMidia ?? null,
       composicao?.prefixoHash ?? null,
+      // #5020: a MESMA divisão que já decidiu o custo acima. Sem ela o banco só
+      // tem o total, e uma auditoria não consegue provar a parcela de 1 hora.
+      // Provedor sem a divisão (nenhum passo com `cache_creation`) grava nulo —
+      // "não medido", nunca 0. Os outros escritores de `llm_calls` também.
+      usage.cacheWrite1hTokens ?? null,
       // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
       input.previewRunId ?? null,
     ],
