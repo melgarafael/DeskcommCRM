@@ -342,9 +342,19 @@ describe("#5259 — o próprio turno transfere a conversa e avisa o cliente", ()
       ),
     );
 
-    expect(erro).toBeNull();
     expect(chamadasAoCanal, "a IA falou por cima de quem assumiu").toHaveLength(0);
     expect(JSON.stringify(resultadosVistos)).toMatch(/pessoa_assumiu_a_conversa/);
+    // A atribuição da pessoa (sem job de origem) revoga o turno vivo pelo
+    // `trg_interromper_turnos_ao_assumir` (#3926): o complete perde o lease e
+    // o job fica `failed`, sem nova tentativa — a fila não re-roda o turno.
+    expect(erro?.message ?? "").toMatch(/perdido no complete/);
+    const { rows } = await pool.query<{ status: string; last_error: string | null }>(
+      `select status, last_error from job_queue
+        where organization_id = $1 and kind = 'inbound_turn'
+        order by created_at desc limit 1`,
+      [ORG],
+    );
+    expect(rows[0]).toMatchObject({ status: "failed", last_error: "conversation_command_taken" });
   });
 
   it("o agente atribui e o atendente já escreveu ao cliente: nada sai", async () => {
