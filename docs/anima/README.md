@@ -146,6 +146,40 @@ O instalador do upstream recusa servidor com menos de **4 GB de RAM** e recomend
 CRM com o Supabase no mesmo servidor. ❓ O consumo real do stack Ânima será medido antes do primeiro
 deploy e registrado aqui.
 
+### 4.2 Como a imagem Ânima é gerada
+
+A imagem do app é publicada pelo workflow `.github/workflows/anima-imagem.yml` (só do fork):
+
+| Evento | O que acontece |
+|---|---|
+| Tag `anima-v<X.Y.Z>-<n>` (ex.: `anima-v1.40.0-1`) | Publica `ghcr.io/anima-solutions/anima-hub:<X.Y.Z>-<n>` e move `stable` |
+| `workflow_dispatch` | Publica `sha-<7>` do commit, para teste |
+| Pull request | Só constrói (portão "a imagem constrói?") |
+
+`<X.Y.Z>` é a versão do upstream em que o fork se baseia, e é a tag das imagens oficiais de worker
+e scheduler que acompanham a instalação. `<n>` conta as publicações Ânima sobre a mesma base.
+O prefixo `anima-` deixa a tag fora dos workflows do upstream, que reagem a `v*`. Só linux/amd64.
+
+**Acesso ao pacote do DS no CI.** O `Dockerfile` instala o DS com o token passado como secret do
+BuildKit (`--mount=type=secret,id=npm_token`), que não fica gravado em nenhuma camada. No CI, o
+token é o `GITHUB_TOKEN` do workflow. Para ele funcionar, libere o repositório uma vez: no GitHub,
+pacote `@anima-solutions/design-system` › *Package settings* › *Manage Actions access* › adicionar
+`anima-hub` com papel *Read*. Uma alternativa é o secret `NPM_TOKEN` no repositório (PAT com
+`read:packages`), que tem precedência no `anima-imagem.yml`. O CI do upstream (`ci.yml` e `e2e.yml`,
+pela action `preparar-node`) usa só o `GITHUB_TOKEN`.
+
+Build local (o que o `make build`, 🚧, vai encapsular):
+
+```bash
+docker build --secret id=npm_token,env=NPM_TOKEN -t ghcr.io/anima-solutions/anima-hub:<tag> .
+```
+
+**Workflows do upstream desabilitados no fork** (GitHub › Actions › *Disable workflow*, sem mudar
+arquivo): `publish-image.yml` (publicaria as imagens do upstream com o nome da organização Ânima),
+`release.yml` (corte de versão do upstream), `acolhida.yml`, `relogio.yml` e
+`vigia-de-colisao.yml` (automação de PR do repositório upstream). Depois de cada sync, confira se
+continuam desabilitados.
+
 ## 5. Atualização (update)
 
 > ⚠️ **Não rode `hostgator-setup-kit/update.sh` do upstream numa instalação Ânima.** Ele monta as
@@ -253,7 +287,7 @@ A marca mora **no banco**, não na imagem. O `.env` é só a semente:
 |---|---|---|
 | `401 Unauthorized` no `pnpm install` (npm.pkg.github.com) | `NPM_TOKEN` ausente, ou é o token do MCP | Exportar um token do GitHub com `read:packages` |
 | `404` para `@anima-solutions/design-system` | O escopo não está apontando para o GitHub Packages | Conferir o `.npmrc` (seção 3) |
-| Build da imagem falha ao instalar o DS | Secret do token não passado ao build | 🚧 Será documentado junto com o `Dockerfile` (secret mount) |
+| Build da imagem falha com `401` ao instalar o DS | Secret do token não passado ao build, ou o pacote não libera o repositório | Local: `--secret id=npm_token,env=NPM_TOKEN`. CI: liberar o acesso de Actions no pacote (seção 4.2) |
 | Tela ilegível depois de um CSS personalizado | CSS do administrador sobrescrevendo tokens | Abrir a página com `?sem_css=1` para desligá-lo e corrigir em `/admin/marca` |
 | `network anima_proxymanager_shared_network declared as external, but could not be found` | O stack do NPM não criou a rede, ou ela tem outro nome | `docker network ls`; ajustar `PROXY_NETWORK_NAME` |
 | Domínio responde `502` depois de um deploy | `PROXY_NETWORK_APP_IP` diferente do IP do Proxy Host | Alinhar o `.env` com o Proxy Host do NPM |

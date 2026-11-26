@@ -1,0 +1,103 @@
+name: Imagem Ânima (GHCR)
+
+# Fork Ânima — publica a imagem do APP com o design system Ânima em
+# ghcr.io/anima-solutions/anima-hub. Worker e scheduler NÃO são construídos aqui:
+# a instalação Ânima usa as imagens oficiais do upstream (docs/anima/README.md §4).
+#
+# Versão: a tag git `anima-v<X.Y.Z do upstream>-<n>` publica a imagem
+# `<X.Y.Z>-<n>` (imutável) e move o canal `stable`. O prefixo `anima-` mantém a
+# tag fora do `on: push: tags: ["v*"]` dos workflows do upstream.
+#   git tag anima-v1.40.0-1 && git push origin anima-v1.40.0-1
+# `workflow_dispatch` constrói o commit escolhido e publica só `sha-<7>`, para teste.
+# Em pull_request a imagem é CONSTRUÍDA e descartada: é o portão "a imagem
+# constrói?", que no upstream mora no publish-image.yml (desabilitado no fork).
+#
+# Segredo: o pacote @anima-solutions/design-system é privado (GitHub Packages).
+# O token entra no build como secret do BuildKit (Dockerfile, estágio deps) e não
+# fica em camada nenhuma. Usa o secret `NPM_TOKEN` do repositório (PAT com
+# read:packages); sem ele, cai no GITHUB_TOKEN, que só lê o pacote se o pacote der
+# acesso a este repositório (Package settings › Manage Actions access).
+#
+# Arquitetura: só linux/amd64 por ora (o servidor Ânima é x86). Para arm64,
+# acrescente um runner nativo e una os manifests, como faz o publish-image.yml.
+
+on:
+  push:
+    tags: ["anima-v*"]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # PR: a rodada nova supera a velha. Tag e dispatch nunca são cancelados.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  imagem:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGEM: ghcr.io/anima-solutions/anima-hub
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Versão
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            versao="${GITHUB_REF_NAME#anima-v}"
+            if ! printf '%s' "$versao" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$'; then
+              echo "::error::Tag ${GITHUB_REF_NAME} fora do formato anima-vX.Y.Z-N"
+              exit 1
+            fi
+            {
+              echo "value=${versao}"
+              echo "tags=${IMAGEM}:${versao},${IMAGEM}:stable"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "value=${GITHUB_SHA::7}"
+              echo "tags=${IMAGEM}:sha-${GITHUB_SHA::7}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build e push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.ver.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=Ânima Hub
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.value }}
+          build-args: |
+            APP_VERSION=${{ steps.ver.outputs.value }}
+            NODE_HEAP_MB=6144
+          secrets: |
+            npm_token=${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=anima-hub-amd64
+          cache-to: type=gha,mode=max,scope=anima-hub-amd64
+
+      # Mesma sonda do publish-image.yml (#4967): BUILD_ID do servidor = o de .next/static.
+      - name: O BUILD_ID do servidor bate com o de .next/static?
+        if: github.event_name != 'pull_request'
+        run: bash scripts/verifica-build-id.sh "${IMAGEM}@${{ steps.build.outputs.digest }}"

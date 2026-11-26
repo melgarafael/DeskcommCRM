@@ -94,4 +94,8 @@ runs:
         cache: pnpm
 
     - shell: bash
+      # Fork Ânima: o .npmrc lê ${NPM_TOKEN} para o pacote privado do design system.
+      # O GITHUB_TOKEN basta se o pacote der acesso de Actions a este repositório.
+      env:
+        NPM_TOKEN: ${{ github.token }}
       run: pnpm install --frozen-lockfile

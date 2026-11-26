@@ -8,7 +8,11 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
-RUN pnpm install --frozen-lockfile
+# Fork Ânima: o design system vem do GitHub Packages (privado). O token entra como
+# secret do BuildKit e não fica em camada nenhuma:
+#   docker build --secret id=npm_token,env=NPM_TOKEN ...
+COPY .npmrc ./
+RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN pnpm install --frozen-lockfile
 
 # ---- build: gera .next/standalone ----
 FROM node:22-alpine AS build
