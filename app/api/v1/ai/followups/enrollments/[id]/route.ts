@@ -161,18 +161,28 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!row) return fail("not_found", t("Follow-up não encontrado."), 404, { requestId });
 
-  const { data: eventos, error: evErr } = await supabase
-    .from("followup_enrollment_events")
-    .select("id, node_id, event_type, payload, created_at")
-    .eq("organization_id", organizationId)
-    .eq("enrollment_id", id)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(TETO_DE_EVENTOS + 1);
+  const leEventos = (tabela: "followup_enrollment_events" | "followup_delivery_events") =>
+    supabase
+      .from(tabela)
+      .select("id, node_id, event_type, payload, created_at")
+      .eq("organization_id", organizationId)
+      .eq("enrollment_id", id)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(TETO_DE_EVENTOS + 1);
+
+  const [motor, entrega] = await Promise.all([
+    leEventos("followup_enrollment_events"),
+    leEventos("followup_delivery_events"),
+  ]);
+  const evErr = motor.error ?? entrega.error;
   if (evErr) return fail("internal_error", evErr.message, 500, { requestId });
 
-  const lidos = eventos ?? [];
-  const truncado = lidos.length > TETO_DE_EVENTOS;
+  const recentes = [...(motor.data ?? []), ...(entrega.data ?? [])].sort(
+    (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+  );
+  const truncado = recentes.length > TETO_DE_EVENTOS;
+  const lidos = recentes.slice(0, TETO_DE_EVENTOS).reverse();
 
   const linha = row as unknown as {
     id: string;
@@ -309,7 +319,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     no_atual: porId.get(linha.current_node_id) ?? null,
     nos,
     saidas,
-    eventos: lidos.slice(0, TETO_DE_EVENTOS) as EventoDeEnrollment[],
+    eventos: lidos as EventoDeEnrollment[],
     eventos_truncados: truncado,
     plano_de_tempo: leituraDoPlano(linha.timing_plan),
     autores: await resolveAutores(organizationId, lidos),
