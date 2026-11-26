@@ -38,6 +38,8 @@ import { GOV_ADMIN, GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
  *   E  — `enviar` ao lado de `adiar`: espera junto e sai uma vez só;
  *   F  — `adiar` com condição "sem a etiqueta atendido" ao lado de uma `add_tag
  *        atendido`: as duas são julgadas sobre o estado do gatilho, como na main.
+ *   G  — três dias de rechecagens deixam uma só espera, com a data original;
+ *   H  — atualizar a espera mescla os pulos da agenda de passagens distintas.
  *
  * Double de admin client copiado de `automation-send-whatsapp.test.ts` (o
  * Postgres efêmero não tem PostgREST), com `gt`/`gte` e jsonb de objetos. Cada
@@ -464,10 +466,10 @@ function mensagens(contato: string): string[] {
   ).map((r) => String(r.body));
 }
 
-type Run = { status: string; actions_result: Array<{ status: string; detail?: Record<string, unknown> }> };
+type Run = { id: string; created_at: string; status: string; actions_result: Array<{ status: string; detail?: Record<string, unknown> }> };
 function runs(regraId: string, eventoId: string): Run[] {
   return rows(
-    `select status, actions_result from public.automation_rule_runs
+    `select id, created_at, status, actions_result from public.automation_rule_runs
       where rule_id = '${regraId}' and event_id = '${eventoId}' order by created_at`,
   ) as never;
 }
@@ -643,5 +645,77 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     await voltarNasHoras(ev, contato, r1);
     expect(mensagens(contato), "a regra adiada deixou de enviar").toEqual(["ADIAR Bia"]);
     expect(execucoes(runs(RT, ev)), "a add_tag rodou uma vez").toHaveLength(1);
+  });
+
+  it("G. três dias de rechecagens atualizam uma só espera e preservam o início", async () => {
+    vi.setSystemTime(new Date(T0));
+    const { contato, sessao, compromisso } = semearCena("a4", "+5511977770009");
+    const RA = "55555555-1111-4000-8000-0000000002a4";
+    regra(RA, "ADIAR", sessao, null);
+    sql(`update public.calendar_appointments
+      set starts_at = '${T0}'::timestamptz + interval '72 hours',
+          ends_at = '${T0}'::timestamptz + interval '73 hours'
+      where id = '${compromisso}'`);
+    const ev = evento(emitirTag(contato));
+    // Um envio que chegou à fila do canal também tem status adiado.
+    sql(`insert into public.automation_rule_runs (organization_id, rule_id, event_id, status, actions_result)
+      values ('${GOV_ORG}', '${RA}', '${ev.id}', 'adiado',
+        '[{"status":"postponed","detail":{"reason":"aguardando_o_canal"}}]'::jsonb)`);
+    const execucaoNaFila = runs(RA, ev.id)[0]!;
+
+    let resultado = await runAutomationForEvent(admin, ev);
+    const primeiraEspera = runs(RA, ev.id).find((run) => run.id !== execucaoNaFila.id)!;
+    for (let hora = 1; hora < 72; hora += 1) {
+      const agora = new Date(Date.parse(T0) + hora * 3_600_000);
+      expect(resultado).toMatchObject({ status: "retry", retry_at: agora.toISOString() });
+      vi.setSystemTime(agora);
+      resultado = await runAutomationForEvent(admin, ev);
+    }
+    expect(mensagens(contato)).toEqual([]);
+    const todos = runs(RA, ev.id);
+    const esperas = todos.filter((run) => run.actions_result[0]?.detail?.reason === "fora_da_janela_de_envio");
+    expect(esperas, "72 adiamentos do mesmo evento ocupam uma linha da atividade").toHaveLength(1);
+    expect(esperas[0]).toMatchObject({
+      id: primeiraEspera.id,
+      created_at: primeiraEspera.created_at,
+      status: "adiado",
+      actions_result: [{ detail: { retry_at: "2026-07-20T13:00:00.000Z" } }],
+    });
+    expect(execucoes(todos)).toEqual([execucaoNaFila]);
+  });
+
+  it("H. a espera reúne pulos de rechecagens diferentes e ambas as regras seguem sem enviar", async () => {
+    vi.setSystemTime(new Date(T0));
+    const { contato, sessao, compromisso } = semearCena("a5", "+5511977770010");
+    const RA = "55555555-1111-4000-8000-0000000002a5";
+    const RN1 = "55555555-1111-4000-8000-0000000001a5";
+    const RN2 = "55555555-1111-4000-8000-0000000003a5";
+    await ensureConversation(admin, GOV_ORG, contato, sessao);
+    regra(RA, "ADIAR", sessao, null);
+    regra(RN1, "NAO_ENVIAR_1", sessao, "nao_enviar");
+    const ev = evento(emitirTag(contato));
+    expect(await runAutomationForEvent(admin, ev)).toMatchObject({ status: "retry", retry_at: PRIMEIRA_VOLTA });
+    const [primeiraEspera] = runs(RA, ev.id);
+    expect(primeiraEspera?.actions_result[0]?.detail?.pular_por_agenda).toEqual({ [RN1]: compromisso });
+
+    // Só RN2 pode anotar um pulo nesta volta. RN1 volta a ficar ativa antes do envio.
+    sql(`update public.automation_rules set is_active = false where id = '${RN1}'`);
+    regra(RN2, "NAO_ENVIAR_2", sessao, "nao_enviar");
+    vi.setSystemTime(new Date(PRIMEIRA_VOLTA));
+    expect(await runAutomationForEvent(admin, ev)).toMatchObject({ status: "retry", retry_at: VOLTAS[1] });
+    const marcas = runs(RA, ev.id).find((run) => run.id === primeiraEspera!.id)
+      ?.actions_result[0]?.detail?.pular_por_agenda;
+
+    sql(`update public.automation_rules set is_active = true where id = '${RN1}'`);
+    alterarStatusDoCompromisso(compromisso, "cancelled");
+    vi.setSystemTime(new Date(VOLTAS[1]!));
+    expect((await runAutomationForEvent(admin, ev)).status).toBe("ok");
+    expect(mensagens(contato)).toEqual(["ADIAR Bia"]);
+    esperarPuloUnico(RN1, ev.id);
+    esperarPuloUnico(RN2, ev.id);
+    expect(marcas, "a espera original guarda o pulo anterior e o recém-decidido").toEqual({
+      [RN1]: compromisso,
+      [RN2]: compromisso,
+    });
   });
 });
