@@ -62,9 +62,7 @@ const inputShape = {
   name: z.string().trim().min(1).max(200).optional().describe("Nome do contato, usado só se um novo cadastro for criado."),
   phone_whatsapp: telefoneWhatsappSchema
     .optional()
-    .describe(
-      "O número tem WhatsApp? `sim`, `nao` ou `nao_sei`. Usado só se um novo cadastro for criado; ausente, ele nasce `nao_sei`. Cadastro existente não é alterado.",
-    ),
+    .describe("O número tem WhatsApp? Só para cadastro novo; ausente, nao_sei."),
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
   media_mime: z.string().optional(),
