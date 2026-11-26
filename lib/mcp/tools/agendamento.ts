@@ -841,6 +841,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
         if (serviceComLugar && lugaresDoServico(serviceComLugar).length > 0) {
           const { livre, motivo: motivoSemLugar } = await primeiroLugarLivre(
             ctx.supabase, ctx.organizationId, serviceComLugar, input.starts_at, input.owner_user_id ?? null,
+            input.participants?.length ?? undefined,
           );
           if (!livre) {
             // O motivo real do horário (fora da programação, bloqueio...), não "lugar ocupado" fixo.

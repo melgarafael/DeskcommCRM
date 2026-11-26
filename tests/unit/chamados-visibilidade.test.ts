@@ -72,13 +72,16 @@ function bancoFake(tabelas: Record<string, Linha[]>) {
   function from(tabela: string) {
     const consulta: Consulta = { tabela, colunas: "", eqs: [], ins: [] };
     let contagem = false;
+    let faixa: [number, number] | null = null;
 
-    const linhas = () =>
-      (tabelas[tabela] ?? []).filter(
+    const linhas = () => {
+      const filtradas = (tabelas[tabela] ?? []).filter(
         (linha) =>
           consulta.eqs.every(([coluna, valor]) => linha[coluna] === valor) &&
           consulta.ins.every(([coluna, valores]) => valores.includes(linha[coluna])),
       );
+      return faixa ? filtradas.slice(faixa[0], faixa[1] + 1) : filtradas;
+    };
     const resultado = () =>
       contagem
         ? { data: null, count: linhas().length, error: null }
@@ -101,6 +104,12 @@ function bancoFake(tabelas: Record<string, Linha[]>) {
       },
       order: () => cadeia,
       limit: () => cadeia,
+      // A leitura do universo é paginada (`lerPaginado`): a página seguinte
+      // à última tem de vir VAZIA, senão o laço não prova o fim.
+      range(inicio: number, fim: number) {
+        faixa = [inicio, fim];
+        return cadeia;
+      },
       maybeSingle: async () => ({ data: linhas()[0] ?? null, error: null }),
       then: (aceita: (valor: unknown) => unknown) => Promise.resolve(resultado()).then(aceita),
     };

@@ -112,6 +112,14 @@ describe("destinos da Central", () => {
     const items = await resolverDestinosDosAvisos(leitor().client, ORG, "admin", [aviso(kind, ref, ORG), aviso(kind, ref, ID)]);
     expect(items[0]?.destination.estado).toBe("disponivel"); expect(items[1]?.destination.estado).toBe("indisponivel");
   });
+  it("reactivation_expired com ref_kind lead abre o negócio diretamente para quem enxerga", async () => {
+    const [agente] = await resolverDestinosDosAvisos(leitor().client, ORG, "agent", [aviso("reactivation_expired", "lead", ID)]);
+    expect(agente?.destination).toEqual({ estado: "disponivel", rotulo: "Abrir negócio", href: `/app/pipelines/${PIPELINE}?lead=${ID}` });
+    const [viewer] = await resolverDestinosDosAvisos(leitor().client, ORG, "viewer", [aviso("reactivation_expired", "lead", ID)]);
+    expect(viewer?.destination.estado).toBe("sem_permissao");
+    const [oculta] = await resolverDestinosDosAvisos(leitor([]).client, ORG, "agent", [aviso("reactivation_expired", "lead", ID)]);
+    expect(oculta?.destination.estado).toBe("indisponivel");
+  });
   it("kind/ref desconhecidos, pares inválidos e URLs arbitrárias falham fechados", async () => {
     const l = leitor(); const items = await resolverDestinosDosAvisos(l.client, ORG, "admin", [aviso("novo"), aviso("handoff", "https://evil.test"), aviso("handoff", "channel_session"), aviso("__proto__"), aviso("other", "__proto__")]);
     expect(items.every(i => !("href" in i.destination))).toBe(true); expect(l.queries).toHaveLength(0);

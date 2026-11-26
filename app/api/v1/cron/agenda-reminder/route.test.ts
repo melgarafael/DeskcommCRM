@@ -180,6 +180,32 @@ describe("montarLembrete", () => {
     });
     expect(texto).not.toContain("Lugar:");
   });
+
+  it("frase padrão cita \"Lugar: Sala A\" com calendar_resources como objeto", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala A",
+    });
+    expect(texto).toContain("Lugar: Sala A");
+  });
+
+  it("molde com {{lugar}} substitui a variável no corpo personalizado", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala A",
+      molde: "Oi {{primeiro_nome}}! Seu {{tipo}} é {{dia}} às {{hora}} no {{lugar}}.",
+    });
+    expect(texto).toContain("no Sala A");
+    expect(texto).toContain("Sala A");
+  });
 });
 
 describe("montarLembrete — o link da reunião (Google Meet)", () => {

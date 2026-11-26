@@ -75,11 +75,11 @@ describe("o CSV do relatório de vendas", () => {
 describe("o nome do arquivo", () => {
   it("diz O QUE É e QUAL é o período, sem acento nem espaço", () => {
     const nome = nomeDoArquivoDoRelatorio({
-      from: new Date("2026-09-01T00:00:00.000Z"),
-      to: new Date("2026-10-01T00:00:00.000Z"),
+      de: "2026-08-31",
+      ate: "2026-09-30",
     });
 
-    expect(nome).toBe("vendas-por-atendente-2026-09-01_a_2026-10-01.csv");
+    expect(nome).toBe("vendas-por-atendente-2026-08-31_a_2026-09-30.csv");
     expect(nome).not.toMatch(/[^\w.-]/);
   });
 });
