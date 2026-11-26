@@ -406,10 +406,10 @@ it("a migration 9496 deduplica antes do índice: fica a mais antiga, o históric
 
     // Reaplicar não muda nada (o update.sh do kit reaplica o baseline inteiro).
     await banco.query(MIGRATION_9496);
-    const { rows: [{ abertas }] } = await banco.query<{ abertas: number }>(
+    const { rows: [reaplicada] } = await banco.query<{ abertas: number }>(
       "select count(*)::int as abertas from public.crm_leads where pipeline_id = $1 and status = 'open'", [c.destino],
     );
-    expect(abertas).toBe(1);
+    expect(reaplicada?.abertas).toBe(1);
   } finally {
     await banco.query(`
       create unique index if not exists crm_leads_clone_aberto_no_funil_uidx
