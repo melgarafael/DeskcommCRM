@@ -15335,6 +15335,8 @@ export const DICIONARIO: Traducoes = {
   "{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.": { es: "{nome} está ocupado en este horario. Elija otro horario o quite a esa persona de Quién conduce." },
   "Com a equipe:": { es: "Con el equipo:" },
   "com a equipe": { es: "con el equipo" },
+  "Conduz com:": { es: "Conduce con:" },
+  "conduz com": { es: "conduce con" },
   "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.": {
     es: "El responsable ya recibe la invitación. Marca a quién más debe participar: cada persona ve el compromiso en su propia agenda.",
   },

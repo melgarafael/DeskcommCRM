@@ -78,6 +78,14 @@ export const ERRO_RESPONSAVEIS = {
 
 export type ErroResponsaveis = keyof typeof ERRO_RESPONSAVEIS;
 
+type QuemOcupa = { responsavelId: string; responsaveis?: string[] };
+
+/** Os dois compromissos ocupam a agenda de alguma pessoa em comum? (#3067) */
+export function dividemQuemConduz(a: QuemOcupa, b: QuemOcupa): boolean {
+  const deA = new Set([a.responsavelId, ...(a.responsaveis ?? [])]);
+  return [b.responsavelId, ...(b.responsaveis ?? [])].some((id) => deA.has(id));
+}
+
 /**
  * Traduz a exceção NOMEADA do banco (ver `ERRO_RESPONSAVEIS`) para ApiError.
  * Devolve null quando o erro não é um destes: quem chama cai no mapeamento
