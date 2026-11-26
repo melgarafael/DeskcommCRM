@@ -1,0 +1,78 @@
+{
+ "dark inbox": {
+  "url": "/app/inbox",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark kanban": {
+  "url": "/app/kanban",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark contatos": {
+  "url": "/app/contacts",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark configuracoes": {
+  "url": "/app/settings",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark marca": {
+  "url": "/app/settings/marca",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark aparencia": {
+  "url": "/app/settings/marca",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark admin-marca": {
+  "url": "/admin/marca",
+  "tema": "dark",
+  "azuis": []
+ },
+ "dark login": {
+  "azuis": []
+ },
+ "light inbox": {
+  "url": "/app/inbox",
+  "tema": "light",
+  "azuis": []
+ },
+ "light kanban": {
+  "url": "/app/kanban",
+  "tema": "light",
+  "azuis": []
+ },
+ "light contatos": {
+  "url": "/app/contacts",
+  "tema": "light",
+  "azuis": []
+ },
+ "light configuracoes": {
+  "url": "/app/settings",
+  "tema": "light",
+  "azuis": []
+ },
+ "light marca": {
+  "url": "/app/settings/marca",
+  "tema": "light",
+  "azuis": []
+ },
+ "light aparencia": {
+  "url": "/app/settings/marca",
+  "tema": "light",
+  "azuis": []
+ },
+ "light admin-marca": {
+  "url": "/admin/marca",
+  "tema": "light",
+  "azuis": []
+ },
+ "light login": {
+  "azuis": []
+ }
+}
