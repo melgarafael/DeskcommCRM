@@ -4819,3 +4819,8 @@ Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 8 do CI.
 - Conferir também a largura da página no Inbox e na lista de funis.
 - Evidências a partir da raiz do repositório: `evidence/sidebar-scroll-lock/desktop-perfil.png`, `evidence/sidebar-scroll-lock/celular-navegacao.png` e `evidence/sidebar-scroll-lock/medidas-desktop.json`.
 - Resultado: PASS (2 testes, Chromium; 17,6 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.
+
+
+### [P1] Número sem WhatsApp ao iniciar conversa
+
+`tests/e2e/numero-sem-whatsapp.spec.ts`: Inbox → Iniciar conversa → telefone sintético → recusa legível antes de criar conversa. Em conversa legada, envio fica failed com motivo visível e natureza permanente; consulta inconclusiva continua permitindo envio. Supabase real do baseline e servidor HTTP simulado local, sem consulta de números nem envio no WhatsApp real. Evidências em evidence/numero-sem-whatsapp/.
