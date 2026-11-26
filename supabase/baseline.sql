@@ -84372,6 +84372,19 @@ create trigger trg_tipo_segue_o_fuso_da_empresa
   for each row
   execute function public.fn_tipo_segue_o_fuso_da_empresa();
 
+-- ---- llm_calls: escrita de cache de 1 hora (migration 9481, #5020) ----
+-- Espelho de supabase/migrations/20261126021255_9481_llm_calls_cache_write_1h.sql.
+-- Coluna nulável, sem default e sem backfill: nula = não medido (linha antiga,
+-- provedor sem a divisão ou escritor fora do seam), nunca "zero". Não cria
+-- função.
+alter table public.llm_calls
+  add column if not exists cache_write_1h_tokens integer;
+
+comment on column public.llm_calls.cache_write_1h_tokens is
+  'Tokens da gravação de cache com prazo de 1 hora, lidos de cache_creation.ephemeral_1h_input_tokens (Anthropic). O restante da gravação é 5m: cache_write_tokens - cache_write_1h_tokens. Nulo = não medido (linha antiga, provedor sem a divisão ou escritor fora do seam), nunca "zero".';
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -90913,16 +90926,12 @@ end $followup_daily_cap$;
 alter table public.platform_meta_app
   add column if not exists app_id text,
   add column if not exists config_id text;
+-- ---- lembrete de cada degrau pode sair sem o link da reunião (migration 9479) ----
+-- Espelho de supabase/migrations/20261126012000_9479_lembrete_sem_link_por_degrau.sql.
+-- O porquê inteiro está no cabeçalho da migration. Coluna só, default '{}' =
+-- todos os degraus levam o link (o comportamento de sempre), sem backfill.
+alter table public.calendar_event_types
+  add column if not exists reminder_sem_link_offsets_minutes integer[] not null default '{}';
 
--- ---- llm_calls: escrita de cache de 1 hora (migration 9481, #5020) ----
--- Espelho de supabase/migrations/20261126021255_9481_llm_calls_cache_write_1h.sql.
--- Coluna nulável, sem default e sem backfill: nula = não medido (linha antiga,
--- provedor sem a divisão ou escritor fora do seam), nunca "zero". Não cria
--- função, então pode ficar depois da VARREDURA anon.
-alter table public.llm_calls
-  add column if not exists cache_write_1h_tokens integer;
-
-comment on column public.llm_calls.cache_write_1h_tokens is
-  'Tokens da gravação de cache com prazo de 1 hora, lidos de cache_creation.ephemeral_1h_input_tokens (Anthropic). O restante da gravação é 5m: cache_write_tokens - cache_write_1h_tokens. Nulo = não medido (linha antiga, provedor sem a divisão ou escritor fora do seam), nunca "zero".';
-
-notify pgrst, 'reload schema';
+comment on column public.calendar_event_types.reminder_sem_link_offsets_minutes is
+  'Degraus (minutos antes) cujo lembrete sai SEM a linha automática do link da reunião (#5154). Vazio = todos levam, o comportamento de sempre: é o default e o valor de toda linha que já existe, então atualizar não muda nenhum envio. A tela grava a lista inteira a cada salvamento; degrau fora da lista leva o link.';

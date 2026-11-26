@@ -1,6 +1,6 @@
 import { googleRpc } from "./google/sync-store";
 import { consultarServico, lerServico, type DisponibilidadeDoServico } from "./servicos/consulta";
-import { lerCorposDoLembrete } from "./lembretes";
+import { lerCorposDoLembrete, lerDegrausSemLink } from "./lembretes";
 import { RECUSA_DE_TIPO_EXTERNO } from "./autoridade";
 import { agendaAuthority, AMIGO_CONTEXT_REQUIRED, providerContext } from "@/lib/amigo/agenda";
 /**
@@ -1251,6 +1251,8 @@ export interface TipoDeAtendimento {
   lembreteMensagem: string | null;
   /** Texto de cada extra, chave = minutos antes. Vazio = nenhum extra tem texto próprio. */
   lembreteMensagens: Record<string, string>;
+  /** #5154: degraus (minutos) cujo lembrete sai SEM a linha do link. Vazio = todos levam. */
+  lembreteDegrausSemLink: number[];
   /** Preço padrão em centavos, ou null quando o negócio digita na hora. */
   precoPadraoCents: number | null;
   servico?: { booking_mode: string; capacity: number | null; revision: number; publication_mode: string };
@@ -1271,7 +1273,7 @@ export type ResultadoDosTipos =
  * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
  */
 export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
-  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, reminder_sem_link_offsets_minutes, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
 
 /**
  * Os tipos de atendimento da organização.
@@ -1352,6 +1354,7 @@ export async function listaTiposDeAtendimento(
         ? null
         : String(t.reminder_body),
       lembreteMensagens: lerCorposDoLembrete(t.reminder_bodies),
+      lembreteDegrausSemLink: lerDegrausSemLink(t.reminder_sem_link_offsets_minutes),
       precoPadraoCents:
         t.default_price_cents === null || t.default_price_cents === undefined
           ? null
