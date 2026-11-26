@@ -37,7 +37,7 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
   const payload = verifyInviteToken(token);
   if (!payload) return { ok: false, error: "invalid_or_expired" };
 
-  // MESMA RÉGUA DO LOGIN (issue #4743, item 2). O aceite é a terceira porta que
+  // MESMA RÉGUA DO LOGIN (issue #4743, item 1). O aceite é a terceira porta que
   // confere credencial de conta (aqui, o token assinado). A página já tem teto
   // por IP; o que faltava era a conta entrar na conta do bloqueio progressivo —
   // senão trocar de IP a cada tentativa devolvia o orçamento inteiro.

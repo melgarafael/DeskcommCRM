@@ -117,7 +117,7 @@ describe("signInWithPassword — dispositivo confiável", () => {
 });
 
 /**
- * Issue #4743, item 1 — a janela de 24 h está LIGADA no login, e com castigo
+ * Issue #4743, item 1 — a janela do dia está LIGADA no login, e com castigo
  * crescente. A régua em si tem teste próprio (`lib/auth/bloqueio-progressivo`);
  * aqui se prova a fiação: o login recusa a tentativa antes de falar com o
  * GoTrue, emite o evento do degrau e responde IGUAL para conta inexistente.
@@ -125,9 +125,8 @@ describe("signInWithPassword — dispositivo confiável", () => {
  * Relógio controlado do começo ao fim — nenhum `sleep`.
  */
 describe("signInWithPassword — bloqueio progressivo por conta (issue #4743)", () => {
-  /** Meio-dia UTC: 20 tentativas espaçadas de 31 min cabem na janela de 24 h. */
+  /** Meio-dia UTC: longe da virada do dia (meia-noite UTC). */
   const AGORA = Date.parse("2026-03-10T12:00:00.000Z");
-  const CASTIGO_VENCIDO = 31 * 60_000;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -151,29 +150,37 @@ describe("signInWithPassword — bloqueio progressivo por conta (issue #4743)", 
     vi.useRealTimers();
   });
 
-  it("o atacante que espera cada castigo vencer para no 20º erro, e a conta não volta sozinha", async () => {
+  it("o atacante que tenta uma vez por minuto o dia UTC inteiro chega a 57, não a 1.440", async () => {
+    // Do primeiro ao último minuto do mesmo dia UTC: a conta do dia não vira no
+    // meio. A conta à mão: 5 falhas seguidas, mais 5 espaçadas pelo castigo de
+    // 5 min (a 10ª no minuto 29), e depois uma a cada 30 min até o minuto
+    // 1.439 — 9 + 48 = 57.
+    vi.setSystemTime(Date.parse("2026-03-10T00:00:00.000Z"));
     const { signInWithPassword } = await import("./signInWithPassword");
-    const input = { email: "alvo@empresa.test", password: "senha-errada-123" };
     const { audit } = await import("@/lib/audit");
+    vi.mocked(audit).mockClear();
+    const input = { email: "o-dia-todo@empresa.test", password: "senha-errada-123" };
 
-    const resultados = [];
-    for (let i = 0; i < 21; i++) {
-      if (i > 0) vi.setSystemTime(Date.now() + CASTIGO_VENCIDO);
-      resultados.push(await signInWithPassword(input));
+    for (let i = 0; i < 1440; i++) {
+      if (i > 0) vi.setSystemTime(Date.now() + 60_000);
+      await signInWithPassword(input);
     }
 
-    // As 20 primeiras chegam ao provedor e gastam a conta do dia; a 21ª é
-    // barrada pelo degrau 3 (até redefinir a senha), sem tocar no GoTrue.
-    expect(resultados.slice(0, 20).map((r) => r.error)).toEqual(
-      Array(20).fill("invalid_credentials"),
-    );
-    expect(resultados[20]?.error).toBe("rate_limited");
-    expect(signIn).toHaveBeenCalledTimes(20);
+    expect(signIn).toHaveBeenCalledTimes(57);
 
-    const acoes = vi.mocked(audit).mock.calls.map(([evento]) => evento.action);
-    expect(acoes).toContain("auth.login_bloqueio_5min");
-    expect(acoes).toContain("auth.login_bloqueio_30min");
-    expect(acoes).toContain("auth.login_bloqueio_ate_redefinir");
+    // Um evento de degrau por castigo que NASCE: aqui cada falha que passou
+    // chegou com o castigo anterior já vencido, então cada uma abre um castigo
+    // novo — 5 de 5 min (falhas 5 a 9) e 48 de 30 min (da 10ª em diante). As
+    // 1.383 tentativas barradas NÃO viram evento de degrau: seguem no registro
+    // de sempre, com o degrau anotado ao lado.
+    const eventos = vi.mocked(audit).mock.calls.map(([evento]) => evento);
+    const acoes = eventos.map((e) => e.action);
+    expect(acoes.filter((a) => a === "auth.login_bloqueio_5min").length).toBe(5);
+    expect(acoes.filter((a) => a === "auth.login_bloqueio_30min").length).toBe(48);
+    expect(acoes.filter((a) => a === "auth.login_rate_limited").length).toBe(1440 - 57);
+    expect(
+      eventos.find((e) => e.action === "auth.login_rate_limited" && e.metadata?.degrau === 2),
+    ).toBeDefined();
   });
 
   it("a cadência de 5 erros a cada 5 minutos não rende 1.440 tentativas por dia", async () => {

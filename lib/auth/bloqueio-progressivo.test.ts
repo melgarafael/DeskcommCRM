@@ -1,16 +1,16 @@
 /**
- * Issue #4743, item 1 — a janela de 24 h com castigo crescente.
+ * Issue #4743, item 1 — a janela do dia (vira à meia-noite UTC) com castigo
+ * crescente.
  *
  * O que este arquivo prova, com RELÓGIO CONTROLADO (nada de `sleep`):
  *
- *   - o castigo tem o PRAZO que promete (5 min / 30 min / até redefinir),
- *     contado a partir da falha e não do início de uma janela alinhada;
+ *   - o castigo tem o PRAZO que promete (5 min / 30 min), contado a partir da
+ *     falha e não do início de uma janela alinhada;
  *   - a conta NÃO volta ao zero a cada 5 minutos — é o defeito que a issue
  *     descreve ("5 erros a cada 5 min dão ~1.440 tentativas por dia");
- *   - o degrau 3 sobrevive à virada da janela diária, senão o atacante só
- *     precisaria esperar 24 h;
- *   - redefinir a senha destranca na hora, e o teto de 7 dias existe para o
- *     caso de ninguém redefinir.
+ *   - o castigo em curso sobrevive à virada do dia UTC;
+ *   - redefinir a senha destranca na hora;
+ *   - NÃO existe degrau "até redefinir a senha" (decisão do dono, doc 418).
  *
  * O limitador é o de verdade: sem Upstash no ambiente de teste, `checkRateLimit`
  * cai para o contador em memória do processo — exatamente o caminho real de uma
@@ -100,26 +100,18 @@ describe("régua do bloqueio progressivo por conta", () => {
     expect(await bloqueioProgressivoDeConta(email)).toMatchObject({ bloqueado: false });
   });
 
-  it("20 falhas em 24 h trancam até redefinir a senha, e o castigo sobrevive à virada do dia", async () => {
-    const { bloqueioProgressivoDeConta, TETO_DO_BLOQUEIO_SEC } = await regua();
-    const email = "vinte@example.com";
+  it("o castigo de 30 min sobrevive à virada do dia UTC, e a conta do dia recomeça", async () => {
+    const { bloqueioProgressivoDeConta, falhasNaJanelaDiaria } = await regua();
+    const email = "virada@example.com";
 
-    // O atacante que ESPERA cada castigo vencer — 20 falhas em ~10 h, dentro da
-    // mesma janela de 24 h.
-    await falhar(email, 20, 31 * MINUTO);
+    // 10 falhas terminando às 23:59 UTC: o castigo de 30 min atravessa a
+    // meia-noite, mas a conta do dia é de um dia novo.
+    vi.setSystemTime(Date.parse("2026-03-10T23:50:00.000Z"));
+    await falhar(email, 10, MINUTO);
+    vi.setSystemTime(Date.parse("2026-03-11T00:05:00.000Z"));
 
-    const bloqueio = await bloqueioProgressivoDeConta(email);
-    expect(bloqueio).toMatchObject({ bloqueado: true, degrau: 3 });
-    expect(bloqueio.acao).toBe("auth.login_bloqueio_ate_redefinir");
-    expect(bloqueio.restanteSec).toBe(TETO_DO_BLOQUEIO_SEC);
-
-    // Virada da janela diária: o degrau 3 continua de pé. Sem isto bastaria ao
-    // atacante esperar 24 h para recomeçar o ciclo.
-    vi.setSystemTime(Date.now() + 24 * 60 * MINUTO + 1_000);
-    expect(await bloqueioProgressivoDeConta(email)).toMatchObject({
-      bloqueado: true,
-      degrau: 3,
-    });
+    expect(await bloqueioProgressivoDeConta(email)).toMatchObject({ bloqueado: true, degrau: 2 });
+    expect(await falhasNaJanelaDiaria(email)).toBe(0);
   });
 
   it("redefinir a senha destranca na hora e zera a janela diária", async () => {
@@ -127,7 +119,7 @@ describe("régua do bloqueio progressivo por conta", () => {
       await regua();
     const email = "redefine@example.com";
 
-    await falhar(email, 20, 31 * MINUTO);
+    await falhar(email, 10);
     expect((await bloqueioProgressivoDeConta(email)).bloqueado).toBe(true);
 
     await liberarBloqueioProgressivo(email);
@@ -138,18 +130,6 @@ describe("régua do bloqueio progressivo por conta", () => {
       restanteSec: 0,
     });
     expect(await falhasNaJanelaDiaria(email)).toBe(0);
-  });
-
-  it("sem ninguém redefinir, o degrau 3 tem fim em 7 dias — o item 1 não tem tela de admin", async () => {
-    const { bloqueioProgressivoDeConta, TETO_DO_BLOQUEIO_SEC } = await regua();
-    const email = "sete-dias@example.com";
-
-    await falhar(email, 20, 31 * MINUTO);
-    vi.setSystemTime(Date.now() + (TETO_DO_BLOQUEIO_SEC - 60) * 1000);
-    expect((await bloqueioProgressivoDeConta(email)).bloqueado).toBe(true);
-
-    vi.setSystemTime(Date.now() + 61_000);
-    expect(await bloqueioProgressivoDeConta(email)).toMatchObject({ bloqueado: false });
   });
 
   it("o castigo já ativo não vira um segundo evento de auditoria", async () => {
@@ -168,18 +148,32 @@ describe("régua do bloqueio progressivo por conta", () => {
     expect(await registrarFalhaNaRegua(email)).toBeNull();
   });
 
-  it("os degraus são 5 / 10 / 20 falhas em 24 h, então o ataque deixa de render 1.440 por dia", async () => {
+  it("os degraus são 5 e 10 falhas no dia, e o mais alto é 30 min — sem degrau até redefinir", async () => {
     const { degrauDeFalhas, DEGRAUS_DO_BLOQUEIO, JANELA_DIARIA_DA_CONTA_SEC } = await regua();
 
     expect(DEGRAUS_DO_BLOQUEIO.map((d) => [d.falhas, d.segundos])).toEqual([
       [5, 300],
       [10, 1800],
-      [20, 604_800],
     ]);
     expect(JANELA_DIARIA_DA_CONTA_SEC).toBe(86_400);
 
     expect([0, 4, 5, 9, 10, 19, 20, 400].map(degrauDeFalhas)).toEqual([
-      0, 0, 1, 1, 2, 2, 3, 3,
+      0, 0, 1, 1, 2, 2, 2, 2,
     ]);
+  });
+
+  it("400 falhas no mesmo dia seguem num castigo de 30 min, que tem fim", async () => {
+    const { bloqueioProgressivoDeConta } = await regua();
+    const email = "insistente@example.com";
+
+    await falhar(email, 400);
+    expect(await bloqueioProgressivoDeConta(email)).toMatchObject({
+      bloqueado: true,
+      degrau: 2,
+      restanteSec: 1800,
+    });
+
+    vi.setSystemTime(Date.now() + 1800_000 + 1_000);
+    expect(await bloqueioProgressivoDeConta(email)).toMatchObject({ bloqueado: false });
   });
 });

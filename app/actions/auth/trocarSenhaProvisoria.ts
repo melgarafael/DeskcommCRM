@@ -79,7 +79,7 @@ export async function trocarSenhaProvisoria(
   // senha de novo — a segunda gravação com o mesmo valor falharia no GoTrue.
   if (orgs.length === 0) return { ok: false, error: "not_required" };
 
-  // MESMA RÉGUA DO LOGIN (issue #4743, item 2). A senha só se grava por duas
+  // MESMA RÉGUA DO LOGIN (issue #4743, item 1). A senha só se grava por duas
   // portas — esta e a recuperação por e-mail —, e a régua vale nas duas. Aqui
   // ela FECHA a porta: conta sob bloqueio progressivo não troca a senha pelo
   // caminho do primeiro acesso. A recuperação (`updatePassword`) é a exceção

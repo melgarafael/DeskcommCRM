@@ -112,11 +112,11 @@ export async function updatePassword(
 
   await limparSenhaProvisoria(supabase, user.id, requestId);
 
-  // O DESBLOQUEIO (issue #4743, item 4). Este é o caminho real medido no
+  // O DESBLOQUEIO (issue #4743, item 1). Este é o caminho real medido no
   // produto: `/login` → "esqueci a senha" → link do e-mail → `/auth/confirm`
   // (sessão de recuperação) → é aqui que a senha nova é gravada. Sem esta
-  // limpeza, o degrau de 20 falhas em 24 h seguraria a conta por 7 dias DEPOIS
-  // de o dono já ter provado que controla o e-mail e trocado a senha.
+  // limpeza, o castigo de 30 minutos seguraria a conta DEPOIS de o dono já ter
+  // provado que controla o e-mail e trocado a senha.
   const emailDaConta = user.email ?? null;
   if (emailDaConta) {
     const antes = await bloqueioProgressivoDeConta(emailDaConta);

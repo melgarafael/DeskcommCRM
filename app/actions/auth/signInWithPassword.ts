@@ -57,8 +57,9 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
   // ilimitado (issue #64). Conta por IP e por conta — o ataque distribuído
   // contra um e-mail só não aparece na contagem por IP.
   //
-  // O bloqueio progressivo (issue #4743) é a janela de 24 h: a de 5 min zera, e
-  // 5 erros a cada 5 min davam ~1.440 tentativas por dia contra a mesma conta.
+  // O bloqueio progressivo (issue #4743) é a janela do dia (vira à meia-noite
+  // UTC): a de 5 min zera, e 5 erros a cada 5 min davam ~1.440 tentativas por
+  // dia contra a mesma conta.
   // O balde é derivado do e-mail APRESENTADO, exista a conta ou não, então a
   // resposta é a mesma sequência para e-mail inexistente — o bloqueio não pode
   // virar oráculo de enumeração.
@@ -69,10 +70,12 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
     bloqueio.bloqueado
   ) {
     await audit({
-      // Um evento por DEGRAU quando quem barrou foi a régua: 5 min e "até
-      // redefinir" são incidentes diferentes, e o dono da conta precisa saber
-      // qual dos dois aconteceu.
-      action: bloqueio.acao ?? "auth.login_rate_limited",
+      // A tentativa barrada é SEMPRE `auth.login_rate_limited`, como antes da
+      // régua: o evento do degrau (`auth.login_bloqueio_*`) é gravado uma vez,
+      // quando o castigo nasce (abaixo). Gravá-lo de novo a cada tentativa
+      // barrada faria a auditoria parecer ter tido vários bloqueios. O degrau
+      // vai anotado ao lado.
+      action: "auth.login_rate_limited",
       metadata: bloqueio.bloqueado
         ? {
             email_hash: hashEmail(parsed.data.email),
@@ -113,7 +116,7 @@ export async function signInWithPassword(input: LoginInput, next?: string): Prom
         action: degrau.acao,
         metadata: {
           email_hash: hashEmail(parsed.data.email),
-          falhas_24h: await falhasNaJanelaDiaria(parsed.data.email),
+          falhas_no_dia: await falhasNaJanelaDiaria(parsed.data.email),
           castigo_seg: degrau.segundos,
         },
         requestId,

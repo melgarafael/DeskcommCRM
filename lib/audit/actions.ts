@@ -46,11 +46,11 @@ export const AUDIT_ACTIONS = [
   /**
    * Bloqueio progressivo por conta (issue #4743) — um evento por DEGRAU, porque
    * "a conta está travada" não diz o que se deve fazer: 5 min é ruído de quem
-   * errou a senha, 20 falhas em 24 h é conta sob ataque.
+   * errou a senha, 30 min (10 falhas no dia) já é insistência. Um evento quando
+   * o degrau NASCE; a tentativa barrada segue em `auth.login_rate_limited`.
    */
   "auth.login_bloqueio_5min",
   "auth.login_bloqueio_30min",
-  "auth.login_bloqueio_ate_redefinir",
   /** A senha foi redefinida pelo e-mail e o castigo caiu (issue #4743). */
   "auth.login_bloqueio_removido",
   "auth.logout",

@@ -1,5 +1,5 @@
 /**
- * Issue #4743, item 2 — a MESMA régua do login vale no aceite de convite.
+ * Issue #4743, item 1 — a MESMA régua do login vale no aceite de convite.
  *
  * O aceite é a terceira porta que confere credencial de conta (aqui, o token
  * assinado). A página já tem teto por IP; o que faltava era a CONTA entrar na
@@ -51,7 +51,7 @@ describe("acceptInviteAction — régua do bloqueio progressivo (issue #4743)", 
   it("conta trancada não aceita convite: responde rate_limited antes de abrir sessão nenhuma", async () => {
     const email = "trancada@empresa.test";
     const { registrarFalhaNaRegua } = await import("@/lib/auth/rate-limit");
-    for (let i = 0; i < 20; i++) await registrarFalhaNaRegua(email);
+    for (let i = 0; i < 10; i++) await registrarFalhaNaRegua(email);
 
     const res = await acceptInviteAction(convitePara(email));
 
