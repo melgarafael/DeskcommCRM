@@ -1,0 +1,39 @@
+diff --git a/dist/lib/IconBase.es.js b/dist/lib/IconBase.es.js
+index 3069d7f52b7d5b7f4c841391d4d0ac24cf0bab84..52a7bb6aeba803400f2deccee1c3824fbfe69034 100644
+--- a/dist/lib/IconBase.es.js
++++ b/dist/lib/IconBase.es.js
+@@ -14,7 +14,7 @@ const p = e.forwardRef(
+     } = s, {
+       color: d = "currentColor",
+       size: l,
+-      weight: f = "regular",
++      weight: f = "bold",
+       mirrored: g = !1,
+       ...w
+     } = e.useContext(h);
+diff --git a/dist/lib/SSRBase.es.js b/dist/lib/SSRBase.es.js
+index 1f6d1ef116f243969fc43ef83d1f71c18bb1f8fc..b428bb9c6a7c6767ed1d544320d6258fcee2ec23 100644
+--- a/dist/lib/SSRBase.es.js
++++ b/dist/lib/SSRBase.es.js
+@@ -4,7 +4,7 @@ const w = e.forwardRef((l, s) => {
+     alt: r,
+     color: a = "currentColor",
+     size: t = "1em",
+-    weight: o = "regular",
++    weight: o = "bold",
+     mirrored: i = !1,
+     children: n,
+     weights: c,
+diff --git a/dist/lib/context.es.js b/dist/lib/context.es.js
+index 0486e23a6f0284e7ad30419af31b1f65d229f733..3ce1b430a9149c8adf229a08544312acce80bfd5 100644
+--- a/dist/lib/context.es.js
++++ b/dist/lib/context.es.js
+@@ -2,7 +2,7 @@ import { createContext as r } from "react";
+ const o = r({
+   color: "currentColor",
+   size: "1em",
+-  weight: "regular",
++  weight: "bold",
+   mirrored: !1
+ });
+ export {

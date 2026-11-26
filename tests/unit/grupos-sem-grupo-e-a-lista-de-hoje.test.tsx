@@ -27,7 +27,8 @@
 import { render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/ui/icons", async (original) => { const { createElement, forwardRef } = await import("react"); return Object.fromEntries(Object.entries(await original<Record<string, unknown>>()).map(([nome, Icone]) => [nome, typeof Icone === "object" && Icone !== null && "render" in Icone ? forwardRef<SVGSVGElement, object>((props, ref) => createElement(Icone as never, { weight: "regular", ...props, ref })) : Icone])); }); // Fork Ânima: ícones no peso do upstream
 
 import { ListaDeRespostas } from "@/app/app/templates/_components/ListaDeRespostas";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";

@@ -55,6 +55,7 @@
     "@ai-sdk/anthropic": "^4.0.78",
     "@ai-sdk/google": "^4.0.18",
     "@ai-sdk/openai": "^4.0.121",
+    "@anima-solutions/design-system": "2026.11.2",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@hello-pangea/dnd": "^18.0.1",
@@ -166,7 +167,8 @@
       "source-map-js": "^1.2.2"
     },
     "patchedDependencies": {
-      "@react-pdf/hyphenate": "patches/@react-pdf__hyphenate.patch"
+      "@react-pdf/hyphenate": "patches/@react-pdf__hyphenate.patch",
+      "@phosphor-icons/react@2.1.10": "patches/@phosphor-icons__react@2.1.10.patch"
     }
   }
 }
