@@ -851,6 +851,7 @@ async function runRetomadaAoDevolver(
     `select direction, sent_via, type, body, media_url, media_storage_path, media_derived_text
        from messages
       where organization_id = $1 and conversation_id = $2
+        and coalesce(metadata->>'dispatch_mode', '') <> 'institutional'
       order by coalesce(sent_at, created_at) desc, created_at desc, id desc
       limit $3`,
     [target.tenantId, target.conversationId, FALAS_DA_EQUIPE_LIDAS],

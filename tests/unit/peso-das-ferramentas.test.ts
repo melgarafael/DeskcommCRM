@@ -156,9 +156,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": {
-    tokens: 320,
+    tokens: 367,
     motivo:
-      "#5034: media_storage_path e media_filename, para mandar arquivo já enviado ao CRM sem link público (documento de cliente não vai para a internet); a descrição ficou em uma frase, com a rota de upload",
+      "#5034 + PR 02 mensagens institucionais: +47 tokens do campo opcional `dispatch_mode` (operational|institutional) para aviso sem efeitos colaterais no atendimento (medido em 367 vs 320)",
   },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -278,7 +278,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-const TETO_TOTAL = 47945;
+// +47 em `crm_send_whatsapp_message` com `dispatch_mode` opcional (PR 02 mensagens
+// institucionais). MEDIDO: 47992 = 47945 + 47.
+const TETO_TOTAL = 47992;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

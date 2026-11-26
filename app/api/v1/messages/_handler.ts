@@ -51,6 +51,12 @@ import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { CHAVE_DO_NOME_DA_INTEGRACAO } from "@/lib/messaging/nome-da-integracao";
+import {
+  CHAVE_DO_MODO_DE_ENVIO,
+  ConversaEncerradaNoCorteError,
+  MODO_DE_ENVIO_INSTITUCIONAL,
+  conversaEncerradaParaEnvioInstitucional,
+} from "@/lib/messaging/modo-de-envio";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import {
   CHAVE_DO_NOME_NA_METADATA,
@@ -601,7 +607,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, assigned_to_user_id, assignee_kind, metadata, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, status, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, assigned_to_user_id, assignee_kind, metadata, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, social_identity, is_blocked, is_personal, personal_owner_user_id), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -651,6 +657,7 @@ export async function sendMessageHandler(
   type Joined = {
     id: string;
     organization_id: string;
+    status?: string | null;
     contact_id: string;
     channel_session_id: string;
     is_group: boolean;
@@ -908,6 +915,16 @@ export async function sendMessageHandler(
   // ganha nome aqui: a identidade dele é o `slug` (`publisher/name`), que não é
   // o nome da linha do token, e o rótulo genérico "Integração" já diz o que o
   // `sent_via='system'` garante.
+  const pediuInstitucional =
+    input.dispatch_mode === MODO_DE_ENVIO_INSTITUCIONAL ||
+    ctx.dispatchMode === MODO_DE_ENVIO_INSTITUCIONAL;
+  const ehInstitucional =
+    pediuInstitucional &&
+    ctx.dispatchMode === MODO_DE_ENVIO_INSTITUCIONAL &&
+    ctx.actor.type === "api_token" &&
+    !input.on_behalf_of_user_id &&
+    !ctx.onBehalfOf;
+
   const nomeDaIntegracao =
     origemDoEmissor === "system" && ctx.actor.type === "api_token"
       ? await nomeDoTokenDeApi(supabase, ctx.organization_id, apiTokenIdDoActor(ctx.actor))
@@ -935,7 +952,7 @@ export async function sendMessageHandler(
       ? await nomeDoAgenteDeIA(supabase, ctx.organization_id, idDoAgente)
       : null;
   let assinatura: string | null = null;
-  if (origemDoEmissor === "user" || origemDoEmissor === "ai") {
+  if (!ehInstitucional && (origemDoEmissor === "user" || origemDoEmissor === "ai")) {
     const { data: orgAssinatura } = await supabase
       .from("organizations")
       .select("settings")
@@ -1147,6 +1164,58 @@ export async function sendMessageHandler(
     );
   }
 
+  if (pediuInstitucional) {
+    if (ctx.actor.type === "ai_agent") {
+      throw new ApiError(
+        403,
+        "forbidden",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "Agentes de IA não podem enviar mensagens institucionais.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
+    const emissorTokenApi = ctx.actor.type === "api_token";
+    if (ctx.dispatchMode !== MODO_DE_ENVIO_INSTITUCIONAL || !emissorTokenApi) {
+      throw new ApiError(
+        403,
+        "forbidden",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "Envio institucional exige o escopo messages:institutional.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
+    if (input.on_behalf_of_user_id || ctx.onBehalfOf) {
+      throw new ApiError(
+        422,
+        "validation_failed",
+        undefined,
+        ctx.requestId,
+        traduzir(
+          "Mensagens institucionais não podem ser enviadas em nome de um atendente.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
+    if (conversaEncerradaParaEnvioInstitucional(c.status)) {
+      throw new ApiError(
+        409,
+        "state_conflict",
+        c.status ? { conversation_status: c.status } : undefined,
+        ctx.requestId,
+        traduzir(
+          "Não é possível enviar mensagem institucional em conversa encerrada, resolvida ou arquivada.",
+          ctx.idioma ?? "pt-BR",
+        ),
+      );
+    }
+  }
+
   // Os BOTÕES que o modelo leva ao cliente, gravados na própria linha: o balão
   // mostra o que o cliente recebeu, e não faz join (`lib/messaging/botoes-do-modelo.ts`).
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
@@ -1156,6 +1225,9 @@ export async function sendMessageHandler(
     // O nome da integração é do SERVIDOR (#5160): um valor forjado no corpo não
     // pode sobreviver numa linha sem nome resolvido e virar assinatura na tela.
     [CHAVE_DO_NOME_DA_INTEGRACAO]: _nomeDaIntegracaoDoCliente,
+    // A classificação institucional também é carimbada só pelo servidor após
+    // validação do escopo `messages:institutional`: cliente HTTP não pode forjar.
+    [CHAVE_DO_MODO_DE_ENVIO]: _modoDeEnvioDoCliente,
     ...metadataDeEntrada
   } = input.metadata ?? {};
   // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
@@ -1206,11 +1278,11 @@ export async function sendMessageHandler(
     ...(ctx.aiVoiceDerivedText
       ? { media_derived_text: ctx.aiVoiceDerivedText, media_derived_status: "ready" }
       : {}),
-    sent_via: origemDaMensagem(ctx.actor),
-    sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+    sent_via: ehInstitucional ? "system" : origemDoEmissor,
+    sent_by_user_id: ehInstitucional ? null : ctx.actor.type === "user" ? ctx.actor.id : null,
     // A PESSOA, não o token (#1613). Só chega aqui pelo ctx validado na rota
     // — ver a recusa acima —, e fica na coluna para consulta e auditoria.
-    sent_on_behalf_of_user_id: ctx.onBehalfOf?.userId ?? null,
+    sent_on_behalf_of_user_id: ehInstitucional ? null : ctx.onBehalfOf?.userId ?? null,
     sent_at: now,
     metadata: {
       // As chaves da derivação de mídia (âncora do dreno, marca de foto adiada)
@@ -1226,6 +1298,7 @@ export async function sendMessageHandler(
       // `input.metadata` de propósito, como `ai_actor_name`: o cliente da API
       // não escolhe como a própria chamada aparece na conversa.
       ...(nomeDaIntegracao ? { [CHAVE_DO_NOME_DA_INTEGRACAO]: nomeDaIntegracao } : {}),
+      ...(ehInstitucional ? { [CHAVE_DO_MODO_DE_ENVIO]: MODO_DE_ENVIO_INSTITUCIONAL } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
       // Os dois nomes viajam GRAVADOS porque o balão não faz join: "Fulano ·
       // via {token}" é desenhado da própria linha. Vêm DEPOIS de
@@ -1404,6 +1477,18 @@ export async function sendMessageHandler(
       const fronteiraJaConferida = mesmaFronteira(currentExecutionBoundary(), ctx.serviceBoundary ?? null);
       const operacaoJaConferida = mesmaOperacao(currentExecutionAgentOperation(), ctx.agentOperation);
       const checkBoundary = async () => {
+        if (ehInstitucional) {
+          const { data: atual, error: erroStatus } = await supabase
+            .from("conversations")
+            .select("status")
+            .eq("id", c.id)
+            .eq("organization_id", c.organization_id)
+            .maybeSingle();
+          const statusAtual = (atual as { status?: string | null } | null)?.status ?? null;
+          if (erroStatus || !atual || conversaEncerradaParaEnvioInstitucional(statusAtual)) {
+            throw new ConversaEncerradaNoCorteError(statusAtual);
+          }
+        }
         await guardServiceEffect();
         await guardAgendaEffect();
         if (ctx.prospectingDelivery) await assertProspectingDelivery(supabase, ctx.prospectingDelivery);
@@ -1742,6 +1827,31 @@ export async function sendMessageHandler(
           .maybeSingle();
         throw err;
       }
+      if (err instanceof ConversaEncerradaNoCorteError) {
+        await supabase
+          .from("messages")
+          .update({
+            status: "failed",
+            error_code: "conversation_closed",
+            error_message:
+              "Não enviada: a conversa foi encerrada, resolvida ou arquivada antes do envio institucional.",
+          })
+          .eq("id", message.id)
+          .eq("organization_id", ctx.organization_id)
+          .eq("status", "queued")
+          .select("id")
+          .maybeSingle();
+        throw new ApiError(
+          409,
+          "state_conflict",
+          err.statusAtual ? { conversation_status: err.statusAtual } : undefined,
+          ctx.requestId,
+          traduzir(
+            "Não é possível enviar mensagem institucional em conversa encerrada, resolvida ou arquivada.",
+            ctx.idioma ?? "pt-BR",
+          ),
+        );
+      }
       if (err instanceof StaleServiceBoundaryError || err instanceof AgendaDeferredError || err instanceof ApprovedReplyReceiptPersistenceError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
@@ -1855,7 +1965,7 @@ export async function sendMessageHandler(
     }
   }
 
-  if (!ctx.approvedReply) {
+  if (!ctx.approvedReply && !ehInstitucional) {
   const conversationUpdate: {
     last_outbound_at: string;
     last_message_at: string;
@@ -1966,17 +2076,26 @@ export async function sendMessageHandler(
   // identidade provada: pô-la na coluna de autor faria o log dizer que ela
   // agiu, quando ninguém a autenticou nesta chamada.
   const emNomeDe = ctx.onBehalfOf ? { on_behalf_of_user_id: ctx.onBehalfOf.userId } : {};
+  const modoInstitucionalAudit = ehInstitucional
+    ? { [CHAVE_DO_MODO_DE_ENVIO]: MODO_DE_ENVIO_INSTITUCIONAL }
+    : {};
   // Fire-and-forget pela doutrina de audit: `audit()` nunca lança e reporta a
   // própria falha ao Sentry.
   void audit({
     action: "message.sent",
     actorUserId: a.actorUserId,
-    actorApiTokenId: ctx.onBehalfOf ? apiTokenIdDoActor(ctx.actor) : undefined,
+    actorApiTokenId: ctx.onBehalfOf || ehInstitucional ? apiTokenIdDoActor(ctx.actor) : undefined,
     organizationId: c.organization_id,
     resourceType: "message",
     resourceId: message.id,
     requestId: ctx.requestId,
-    metadata: { ...a.metadataActor, ...emNomeDe, status: message.status, type: message.type },
+    metadata: {
+      ...a.metadataActor,
+      ...emNomeDe,
+      ...modoInstitucionalAudit,
+      status: message.status,
+      type: message.type,
+    },
   });
 
   // Sem `await`: quem consome `message.sent` é o dispatcher do event_log, que lê
@@ -1986,8 +2105,8 @@ export async function sendMessageHandler(
       p_event_type: "message.sent",
       p_entity_kind: "message",
       p_entity_id: message.id,
-      p_payload: { status: message.status, conversation_id: c.id },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor, ...emNomeDe },
+      p_payload: { status: message.status, conversation_id: c.id, ...modoInstitucionalAudit },
+      p_metadata: { request_id: ctx.requestId, ...a.metadataActor, ...emNomeDe, ...modoInstitucionalAudit },
       p_organization_id: c.organization_id,
     })
     .then(({ error }) => {

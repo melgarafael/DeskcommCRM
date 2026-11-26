@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { ESCOPO_MENSAGENS_INSTITUCIONAIS, tokenTemEscopo } from "@/lib/api/escopos-do-token";
+import { MODO_DE_ENVIO_INSTITUCIONAL } from "@/lib/messaging/modo-de-envio";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { chaveDaRequisicao, comIdempotencia, type DesfechoIdempotente } from "@/lib/api/idempotency";
@@ -214,6 +216,36 @@ export async function POST(req: NextRequest): Promise<Response> {
    * passa daqui — e o handler ainda recusa alto se o campo chegar sem este
    * ctx, porque a mesma entrada atravessa o MCP (item B, fora deste PR).
    */
+  const ehInstitucional = entrada.dispatch_mode === MODO_DE_ENVIO_INSTITUCIONAL;
+  if (ehInstitucional) {
+    if (authz.actor.type === "ai_agent") {
+      return fail("forbidden", t("Agentes de IA não podem enviar mensagens institucionais."), 403, {
+        requestId,
+      });
+    }
+    if (authz.via !== "token" || !tokenTemEscopo(authz.scopes, ESCOPO_MENSAGENS_INSTITUCIONAIS)) {
+      return fail("forbidden", t("Envio institucional exige o escopo messages:institutional."), 403, {
+        requestId,
+      });
+    }
+    if (entrada.on_behalf_of_user_id) {
+      return fail(
+        "validation_failed",
+        t("Mensagens institucionais não podem ser enviadas em nome de um atendente."),
+        422,
+        { requestId },
+      );
+    }
+    if (!entrada.conversation_id || Boolean(entrada.phone_number?.trim())) {
+      return fail(
+        "validation_failed",
+        t("Mensagens institucionais exigem conversation_id explícito de uma conversa ativa e não aceitam phone_number."),
+        422,
+        { requestId },
+      );
+    }
+  }
+
   let onBehalf: HandlerCtx["onBehalfOf"];
   if (entrada.on_behalf_of_user_id) {
     // A sessão do navegador não tem escopos — e não precisa: quem digita no
@@ -377,6 +409,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         // Só chega aqui com o escopo e o membership já validados acima; o
         // handler recusa se `on_behalf_of_user_id` vier sem este ctx (#1613).
         ...(onBehalf ? { onBehalfOf: onBehalf } : {}),
+        ...(ehInstitucional ? { dispatchMode: MODO_DE_ENVIO_INSTITUCIONAL } : {}),
       },
       input,
     );
@@ -384,15 +417,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     // empresa ligou "a conversa fica com quem atendeu" (settings.routing,
     // desligado por padrão). A regra mora em `assumirConversaAposEnvio`, e é a
     // MESMA que o encaminhamento chama: uma regra, dois caminhos de escrita.
-    await assumirConversaAposEnvio({
-      supabase,
-      organizationId,
-      actor,
-      requestId,
-      via: authz.via,
-      conversationId: message.conversation_id,
-      status: message.status,
-    });
+    if (!ehInstitucional) {
+      await assumirConversaAposEnvio({
+        supabase,
+        organizationId,
+        actor,
+        requestId,
+        via: authz.via,
+        conversationId: message.conversation_id,
+        status: message.status,
+      });
+    }
     if (ritmo) await registrarEnvioPorToken(ritmo, organizationId, segurado, message.status);
     return message;
   };
