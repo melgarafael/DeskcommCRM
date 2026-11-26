@@ -19158,7 +19158,6 @@ export const DICIONARIO: Traducoes = {
   "Pediu para não receber mensagens": { es: "Pidió no recibir mensajes" },
   "Dono da carteira dos contatos criados": { es: "Dueño de la cartera de los contactos creados" },
   "Eu (quem importa)": { es: "Yo (quien importa)" },
-  "Motivo": { es: "Motivo" },
   "Já cadastrado como": { es: "Ya registrado como" },
   "De quem é": { es: "De quién es" },
   "Conferir arquivo": { es: "Revisar archivo" },
