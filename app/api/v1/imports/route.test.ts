@@ -18,7 +18,10 @@ const h = vi.hoisted(() => ({
   classificadas: [] as LinhaClassificada[],
   processar: vi.fn(),
   carteira: vi.fn(),
-  papel: "manager" as string,
+  papel: "manager" as string | undefined,
+  /** O que o cliente de serviço devolve para "o dono escolhido é membro ativo?". */
+  membro: { data: { user_id: "x" }, error: null } as { data: unknown; error: unknown },
+  filtrosDoMembro: [] as Array<[string, ...unknown[]]>,
   ator: { type: "user", id: "11111111-1111-4111-8111-111111111111" } as { type: string; id: string },
 }));
 
@@ -35,6 +38,7 @@ vi.mock("@/lib/api/auth-dual", () => ({
     organizationId: "22222222-2222-4222-8222-222222222222",
     actor: h.ator,
     apiTokenId: h.ator.type === "user" ? null : "tok-1",
+    ...(h.ator.type === "user" && h.papel ? { papelDaSessao: h.papel } : {}),
     idioma: "pt-BR",
   })),
   tetoDeEscritaDoToken: vi.fn(async () => null),
@@ -46,7 +50,20 @@ vi.mock("@/lib/crm-b2b/import-previa", async (original) => ({
 vi.mock("@/lib/crm-b2b/import-process", () => ({
   processCompaniesPeopleImport: (...args: unknown[]) => h.processar(...args),
 }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ admin: true }) }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => {
+    // Cadeia que registra cada filtro: o teste cobra o MESMO predicado da função do banco.
+    const cadeia: Record<string, unknown> = { admin: true };
+    for (const metodo of ["from", "select", "eq", "is", "not", "in"]) {
+      cadeia[metodo] = (...args: unknown[]) => {
+        h.filtrosDoMembro.push([metodo, ...args]);
+        return cadeia;
+      };
+    }
+    cadeia.maybeSingle = async () => h.membro;
+    return cadeia;
+  },
+}));
 vi.mock("@/lib/crm-b2b/import-carteira", () => ({
   definirCarteiraDoLote: (...args: unknown[]) => h.carteira(...args),
 }));
@@ -70,6 +87,8 @@ beforeEach(() => {
   h.carteira.mockReset();
   h.carteira.mockResolvedValue({ definidos: 1, falhas: 0 });
   h.papel = "manager";
+  h.membro = { data: { user_id: "x" }, error: null };
+  h.filtrosDoMembro = [];
   h.ator = { type: "user", id: "11111111-1111-4111-8111-111111111111" };
   h.processar.mockReset();
   h.processar.mockResolvedValue({ successful_rows: 1, failed_rows: 1, conflict_rows: 1, processed_rows: 3 });
@@ -138,22 +157,11 @@ describe("POST /api/v1/imports com previa=true", () => {
 const ATOR = "11111111-1111-4111-8111-111111111111";
 const OUTRO = "99999999-9999-4999-8999-999999999999";
 
-/** `from` do dublê: o lote e o vínculo (papel) de quem importa. */
+/** `from` do dublê: só o lote — o papel agora vem de `papelDaSessao`, sem segunda consulta. */
 function bancoDoLote() {
-  h.from.mockImplementation((tabela: string) => {
-    if (tabela === "user_organizations") {
-      return {
-        select: () => ({
-          eq: () => ({
-            eq: () => ({ maybeSingle: async () => ({ data: { role: h.papel }, error: null }) }),
-          }),
-        }),
-      };
-    }
-    return {
-      insert: () => ({ select: () => ({ single: async () => ({ data: { id: "lote-1" }, error: null }) }) }),
-    };
-  });
+  h.from.mockImplementation(() => ({
+    insert: () => ({ select: () => ({ single: async () => ({ data: { id: "lote-1" }, error: null }) }) }),
+  }));
 }
 
 describe("POST /api/v1/imports sem previa", () => {
@@ -176,7 +184,7 @@ describe("POST /api/v1/imports sem previa", () => {
 
     expect(res.status).toBe(201);
     expect(h.carteira).toHaveBeenCalledWith(
-      { admin: true },
+      expect.objectContaining({ admin: true }),
       expect.objectContaining({ batchId: "lote-1", atorId: ATOR, donoId: ATOR }),
     );
     expect(corpo.data.carteira).toMatchObject({ dono_user_id: ATOR, definidos: 1 });
@@ -185,7 +193,7 @@ describe("POST /api/v1/imports sem previa", () => {
   it("gerente escolhe outro dono: a escolha vai para a carteira", async () => {
     bancoDoLote();
     await POST(pedido({ dono_user_id: OUTRO }) as never);
-    expect(h.carteira).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ atorId: ATOR, donoId: OUTRO }));
+    expect(h.carteira).toHaveBeenCalledWith(expect.objectContaining({ admin: true }), expect.objectContaining({ atorId: ATOR, donoId: OUTRO }));
   });
 
   it("atendente que pede OUTRO dono recebe 403 e nenhum lote é criado", async () => {
@@ -200,12 +208,67 @@ describe("POST /api/v1/imports sem previa", () => {
     expect(h.carteira).not.toHaveBeenCalled();
   });
 
+  it("papel ausente com outro dono pedido: falha FECHADA (403), nada gravado", async () => {
+    h.papel = undefined;
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(res.status).toBe(403);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("atendente pede outro dono na PRÉVIA: a prévia segue (nada é gravado)", async () => {
+    h.papel = "agent";
+    const res = await POST(pedido({ dono_user_id: OUTRO, previa: "true" }) as never);
+    expect(res.status).toBe(200);
+    expect(h.from).not.toHaveBeenCalled();
+  });
+
+  it("gerente escolhe quem não é membro ativo: 422 dono_invalido e NENHUM lote criado", async () => {
+    h.membro = { data: null, error: null };
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    const corpo = (await res.json()) as { error: { code: string } };
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("dono_invalido");
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.processar).not.toHaveBeenCalled();
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("a conferência do dono usa o predicado da função do banco (aceito, não revogado, papel com carteira)", async () => {
+    bancoDoLote();
+    await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(h.filtrosDoMembro).toEqual(
+      expect.arrayContaining([
+        ["eq", "user_id", OUTRO],
+        ["is", "revoked_at", null],
+        ["not", "accepted_at", "is", null],
+        ["in", "role", ["agent", "manager", "admin"]],
+      ]),
+    );
+  });
+
+  it("erro ao conferir o dono: 500 e nada gravado (não segue como se estivesse tudo certo)", async () => {
+    h.membro = { data: null, error: { message: "boom" } };
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(res.status).toBe(500);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+  });
+
+  it("dono = quem importa não precisa da conferência de membro", async () => {
+    bancoDoLote();
+    await POST(pedido({ dono_user_id: ATOR }) as never);
+    expect(h.filtrosDoMembro).toEqual([]);
+  });
+
   it("atendente sendo dono dele mesmo passa", async () => {
     h.papel = "agent";
     bancoDoLote();
     const res = await POST(pedido({ dono_user_id: ATOR }) as never);
     expect(res.status).toBe(201);
-    expect(h.carteira).toHaveBeenCalledWith({ admin: true }, expect.objectContaining({ donoId: ATOR }));
+    expect(h.carteira).toHaveBeenCalledWith(expect.objectContaining({ admin: true }), expect.objectContaining({ donoId: ATOR }));
   });
 });
 

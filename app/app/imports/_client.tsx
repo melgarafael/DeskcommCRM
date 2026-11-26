@@ -126,9 +126,19 @@ export function ImportsListClient() {
       setPrevia(json.data as Previa);
       return;
     }
+    // A carteira é best-effort: o lote grava mesmo se ela falhar. Quem importou precisa
+    // saber quantos contatos ficaram sem dono (-1 = nem a leitura do lote funcionou).
+    const carteira = json.data.carteira as { definidos: number; falhas: number } | undefined;
+    const avisoDaCarteira =
+      !carteira || carteira.falhas === 0
+        ? ""
+        : carteira.falhas < 0
+          ? ` ${t("Não foi possível conferir a carteira: confira o dono dos contatos do lote.")}`
+          : ` ${carteira.falhas} ${t("contatos ficaram sem dono na carteira.")}`;
     setMessage(
       t("Lote processado") +
-        `: ${json.data.successful_rows} ok, ${json.data.conflict_rows} conflitos, ${json.data.failed_rows} falhas.`,
+        `: ${json.data.successful_rows} ok, ${json.data.conflict_rows} conflitos, ${json.data.failed_rows} falhas.` +
+        avisoDaCarteira,
     );
     setFile(null);
     setPrevia(null);

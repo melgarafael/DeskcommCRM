@@ -46,7 +46,8 @@ export const dynamic = "force-dynamic";
  * DONO DA CARTEIRA (A23 parte 2): `dono_user_id` escolhe quem recebe os contatos
  * criados pelo lote (origem `importacao`); sem ele, quem importa. O Atendente só é
  * dono dele mesmo (403 `fora_da_posse` antes de gravar qualquer coisa); gerente e
- * admin escolhem qualquer membro ativo. `dono_user_id` passa pelo Zod (UUID; 422 se
+ * admin escolhem qualquer membro ativo (422 `dono_invalido` se não for: convite pendente,
+ * revogado ou de outra organização). `dono_user_id` passa pelo Zod (UUID; 422 se
  * não for). Por token não há pessoa: o ator da checagem NUNCA vem do `dono_user_id`
  * do corpo, e sem pessoa por trás a carteira não é definida (o lote grava, os contatos
  * ficam sem dono).
@@ -160,17 +161,39 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     const donoId = donoPedido ?? autorId;
     if (autorId && donoPedido && donoPedido !== autorId && form.get("previa") !== "true") {
-      const { data: vinculo } = await supabase
-        .from("user_organizations")
-        .select("role")
-        .eq("organization_id", authz.organizationId)
-        .eq("user_id", autorId)
-        .maybeSingle();
-      if ((vinculo as { role?: string } | null)?.role === "agent") {
+      // O papel vem de `authz.papelDaSessao` (`fn_user_role_in_org`, a MESMA função das
+      // policies): nada de segunda consulta que falha aberta, e a regra é POSITIVA —
+      // só gerente e admin escolhem outro dono; papel ausente ou outro cai em 403.
+      const papel = authz.papelDaSessao;
+      if (papel !== "manager" && papel !== "admin") {
         return fail(
           "fora_da_posse",
           "O atendente só pode ser dono dos contatos que ele mesmo importa.",
           403,
+          { requestId },
+        );
+      }
+      // O dono escolhido tem de ser membro ATIVO (convite aceito, não revogado, papel que
+      // pode ter carteira): o mesmo predicado da função do banco. Sem isto o lote inteiro
+      // gravava e cada contato era recusado depois, em silêncio. O cliente de serviço lê a
+      // tabela porque a RLS só mostra ao atendente o próprio vínculo.
+      const { data: membro, error: membroErr } = await createAdminClient()
+        .from("user_organizations")
+        .select("user_id")
+        .eq("organization_id", authz.organizationId)
+        .eq("user_id", donoPedido)
+        .is("revoked_at", null)
+        .not("accepted_at", "is", null)
+        .in("role", ["agent", "manager", "admin"])
+        .maybeSingle();
+      if (membroErr) {
+        return fail("internal_error", "Não foi possível conferir o dono escolhido.", 500, { requestId });
+      }
+      if (!membro) {
+        return fail(
+          "dono_invalido",
+          "O dono escolhido não é um membro ativo desta organização.",
+          422,
           { requestId },
         );
       }

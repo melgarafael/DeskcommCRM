@@ -11275,6 +11275,8 @@ export const DICIONARIO: Traducoes = {
   "primeira mensagem recebida no Instagram": { es: "primer mensaje recibido en Instagram" },
   "primeira mensagem recebida no Facebook": { es: "primer mensaje recibido en Facebook" },
   "primeira ligação recebida": { es: "primera llamada recibida" },
+  "Não foi possível conferir a carteira: confira o dono dos contatos do lote.": { es: "No se pudo verificar la cartera: revise el dueño de los contactos del lote." },
+  "contatos ficaram sem dono na carteira.": { es: "contactos quedaron sin dueño en la cartera." },
   "cliente conhecido voltou a escrever": { es: "un cliente conocido volvió a escribir" },
   "Mudou de estágio": { es: "Cambió de etapa" },
   "Correção do que o assistente tinha feito": { es: "Corrección de lo que había hecho el asistente" },
