@@ -206,10 +206,12 @@ describe("responsáveis — principal, repetidos, membros", () => {
     await expect(alterarA(id, { responsible_user_ids: [A.manager] })).rejects.toThrow("appointment_responsibles_invalid");
   });
 
-  it("F.2b: trocar o principal para quem já é adicional é recusado (revalidação depois do UPDATE)", async () => {
+  // Fora de serviço o PATCH não troca o principal (`fn_appointment_change_core` ignora `owner_user_id`),
+  // então a sobreposição é montada por INSERT direto e a alteração seguinte é que tem de recusar.
+  it("F.2b: com o principal repetido entre os adicionais, a alteração é recusada (revalidação depois do UPDATE)", async () => {
     const id = await compromisso(A.org, A.manager);
-    await porDoAdicional(id, X);
-    await expect(alterarA(id, { owner_user_id: X })).rejects.toThrow("appointment_responsibles_invalid");
+    await porDoAdicional(id, A.manager);
+    await expect(alterarA(id, { title: "Qualquer alteração" })).rejects.toThrow("appointment_responsibles_invalid");
   });
 
   it("F.3: a mesma pessoa repetida em caixa diferente é recusada", async () => {
@@ -259,10 +261,12 @@ describe("responsáveis — sessão coletiva (equipe herdada)", () => {
     const tipo = await servico();
     const c = await contato();
     const chave = randomUUID();
-    await reservar(tipo, c, { operation_key: chave, responsible_user_ids: [X] });
-    await expect(reservar(tipo, c, { operation_key: chave, responsible_user_ids: [Y] })).rejects.toMatchObject({
-      code: "PT409",
-    });
+    // Pessoas que o F.7 não usa: ele ocupa X e Y neste mesmo horário.
+    const [primeiro, outro] = [umAdicional(adicionais, 3), umAdicional(adicionais, 4)];
+    await reservar(tipo, c, { operation_key: chave, responsible_user_ids: [primeiro] });
+    await expect(reservar(tipo, c, { operation_key: chave, responsible_user_ids: [outro] })).rejects.toThrow(
+      "service_idempotency_conflict",
+    );
   });
 });
 
