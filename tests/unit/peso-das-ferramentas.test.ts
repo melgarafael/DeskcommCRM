@@ -141,7 +141,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_human_case": { tokens: 208, motivo: BASE },
   "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
   "crm_book_appointment": { tokens: 1330, motivo: BASE },
-  "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
+  "crm_reschedule_appointment": { tokens: 610, motivo: "DES-1952: ganhou `idempotency_key` opcional (+38) — repetir a remarcação com a mesma chave não remarca de novo, no local e no Amigo (pedido do DeskVoice, R7). Base: 572" },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
@@ -278,7 +278,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-const TETO_TOTAL = 47945;
+const TETO_TOTAL = 47983;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
