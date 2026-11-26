@@ -3067,9 +3067,17 @@ async function executarTurnoDoAgente(
 
   // A escolta do teto do visitante anônimo: o aviso ANTES da passagem (que arma o
   // `force_human` e vetaria o envio), e aviso que falha não impede a passagem.
-  // Nenhum modelo é chamado. Passagem que falha derruba o turno: o job tenta de
-  // novo e o aviso não se repete (o envio é idempotente por job).
+  // Nenhum modelo é chamado. Passagem que falha derruba o turno e o job tenta de
+  // novo, sem repetir o aviso (o envio é idempotente por job). Só recupera a falha
+  // ANTES de `performHumanHandoff` armar o `force_human`: depois disso a nova
+  // tentativa para no veto de handoff.
   if (escoltarTetoDoAnonimo) {
+    // Fora do público do agente (#3722) é silêncio, no teto também.
+    if (input.resolvedAgent && 'silencioPeloPublico' in input.resolvedAgent
+      && input.resolvedAgent.silencioPeloPublico === true) {
+      runLog.info('turno pulado — teto do visitante anônimo, contato fora do público do agente');
+      return;
+    }
     // Pedido de parar e pedido de uma pessoa vencem o teto.
     const agente = input.resolvedAgent?.config;
     if (
@@ -3101,7 +3109,8 @@ async function executarTurnoDoAgente(
         },
         {
           motivo: 'teto_do_visitante_anonimo',
-          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p,
+            agente ? { ...deps.crmCfg, agentActorId: agente.agentId } : deps.crmCfg)))(pool),
           origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
           now: clock(),
           log: runLog,
@@ -8565,7 +8574,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
     }
-    if (await escalarComercialAntesDoModelo(pool, deps, job, {
+    // No teto, quem passa a conversa é a escolta, que espera a janela de envio.
+    if (!tetoDoAnonimo && await escalarComercialAntesDoModelo(pool, deps, job, {
       leadId: job.contact_id,
       conversationId: payload.conversation_id,
       channelSessionId: payload.channel_session_id,

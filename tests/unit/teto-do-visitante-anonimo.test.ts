@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   avisoComContexto: vi.fn(),
   contexto: vi.fn(),
   adiar: vi.fn(),
+  comercial: vi.fn(),
+  adapter: vi.fn(),
 }));
 
 // Só os EFEITOS do handoff são dublados. As detecções seguem as REAIS.
@@ -44,6 +46,13 @@ vi.mock("@/lib/agent-engine/agent/aviso-de-escalacao", async (importOriginal) =>
 vi.mock("@/lib/agent-engine/edge/crm/get-lead-context", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLeadContext: mocks.contexto,
+}));
+vi.mock("@/lib/agent-engine/edge/channel/waha-adapter", () => ({
+  WahaChannelAdapter: class {
+    constructor(_pool: unknown, cfg: unknown) {
+      mocks.adapter(cfg);
+    }
+  },
 }));
 vi.mock("@/lib/agent-engine/queue/queue", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -66,7 +75,7 @@ vi.mock("@/lib/agent-engine/agent/turno-ja-respondido", async (importOriginal) =
 vi.mock("@/lib/agent-engine/agent/reply-drafts", () => ({ generateReplyDraft: mocks.rascunho }));
 vi.mock("@/lib/escalacao/assunto-comercial", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  comercialExigeHumano: vi.fn(async () => false),
+  comercialExigeHumano: mocks.comercial,
 }));
 
 vi.mock("@/lib/catalogo/retomada-de-apresentacao", async (importOriginal) => ({
@@ -195,6 +204,7 @@ beforeEach(() => {
   mocks.avisoComContexto.mockResolvedValue({ avisado: true });
   mocks.contexto.mockResolvedValue({ ok: false, error: { code: "indisponivel" } });
   mocks.adiar.mockResolvedValue(undefined);
+  mocks.comercial.mockResolvedValue(false);
 });
 
 describe("turno REAL — o teto do visitante anônimo pede contato e passa para a equipe", () => {
@@ -299,6 +309,7 @@ describe("handler REAL do job — o teto chega à escolta", () => {
     operationMode: "automatic" | "assisted",
     extra: Record<string, unknown> = {},
     agora = "2026-10-06T15:00:00Z",
+    opts: { silencioPeloPublico?: boolean; canalReal?: boolean } = {},
   ): Promise<void> {
     (decidirElegibilidadeDaConversa as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       permite: false,
@@ -314,6 +325,7 @@ describe("handler REAL do job — o teto chega à escolta", () => {
         handoffKeywords: [], filtroDePalavraChave: null,
       },
       routerId: null, intentName: null, confidence: null, outcome: "fallback",
+      ...(opts.silencioPeloPublico ? { config: null, silencioPeloPublico: true } : {}),
     });
     const job = {
       id: JOB, organization_id: ORG, contact_id: CONTATO, kind: "inbound_turn",
@@ -328,7 +340,9 @@ describe("handler REAL do job — o teto chega à escolta", () => {
       log: logFalso(), llmCfg: {}, crmCfg: {},
       knobs: { maxSteps: 1, allowlistTtlMs: 21 * 24 * 60 * 60 * 1000 },
       clock: () => new Date(agora),
-      channel: () => ({ send: vi.fn(async () => ({ kind: "sent" })) }),
+      ...(opts.canalReal
+        ? {}
+        : { channel: () => ({ send: vi.fn(async () => ({ kind: "sent" })) }) }),
     };
     const pool = poolCom([texto("inbound", "e quanto custa?", 3)], texto("inbound", "e quanto custa?", 3));
     await createInboundTurnHandler(deps as never)(job as never, pool, { workerId: "w" });
@@ -391,6 +405,24 @@ describe("handler REAL do job — o teto chega à escolta", () => {
     expect(mocks.passagem.mock.calls[0]?.[2]).toMatchObject({
       inboxTitle: "Visitante do chat no site chegou ao limite da IA — assumir a conversa",
     });
+  });
+
+  it("assunto comercial restrito não passa na frente do teto: fora da janela, adia", async () => {
+    mocks.comercial.mockResolvedValue(true);
+    await expect(peloHandler("automatic", {}, "2026-10-07T02:00:00Z")).rejects.toThrow(/janela/);
+    expect(mocks.aviso).not.toHaveBeenCalled();
+    expect(mocks.passagem).not.toHaveBeenCalled();
+  });
+
+  it("contato fora do público do agente: silêncio, sem frase nem passagem", async () => {
+    await peloHandler("automatic", {}, undefined, { silencioPeloPublico: true });
+    expect(mocks.aviso).not.toHaveBeenCalled();
+    expect(mocks.passagem).not.toHaveBeenCalled();
+  });
+
+  it("a frase sai em nome do agente que atende", async () => {
+    await peloHandler("automatic", {}, undefined, { canalReal: true });
+    expect(mocks.adapter).toHaveBeenCalledWith(expect.objectContaining({ agentActorId: "agente-1" }));
   });
 
   it("agente assistido: no teto não rascunha, não avisa e não passa", async () => {

@@ -369,8 +369,10 @@ Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável d
   a escolta respeita a janela de envio do canal (fora dela o turno é adiado para a abertura, como
   qualquer resposta); pedido de parar e pedido de uma pessoa vencem o teto (nos dois modos eles
   seguem as detecções de sempre, com o aviso delas); a frase ao visitante sai antes da passagem, e
-  aviso que falha não impede a passagem. Passagem que falha derruba o turno, sem chamar o modelo, e
-  o job tenta de novo. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
+  aviso que falha não impede a passagem. Passagem que falha derruba o turno, sem chamar o modelo, e o job tenta de novo; a nova
+  tentativa só recupera a falha anterior ao `force_human` (a passagem não é uma transação: depois
+  dele, o job termina no veto de handoff). Contato fora do público do agente segue em silêncio, e
+  a restrição comercial não passa na frente da escolta. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
   'teto_do_visitante_anonimo'` (migration 9493). Depois dela, o `force_human` veta a IA antes do
   teto, então a frase não se repete enquanto a conversa está com a equipe; quem a devolve ao
   automático, com o visitante ainda anônimo e no limite, volta a receber a frase e a passagem.
