@@ -18,8 +18,11 @@ import {
   carregarLimiteDaRede,
   configDoAgenteNaRede,
   limiteDaRedeGate,
+  fotosQueCabemNaJanela,
   tetosDeEnvioDoTurno,
 } from "./limite-da-rede";
+
+import { limitesDaRede } from "@/lib/channels/social/limites-da-rede";
 
 const AGORA = new Date("2026-11-25T12:00:00.000Z");
 const HORA = 60 * 60 * 1000;
@@ -156,5 +159,23 @@ describe("carregarLimiteDaRede: erro de leitura", () => {
       }),
     } as unknown as Parameters<typeof carregarLimiteDaRede>[0];
     await expect(carregarLimiteDaRede(db, ENTRADA)).rejects.toThrow(/aborted/);
+  });
+});
+
+describe("fotosQueCabemNaJanela: o saldo da janela decide quantas fotos saem depois do texto", () => {
+  const tiktok = limitesDaRede("tiktok")!;
+  it("janela vazia: as 2 fotos do teto fixo", () => {
+    expect(fotosQueCabemNaJanela(tiktok, 0)).toBe(2);
+    expect(fotosQueCabemNaJanela(tiktok, 5)).toBe(2);
+  });
+  it("com 6 usadas: texto = 7ª, 1 foto = 8ª (teto da IA é 8)", () => {
+    expect(fotosQueCabemNaJanela(tiktok, 6)).toBe(1);
+  });
+  it("com 7 usadas: o texto é a 8ª e nenhuma foto cabe", () => {
+    expect(fotosQueCabemNaJanela(tiktok, 7)).toBe(0);
+  });
+  it("janela já no teto da IA ou acima: nunca negativo", () => {
+    expect(fotosQueCabemNaJanela(tiktok, 8)).toBe(0);
+    expect(fotosQueCabemNaJanela(tiktok, 10)).toBe(0);
   });
 });

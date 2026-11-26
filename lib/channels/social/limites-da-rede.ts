@@ -90,6 +90,9 @@ export interface EntradaDoLimiteDaRede {
   now: Date;
 }
 
+/** Desvio de relógio tolerado entre o carimbo do cliente e o `now` do servidor. */
+const DESVIO_DE_RELOGIO_MS = 5 * 60 * 1000;
+
 function horas(ms: number): number {
   return Math.round(ms / HORA_MS);
 }
@@ -104,7 +107,11 @@ export function decidirLimiteDaRede(entrada: EntradaDoLimiteDaRede): VeredictoDo
   const { limites, autor, respostasNaJanela, lastInboundAt, now } = entrada;
   const janelaHoras = horas(limites.janelaMs);
 
-  const decorrido = lastInboundAt === null ? Number.POSITIVE_INFINITY : now.getTime() - lastInboundAt.getTime();
+  // Carimbo no futuro: com `decorrido` negativo a janela fecharia só 48 h depois do carimbo, e
+  // ele abriria mais do que a rede permite. Até 5 min de desvio de relógio vale como "acabou de
+  // escrever" (`Math.max(0, ...)`); acima disso o carimbo não é confiável e a janela fica fechada.
+  const bruto = lastInboundAt === null ? Number.POSITIVE_INFINITY : now.getTime() - lastInboundAt.getTime();
+  const decorrido = bruto < -DESVIO_DE_RELOGIO_MS ? Number.POSITIVE_INFINITY : Math.max(0, bruto);
   if (decorrido >= limites.janelaMs) {
     return {
       permitido: false,

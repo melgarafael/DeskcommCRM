@@ -251,3 +251,13 @@ export function tetosDeEnvioDoTurno(
   if (limites === null) return { maxSendsPerTurn: padrao, maxTextosPorTurno: padrao };
   return { maxSendsPerTurn: 1 + limites.fotosPorTurnoDaIa, maxTextosPorTurno: 1 };
 }
+
+/**
+ * Quantas fotos do turno da IA CABEM na janela: o texto vai primeiro e gasta uma resposta;
+ * as fotos só usam o que sobra depois da reserva da equipe. Sem isto, com 7 respostas já
+ * usadas o texto saía (a 8ª) e a foto seguinte era recusada no meio do turno.
+ */
+export function fotosQueCabemNaJanela(limites: LimitesDaRede, respostasNaJanela: number): number {
+  const saldo = limites.maxRespostas - limites.reservaParaEquipe - respostasNaJanela - 1;
+  return Math.max(0, Math.min(limites.fotosPorTurnoDaIa, saldo));
+}

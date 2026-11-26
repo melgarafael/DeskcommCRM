@@ -106,3 +106,14 @@ describe("decidirLimiteDaRede: o teto de 10 e a reserva da equipe", () => {
     });
   });
 });
+
+describe("decidirLimiteDaRede: carimbo do cliente no futuro", () => {
+  it("desvio pequeno de relógio (1 min à frente) vale como acabou de escrever", () => {
+    expect(decidirLimiteDaRede(entrada({ ultimaHaHoras: -1 / 60 })).permitido).toBe(true);
+  });
+  it("carimbo 1 h à frente não é confiável: janela fechada, nunca mais larga", () => {
+    const v = decidirLimiteDaRede(entrada({ ultimaHaHoras: -1 }));
+    expect(v.permitido).toBe(false);
+    expect(v).toMatchObject({ codigo: "janela_da_rede_fechada" });
+  });
+});

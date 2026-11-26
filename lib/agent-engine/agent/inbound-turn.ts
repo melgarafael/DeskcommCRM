@@ -324,8 +324,10 @@ import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } fro
 import {
   CODIGOS_DO_LIMITE_DA_REDE,
   avisarEquipeDoLimiteDaRede,
+  carregarLimiteDaRede,
   carregarRedeDoCanal,
   configDoAgenteNaRede,
+  fotosQueCabemNaJanela,
   tetosDeEnvioDoTurno,
 } from './limite-da-rede';
 import { limitesDaRede } from '@/lib/channels/social/limites-da-rede';
@@ -5792,6 +5794,17 @@ async function executarTurnoDoAgente(
                 return resultado;
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
+              // A21: as fotos só usam o saldo da janela que sobra depois do texto e da reserva da
+              // equipe. Leitura fora de transação; se falhar, vale o teto fixo e o gate segue barrando.
+              let maxFotosDaRede = limitesDoCanal?.fotosPorTurnoDaIa ?? 0;
+              if (limitesDoCanal !== null && input.channelSessionId) {
+                try {
+                  const estado = await carregarLimiteDaRede(pool, { organizationId: tenantId, contactId: leadId, channelSessionId: input.channelSessionId });
+                  if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, estado.respostasNaJanela);
+                } catch (err) {
+                  runLog.warn('limite_da_rede: saldo da janela não lido; usando o teto fixo de fotos', { err: String(err) });
+                }
+              }
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
                   corposEnviados.push(finalBody);
@@ -5806,7 +5819,7 @@ async function executarTurnoDoAgente(
                       jitter,
                       restantes: () => maxSendsPerTurn - seq,
                       ...(limitesDoCanal !== null
-                        ? { legendaSeparada: true, maxFotos: limitesDoCanal.fotosPorTurnoDaIa }
+                        ? { legendaSeparada: true, maxFotos: maxFotosDaRede }
                         : {}),
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
