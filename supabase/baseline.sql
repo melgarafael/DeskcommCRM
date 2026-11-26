@@ -84073,7 +84073,7 @@ create trigger trg_tipo_segue_o_fuso_da_empresa
   for each row
   execute function public.fn_tipo_segue_o_fuso_da_empresa();
 
--- ---- reutilizar o clone aberto no funil (migration 9480, #5229) ----
+-- ---- reutilizar o clone aberto no funil (migration 9492, #5229) ----
 create index if not exists crm_leads_clone_aberto_no_funil_idx
   on public.crm_leads (organization_id, pipeline_id, (source_metadata->'clonado_de'->>'lead_id'), created_at, id)
   where status = 'open' and source_metadata ? 'clonado_de';
