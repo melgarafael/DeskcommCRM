@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { EntradaDaAgenda } from "@/components/agenda/EntradaDaAgenda";
 import { EnderecoDaMarcacao } from "@/components/agenda/EnderecoDaMarcacao";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
+import { QuemConduz } from "@/components/agenda/QuemConduz";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -23,6 +24,7 @@ import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
+import { ApiError } from "@/lib/api/types";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import {
   MAXIMO_DE_CONVIDADOS_DA_EQUIPE,
@@ -242,6 +244,8 @@ export function AgendaClient({
    * escolhida é a própria diferença.
    */
   const [equipeAoAbrir, setEquipeAoAbrir] = React.useState<string[]>([]);
+  /** Responsáveis ADICIONAIS escolhidos na marcação nova (#3067). */
+  const [responsaveis, setResponsaveis] = React.useState<string[]>([]);
   /** Abrir o painel do zero: o vínculo volta a ser o da rota, nunca o da vez anterior. */
   const abrirMarcacao = React.useCallback(() => {
     reiniciarVinculo();
@@ -250,6 +254,7 @@ export function AgendaClient({
     // convidados sem ninguém ter escolhido (#4006).
     setConvidadosDaEquipe([]);
     setEquipeAoAbrir([]);
+    setResponsaveis([]);
     setMarcando(true);
   }, [reiniciarVinculo]);
   /**
@@ -1069,6 +1074,16 @@ export function AgendaClient({
                 </div>
               </div>
             )}
+            {!remarcandoId && tipo ? (
+              <div className="lg:col-span-2">
+                <QuemConduz
+                  pessoas={pessoas}
+                  principalId={donoDaMarcacao ?? tipo.donoId ?? null}
+                  selecionados={responsaveis}
+                  onChange={setResponsaveis}
+                />
+              </div>
+            ) : null}
             {!remarcandoId ? (
               /*
                 O TÍTULO LIVRE (#3766) — opcional, e por isso vem ANTES dos
@@ -1399,6 +1414,13 @@ export function AgendaClient({
                         convidadosDaEquipe.length && !tipo.servico
                           ? convidadosDaEquipe
                           : undefined,
+                      // O principal nunca vai na lista (o banco recusa). Vazio fica
+                      // FORA do corpo: é o caminho de sempre.
+                      responsible_user_ids: (() => {
+                        const principal = donoDaMarcacao ?? tipo.donoId ?? null;
+                        const lista = responsaveis.filter((id) => id !== principal);
+                        return lista.length ? lista : undefined;
+                      })(),
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
                       // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
@@ -1414,9 +1436,26 @@ export function AgendaClient({
                       setEnderecoEditado(null);
                       setObservacao("");
                       setTituloLivre("");
+                      setResponsaveis([]);
                       // Guardado para o fechamento saber para onde levar a grade.
                       setMarcadoEm(instante);
                       return r;
+                    })
+                    .catch((err: unknown) => {
+                      // O banco diz QUEM está ocupado; a frase na tela diz o nome.
+                      if (err instanceof ApiError && err.code === "responsavel_indisponivel") {
+                        const nome = pessoas.find((p) => p.id === err.details?.user_id)?.nome;
+                        if (nome) {
+                          throw new ApiError(
+                            err.status,
+                            err.code,
+                            err.details,
+                            err.requestId,
+                            t("{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.").replace("{nome}", nome),
+                          );
+                        }
+                      }
+                      throw err;
                     });
                 }}
                 // "VER NA AGENDA" — o botão que não fazia nada.
