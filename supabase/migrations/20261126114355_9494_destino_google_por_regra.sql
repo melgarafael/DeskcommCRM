@@ -1,5 +1,5 @@
 -- manifest: Permite destinos Google distintos na mesma etapa e preserva o destino original de cada envio, sem trocar a autorização global nem reenviar protocolos legados.
--- 9493 — destino explícito por regra, sem credencial de leitura no envio.
+-- 9494 — destino explícito por regra, sem credencial de leitura no envio.
 
 -- IDs externos do Google, como em ad_platform_connections. Não apontam para
 -- google_ads_reporting_accounts: autorizar leitura não autoriza conversões.

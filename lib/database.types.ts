@@ -10882,6 +10882,7 @@ export type Database = {
         Row: {
           agent_id: string | null;
           cache_read_tokens: number;
+          cache_write_1h_tokens: number | null;
           cache_write_tokens: number;
           chars_ferramentas: number | null;
           chars_mensagens: number | null;
@@ -10915,6 +10916,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -10947,6 +10949,7 @@ export type Database = {
         Update: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -16571,6 +16574,18 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_levar_negocio_para_funil: {
+        Args: {
+          p_destino: string
+          p_fechamento: Json
+          p_linha: Json
+          p_org: string
+          p_origem: string
+          p_origem_atualizada_em: string
+          p_sessao: Json
+        }
+        Returns: Json
+      }
       fn_lgpd_anonymize_contact: {
         Args: { p_contact_id: string; p_organization_id: string };
         Returns: Json;

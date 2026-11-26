@@ -206,13 +206,13 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
 }
 
 /**
- * Grava a linha do adiamento — a única evidência de que a regra casou e está
- * esperando.
+ * Registra uma espera por regra e evento. O `created_at` da primeira linha
+ * mostra desde quando a regra espera, e o `retry_at` acompanha a próxima volta.
  *
- * Um run por adiamento, e não um por tique do drain: o evento só volta na hora
- * marcada por `retry_at`, então não há repetição a cada minuto. Se a janela
- * seguir fechada quando ele voltar, sai outra linha — e aí a repetição É a
- * informação (a automação está presa há três dias).
+ * O claim do event_log serializa as passagens do motor pelo mesmo evento.
+ * Ao reencontrar esperas gravadas antes da atualização, reaproveita a mais
+ * antiga. Um envio já posto na fila do canal também pode ter status `adiado`,
+ * por isso o motivo da ação faz parte da busca.
  *
  * Fire-and-forget quanto a erro: perder o registro não pode impedir o
  * adiamento, que é o que protege o número.
@@ -225,25 +225,54 @@ async function registrarAdiamento(
   retryAt: string,
   puladasPelaAgenda: Map<string, string | null>,
 ): Promise<void> {
-  const { error } = await admin.from("automation_rule_runs").insert({
-    organization_id: row.organization_id,
-    rule_id: rule.id,
-    event_id: row.id,
-    status: "adiado",
-    actions_result: [
-      {
-        type: actionType,
-        status: "postponed",
-        detail: {
-          reason: "fora_da_janela_de_envio",
-          retry_at: retryAt,
-          explicacao:
-            "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
-          ...(puladasPelaAgenda.size ? { pular_por_agenda: Object.fromEntries(puladasPelaAgenda) } : {}),
-        },
+  const motivo = "fora_da_janela_de_envio";
+  let busca = admin
+    .from("automation_rule_runs")
+    .select("id, actions_result")
+    .eq("organization_id", row.organization_id)
+    .eq("rule_id", rule.id)
+    .eq("event_id", row.id)
+    .eq("status", "adiado")
+    .eq("actions_result->0->detail->>reason", motivo);
+  if (row.created_at) busca = busca.gte("created_at", row.created_at);
+  const { data: espera, error: erroDaBusca } = await busca
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      actions_result: Array<{ detail?: { pular_por_agenda?: Record<string, string | null> } }>;
+    }>();
+  // Uma volta pode não ver mais o compromisso que decidiu um pulo. A primeira
+  // decisão de cada regra segue valendo, junto com os pulos recém-observados.
+  const pulos = {
+    ...Object.fromEntries(puladasPelaAgenda),
+    ...espera?.actions_result[0]?.detail?.pular_por_agenda,
+  };
+  const actionsResult = [
+    {
+      type: actionType,
+      status: "postponed",
+      detail: {
+        reason: motivo,
+        retry_at: retryAt,
+        explicacao:
+          "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
+        ...(Object.keys(pulos).length ? { pular_por_agenda: pulos } : {}),
       },
-    ],
-  });
+    },
+  ];
+  const error = erroDaBusca ?? (espera
+    ? await admin.from("automation_rule_runs")
+      .update({ actions_result: actionsResult })
+      .eq("organization_id", row.organization_id)
+      .eq("id", espera.id)
+    : await admin.from("automation_rule_runs").insert({
+      organization_id: row.organization_id,
+      rule_id: rule.id,
+      event_id: row.id,
+      status: "adiado",
+      actions_result: actionsResult,
+    })).error;
   if (error) {
     logger.error("[automation.engine] não foi possível registrar o adiamento", {
       rule_id: rule.id,
@@ -262,8 +291,8 @@ async function registrarAdiamento(
  * pré-checagem e gravada na linha de espera (`pular_por_agenda`); na volta ela
  * vale sem reler a agenda. Regra → `appointment_id` do compromisso que decidiu.
  *
- * Se a gravação da espera falhou (`registrarAdiamento` não lança), a marca não
- * existe e a regra reavalia a agenda na volta — o comportamento de antes.
+ * Se uma gravação falhou, as decisões já registradas ainda valem. Para uma
+ * regra que ficou sem marca, a agenda é reavaliada na volta.
  */
 async function pulosCongeladosNoEvento(
   admin: SupabaseClient,
