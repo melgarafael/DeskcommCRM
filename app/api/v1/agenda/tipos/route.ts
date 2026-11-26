@@ -150,6 +150,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       reminder_extra_offsets_minutes: t.lembreteDegrausExtras,
       reminder_body: t.lembreteMensagem,
       reminder_bodies: t.lembreteMensagens,
+      reminder_sem_link_offsets_minutes: t.lembreteDegrausSemLink,
       default_price_cents: t.precoPadraoCents,
       ...(t.servico ? { service_enabled: true, booking_mode: t.servico.booking_mode, service_capacity: t.servico.capacity,
         service_revision: t.servico.revision, service_publication_mode: t.servico.publication_mode } : {}),
