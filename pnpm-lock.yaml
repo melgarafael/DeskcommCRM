@@ -23,7 +23,7 @@ overrides:
 
 patchedDependencies:
   '@phosphor-icons/react@2.1.10':
-    hash: m3wkiwjijyds25ck3atpd67zma
+    hash: mkvik6idvl5bzvbunenmpb5fca
     path: patches/@phosphor-icons__react@2.1.10.patch
   '@react-pdf/hyphenate':
     hash: 7zbg3hcwdkwwiwo2qqqwdmolwi
@@ -62,7 +62,7 @@ importers:
         version: 1.32.2(zod@4.6.7)
       '@phosphor-icons/react':
         specifier: ^2.1.10
-        version: 2.1.10(patch_hash=m3wkiwjijyds25ck3atpd67zma)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 2.1.10(patch_hash=mkvik6idvl5bzvbunenmpb5fca)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.2.1
         version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -6097,7 +6097,7 @@ snapshots:
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@fontsource-variable/inter': 5.3.0
-      '@phosphor-icons/react': 2.1.10(patch_hash=m3wkiwjijyds25ck3atpd67zma)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@phosphor-icons/react': 2.1.10(patch_hash=mkvik6idvl5bzvbunenmpb5fca)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@shadcn/react': 0.3.1(@types/react@19.3.0)(react@19.3.1)
       class-variance-authority: 0.7.1
       cmdk: 1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -6882,7 +6882,7 @@ snapshots:
 
   '@oxc-project/types@0.156.0': {}
 
-  '@phosphor-icons/react@2.1.10(patch_hash=m3wkiwjijyds25ck3atpd67zma)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@phosphor-icons/react@2.1.10(patch_hash=mkvik6idvl5bzvbunenmpb5fca)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)

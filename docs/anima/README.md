@@ -251,7 +251,8 @@ Se o intervalo trouxer mudança estrutural (Tailwind, Next, React ou reestrutura
   upstream mede.
 - **Raios:** botões e campos 12px (`--radius-sm`), cards e diálogos 28px (`--radius-lg`).
 - **Fonte:** Inter variável, servida do próprio pacote (`dist/fonts`) por `next/font/local`.
-- **Ícones:** Phosphor em `bold` por padrão, via `patches/@phosphor-icons__react@2.1.10.patch`.
+- **Ícones:** Phosphor em `bold`, via `patches/@phosphor-icons__react@2.1.10.patch`: o padrão e o
+  `regular` declarado pelo upstream desenham bold. `fill` e `duotone` ficam como estão.
 - **Tema padrão:** escuro, quando o usuário nunca escolheu. "Sistema" continua seguindo o SO.
 - **Contraste:** os testes `lib/branding/contraste.ts`, `lib/channels/marca-do-canal.test.ts` e
   `lib/aparencia/aparencia.test.ts` medem os tokens contra a WCAG. Se falharem, o token está
