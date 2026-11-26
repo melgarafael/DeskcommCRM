@@ -9215,6 +9215,55 @@ export type Database = {
           },
         ];
       };
+      followup_delivery_events: {
+        Row: {
+          created_at: string;
+          enrollment_id: string;
+          event_type: string;
+          id: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          enrollment_id: string;
+          event_type: string;
+          id?: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        Update: {
+          created_at?: string;
+          enrollment_id?: string;
+          event_type?: string;
+          id?: string;
+          idempotency_key?: string;
+          node_id?: string;
+          organization_id?: string;
+          payload?: NonNullable<Json>;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "followup_delivery_events_enrollment_id_fkey";
+            columns: ["enrollment_id"];
+            isOneToOne: false;
+            referencedRelation: "followup_enrollments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "followup_delivery_events_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       followup_enrollment_events: {
         Row: {
           created_at: string;
