@@ -84,8 +84,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const parsed = z.object({
     expected_revision: z.number().int().positive().optional(),
     devolver_ao_automatico: z.boolean().optional(),
+    safe_close: z.boolean().optional(),
+    expected_status: z.enum(["open", "pending", "claimed", "ai_handling", "closed", "resolved", "archived"]).optional(),
+    expected_last_inbound_message_id: z.string().uuid().nullable().optional(),
+    expected_last_inbound_at: z.string().datetime({ offset: true }).nullable().optional(),
+    expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
+    expected_sector_id: z.string().uuid().nullable().optional(),
+    reject_human_assigned: z.boolean().optional(),
+    reject_open_pendencies: z.boolean().optional(),
+    idempotency_key: z.string().trim().min(1).max(200).optional(),
   }).safeParse(body);
-  if (!parsed.success) return fail("validation_failed", "Revisão inválida.", 422, { requestId });
+  if (!parsed.success) return fail("validation_failed", "Parâmetros de encerramento inválidos.", 422, { requestId });
+
+  const idempotencyHeader = req.headers.get("idempotency-key")?.trim() || undefined;
+  const idempotencyKey = parsed.data.idempotency_key ?? idempotencyHeader;
 
   const { id } = await ctx.params;
 
@@ -105,7 +117,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 
   try {
-    const { conversation, devolucao } = await fecharConversaHandler(
+    const { conversation, devolucao, already_closed, idempotent_replay } = await fecharConversaHandler(
       authz.supabase,
       {
         organization_id: authz.organizationId,
@@ -126,12 +138,48 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         ...(parsed.data.devolver_ao_automatico !== undefined
           ? { devolverAoAutomatico: parsed.data.devolver_ao_automatico }
           : {}),
+        ...(parsed.data.safe_close !== undefined
+          ? { safeClose: parsed.data.safe_close }
+          : {}),
+        ...(parsed.data.expected_status !== undefined
+          ? { expectedStatus: parsed.data.expected_status }
+          : {}),
+        ...(parsed.data.expected_last_inbound_message_id !== undefined
+          ? { expectedLastInboundMessageId: parsed.data.expected_last_inbound_message_id }
+          : {}),
+        ...(parsed.data.expected_last_inbound_at !== undefined
+          ? { expectedLastInboundAt: parsed.data.expected_last_inbound_at }
+          : {}),
+        ...(parsed.data.expected_assigned_to_user_id !== undefined
+          ? { expectedAssignedToUserId: parsed.data.expected_assigned_to_user_id }
+          : {}),
+        ...(parsed.data.expected_sector_id !== undefined
+          ? { expectedSectorId: parsed.data.expected_sector_id }
+          : {}),
+        ...(parsed.data.reject_human_assigned !== undefined
+          ? { rejectHumanAssigned: parsed.data.reject_human_assigned }
+          : {}),
+        ...(parsed.data.reject_open_pendencies !== undefined
+          ? { rejectOpenPendencies: parsed.data.reject_open_pendencies }
+          : {}),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       },
     );
 
-    return ok(devolucao === null ? conversation : { ...conversation, devolucao }, { requestId });
+    const payload = {
+      ...conversation,
+      ...(devolucao !== null ? { devolucao } : {}),
+      ...(already_closed !== undefined ? { already_closed } : {}),
+      ...(idempotent_replay !== undefined ? { idempotent_replay } : {}),
+    };
+    return ok(payload, { requestId });
   } catch (err) {
-    if (err instanceof ApiError) return fail(err.code, t(err.message), err.status, { requestId });
+    if (err instanceof ApiError) {
+      return fail(err.code, t(err.message), err.status, {
+        requestId,
+        ...(err.details !== undefined ? { details: err.details } : {}),
+      });
+    }
     throw err;
   }
 }

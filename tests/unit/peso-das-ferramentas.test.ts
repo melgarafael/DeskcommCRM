@@ -65,8 +65,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
   },
   "crm_close_conversation": {
-    tokens: 256,
-    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+    tokens: 737,
+    motivo: "PR 01: ganhou pré-condições de encerramento seguro condicional (safe_close, expected_status, expected_last_inbound_message_id, expected_assigned_to_user_id, expected_sector_id, reject_human_assigned, reject_open_pendencies, idempotency_key), medido após alteração",
   },
   "crm_reopen_conversation": {
     tokens: 242,
@@ -278,7 +278,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-const TETO_TOTAL = 47945;
+// +481 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional (PR 01):
+// 48426 = 47945 + 481, medido.
+const TETO_TOTAL = 48426;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
