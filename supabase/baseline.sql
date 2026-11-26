@@ -69691,7 +69691,7 @@ create or replace function public.fn_extensions_permissoes_validas(p_permissions
 returns boolean language sql immutable set search_path = public, pg_temp as $$
   select p_permissions is not null
     and jsonb_typeof(p_permissions) = 'array'
-    and jsonb_array_length(p_permissions) between 1 and 26
+    and jsonb_array_length(p_permissions) between 1 and 30
     and not exists (
       select 1 from jsonb_array_elements(p_permissions) e
       where jsonb_typeof(e.value) <> 'string'
@@ -69707,7 +69707,9 @@ returns boolean language sql immutable set search_path = public, pg_temp as $$
               'area.agentes_ia.leitura', 'area.agentes_ia.escrita',
               'area.catalogo.leitura', 'area.catalogo.escrita',
               'area.configuracao.leitura', 'area.configuracao.escrita',
-              'area.analise.leitura', 'area.analise.escrita')
+              'area.analise.leitura', 'area.analise.escrita',
+              'area.tarefas.leitura', 'area.tarefas.escrita',
+              'area.financeiro.leitura', 'area.financeiro.escrita')
     )
     and (select count(distinct e.value) from jsonb_array_elements(p_permissions) e)
         = jsonb_array_length(p_permissions);
@@ -70421,7 +70423,9 @@ begin
       'area.agentes_ia.leitura','area.agentes_ia.escrita',
       'area.catalogo.leitura','area.catalogo.escrita',
       'area.configuracao.leitura','area.configuracao.escrita',
-      'area.analise.leitura','area.analise.escrita'
+      'area.analise.leitura','area.analise.escrita',
+      'area.tarefas.leitura','area.tarefas.escrita',
+      'area.financeiro.leitura','area.financeiro.escrita'
     ]::text[]);
 end
 $consentidas$;
@@ -70463,7 +70467,7 @@ begin
     raise exception using errcode='PT409',message='extension_area_not_declared';
   end if;
   -- Decisão 5 da spec 33: configuração e agentes de IA só por quem administra a organização.
-  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia)\.') then
+  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia|financeiro)\.') then
     select u.role into v_role from public.user_organizations u
       where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;
     if v_role is distinct from 'admin' and v_role is distinct from 'owner' then

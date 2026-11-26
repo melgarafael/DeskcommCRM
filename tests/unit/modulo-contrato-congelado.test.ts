@@ -93,7 +93,7 @@ describe("o contrato que o módulo conectado enxerga está congelado", () => {
   }
 
   it("a derivação enxerga o contrato inteiro (um conjunto vazio passaria por vacuidade)", () => {
-    expect(agora.areas).toHaveLength(9);
+    expect(agora.areas).toHaveLength(11);
     expect(agora.permissoes).toHaveLength(18);
     const total = Object.values(agora.rotas).reduce((n, l) => n + l.length, 0);
     expect(total, "quase nenhuma rota liberada a módulo foi encontrada: a varredura quebrou").toBeGreaterThan(40);

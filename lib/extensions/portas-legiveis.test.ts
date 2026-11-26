@@ -102,20 +102,22 @@ describe("frases do consentimento por área (módulo conectado, F3)", () => {
     p.startsWith("area."),
   );
 
-  it("as 18 permissões de área têm frase própria, não vazia e diferente entre si", () => {
-    expect(permissoesDeArea).toHaveLength(18);
+  it("as 22 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(22);
     const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
     expect(frases.every((frase) => frase.length > 10)).toBe(true);
-    expect(new Set(frases).size).toBe(18);
+    expect(new Set(frases).size).toBe(22);
   });
 
-  it("só configuração e agentes de IA são sensíveis", () => {
+  it("só configuração, agentes de IA e financeiro são sensíveis", () => {
     const sensiveis = permissoesDeArea.filter(ehAreaSensivel).sort();
     expect(sensiveis).toEqual([
       "area.agentes_ia.escrita",
       "area.agentes_ia.leitura",
       "area.configuracao.escrita",
       "area.configuracao.leitura",
+      "area.financeiro.escrita",
+      "area.financeiro.leitura",
     ]);
   });
 
