@@ -84372,7 +84372,405 @@ create trigger trg_tipo_segue_o_fuso_da_empresa
   for each row
   execute function public.fn_tipo_segue_o_fuso_da_empresa();
 
--- ---- responsáveis da consulta (migration 9482) ----
+-- ---- llm_calls: escrita de cache de 1 hora (migration 9481, #5020) ----
+-- Espelho de supabase/migrations/20261126021255_9481_llm_calls_cache_write_1h.sql.
+-- Coluna nulável, sem default e sem backfill: nula = não medido (linha antiga,
+-- provedor sem a divisão ou escritor fora do seam), nunca "zero". Não cria
+-- função.
+alter table public.llm_calls
+  add column if not exists cache_write_1h_tokens integer;
+
+comment on column public.llm_calls.cache_write_1h_tokens is
+  'Tokens da gravação de cache com prazo de 1 hora, lidos de cache_creation.ephemeral_1h_input_tokens (Anthropic). O restante da gravação é 5m: cache_write_tokens - cache_write_1h_tokens. Nulo = não medido (linha antiga, provedor sem a divisão ou escritor fora do seam), nunca "zero".';
+
+notify pgrst, 'reload schema';
+
+-- ---- reutilizar o clone aberto no funil (migration 9492, #5229) ----
+create index if not exists crm_leads_clone_aberto_no_funil_idx
+  on public.crm_leads (organization_id, pipeline_id, (source_metadata->'clonado_de'->>'lead_id'), created_at, id)
+  where status = 'open' and source_metadata ? 'clonado_de';
+
+create or replace function public.fn_levar_negocio_para_funil(
+  p_org uuid,
+  p_origem uuid,
+  p_destino uuid,
+  p_linha jsonb,
+  p_fechamento jsonb,
+  p_origem_atualizada_em timestamptz,
+  p_sessao jsonb
+) returns jsonb
+language plpgsql security invoker set search_path = ''
+as $$
+declare
+  v_origem public.crm_leads%rowtype;
+  v_clone public.crm_leads%rowtype;
+  v_linha public.crm_leads%rowtype;
+  v_vinculos jsonb;
+  v_consulta boolean := p_linha is null and p_fechamento is null;
+  v_criou boolean := false;
+  v_fechou boolean := false;
+  v_role text := current_setting('role');
+  v_claims text := current_setting('request.jwt.claims', true);
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+  v_jwt_role text := current_setting('request.jwt.claim.role', true);
+begin
+  -- A consulta inicial é só leitura. Toda decisão que escreve repete a busca
+  -- depois de travar a mesma origem: a segunda transação vê o commit da primeira.
+  if v_consulta then
+    select * into v_origem from public.crm_leads
+     where id = p_origem and organization_id = p_org;
+  else
+    select * into v_origem from public.crm_leads
+     where id = p_origem and organization_id = p_org for no key update;
+  end if;
+
+  if v_origem.id is null or v_origem.pipeline_id = p_destino or not exists (
+    select 1 from public.crm_pipelines
+     where id = p_destino and organization_id = p_org and not is_archived
+  ) then
+    raise exception 'clone_origem_ou_destino_mudou' using errcode = 'PT409';
+  end if;
+
+  select * into v_clone from public.crm_leads
+   where organization_id = p_org
+     and pipeline_id = p_destino
+     and status = 'open'
+     and source_metadata ? 'clonado_de'
+     and source_metadata->'clonado_de'->>'lead_id' = p_origem::text
+   order by created_at, id
+   limit 1;
+
+  -- A leitura de negócio também esconde contatos marcados como pessoais,
+  -- inclusive para um token da organização. Verifica antes de qualquer escrita.
+  if exists (
+    select 1 from public.contacts
+     where organization_id = p_org and id in (v_origem.contact_id, v_clone.contact_id)
+       and is_personal
+  ) then
+    raise exception 'clone_contato_pessoal' using errcode = 'PT404';
+  end if;
+
+  if v_consulta and v_clone.id is null then
+    return null;
+  end if;
+  if v_clone.id is null and p_linha is null then
+    raise exception 'clone_destino_mudou' using errcode = 'PT409';
+  end if;
+
+  -- Só a rota pode chamar esta função e passa as claims da sessão validada.
+  -- O INSERT e o fecho rodam com o papel da sessão e as policies reais
+  -- (inclusive sobre o dono que os gatilhos de INSERT atribuírem).
+  if p_sessao is not null then
+    perform set_config('request.jwt.claim.sub', '', true);
+    perform set_config('request.jwt.claim.role', 'authenticated', true);
+    perform set_config('request.jwt.claims', p_sessao::text, true);
+    set local role authenticated;
+    if not exists (select 1 from public.crm_leads where id = p_origem and organization_id = p_org)
+       or (v_clone.id is not null and not exists (
+         select 1 from public.crm_leads where id = v_clone.id and organization_id = p_org
+       )) then
+      raise exception 'clone_fora_do_escopo' using errcode = 'PT404';
+    end if;
+  end if;
+
+  if v_clone.id is null then
+    if v_origem.updated_at is distinct from p_origem_atualizada_em
+       or (v_origem.status = 'open') <> (p_fechamento is not null) then
+      raise exception 'clone_origem_mudou' using errcode = 'PT409';
+    end if;
+    v_linha := jsonb_populate_record(null::public.crm_leads, p_linha);
+    if not exists (
+      select 1 from public.crm_stages
+       where id = v_linha.stage_id and organization_id = p_org and pipeline_id = p_destino
+         and not is_archived and not is_won and not is_lost
+    ) then
+      raise exception 'clone_etapa_mudou' using errcode = 'PT409';
+    end if;
+
+    v_vinculos := jsonb_build_object('clonado_de', jsonb_build_object(
+      'lead_id', p_origem, 'pipeline_id', v_origem.pipeline_id
+    ));
+    if v_linha.source_metadata ? 'movido_para' then
+      v_vinculos := v_vinculos || jsonb_build_object('movido_para', v_linha.source_metadata->'movido_para');
+    end if;
+
+    insert into public.crm_leads (
+      organization_id, pipeline_id, stage_id, title, description, contact_id, value_cents,
+      recurring_value_cents, recurring_period, recurring_months, currency, owner_user_id,
+      owner_agent_id, owner_kind, assigned_at, expected_close_date, tags, source,
+      source_metadata, custom_fields, retomado_de_lead_id, position_in_stage, created_by_user_id
+    ) values (
+      p_org, p_destino, v_linha.stage_id, v_linha.title, v_linha.description, v_linha.contact_id,
+      v_linha.value_cents, v_linha.recurring_value_cents, v_linha.recurring_period,
+      v_linha.recurring_months, v_linha.currency, v_linha.owner_user_id, v_linha.owner_agent_id,
+      v_linha.owner_kind, v_linha.assigned_at, v_linha.expected_close_date, v_linha.tags, v_linha.source,
+      v_linha.source_metadata - 'clonado_de' - 'movido_para', v_linha.custom_fields,
+      v_linha.retomado_de_lead_id, v_linha.position_in_stage, v_linha.created_by_user_id
+    ) returning * into v_clone;
+    v_criou := true;
+  end if;
+
+  if v_origem.status = 'open' and p_fechamento is not null then
+    if v_origem.updated_at is distinct from p_origem_atualizada_em then
+      raise exception 'clone_origem_mudou' using errcode = 'PT409';
+    end if;
+    v_linha := jsonb_populate_record(null::public.crm_leads, p_fechamento);
+    if not exists (
+      select 1 from public.crm_stages
+       where id = v_linha.stage_id and organization_id = p_org and pipeline_id = v_origem.pipeline_id
+         and is_lost and not is_archived
+    ) then
+      raise exception 'clone_fechamento_mudou' using errcode = 'PT409';
+    end if;
+    update public.crm_leads
+       set stage_id = v_linha.stage_id, position_in_stage = v_linha.position_in_stage,
+           lost_reason = v_linha.lost_reason, updated_at = v_linha.updated_at
+     where id = p_origem and organization_id = p_org
+     returning * into v_origem;
+    if not found then
+      raise exception 'clone_fora_do_escopo' using errcode = 'PT403';
+    end if;
+    v_fechou := true;
+  end if;
+
+  if p_sessao is not null then
+    perform set_config('role', v_role, true);
+    perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+    perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+    perform set_config('request.jwt.claim.role', coalesce(v_jwt_role, ''), true);
+  end if;
+
+  -- As chaves reservadas são escritas pelo servidor, dentro da MESMA
+  -- transação. A recusa de qualquer vínculo desfaz o INSERT e o fecho.
+  if v_criou then
+    update public.crm_leads
+       set source_metadata = source_metadata || v_vinculos
+     where id = v_clone.id and organization_id = p_org
+     returning * into strict v_clone;
+  end if;
+  if v_criou or v_fechou then
+    update public.crm_leads
+       set source_metadata = source_metadata || jsonb_build_object('movido_para', jsonb_build_object(
+         'lead_id', v_clone.id, 'pipeline_id', v_clone.pipeline_id, 'stage_id', v_clone.stage_id
+       )), updated_at = now()
+     where id = p_origem and organization_id = p_org
+     returning * into strict v_origem;
+  end if;
+
+  return jsonb_build_object('clone', to_jsonb(v_clone), 'origem', to_jsonb(v_origem),
+                            'criou', v_criou, 'fechou', v_fechou);
+end;
+$$;
+revoke execute on function public.fn_levar_negocio_para_funil(uuid, uuid, uuid, jsonb, jsonb, timestamptz, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.fn_levar_negocio_para_funil(uuid, uuid, uuid, jsonb, jsonb, timestamptz, jsonb)
+  to service_role;
+
+-- ---- Etapas de envio no dossiê do follow-up (#4913, migration 9493) ----
+-- Espelho de supabase/migrations/20261126083322_9493_historico_de_envio_followup.sql.
+-- Antes da VARREDURA anon: as funções nascem aqui, e o revoke explícito de cada
+-- uma vale também para quem atualiza. Ordem: tabela, funções, gatilhos.
+-- Registra as etapas comprovadas do envio no dossiê do follow-up (#4913).
+-- A trilha registra fatos, inclusive depois de uma pausa/cancelamento. Ela
+-- não concede permissão de envio nem participa da progressão do motor.
+
+create table if not exists public.followup_delivery_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  enrollment_id uuid not null references public.followup_enrollments(id) on delete cascade,
+  node_id text not null,
+  event_type text not null,
+  payload jsonb not null,
+  idempotency_key text not null,
+  created_at timestamptz not null default clock_timestamp(),
+  unique (enrollment_id, idempotency_key)
+);
+
+alter table public.followup_delivery_events enable row level security;
+revoke all on public.followup_delivery_events from public, anon, authenticated;
+grant select on public.followup_delivery_events to authenticated;
+grant select, insert on public.followup_delivery_events to service_role;
+
+drop policy if exists followup_delivery_events_select on public.followup_delivery_events;
+create policy followup_delivery_events_select on public.followup_delivery_events for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()));
+
+create index if not exists idx_followup_delivery_events_timeline
+  on public.followup_delivery_events (enrollment_id, created_at, id);
+create index if not exists idx_followup_historico_mensagem
+  on public.followup_delivery_events (organization_id, (payload->>'message_id'))
+  where event_type in ('followup_message_queued', 'followup_message_failed', 'followup_message_sent');
+create index if not exists idx_followup_historico_rascunho
+  on public.followup_delivery_events (organization_id, (payload->>'draft_id'))
+  where event_type = 'followup_draft_generated';
+
+create or replace function public.fn_followup_origem_do_envio(p_org uuid, p_job uuid)
+returns table (enrollment_id uuid, node_id text, source_step_key text)
+language plpgsql stable set search_path = public, pg_catalog as $$
+begin
+  return query
+  select e.id, origem.node_id, origem.idempotency_key
+  from public.job_queue j
+  join public.followup_enrollments e
+    on e.organization_id = j.organization_id and e.contact_id = j.contact_id
+    and e.id::text = j.payload->>'followup_enrollment_id'
+  join public.followup_enrollment_events origem
+    on origem.organization_id = e.organization_id and origem.enrollment_id = e.id
+    and origem.node_id = j.payload->>'node_id'
+    and origem.idempotency_key = j.payload->>'source_step_key'
+    and origem.event_type = 'turn_enqueued'
+  where j.id = p_job and j.organization_id = p_org and j.kind = 'followup_turn'
+    and j.payload->>'purpose' = 'send_message'
+  union all
+  select e.id, r.node_id, r.payload->>'source_step_key'
+  from public.job_queue j
+  join public.followup_delivery_events r
+    on r.organization_id = j.organization_id and r.event_type = 'followup_draft_generated'
+    and r.payload->>'draft_id' = j.payload->>'draft_id'
+  join public.followup_enrollments e
+    on e.organization_id = r.organization_id and e.id = r.enrollment_id and e.contact_id = j.contact_id
+  join public.ai_reply_drafts d
+    on d.organization_id = j.organization_id and d.send_job_id = j.id
+    and d.id::text = j.payload->>'draft_id' and d.conversation_id = e.conversation_id
+  where j.id = p_job and j.organization_id = p_org and j.kind = 'approved_reply';
+end;
+$$;
+revoke execute on function public.fn_followup_origem_do_envio(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_followup_origem_do_envio(uuid,uuid) to service_role;
+
+create or replace function public.fn_followup_registrar_envio(
+  p_org uuid, p_job uuid, p_tipo text, p_chave text, p_detalhe jsonb
+)
+returns void language plpgsql set search_path = public, pg_catalog as $$
+begin
+  insert into public.followup_delivery_events
+    (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+  select p_org, o.enrollment_id, o.node_id, p_tipo,
+    p_detalhe || jsonb_build_object('job_id', p_job, 'source_step_key', o.source_step_key),
+    'historico_envio:' || p_chave || ':' || p_tipo
+  from public.fn_followup_origem_do_envio(p_org, p_job) o
+  on conflict (enrollment_id, idempotency_key) do nothing;
+exception when others then
+  raise log 'histórico de envio do follow-up indisponível (%, SQLSTATE %)', p_tipo, sqlstate;
+end;
+$$;
+revoke execute on function public.fn_followup_registrar_envio(uuid,uuid,text,text,jsonb) from public, anon, authenticated;
+grant execute on function public.fn_followup_registrar_envio(uuid,uuid,text,text,jsonb) to service_role;
+
+create or replace function public.fn_followup_historico_job()
+returns trigger language plpgsql security definer set search_path = public, pg_catalog as $$
+begin
+  perform public.fn_followup_registrar_envio(
+    new.organization_id, new.id, 'followup_job_queued', new.id::text, '{}'::jsonb
+  );
+  return new;
+end;
+$$;
+revoke execute on function public.fn_followup_historico_job() from public, anon, authenticated;
+
+create or replace function public.fn_followup_historico_ledger()
+returns trigger language plpgsql security definer set search_path = public, pg_catalog as $$
+declare
+  tipo text := case new.status
+    when 'queued' then 'followup_message_queued'
+    when 'accepted' then 'followup_message_sent'
+    when 'failed' then 'followup_message_failed'
+  end;
+begin
+  if auth.uid() is not null then return new; end if;
+  perform public.fn_followup_registrar_envio(
+    new.organization_id, new.job_id, tipo, new.crm_message_id::text,
+    jsonb_build_object('message_id', new.crm_message_id, 'seq', new.seq)
+  );
+  return new;
+end;
+$$;
+revoke execute on function public.fn_followup_historico_ledger() from public, anon, authenticated;
+
+create or replace function public.fn_followup_historico_recibo()
+returns trigger language plpgsql security definer set search_path = public, pg_catalog as $$
+declare
+  tipo text := case when new.status = 'failed' then 'followup_message_failed'
+    else 'followup_message_sent' end;
+  pendencia record;
+  envio record;
+begin
+  -- Mesma regra do ledger: a trilha é escrita só pelo sistema.
+  if auth.uid() is not null then return new; end if;
+  -- A trilha conserva o vínculo quando o job já foi expurgado ou o
+  -- ledger rotacionou para outra tentativa. O id é o da mensagem física.
+  for pendencia in
+    select distinct on (h.enrollment_id) h.enrollment_id, h.node_id, h.payload
+    from public.followup_delivery_events h
+    join public.followup_enrollments e on e.id = h.enrollment_id
+      and e.organization_id = h.organization_id and e.contact_id = new.contact_id
+    where h.organization_id = new.organization_id
+      and h.event_type in ('followup_message_queued', 'followup_message_failed', 'followup_message_sent')
+      and h.payload->>'message_id' = new.id::text
+    order by h.enrollment_id, h.created_at
+  loop
+    insert into public.followup_delivery_events
+      (organization_id, enrollment_id, node_id, event_type, payload, idempotency_key)
+    values (new.organization_id, pendencia.enrollment_id, pendencia.node_id, tipo,
+      pendencia.payload, 'historico_envio:' || new.id::text || ':' || tipo)
+    on conflict (enrollment_id, idempotency_key) do nothing;
+  end loop;
+  if found then return new; end if;
+
+  -- O handler cria a mensagem com a chave da intenção. Assim, também
+  -- registramos o recibo quando o worker cai antes de atualizar o ledger.
+  select l.job_id, l.seq into envio
+    from public.send_ledger l
+    where l.id = new.id and l.organization_id = new.organization_id and l.contact_id = new.contact_id;
+  if found then
+    perform public.fn_followup_registrar_envio(
+      new.organization_id, envio.job_id, tipo, new.id::text,
+      jsonb_build_object('message_id', new.id, 'seq', envio.seq)
+    );
+  end if;
+  return new;
+exception when others then
+  raise log 'histórico de recibo do follow-up indisponível (SQLSTATE %)', sqlstate;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_followup_historico_recibo() from public, anon, authenticated;
+
+drop trigger if exists trg_followup_historico_job on public.job_queue;
+create trigger trg_followup_historico_job
+  after insert on public.job_queue for each row
+  when (new.kind = 'followup_turn' and new.status = 'pending' and new.payload->>'purpose' = 'send_message')
+  execute function public.fn_followup_historico_job();
+
+drop trigger if exists trg_followup_historico_ledger on public.send_ledger;
+create trigger trg_followup_historico_ledger
+  after update of status on public.send_ledger for each row
+  when (new.status in ('queued', 'accepted', 'failed') and new.crm_message_id is not null
+    and old.status is distinct from new.status)
+  execute function public.fn_followup_historico_ledger();
+
+drop trigger if exists trg_followup_historico_recibo on public.messages;
+create trigger trg_followup_historico_recibo
+  after update of status on public.messages for each row
+  when (new.direction = 'outbound' and new.status in ('sent', 'delivered', 'read', 'failed')
+    and (old.status not in ('sent', 'delivered', 'read', 'failed')
+      or (new.status = 'failed') <> (old.status = 'failed')))
+  execute function public.fn_followup_historico_recibo();
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1 from pg_publication_tables where pubname = 'supabase_realtime'
+        and schemaname = 'public' and tablename = 'followup_delivery_events'
+    )
+  then
+    alter publication supabase_realtime add table public.followup_delivery_events;
+  end if;
+end;
+$$;
+
+-- ---- responsáveis da consulta (migration 9494) ----
 -- manifest: Vários responsáveis por consulta: o principal (owner_user_id) continua único; adicionais ocupam a agenda e ficam em tabela própria com FK para o compromisso e para o membro da organização. Teto de 10 conduzindo (1 principal + até 9 adicionais). O agente não escolhe adicionais; adicional basta ser membro ativo da organização e estar livre. Módulo "Reservas de lugar" inalterado.
 
 create table if not exists public.calendar_appointment_responsibles (
@@ -85591,8 +85989,6 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
-
-
 
 
 
@@ -91309,3 +91705,111 @@ alter table public.calendar_event_types
 
 comment on column public.calendar_event_types.reminder_sem_link_offsets_minutes is
   'Degraus (minutos antes) cujo lembrete sai SEM a linha automática do link da reunião (#5154). Vazio = todos levam, o comportamento de sempre: é o default e o valor de toda linha que já existe, então atualizar não muda nenhum envio. A tela grava a lista inteira a cada salvamento; degrau fora da lista leva o link.';
+
+-- ---- uma só cópia aberta por origem e destino vira índice único (migration 9496, #5281) ----
+-- Espelho de supabase/migrations/20261126141351_9496_clone_aberto_no_funil_indice_unico.sql.
+-- O porquê inteiro (critério de quem fica, o que é repontado, por que o gatilho
+-- de eventos fica desligado) está no cabeçalho da migration. Não cria função,
+-- então pode ficar depois da VARREDURA anon. O invariante
+-- `clone-no-funil-sem-duplicata` confere que este bloco é o da migration.
+do $clone_aberto_unico$
+declare
+  v_mapa jsonb;
+  v_alvo record;
+  v_linha record;
+  v_ficaram integer := 0;
+begin
+  if to_regclass('public.crm_leads_clone_aberto_no_funil_uidx') is not null then
+    return;
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('descartada', c.id, 'mantida', c.mantida)), '[]'::jsonb)
+    into v_mapa
+    from (
+      select l.id,
+             first_value(l.id) over (
+               partition by l.organization_id, l.pipeline_id, l.source_metadata->'clonado_de'->>'lead_id'
+               order by l.created_at, l.id
+             ) as mantida
+        from public.crm_leads l
+       where l.status = 'open' and l.source_metadata ? 'clonado_de'
+    ) c
+   where c.id <> c.mantida;
+
+  if jsonb_array_length(v_mapa) > 0 then
+    alter table public.crm_leads disable trigger trg_emit_event_on_lead_change;
+
+    for v_alvo in
+      select c.conrelid::regclass as tabela, a.attname::text as coluna, 'true' as filtro
+        from pg_constraint c
+        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+        join pg_attribute r on r.attrelid = c.confrelid and r.attnum = c.confkey[1]
+       where c.contype = 'f'
+         and c.confrelid = 'public.crm_leads'::regclass
+         and cardinality(c.conkey) = 1
+         and r.attname = 'id'
+      union all
+      select 'public.crm_lead_links'::regclass, 'target_id', $f$t.target_kind = 'lead'$f$
+    loop
+      begin
+        execute format(
+          'update %s t set %I = m.mantida
+             from jsonb_to_recordset($1) as m(descartada uuid, mantida uuid)
+            where t.%I = m.descartada and %s',
+          v_alvo.tabela, v_alvo.coluna, v_alvo.coluna, v_alvo.filtro
+        ) using v_mapa;
+      exception when unique_violation then
+        for v_linha in execute format(
+          'select t.ctid as linha, m.mantida
+             from %s t join jsonb_to_recordset($1) as m(descartada uuid, mantida uuid)
+               on t.%I = m.descartada
+            where %s',
+          v_alvo.tabela, v_alvo.coluna, v_alvo.filtro
+        ) using v_mapa loop
+          begin
+            execute format('update %s set %I = $1 where ctid = $2', v_alvo.tabela, v_alvo.coluna)
+              using v_linha.mantida, v_linha.linha;
+          exception when unique_violation then
+            v_ficaram := v_ficaram + 1;
+          end;
+        end loop;
+      end;
+    end loop;
+
+    update public.crm_leads o
+       set source_metadata = o.source_metadata || jsonb_build_object('movido_para',
+             (o.source_metadata->'movido_para')
+             || jsonb_build_object('lead_id', k.id, 'pipeline_id', k.pipeline_id, 'stage_id', k.stage_id))
+      from jsonb_to_recordset(v_mapa) as m(descartada uuid, mantida uuid)
+      join public.crm_leads k on k.id = m.mantida
+     where o.source_metadata->'movido_para'->>'lead_id' = m.descartada::text;
+
+    update public.crm_leads d
+       set stage_id = coalesce((
+             select s.id from public.crm_stages s
+              where s.pipeline_id = d.pipeline_id and s.organization_id = d.organization_id and s.is_lost
+              order by s.is_archived, s.position, s.id
+              limit 1
+           ), d.stage_id),
+           status = 'lost',
+           closed_at = now(),
+           lost_reason = 'moved_to_another_pipeline',
+           source_metadata = d.source_metadata || jsonb_build_object('duplicata_de', jsonb_build_object(
+             'lead_id', m.mantida, 'migration', '9496'
+           ))
+      from jsonb_to_recordset(v_mapa) as m(descartada uuid, mantida uuid)
+     where d.id = m.descartada;
+
+    alter table public.crm_leads enable trigger trg_emit_event_on_lead_change;
+
+    -- `warning` e não `notice`: o baseline abre com `client_min_messages = warning`.
+    raise warning '9496: % cópia(s) aberta(s) duplicada(s) encerrada(s); % linha(s) ficaram na cópia encerrada por colisão de índice único',
+      jsonb_array_length(v_mapa), v_ficaram;
+  end if;
+
+  -- O índice não-único da 9492 fica: apagá-lo aqui não adianta, porque o bloco
+  -- dela no `baseline.sql` o recria no update seguinte.
+  create unique index crm_leads_clone_aberto_no_funil_uidx
+    on public.crm_leads (organization_id, pipeline_id, (source_metadata->'clonado_de'->>'lead_id'))
+    where status = 'open' and source_metadata ? 'clonado_de';
+end $clone_aberto_unico$;

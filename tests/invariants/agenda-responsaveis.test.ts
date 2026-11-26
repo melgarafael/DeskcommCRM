@@ -314,6 +314,67 @@ describe("responsáveis — isolamento entre organizações", () => {
     );
   });
 
+  it("F.12b: criar com adicionais em OUTRA organização pela RPC é appointment_forbidden e não grava nada; em A, grava (controle positivo)", async () => {
+    const tipo = randomUUID();
+    await pool.query(
+      "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes) values($1::uuid,$2,'Consulta fictícia',$1::text,60)",
+      [tipo, A.org],
+    );
+    const criaComo = async (user: string, h: Horario, adicionaisPedidos: string[]) => {
+      const id = randomUUID();
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("set local role authenticated");
+        await client.query("select set_config('request.jwt.claims',$1,true)", [
+          JSON.stringify({ sub: user, role: "authenticated", aal: "aal1" }),
+        ]);
+        await client.query("select fn_appointment_insert_with_responsibles($1,$2::jsonb,$3::uuid[])", [
+          A.org,
+          JSON.stringify({
+            id,
+            event_type_id: tipo,
+            title: "Consulta fictícia",
+            starts_at: h.inicio,
+            ends_at: h.fim,
+            time_zone: "UTC",
+            owner_user_id: A.manager,
+            location_kind: "in_person",
+            team_guest_user_ids: [],
+          }),
+          adicionaisPedidos,
+        ]);
+        await client.query("commit");
+      } catch (erro) {
+        await client.query("rollback");
+        throw erro;
+      } finally {
+        client.release();
+      }
+      return id;
+    };
+    const gravados = async (id: string) =>
+      Number((await pool.query("select count(*) n from calendar_appointments where id=$1", [id])).rows[0].n);
+
+    const idDeA = await criaComo(A.manager, novoHorario(), [X]); // controle positivo
+    expect(await gravados(idDeA)).toBe(1);
+    expect(await adicionaisDe(idDeA)).toEqual([X]);
+
+    const antes = Number(
+      (await pool.query("select count(*) n from calendar_appointment_responsibles where organization_id=$1", [A.org])).rows[0].n,
+    );
+    await expect(criaComo(B.manager, novoHorario(), [Y])).rejects.toThrow("appointment_forbidden");
+    const depois = Number(
+      (await pool.query("select count(*) n from calendar_appointment_responsibles where organization_id=$1", [A.org])).rows[0].n,
+    );
+    expect(depois).toBe(antes);
+    const { rows } = await pool.query(
+      "select count(*) n from calendar_appointments where organization_id=$1 and created_by_user_id=$2",
+      [A.org, B.manager],
+    );
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
   it("F.13: revoked_at mantém a linha (a checagem de membro ativo impede novas); remover o vínculo apaga a linha", async () => {
     const membroDeLinha = randomUUID();
     await criaUsuario(membroDeLinha);

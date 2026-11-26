@@ -53,6 +53,8 @@ function bancoFalso(
   statusDoLead = "open",
   /** Campos extras do negócio (ex.: `recurring_value_cents` da #3602). */
   leadExtra: Record<string, unknown> = {},
+  /** Recusa do banco no UPDATE do card. */
+  erroNoUpdate: { code: string; message: string } | null = null,
 ) {
   const banco = { updatedAt: CARREGADO, stageId: STAGE_A, ultimoPatch: null as Record<string, unknown> | null };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
@@ -118,6 +120,7 @@ function bancoFalso(
             eq: () => escrita,
             select: () => escrita,
             maybeSingle: async () => {
+              if (erroNoUpdate) return { data: null, error: erroNoUpdate };
               banco.stageId = valores.stage_id;
               banco.updatedAt = DEPOIS_DO_MOVE;
               banco.ultimoPatch = valores;
@@ -371,6 +374,25 @@ describe("POST /move num funil que retoma como novo negócio", () => {
     expect(response.status).toBe(409);
     const corpo = (await response.json()) as { error: { code: string } };
     expect(corpo.error.code).toBe("reabertura_cria_novo");
+  });
+
+  it("reabrir a cópia quando o negócio já tem outra aberta no funil: 409 copia_aberta_no_funil, não 500 (#5281)", async () => {
+    const falso = bancoFalso(null, {}, "lost", {}, { code: "23505", message: 'duplicate key value violates unique constraint "crm_leads_clone_aberto_no_funil_uidx"' });
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    const corpo = (await response.json()) as { error: { code: string; message: string } };
+    expect(corpo.error).toMatchObject({
+      code: "copia_aberta_no_funil",
+      message: "Este negócio já tem uma cópia aberta neste funil. Continue o atendimento por ela.",
+    });
+    expect(falso.banco.stageId).toBe(STAGE_A);
   });
 
   it("mesmo cenário num funil mesmo_registro reabre, como antes da issue", async () => {

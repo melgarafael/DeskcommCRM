@@ -259,7 +259,7 @@ export async function completeTurnForEnrollment(
     if (!edge) throw new Error(`action node "${node.id}" sem aresta 'always' de saída`);
     await applyStep(
       "action_sent",
-      {},
+      jobId ? { job_id: jobId } : {},
       { current_node_id: edge.target, status: "active", next_eval_at: now.toISOString() },
     );
     return;

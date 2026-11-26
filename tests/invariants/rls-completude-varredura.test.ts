@@ -227,6 +227,13 @@ const PROVA_PROPRIA: readonly Excecao[] = [
     razao: "tests/invariants/followup-schema.test.ts — mesmo laço de FOLLOWUP_TABLES.",
   },
   {
+    tabela: "followup_delivery_events",
+    razao:
+      "tests/invariants/followup-turn-bridge.test.ts — " +
+      "«expõe os recibos para a própria organização e reserva as escritas para o sistema» " +
+      "prova isolamento entre duas organizações e veda a escrita pelo usuário autenticado.",
+  },
+  {
     tabela: "user_organizations",
     razao:
       "tests/invariants/gov-1b-team-manager-read.test.ts (\"cross-org: " +
@@ -498,7 +505,7 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   {
     tabela: "calendar_appointment_responsibles",
     razao:
-      "tests/invariants/agenda-responsaveis.test.ts — F.12 (migration 9482, #3067): JWT " +
+      "tests/invariants/agenda-responsaveis.test.ts — F.12 (migration 9494, #3067): JWT " +
       "authenticated de duas organizações; o membro de A lê as linhas da própria organização " +
       "(controle positivo, pelo menos 1) e o membro de B lê ZERO das de A. A tabela só tem " +
       "SELECT para authenticated (a escrita é das funções security definer) e a policy é de " +

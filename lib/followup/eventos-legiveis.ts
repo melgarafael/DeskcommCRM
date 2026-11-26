@@ -19,6 +19,7 @@
  * contato) — quando o nó sumiu do grafo pinado, o id cru aparece dito como id,
  * porque um alvo feio é melhor que alvo nenhum.
  */
+import { TITULOS_DO_HISTORICO_DE_ENVIO } from "./historico-de-envio";
 import {
   CONDITION_FALSE_BRANCH_ID,
   CONDITION_TRUE_BRANCH_ID,
@@ -119,6 +120,7 @@ export function tomDoStatus(status: string): TomDoStatus {
 export interface NoDoDossie {
   id: string;
   tipo: FlowNode["type"];
+  modoDaAcao?: Extract<FlowNode, { type: "action" }>["config"]["mode"];
   /** O nome que a pessoa deu ao nó no construtor. */
   rotulo: string;
   /** O que o nó faz, em uma linha, sem instrução de prompt. */
@@ -197,6 +199,7 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
     case "action":
       return {
         ...base,
+        modoDaAcao: node.config.mode,
         resumo:
           node.config.mode === "ai_message"
             ? "o agente escreve e envia a mensagem"
@@ -375,6 +378,14 @@ export function descreveEvento(
   const pessoa = { onde, autor: "pessoa" as const };
   const cliente = { onde, autor: "cliente" as const };
 
+  if (Object.hasOwn(TITULOS_DO_HISTORICO_DE_ENVIO, evento.event_type)) {
+    return {
+      titulo: TITULOS_DO_HISTORICO_DE_ENVIO[evento.event_type]!,
+      detalhe: null,
+      ...motor,
+    };
+  }
+
   switch (evento.event_type) {
     case "node_advanced":
       // Com `class`, o avanço É a classificação que o motor decidiu: a carência
@@ -397,9 +408,14 @@ export function descreveEvento(
       // payload é o que os separa. Sem olhar para ele, o passo de PLANEJAMENTO
       // aparecia como "escrever a mensagem" — uma linha que descreve o passo
       // errado é pior que uma linha genérica, porque não parece errada.
-      return texto(p.purpose) === "plan_timing"
-        ? { titulo: "Pediu ao agente para planejar os tempos de espera", detalhe: null, ...motor }
-        : { titulo: "Pediu ao agente para escrever a mensagem", detalhe: null, ...motor };
+      if (texto(p.purpose) === "plan_timing") {
+        return { titulo: "Pediu ao agente para planejar os tempos de espera", detalhe: null, ...motor };
+      }
+      const no = evento.node_id ? nos[evento.node_id] : undefined;
+      const titulo = no?.tipo === "match_reply" || no?.modoDaAcao === "text" || no?.modoDaAcao === "template"
+        ? "Solicitou o envio da mensagem"
+        : "Pediu ao agente para escrever a mensagem";
+      return { titulo, detalhe: null, ...motor };
     case "classify_enqueued":
       return { titulo: "Pediu ao agente para interpretar a resposta", detalhe: null, ...motor };
     case "classify_waiting": {

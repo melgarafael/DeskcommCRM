@@ -56,6 +56,8 @@ export function TrocaSenhaProvisoriaForm() {
         setServerError(t("Sua sessão expirou. Entre novamente com a senha que você recebeu."));
       } else if (res.error === "validation_error") {
         setServerError(t("Dados inválidos. Confira os campos."));
+      } else if (res.error === "rate_limited") {
+        setServerError(t("Muitas tentativas. Aguarde alguns minutos antes de tentar novamente."));
       } else {
         setServerError(t("Não foi possível trocar a senha agora. Tente novamente."));
       }
