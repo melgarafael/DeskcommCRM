@@ -40,6 +40,7 @@ import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 
 export const dynamic = "force-dynamic";
 
@@ -339,6 +340,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         if (recusaDoBanco) {
           return fail(recusaDoBanco.codigo, recusaDoBanco.mensagem, 422, { requestId });
         }
+        // O lote reabriria (ou levaria a outro funil) uma cópia de um negócio que
+        // já tem outra aberta lá (#5281). A função é uma transação: nada moveu.
+        const copiaAberta = recusaDeCopiaAbertaPeloBanco(error, idioma);
+        if (copiaAberta) return fail(copiaAberta.codigo, copiaAberta.mensagem, 409, { requestId });
         return fail("internal_error", error.message, 500, { requestId });
       }
       const movidosNoBanco = (data ?? []) as LeadMovidoEmLote[];

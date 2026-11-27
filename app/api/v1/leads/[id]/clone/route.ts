@@ -410,7 +410,13 @@ export async function POST(
       try {
         const { anexos } = await criarCloneNoFunil(supabase, handlerCtx, origem, etapaDeEntrada, {
           persistir: async (linha) => {
-            const resultado = await gravar(linha, fechamento?.patch ?? null, origem.updated_at);
+            const tentar = () => gravar(linha, fechamento?.patch ?? null, origem.updated_at);
+            // A automação e o roteador de intenção gravam a cópia FORA desta
+            // transação. Se um deles gravou entre a busca e o INSERT, o índice
+            // único recusa com 23505 (#5281); a 2ª chamada acha essa cópia sob a
+            // trava da origem e a reaproveita, como a qualquer repetição.
+            let resultado = await tentar();
+            if (resultado.error?.code === "23505") resultado = await tentar();
             if (resultado.gravacao && !resultado.gravacao.criou) {
               throw new CloneReutilizado(resultado.gravacao);
             }

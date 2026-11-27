@@ -59,8 +59,8 @@ export async function insereAtividadeDoLead(
     await db.query(
       `insert into crm_lead_activities
          (organization_id, lead_id, contact_id, type, source_module, source_id,
-          actor_kind, actor_agent_id, performed_by_user_id, reason, evidence, payload)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          actor_kind, actor_agent_id, performed_by_user_id, reason, evidence, payload, metadata)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         linha.organization_id,
         linha.lead_id,
@@ -74,6 +74,9 @@ export async function insereAtividadeDoLead(
         linha.reason,
         linha.evidence,
         linha.payload,
+        // Qual token agiu (#5160): sem esta coluna a tarefa criada ou concluída
+        // por integração apareceria como "Sistema" no painel da conversa.
+        linha.metadata ?? {},
       ],
     );
 

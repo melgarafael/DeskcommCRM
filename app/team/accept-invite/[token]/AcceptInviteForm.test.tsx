@@ -29,6 +29,8 @@ describe("AcceptInviteForm", () => {
     vi.mocked(acceptInviteAction).mockResolvedValue({ ok: false, error });
     render(<AcceptInviteForm {...ROTULOS} />);
     fireEvent.submit(screen.getByRole("button", { name: "Aceitar convite" }).closest("form")!);
-    expect((await screen.findByRole("alert")).textContent).toBe(esperado);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(esperado);
+    expect(alert.className).toContain("text-destructive");
   });
 });

@@ -14,7 +14,7 @@ import {
   type EtapaDoFunil,
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
-import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
+import { criarCloneNoFunil, reporAnexosNaCopiaExistente } from "@/lib/leads/clone-com-anexos";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { motivoDaPerdaDaOrigem } from "@/lib/leads/motivo-da-perda";
 
@@ -136,7 +136,19 @@ export async function transfereParaOFunil(
   // O card novo nasce COM os anexos da origem (#4544): `criarCloneNoFunil` é o
   // passo único dos três caminhos de troca de funil — criar o clone e copiar o
   // que estava pendurado nele, nesta ordem.
-  const { clone, anexos } = await criarCloneNoFunil(admin, handlerCtx, origem, destino.etapa);
+  //
+  // Se a cópia aberta deste negócio já está no destino (uma execução anterior
+  // que não chegou a encerrar a origem, ou outra que correu junto), o índice
+  // único devolve ESSA cópia e a transferência termina sobre ela (#5281) — o
+  // mesmo que `fn_levar_negocio_para_funil` faz com quem repete a rota.
+  const criacao = await criarCloneNoFunil(admin, handlerCtx, origem, destino.etapa);
+  const { clone } = criacao;
+  const reposicao = criacao.reaproveitada
+    ? await reporAnexosNaCopiaExistente(admin, organizationId, origem, clone)
+    : null;
+  const anexos = reposicao
+    ? { copiados: reposicao.copiados, falhas: reposicao.falhas }
+    : criacao.anexos;
 
   await encerraDemanda(admin, handlerCtx, {
     leadId: origem.id,

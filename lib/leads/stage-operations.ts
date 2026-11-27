@@ -42,6 +42,7 @@ import {
   type UpdateDeMarcacao,
 } from "@/lib/leads/stage-editing";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 
 type SB = SupabaseClient;
 
@@ -687,6 +688,13 @@ export async function arquivarEtapa(
       .eq("organization_id", deps.organizationId)
       .eq("stage_id", stageId);
     if (error) {
+      // Levar um card encerrado para a etapa de destino o reabre; se ele é cópia
+      // de um negócio que já tem outra aberta no funil, o índice único da 9496
+      // recusa (#5281). Nada foi movido nem arquivado.
+      const copiaAberta = recusaDeCopiaAbertaPeloBanco(error);
+      if (copiaAberta) {
+        throw new ApiError(409, copiaAberta.codigo, undefined, deps.requestId, copiaAberta.mensagem);
+      }
       // O texto do Postgres vai em `details`, não colado na frase: a mensagem é
       // o que a tela mostra ao dono da clínica.
       throw new ApiError(

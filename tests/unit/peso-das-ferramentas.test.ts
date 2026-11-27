@@ -65,8 +65,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
   },
   "crm_close_conversation": {
-    tokens: 737,
-    motivo: "PR 01: ganhou pré-condições de encerramento seguro condicional (safe_close, expected_status, expected_last_inbound_message_id, expected_assigned_to_user_id, expected_sector_id, reject_human_assigned, reject_open_pendencies, idempotency_key), medido após alteração",
+    tokens: 715,
+    motivo: "PR 01: ganhou pré-condições de encerramento seguro condicional (safe_close, expected_status, expected_last_inbound_message_id, expected_assigned_to_user_id, expected_sector_id, idempotency_key), medido após merge com origin/main",
   },
   "crm_reopen_conversation": {
     tokens: 242,
@@ -141,7 +141,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_get_human_case": { tokens: 208, motivo: BASE },
   "crm_find_and_book_appointment": { tokens: 1155, motivo: BASE },
   "crm_book_appointment": { tokens: 1330, motivo: BASE },
-  "crm_reschedule_appointment": { tokens: 572, motivo: BASE },
+  "crm_reschedule_appointment": { tokens: 610, motivo: "DES-1952: ganhou `idempotency_key` opcional (+38) — repetir a remarcação com a mesma chave não remarca de novo, no local e no Amigo (pedido do DeskVoice, R7). Base: 572" },
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
@@ -165,7 +165,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
   "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
   "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
-  "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
+  "crm_start_conversation_and_send": {
+    tokens: 634,
+    motivo: "phone_whatsapp opcional para o cadastro novo (DES-1950), medido em 2026-11-26",
+  },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
   "crm_assign_conversation": { tokens: 380, motivo: "+26 da frase que diz ao modelo que atribuir não interrompe o próprio turno e pode ir junto com a passagem (#3926, veio da main)" },
@@ -278,9 +281,13 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-// +481 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional (PR 01):
-// 48426 = 47945 + 481, medido.
-const TETO_TOTAL = 48426;
+// +41 do `phone_whatsapp` em `crm_start_conversation_and_send` (DES-1950). MEDIDO neste
+// head sobre a main de 2026-11-26 (`b2b5d4c0d`, que tinha 47945): 47986 = 47945 + 41.
+// +38 do `idempotency_key` em `crm_reschedule_appointment` (DES-1952, #5300). MEDIDO no merge
+// com a main de 2026-11-27 (`f28f722ae5`, que tinha 47986): 48024 = 47986 + 38, não somado à mão.
+// +459 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional (PR 01):
+// 48483 = 48024 + 459, medido no merge com origin/main (ee92db8b9).
+const TETO_TOTAL = 48483;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
