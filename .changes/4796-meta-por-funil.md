@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
-secao: novo
+secao: adicionado
 titulo: A meta de vendas pode ser de um funil
 ---
 
