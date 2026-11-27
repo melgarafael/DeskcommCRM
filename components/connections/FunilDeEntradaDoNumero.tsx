@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 
+import { useNegocioDaConversa } from "./NegocioDaConversa";
+
 interface Etapa {
   id: string;
   name: string;
@@ -41,10 +43,24 @@ const PADRAO = "__padrao__";
  * FUNIL DE ENTRADA DO NÚMERO (migration 9430): onde a conversa nova DESTE
  * número vira negócio. Sem escolha, vale o funil padrão da organização — e o
  * cartão diz isso em vez de mostrar um campo vazio.
+ *
+ * `criaNegocio` (#5142) é o interruptor ao lado: desligado, nada nasce no funil
+ * e a frase acima seria mentira. O seletor CONTINUA na tela, desabilitado — é
+ * ali que o admin vê onde a escolha mora e edita quando religar o interruptor;
+ * esconder apagaria o mapa da configuração. Ausente ou `true`, a tela é a de
+ * antes: as telas sem o interruptor (Canal Parceiro, Redes Sociais) não passam
+ * nada e não mudam.
  */
-export function FunilDeEntradaDoNumero({ channelId }: { channelId: string }) {
+export function FunilDeEntradaDoNumero({
+  channelId,
+  criaNegocio,
+}: {
+  channelId: string;
+  criaNegocio?: boolean;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const semEfeito = criaNegocio === false;
   const query = useQuery({
     queryKey: ["channel-entrada", channelId],
     queryFn: () => apiClient.get<{ data: Entrada }>(`/api/v1/channel-sessions/${channelId}/entrada`),
@@ -64,15 +80,17 @@ export function FunilDeEntradaDoNumero({ channelId }: { channelId: string }) {
   return (
     <div className="flex flex-col items-start gap-1">
       <p className="text-xs text-muted-foreground" data-testid={`funil-de-entrada-${channelId}`}>
-        {!entrada
-          ? t("Carregando…")
-          : funil
-            ? `${t("Contatos novos entram no funil")} ${funil.name}${etapa ? ` · ${etapa.name}` : ""}`
-            : padrao
-              ? `${t("Contatos novos entram no funil padrão")} (${padrao.name})`
-              : t("Contatos novos entram no funil padrão")}
+        {semEfeito
+          ? t("Sem efeito enquanto a opção acima estiver desligada")
+          : !entrada
+            ? t("Carregando…")
+            : funil
+              ? `${t("Contatos novos entram no funil")} ${funil.name}${etapa ? ` · ${etapa.name}` : ""}`
+              : padrao
+                ? `${t("Contatos novos entram no funil padrão")} (${padrao.name})`
+                : t("Contatos novos entram no funil padrão")}
       </p>
-      <Button variant="outline" size="sm" disabled={!entrada} onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" disabled={!entrada || semEfeito} onClick={() => setOpen(true)}>
         {t("Funil de entrada")}
       </Button>
       {open && entrada && (
@@ -85,6 +103,18 @@ export function FunilDeEntradaDoNumero({ channelId }: { channelId: string }) {
       )}
     </div>
   );
+}
+
+/**
+ * O seletor no cartão da conexão, onde o interruptor existe (#5142): lê o mesmo
+ * cache do `NegocioDaConversa` e repassa o estado. Mesma chave e mesma consulta
+ * = um GET só; a troca do interruptor chega aqui pelo cache, sem prop drilling
+ * por uma lista que renderiza um cartão por número (hook não pode entrar no
+ * `map`).
+ */
+export function FunilDeEntradaDoCartao({ channelId }: { channelId: string }) {
+  const { ligado } = useNegocioDaConversa(channelId);
+  return <FunilDeEntradaDoNumero channelId={channelId} criaNegocio={ligado} />;
 }
 
 function FormularioDeEntrada({

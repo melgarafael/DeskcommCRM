@@ -134,6 +134,12 @@ describe("o motivo da passagem tem frase em português", () => {
     expect(MOTIVOS_DO_AVISO.length).toBeGreaterThanOrEqual(6);
   });
 
+  it("teto do visitante anônimo entra no vocabulário da passagem", () => {
+    // Sem esta linha, o motivo existe no dicionário do gate mas nunca chega à
+    // passagem — e o cartão de quem assume fica sem o porquê.
+    expect(MOTIVOS_DA_PASSAGEM).toContain("teto_do_visitante_anonimo");
+  });
+
   it("todo motivo tem frase, e nenhuma frase é vazia nem o próprio código", () => {
     for (const motivo of MOTIVOS_DA_PASSAGEM) {
       const frase = FRASE_DO_MOTIVO[motivo];

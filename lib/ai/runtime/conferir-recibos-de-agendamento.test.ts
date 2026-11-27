@@ -16,6 +16,8 @@ import {
 
 const org = "22222222-2222-4222-8222-222222222222";
 const contato = "33333333-3333-4333-8333-333333333333";
+const profA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const profB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const tipo = "44444444-4444-4444-8444-444444444444";
 const outro = "55555555-5555-4555-8555-555555555555";
 const recibo: ReciboDeAgendamento = {
@@ -41,17 +43,35 @@ const linha = {
   participant_name: "Pessoa Exemplo",
 };
 
-function banco(rows: unknown[] | null, error: unknown = null) {
+function banco(
+  rows: unknown[] | null,
+  error: unknown = null,
+  nomes: Record<string, string | null> = {},
+  erroRpc: unknown = null,
+) {
   const q = {
     select: vi.fn(() => q),
     eq: vi.fn(() => q),
     in: vi.fn(async () => ({ data: rows, error })),
   };
-  return { from: vi.fn(() => q), q };
+  // Resolve nomes dos ids pedidos (`fn_nomes_dos_membros`); formato { user_id, full_name }[].
+  const rpc = vi.fn(async (_fn: string, args: { p_ids?: string[] }) => ({
+    data: (args?.p_ids ?? []).map((user_id) => ({
+      user_id,
+      full_name: nomes[user_id] ?? null,
+    })),
+    error: erroRpc,
+  }));
+  return { from: vi.fn(() => q), q, rpc };
 }
 
-async function conferir(rows: unknown[] | null, error: unknown = null) {
-  const db = banco(rows, error);
+async function conferir(
+  rows: unknown[] | null,
+  error: unknown = null,
+  nomes: Record<string, string | null> = {},
+  erroRpc: unknown = null,
+) {
+  const db = banco(rows, error, nomes, erroRpc);
   const evidencias = await conferirRecibosDeAgendamento(
     db as never,
     { organizationId: org, contactId: contato },
@@ -191,10 +211,109 @@ describe("conferência atual dos recibos, sem repetir a gravação", () => {
         local: "Presencial · Unidade Centro",
         time_zone: "America/Sao_Paulo",
         beneficiario: "Pessoa Exemplo",
+        profissionais: [],
       },
     ]);
     expect(JSON.stringify(evidencias)).not.toContain(linha.notes);
     expect(evidencias[0]?.beneficiario).toBe(linha.participant_name);
+  });
+
+  it("leva quem atende: principal primeiro + adicionais, só nomes, ids fora da evidência", async () => {
+    const { evidencias, db } = await conferir(
+      [
+        {
+          ...linha,
+          owner_user_id: profA,
+          calendar_appointment_responsibles: [{ user_id: profB }],
+        },
+      ],
+      null,
+      { [profA]: "Ana Exemplo", [profB]: "Bia Exemplo" },
+    );
+    expect(evidencias[0]?.profissionais).toEqual(["Ana Exemplo", "Bia Exemplo"]);
+    // UMA chamada, com a org do escopo e todos os ids juntos, ordem principal primeiro.
+    expect(db.rpc).toHaveBeenCalledOnce();
+    expect(db.rpc).toHaveBeenCalledWith("fn_nomes_dos_membros", {
+      p_org: org,
+      p_ids: [profA, profB],
+    });
+    // select contém as colunas novas.
+    const selectArg = (db.q.select.mock.calls[0] as unknown[] | undefined)?.[0] as string;
+    expect(selectArg).toContain("owner_user_id");
+    expect(selectArg).toContain("calendar_appointment_responsibles(user_id)");
+    // nenhum uuid do profissional vaza na evidência serializada.
+    const serializada = JSON.stringify(evidencias);
+    expect(serializada).not.toContain(profA);
+    expect(serializada).not.toContain(profB);
+  });
+
+  it("erro na rpc de nomes: a reserva continua comprovada, profissionais vazio", async () => {
+    const { evidencias } = await conferir(
+      [{ ...linha, owner_user_id: profA, calendar_appointment_responsibles: [{ user_id: profB }] }],
+      null,
+      { [profA]: "Ana Exemplo", [profB]: "Bia Exemplo" },
+      { message: "falha sintética na rpc" },
+    );
+    expect(evidencias).toHaveLength(1);
+    expect(evidencias[0]?.profissionais).toEqual([]);
+  });
+
+  it("duas reservas com donos diferentes: cada evidência traz SÓ o nome do seu dono, rpc uma vez", async () => {
+    const id2 = "12121212-1212-4212-8212-121212121212";
+    const recibo2 = { ...recibo, id: id2 };
+    const db = banco(
+      [
+        { ...linha, owner_user_id: profA },
+        { ...linha, ...recibo2, owner_user_id: profB },
+      ],
+      null,
+      { [profA]: "Ana Exemplo", [profB]: "Bia Exemplo" },
+    );
+    const evidencias = await conferirRecibosDeAgendamento(
+      db as never,
+      { organizationId: org, contactId: contato },
+      [recibo, recibo2],
+    );
+    expect(evidencias.map((e) => e.profissionais)).toEqual([["Ana Exemplo"], ["Bia Exemplo"]]);
+    expect(db.rpc).toHaveBeenCalledOnce();
+    expect(db.rpc.mock.calls[0]?.[1]?.p_ids).toEqual([profA, profB]);
+  });
+
+  it("membro sem nome (null ou só espaços) não entra na lista", async () => {
+    const semNomeNull = await conferir(
+      [{ ...linha, owner_user_id: profA }],
+      null,
+      { [profA]: null },
+    );
+    expect(semNomeNull.evidencias[0]?.profissionais).toEqual([]);
+    const semNomeEspacos = await conferir(
+      [{ ...linha, owner_user_id: profA }],
+      null,
+      { [profA]: "   " },
+    );
+    expect(semNomeEspacos.evidencias[0]?.profissionais).toEqual([]);
+  });
+
+  it("linha de outra organização/contato não faz a rpc ser chamada com o id dela", async () => {
+    const foreign = "99999999-9999-4999-8999-999999999999";
+    // linha de outra organização
+    const outraOrg = await conferir(
+      [{ ...linha, organization_id: outro, owner_user_id: foreign }],
+      null,
+      { [foreign]: "Nome Estrangeiro" },
+    );
+    expect(outraOrg.evidencias).toEqual([]);
+    expect(outraOrg.db.rpc).not.toHaveBeenCalled();
+    expect(outraOrg.db.rpc.mock.calls.flatMap((c) => c[1]?.p_ids ?? [])).not.toContain(foreign);
+    // linha de outro contato
+    const outroContato = await conferir(
+      [{ ...linha, contact_id: outro, owner_user_id: foreign }],
+      null,
+      { [foreign]: "Nome Estrangeiro" },
+    );
+    expect(outroContato.evidencias).toEqual([]);
+    expect(outroContato.db.rpc).not.toHaveBeenCalled();
+    expect(outroContato.db.rpc.mock.calls.flatMap((c) => c[1]?.p_ids ?? [])).not.toContain(foreign);
   });
 
   it.each([
@@ -316,6 +435,24 @@ describe("conferência atual dos recibos, sem repetir a gravação", () => {
       const r = await lerAgendaDaRevisao(admin as never, db as never, escopo, turno);
       expect(r.evidencias).toHaveLength(1);
       expect(admin.from).not.toHaveBeenCalled();
+    });
+
+    it("reserva persistida leva profissionais: admin resolve nomes; SQL isola por org e inclui responsáveis", async () => {
+      const admin = banco([], null, { [profA]: "Ana Exemplo", [profB]: "Bia Exemplo" });
+      const db = pool([
+        { ...linhaDoPool, owner_user_id: profA, calendar_appointment_responsibles: [{ user_id: profB }] },
+      ]);
+      const r = await lerAgendaDaRevisao(admin as never, db as never, escopo, turno);
+      expect(r.evidencias[0]?.profissionais).toEqual(["Ana Exemplo", "Bia Exemplo"]);
+      expect(admin.rpc).toHaveBeenCalledOnce();
+      expect(admin.rpc).toHaveBeenCalledWith("fn_nomes_dos_membros", {
+        p_org: org,
+        p_ids: [profA, profB],
+      });
+      const sql = (db.query.mock.calls[0] as unknown[] | undefined)?.[0] as string;
+      expect(sql).toContain("calendar_appointment_responsibles");
+      expect(sql).toContain("r.organization_id = a.organization_id");
+      expect(sql).toContain("a.owner_user_id");
     });
 
     it("sem evidência comercial não lê: o prompt padrão segue igual para quem tem reserva", async () => {

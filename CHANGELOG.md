@@ -8,6 +8,129 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.127.0] — 2026-11-27
+
+### Adicionado
+
+- **Escolha o período do painel Desempenho** Escolha as datas de início e fim para consultar os indicadores do Desempenho
+  no calendário da organização. Ao limpar o período, o painel volta aos últimos
+  30 dias. A exportação de vendas segue as datas e o atendente da tabela.
+  A taxa de abandono inclui na base as conversas com envio no período, mesmo
+  quando houve um novo envio depois.
+
+  Contribuição de @yunshu0909, a partir da issue #4624.
+
+- **O prazo para o cliente abrir o link de autorização do servidor MCP é configurável** O cadastro do servidor MCP do agente ganhou o campo **Prazo para abrir o link de autorização (minutos)**, ao lado da retenção: de 10 a 1440 minutos, com 10 como padrão. Quem não mexer no campo fica exatamente como estava — o link vale 10 minutos. Quem aumentar (por exemplo 1440, um dia) resolve os dois casos da issue: quem lê a mensagem horas depois e caía em "Link expirado", e quem abre o link no 8º minuto e era recusado na volta, depois de preencher tudo, porque o prazo antigo já tinha estourado.
+
+  Nada mais do fluxo mudou: o `state` continua de uso único e 256 bits, o PKCE S256, o endereço de retorno fixo por servidor e a revogação depois do encerramento da conversa seguem iguais, e pedido vencido continua sendo recusado tanto na abertura quanto no retorno — o prazo maior só aumenta a janela em que o link pode ser aberto. Não há migration: a preferência fica no `oauth_metadados` que já existia no cadastro.
+
+- **O lembrete de cada degrau pode sair sem o link da reunião** Quem usa Google Meet ou Link de vídeo agora escolhe, em cada lembrete, se ele leva a linha com o link da reunião. Ligado por padrão, o comportamento não muda para quem não mexer; desligado, aquele aviso sai sem o link e sem a frase de que ele chega pela conversa. Contribuição de @yunshu0909, a partir da issue #5154.
+
+- **Responda ao aviso de caso citando a mensagem** No WhatsApp, a equipe pode responder a um aviso de caso segurando a mensagem
+  do aviso e escrevendo só a resposta, sem copiar o ID do caso. Começar com `?`
+  (ou com `PERGUNTAR`) faz a resposta virar uma pergunta para a IA fazer ao
+  cliente. O formato com `RESPONDER` e o ID continua valendo. As mesmas regras de
+  antes continuam: só o número interno de avisos, só caso aberto, e a confirmação
+  volta ao mesmo chat. Citar também vale para o aviso de atualização do caso. Por
+  enquanto a citação funciona nas conexões por QR Code; nas outras o aviso segue
+  ensinando só o `RESPONDER`.
+
+  Contribuição de @franklinferre, a partir da issue #5257.
+
+- **Chat no site pode ser ligado e ganha teto de respostas da IA para visitante anônimo** O módulo do chat no site agora pode ser ligado nas configurações. Na aba Conexões › Chat no site, você define quantas vezes a IA responde a um visitante que ainda não deixou telefone nem e-mail (padrão 20, entre 1 e 200). Quando o visitante atinge o teto, a conversa segue para a equipe e a IA não é mais chamada. Contribuição de @paulolimajr77.
+
+- **Vários responsáveis por consulta, e todos ocupam a agenda** Uma consulta passa a ter um responsável principal (dono) e até nove responsáveis adicionais, todos membros ativos da organização e livres no horário, que ocupam a agenda junto com o dono — teto de dez conduzindo por consulta. O agente não escolhe adicionais; quem marca ou remarca pela API define a lista (a tela vem numa próxima versão), e o banco revalida membro, teto e que ninguém é o principal duas vezes. O responsável principal continua único; convidados da equipe seguem apenas avisando, sem ocupar a agenda.
+
+  Crédito: @paulolimajr77.
+
+### Alterado
+
+- **Login passa a ter bloqueio crescente por conta, contado no dia** O login já barrava 5 senhas erradas na mesma conta a cada 5 minutos. O problema é que essa janela zerava: 5 erros a cada 5 minutos davam até 1.440 tentativas por dia contra a mesma conta, todo dia, sem deixar rastro que distinguisse isso de alguém esquecido da senha.
+
+  Agora há uma segunda conta, a do dia (vira à meia-noite UTC), que não zera a cada 5 minutos e cujo castigo cresce com o número de falhas na mesma conta:
+
+  - 5 falhas no dia: 5 minutos de bloqueio (o mesmo castigo da janela curta, agora lembrado);
+  - 10 falhas no dia: 30 minutos, e cada falha nova a partir daí renova os 30 minutos.
+
+  Na conta mais rápida possível, quem tenta adivinhar a senha consegue no máximo 57 tentativas por dia contra a mesma conta, em vez de cerca de 1.440. O castigo mais longo é de 30 minutos: ninguém consegue trancar o dono fora do próprio CRM só por saber o e-mail dele.
+
+  A janela curta continua valendo exatamente como estava, e o teto de 60 tentativas por IP também. Enquanto o castigo dura, nem a senha certa entra; redefinir a senha pelo "esqueci minha senha" destrava na hora.
+
+  A mesma régua vale nas três portas que conferem credencial de conta: entrar com senha, trocar a senha do primeiro acesso e aceitar convite. A resposta ao navegador é a mesma de antes ("muitas tentativas"), e a sequência de respostas é idêntica para um e-mail que não existe: o bloqueio não serve para descobrir quem tem conta.
+
+  Na auditoria, cada degrau grava um evento quando nasce (`auth.login_bloqueio_5min`, `auth.login_bloqueio_30min`), e o desbloqueio pela redefinição de senha também (`auth.login_bloqueio_removido`). A tentativa barrada continua no registro de sempre (`auth.login_rate_limited`), com o degrau anotado ao lado.
+
+  Quem atualiza não precisa fazer nada. O contador é o mesmo do resto do produto: Upstash quando está configurado, memória do processo quando não está. Numa instalação com mais de uma instância e sem Upstash, o número de falhas conta por instância.
+
+  Ainda não há aviso por e-mail ao dono da conta nem destravamento pelo administrador; isso segue na issue #4743.
+
+  Contribuição de @webtecnica, a partir da issue #4743.
+
+### Corrigido
+
+- **A escolha automática de sala leva o número de pessoas** Quando o serviço tem lugar e o agente escolhe a sala livre automaticamente (sem a pessoa escolher uma), o número de pessoas do grupo agora vai na prévia de cada sala. Uma sala que não comporta o grupo é descartada, e o agente escolhe a primeira que comporta. Sem grupo, vale uma pessoa como antes. Reservar em lugar que já existe continua valendo mesmo com o módulo Reservas de lugar desligado — só criar lugar novo fica bloqueado.
+
+  Crédito: @paulolimajr77.
+
+- **O histórico do follow-up separa geração, espera e envio da mensagem** No dossiê do follow-up, acompanhe quando a IA escreveu a mensagem, quando ela ficou esperando pelo canal, e quando o canal aceitou o envio. Falhas e confirmações tardias ficam no histórico do passo em que aconteceram.
+
+  Contribuição de @yunshu0909, a partir da issue #4913.
+
+- **O banco guarda quantos tokens de cache foram gravados com prazo de 1 hora** O custo da IA já cobrava separado a gravação de cache de 1 hora e a de 5 minutos, mas `llm_calls` só guardava o total. Agora `cache_write_1h_tokens` guarda a parcela de 1 hora, e a auditoria de custo das chamadas cobradas pela tabela de preços do sistema passa a ter os dois números. As linhas antigas e as chamadas de provedor que não informa a divisão ficam vazias; a tela não muda.
+
+  Contribuição de @yunshu0909, a partir da issue #5020.
+
+- **Retome o follow-up mais cedo após cancelar um compromisso** A partir da atualização, quando um compromisso futuro adiar um follow-up, a agenda será consultada de novo em até uma hora. Se o compromisso tiver sido cancelado e não houver outro bloqueio, o follow-up volta a seguir as regras de envio. Adiamentos já gravados antes da atualização mantêm o horário de reavaliação que já estava na fila.
+
+  Na Atividade das automações, as rechecagens da mesma regra para o mesmo evento atualizam a linha de espera original. Ela continua mostrando quando a espera começou e passa a indicar o próximo horário de rechecagem.
+
+  Contribuição de @yunshu0909, a partir da issue #5078.
+
+- **As abas de Configurações › Conversões cabem num celular de 375px** Num celular de 375px, a barra de abas de Configurações › Conversões era mais larga que a tela e empurrava o painel para o lado, com a aba "Links rastreáveis" fora da vista. Agora a barra rola sozinha na horizontal, cada aba fica numa linha só, e o painel não rola mais para o lado, em português e em espanhol. A partir da issue #5224.
+
+- **Levar para outro funil reaproveita a cópia aberta** Confirmar o mesmo negócio em duas abas ou repetir o pedido pela API devolve o mesmo card aberto no funil de destino. A criação, o vínculo entre os cards e o encerramento da origem são gravados juntos. Um card já ganho ou perdido fica no histórico e permite uma nova tentativa quando a regra do funil autoriza.
+
+  Contribuição de @yunshu0909, a partir da issue #5229.
+
+- **Aviso de retomada vencida leva direto ao negócio quando há um só** Quando apenas uma sugestão de retomada vence sem resposta, o aviso na Central agora leva
+  diretamente ao negócio (**Abrir negócio**) em vez de abrir o Radar inteiro. Se outro negócio
+  vencer enquanto esse aviso ainda estiver aberto, o aviso passa para o Radar com a contagem
+  atualizada.
+
+- **O botão "Salvar" do cartão Modo de roteamento aparece como "Guardar" em espanhol** Em Equipe, o cartão Modo de roteamento mostrava o botão "Salvar" em português mesmo com a tela em espanhol. Agora ele segue o idioma da tela, como o botão do horário do atendente já fazia.
+
+  Contribuição de @marcusDevGit (#5273). Referente à issue #5252.
+
+- **A tela Casos volta a abrir em organizações com mais de 400 conversas com caso** Numa organização com pouco mais de 400 conversas que já tiveram caso, a tela **Casos** ficava carregando para sempre, tanto em **Abertos** quanto em **Concluídos**: o pedido que monta a fila carregava a lista inteira de conversas de uma vez e passava do tamanho que o servidor aceita, e a rota respondia com erro. Agora essa lista é consultada em partes, e a fila abre com qualquer tamanho. A aba **Abertos** também ficou mais leve, porque passa a considerar só os casos abertos ao decidir o que mostrar.
+
+  Duas falhas vizinhas saíram junto. Acima de 1.000 casos na organização, parte dos casos sumia da fila sem aviso nenhum; agora todos entram. E a leitura da fila por token de integração, que tinha o mesmo limite ao buscar o contato de cada caso, também passou a consultar em partes.
+
+  Relatado em #5255 por @tiagolisboa88; correção de @Jutaosorio.
+
+- **O aviso de liberação de uma conexão de rede social fala de conexão, com o nome da rede** Na Central de avisos, quem conectava o Instagram, o Facebook ou o TikTok via "Número novo aguardando liberação (go-live)", e o texto falava de número e de telefone, que essas conexões não têm. Agora o aviso diz "Conexão nova do Instagram aguardando liberação (go-live)", com o nome da rede, em português, espanhol e inglês. O aviso do número de WhatsApp não muda. Crédito: @xofrd.
+
+- **Depois de transferir a conversa para um atendente, a IA volta a conseguir avisar o cliente** Desde a 1.125.0, quando o agente transferia a conversa com `crm_assign_conversation`, a mensagem seguinte dele ao cliente era recusada como "uma pessoa da equipe assumiu esta conversa". O cliente ficava sem o aviso de transferência e sem resposta. Agora a atribuição feita pelo próprio agente no mesmo turno não conta como uma pessoa assumindo, e o aviso sai. Se uma pessoa trocar o dono depois ou já tiver escrito ao cliente, a IA continua sem enviar. A partir do turno seguinte, a conversa fica com o atendente, como antes. O classificador de promessas também deixa de ler o anúncio de transferência ("vou transferir você para a Andreia, que continua seu atendimento por aqui") como promessa comercial. Crédito: @aerosuiteapp.
+
+- **Os responsáveis adicionais seguem a opção de agenda dos colegas** Com "Atendentes podem mexer na agenda dos colegas" desligado, quem está abaixo de gerente já não marcava consulta na agenda de um colega como responsável principal. Agora a mesma regra vale para os responsáveis adicionais, que também ocupam a agenda de quem é incluído: o atendente só inclui a si mesmo, na criação, na edição da lista e na reserva de serviço. Gerente e administrador seguem incluindo qualquer membro, e com a opção ligada (o padrão) nada muda. Tirar adicionais continua permitido.
+
+- **Um negócio tem uma só cópia aberta em cada funil de destino** As automações e o encaminhamento do assistente para outro funil não criam mais um segundo card aberto do mesmo negócio no mesmo funil: quando o card já existe, eles usam esse card. O banco passa a recusar a segunda cópia aberta, venha ela de onde vier. Reabrir ou mover um card que viraria a segunda cópia aberta mostra o aviso "Este negócio já tem uma cópia aberta neste funil", em vez de um erro do sistema.
+
+  Se a sua instalação já tinha cópias abertas repetidas, a atualização mantém a mais antiga e encerra as outras como perda, com o motivo "levado para outro funil", que não entra nas métricas de perda comercial. O histórico, as tarefas e os vínculos dessas cópias passam para o card que ficou. Nenhum card é apagado, e essa limpeza não dispara automações.
+
+  Achado de @webtecnica na revisão do #5268.
+
+- **O exemplo do campo de respostas rápidas do chat no site sai em espanhol na tela em espanhol** Em Conexões › Chat no site, o exemplo cinza do campo "Respostas rápidas do chat" aparecia "Ex.: Sim" mesmo com a tela em espanhol. Agora aparece "Ej.: Sí". Nada muda no que é salvo.
+
+  Crédito: @franklinferre.
+
+- **A agenda de um serviço com vários profissionais volta a responder a tempo** Num serviço com vários profissionais, a consulta de horários livres conferia o fuso de cada profissional em cada horário de um jeito lento, e a semana passava do tempo limite do banco: o agente ficava sem horários e respondia que ia confirmar depois. A conferência ficou mais leve e o resultado é o mesmo; a semana de um serviço com 7 profissionais, medida numa instalação real, caiu de tempo esgotado para 0,3 segundo. Crédito: @paulolimajr77.
+
+- **O agente confirma a consulta dizendo quem vai atender** Com a conferência de promessa ligada, a confirmação que citava o nome de quem atende era barrada, e o cliente podia recebê-la sem o nome. Agora a conferência recebe da agenda quem atende aquela reserva. Nome de outro profissional continua barrado.
+
+- **Contato criado ao abrir conversa por telefone (API, MCP) não aparece mais como "tem WhatsApp" sem ninguém saber** Quem abria uma conversa por telefone pela API (`POST /api/v1/conversations/open-with-contact`, `POST /api/v1/messages`) ou pela ferramenta MCP `crm_start_conversation_and_send`, com um número que ainda não era de nenhum contato, ganhava um contato novo marcado "WhatsApp: sim". Agora ele nasce "não sei", e vira "sim" quando a pessoa escreve pelo WhatsApp, como antes. A rota e a ferramenta aceitam o campo opcional `phone_whatsapp` (`sim`, `nao` ou `nao_sei`) para o contato que criarem; contato que já existe não muda.
+
+- **O "Editar contato" mostra o nome do WhatsApp quando o contato ainda não tem nome no cadastro** Num contato que chegou pelo WhatsApp, a ficha mostrava um nome no topo e o formulário de edição abria só com o telefone, como se não tivesse carregado. Agora o formulário avisa que o cadastro ainda não tem nome e oferece o nome da agenda do celular e o do WhatsApp, com o botão "Usar este nome". Nada é gravado sem o clique.
+
 ## [1.126.0] — 2026-11-25
 
 ### ⚠️ Requer atenção
@@ -19185,7 +19308,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.126.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.127.0...HEAD
+[1.127.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.126.0...v1.127.0
 [1.126.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.125.0...v1.126.0
 [1.125.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...v1.125.0
 [1.124.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.123.0...v1.124.0

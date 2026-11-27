@@ -3,7 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
@@ -458,8 +458,34 @@ export function PipelinesClient({
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
   const [busca, setBusca] = useState("");
+  // As etapas que a busca enxerga são as VIVAS (a arquivada não recebe card), e
+  // as da ÚLTIMA leitura do editor de cada funil: criar, renomear ou arquivar
+  // aqui relê o editor, e a busca não pode ficar com os nomes de quando a página
+  // abriu. Antes da primeira leitura, valem as que vieram do servidor — e uma
+  // leitura do editor guardada em cache de ANTES de a página abrir (o Kanban
+  // renomeia a etapa sem mexer nesse cache) não vence a do servidor, que é mais
+  // nova que ela.
+  const [abertaEm] = useState(() => Date.now());
+  const [etapasDoEditor, setEtapasDoEditor] = useState<Record<string, readonly string[]>>({});
+  const aoLerEtapas = useCallback((pipelineId: string, nomes: readonly string[], lidasEm: number) => {
+    // `<=`: a leitura do mesmo milissegundo em que a página abriu é do cache de
+    // antes dela, não uma leitura feita depois.
+    if (lidasEm <= abertaEm) return;
+    setEtapasDoEditor((antes) => {
+      const atual = antes[pipelineId];
+      if (atual && atual.length === nomes.length && atual.every((n, i) => n === nomes[i])) return antes;
+      return { ...antes, [pipelineId]: nomes };
+    });
+  }, [abertaEm]);
   // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
-  const visiveis = funisQueCasam(pipelines, busca);
+  const visiveis = funisQueCasam(
+    pipelines.map((p) => ({
+      ...p,
+      etapas:
+        etapasDoEditor[p.id] ?? (etapas[p.id] ?? []).filter((e) => !e.is_archived).map((e) => e.name),
+    })),
+    busca,
+  );
   const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
@@ -510,7 +536,7 @@ export function PipelinesClient({
           que nasce aberto. */}
       {pipelines.length > 1 && (
         <Input
-          placeholder={t("Buscar por nome…")}
+          placeholder={t("Buscar por nome ou etapa…")}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           className="w-full sm:w-64"
@@ -537,6 +563,7 @@ export function PipelinesClient({
             setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
           }}
           oculto={visiveis !== null && !visiveis.has(p.id)}
+          aoLerEtapas={aoLerEtapas}
         />
       ))}
       {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
@@ -589,6 +616,7 @@ function CardDoFunil({
   aberto,
   aoAlternar,
   oculto = false,
+  aoLerEtapas,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
@@ -603,8 +631,15 @@ function CardDoFunil({
    * editor guarda rascunho não salvo, e a busca não pode apagá-lo em silêncio.
    */
   oculto?: boolean;
+  /** Repassa à lista os nomes que o editor de etapas leu (a busca usa, #4593). */
+  aoLerEtapas?: (pipelineId: string, nomes: readonly string[], lidasEm: number) => void;
 }) {
   const t = useT();
+  const pipelineId = pipeline.id;
+  const aoLerEtapasDoFunil = useCallback(
+    (nomes: readonly string[], lidasEm: number) => aoLerEtapas?.(pipelineId, nomes, lidasEm),
+    [aoLerEtapas, pipelineId],
+  );
   const [editorAberto, setEditorAberto] = useState(false);
   // Monta na primeira vez que abre e fica montado: recolher só ESCONDE. Desmontar
   // apagaria em silêncio o que foi editado e ainda não salvo.
@@ -657,7 +692,11 @@ function CardDoFunil({
               depois se decide o que o assistente faz com ele. Invertido, a
               primeira coisa que o dono da clínica vê é um mapeamento sobre
               colunas de e-commerce que ele nem sabia que dava para trocar. */}
-          <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
+          <StagesSection
+            pipelineId={pipeline.id}
+            ancoraMapeamento={ancoraDoMapeamento(pipeline.id)}
+            aoLerEtapas={aoLerEtapasDoFunil}
+          />
           <div className="border-t border-border pt-6">
             <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
           </div>

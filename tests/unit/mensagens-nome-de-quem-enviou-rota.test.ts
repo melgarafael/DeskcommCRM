@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { GET } from "@/app/api/v1/conversations/[id]/messages/route";
+import { GET as GETConversa } from "@/app/api/v1/conversations/[id]/route";
 import type { Message } from "@/lib/types/messaging";
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
@@ -167,5 +168,37 @@ describe("#4031 — o histórico entrega o nome de quem enviou", () => {
     await rodar();
 
     expect(vi.mocked(nomesDosAtendentes)).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("#4508 — identidade e organização nas duas leituras da conversa", () => {
+  it.each([GETConversa, GET])("distingue falha transitória de sessão revogada", async (ler) => {
+    const fazerLeitura = () => ler(new NextRequest(`https://crm.example/api/v1/conversations/${CONVERSA}`), {
+      params: Promise.resolve({ id: CONVERSA }),
+    });
+    const simularFalha = (error: { name: string; status: number; code?: string }) => {
+      vi.mocked(createClient).mockResolvedValue({
+        auth: { getUser: async () => ({ data: { user: null }, error }) },
+      } as never);
+    };
+    simularFalha({ name: "AuthRetryableFetchError", status: 503 });
+    const indisponivel = await fazerLeitura();
+    expect(indisponivel.status).toBe(503);
+    expect(await indisponivel.json()).toMatchObject({ error: { code: "auth_unavailable" } });
+
+    simularFalha({ name: "AuthApiError", status: 403, code: "session_not_found" });
+    const revogada = await fazerLeitura();
+    expect(revogada.status).toBe(401);
+    expect(await revogada.json()).toMatchObject({ error: { code: "unauthenticated" } });
+  });
+
+  it.each([GETConversa, GET])("recusa a leitura quando a aba declara outra organização", async (ler) => {
+    const req = new NextRequest(`https://crm.example/api/v1/conversations/${CONVERSA}`, {
+      headers: { "X-Org-Da-Aba": "outra-org" },
+    });
+    const resposta = await ler(req, { params: Promise.resolve({ id: CONVERSA }) });
+    expect(resposta.status).toBe(409);
+    expect(await resposta.json()).toMatchObject({ error: { code: "org_divergente" } });
   });
 });

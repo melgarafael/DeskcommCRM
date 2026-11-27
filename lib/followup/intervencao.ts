@@ -197,12 +197,19 @@ export interface DepsDaIntervencao {
   userId: string | null;
   /** Id do token, quando quem age é uma integração. Vai no evento e no audit. */
   apiTokenId?: string | null;
+  /**
+   * O ator AUTENTICADO, quando não é pessoa (#5160). Um token com
+   * `actor:ai_agent` é a IA, não uma integração: reconstruí-lo como
+   * `api_token` faria a timeline dizer "Integração · <token>" para a IA.
+   */
+  actor?: Actor;
   requestId: string;
   agora?: Date;
 }
 
-function atorDaIntervencao(deps: DepsDaIntervencao): Actor {
+export function atorDaIntervencao(deps: DepsDaIntervencao): Actor {
   if (deps.userId) return { type: "user", id: deps.userId };
+  if (deps.actor && deps.actor.type !== "user") return deps.actor;
   // Token de integração: a timeline grava como sistema; o audit leva o id do token.
   return { type: "api_token", id: deps.apiTokenId ?? "desconhecido" };
 }

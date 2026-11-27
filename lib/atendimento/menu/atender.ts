@@ -21,11 +21,28 @@
  *    try/catch que devolve `false`, e o pior desfecho é `tratado: false` — a
  *    mensagem segue o caminho de hoje.
  *
- * 2. **Menu sem estado não existe.** Se o menu saiu mas o estado NÃO foi
- *    gravado, a próxima mensagem enviaria o menu outra vez — para sempre. Nesse
- *    caso a conversa cai para humano: um atendente é melhor que um menu em
- *    laço. É a mesma regra do "opção inválida duas vezes" e é o que o teste de
- *    sabotagem mede.
+ * 2. **Menu sem estado não existe.** O estado é gravado na POSSE, antes do
+ *    envio (ver a seção da #5137 abaixo): se o envio falhar, a posse é
+ *    devolvida e a conversa volta ao estado de antes. Nos outros caminhos, se o
+ *    estado não pôde ser gravado depois do envio, a conversa cai para humano —
+ *    um atendente é melhor que um menu em laço. É a mesma regra do "opção
+ *    inválida duas vezes" e é o que o teste de sabotagem mede.
+ *
+ * ─── A POSSE DO MENU: UMA ENTRADA SÓ MANDA (#5137) ──────────────────────────
+ *
+ * `decidirPassoDoMenu` é PURO e diz "esta mensagem pede o menu". Mas duas
+ * mensagens da MESMA conversa podem chegar juntas — o caminho medido pela issue
+ * foi `Promise.all` em `aplicarEfeitosPosEntrada`. Como o `messageId` entra na
+ * chave de idempotência, cada uma tinha a sua chave e as DUAS passavam: "oi" e
+ * "tudo bem?" mandavam dois menus.
+ *
+ * Quem decide se o menu SAI é o banco: antes de enviar, `tomaPosse` faz um
+ * UPDATE condicional que grava o estado `aguardando` **só se a chave
+ * `menu_de_atendimento` ainda não existir**. Uma entrada vence; a outra recebe
+ * `menu_em_disputa`, NÃO manda menu e cai no caminho normal da entrada (card e
+ * despacho da IA) — o comportamento de hoje, sem card nem despacho duplicado.
+ * A decisão continua pura; o desempate mora na porta, que é quem fala com o
+ * banco.
  *
  * 3. **Recusa é NOMEADA.** Toda saída devolve `motivo`: entra no log da
  *    ingestão e responde, sem abrir o banco, "por que esta mensagem não teve
@@ -93,6 +110,31 @@ export interface MensagemDoMenu {
 export interface PortasDoMenu {
   /** Texto para o cliente. `chave` é a chave de idempotência do envio. */
   responde: (p: { texto: string; chave: string }) => Promise<boolean>;
+  /**
+   * Toma a POSSE do menu nesta conversa, atomicamente — a corrida da #5137.
+   *
+   * `metadata` é o `metadata` da conversa JÁ com o estado `aguardando`, montado
+   * por quem chamou. A porta grava **só se a chave `menu_de_atendimento` ainda
+   * não existir**, numa única instrução de banco (UPDATE condicional), e diz se
+   * ESTE chamador foi quem gravou.
+   *
+   * `{ ok: false, motivo: "menu_em_disputa" }` = outra entrada chegou primeiro.
+   * Quem perde NÃO manda menu: cai no comportamento normal da entrada. Sem esta
+   * trava, duas mensagens diferentes da mesma conversa decidiam as duas enviar
+   * — a chave de idempotência inclui o `messageId`, então cada uma tinha a sua
+   * chave e as duas passavam.
+   */
+  tomaPosse: (p: {
+    metadata: Record<string, unknown>;
+  }) => Promise<{ ok: true } | { ok: false; motivo: string }>;
+  /**
+   * Devolve a posse quando o envio falhou (best-effort).
+   *
+   * A posse já gravou `aguardando`; sem o menu enviado, esse estado mentiria que
+   * o cliente recebeu uma lista. Removê-lo devolve a conversa ao estado de
+   * antes, e a próxima mensagem pode tentar de novo.
+   */
+  liberaPosse: (p: { metadata: Record<string, unknown> }) => Promise<boolean>;
   /** Arquivo que já existe, por URL. */
   enviaArquivo: (p: {
     mediaUrl: string;
@@ -354,8 +396,9 @@ export async function atenderMenuSemIa(
   });
 
   /**
-   * Grava o estado e diz se deu. Falha aqui é grave quando o menu acabou de
-   * sair — e é o chamador (`cairParaHumano`) que decide o que fazer com isso.
+   * Grava o estado e diz se deu. Usado pelos caminhos que DECIDEM depois da
+   * leitura (repetição e queda para humano) — o envio do menu não passa mais por
+   * aqui: o estado dele nasce na posse atômica (#5137).
    */
   const gravarEstado = async (novo: EstadoDoMenu): Promise<boolean> => {
     try {
@@ -452,11 +495,38 @@ export async function atenderMenuSemIa(
         return { tratado: true, motivo: "reentrega" };
 
       case "enviar_menu": {
+        // ── A POSSE, NO BANCO, ANTES DE ENVIAR (#5137) ──────────────────────
+        //
+        // A decisão acima é PURA e só diz "esta mensagem pede o menu". Quem
+        // decide se o menu SAI é o banco: a posse é um UPDATE condicional que
+        // grava o estado `aguardando` apenas se a chave ainda não existir. Duas
+        // entradas simultâneas da mesma conversa chegam aqui as duas — e só uma
+        // grava. A outra NÃO manda menu: segue o fluxo normal da entrada.
+        //
+        // O estado é gravado na posse, e não depois do envio, porque é a própria
+        // gravação que desempata. Se o envio falhar, `liberaPosse` desfaz — um
+        // `aguardando` sem menu faria a próxima mensagem do cliente ser lida
+        // como resposta a uma lista que ele nunca viu.
+        const posse = await portas.tomaPosse({
+          metadata: comEstadoDoMenu(conversa.metadata, estadoAguardando(agora, entrada.messageId)),
+        });
+        if (!posse.ok) {
+          log.info("[menu-de-atendimento] outra entrada tomou o menu — esta segue o fluxo", {
+            organization_id: entrada.organizationId,
+            conversation_id: entrada.conversationId,
+            message_id: entrada.messageId,
+            motivo: posse.motivo,
+          });
+          return { tratado: false, motivo: posse.motivo };
+        }
+
         const enviou = await responder(renderizarMenu(menu), "menu");
-        if (!enviou) return { tratado: false, motivo: "envio_falhou" };
-        const gravou = await gravarEstado(estadoAguardando(agora, entrada.messageId));
-        // Sem estado, a próxima mensagem mandaria o menu de novo — para sempre.
-        if (!gravou) return cairParaHumano("estado_nao_gravado");
+        if (!enviou) {
+          await portas.liberaPosse({
+            metadata: comEstadoDoMenu(conversa.metadata, null),
+          });
+          return { tratado: false, motivo: "envio_falhou" };
+        }
         log.info("[menu-de-atendimento] menu enviado", {
           organization_id: entrada.organizationId,
           conversation_id: entrada.conversationId,
