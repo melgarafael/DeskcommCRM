@@ -109,7 +109,7 @@ vi.mock("@/lib/supabase/server", () => ({
 const form = vi.hoisted(() => ({
   definir: vi.fn(),
   resposta: { ok: true } as { ok: boolean; error?: string },
-  /** O que `lerMetasDoMes` devolve por mês — o banco visto pelo formulário. */
+  /** O que `/api/v1/metrics/metas` devolve por mês — o banco visto pelo formulário. */
   porMes: {} as Record<string, Array<Record<string, unknown>>>,
   lidos: [] as string[],
 }));
@@ -215,11 +215,16 @@ describe("#4796 — o formulário oferece o funil", () => {
         return form.resposta;
       }),
     }));
-    vi.doMock("@/app/actions/settings/lerMetasDoMes", () => ({
-      lerMetasDoMes: vi.fn(async (periodo: string) => {
-        form.lidos.push(periodo);
-        return { ok: true, metas: form.porMes[periodo] ?? [] };
-      }),
+    vi.doMock("@/lib/api/client", () => ({
+      apiClient: {
+        get: vi.fn(async (url: string) => {
+          // O mês sai do TEXTO da janela, como na rota.
+          const de = decodeURIComponent(new URL(url, "http://x").searchParams.get("from") ?? "");
+          const periodo = de.slice(0, 7);
+          form.lidos.push(periodo);
+          return { data: { metas: form.porMes[periodo] ?? [] } };
+        }),
+      },
     }));
     vi.resetModules();
     const { FormularioDaMeta } = await import("@/app/app/settings/metas/_form");

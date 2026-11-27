@@ -31,7 +31,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { definirMetaMensal } from "@/app/actions/settings/definirMetaMensal";
-import { lerMetasDoMes } from "@/app/actions/settings/lerMetasDoMes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,6 +46,8 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
+import { apiClient } from "@/lib/api/client";
+import { janelaDoMes } from "@/lib/metas/periodo";
 import { simboloDaMoeda } from "@/lib/money";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
@@ -154,11 +155,25 @@ export function FormularioDaMeta({
     if (gravadas.periodo === periodo || !/^\d{4}-\d{2}$/.test(periodo)) return;
     let vivo = true;
     setErroAoLer(false);
-    lerMetasDoMes(periodo)
+    // A MESMA leitura do Desempenho (`/api/v1/metrics/metas`, mês pelo texto da
+    // janela): uma régua só para "as metas deste mês".
+    const janela = janelaDoMes(periodo);
+    apiClient
+      .get<{ data: { metas?: ReadonlyArray<Record<string, unknown>> } }>(
+        `/api/v1/metrics/metas?from=${encodeURIComponent(janela.from)}&to=${encodeURIComponent(janela.to)}`,
+      )
       .then((r) => {
         if (!vivo) return;
-        if (r.ok) setGravadas({ periodo, metas: r.metas });
-        else setErroAoLer(true);
+        const lidas = (r.data?.metas ?? [])
+          .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
+          .map((m) => ({
+            periodo,
+            indicador: m.indicador as IndicadorDaMeta,
+            vendedor_id: (m.vendedor_id as string | null | undefined) ?? null,
+            pipeline_id: (m.pipeline_id as string | null | undefined) ?? null,
+            alvo: Number(m.alvo),
+          }));
+        setGravadas({ periodo, metas: lidas });
       })
       .catch(() => {
         if (vivo) setErroAoLer(true);
