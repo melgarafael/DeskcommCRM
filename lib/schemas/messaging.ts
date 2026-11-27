@@ -11,6 +11,7 @@ import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
 } from "@/lib/inbox/marcador-da-conversa";
+import { telefoneWhatsappSchema } from "@/lib/schemas/contacts";
 import { PISO_DA_BUSCA, buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
 import { NOME_DE_ARQUIVO_MAX } from "@/lib/messaging/media/nome-de-arquivo";
 
@@ -332,6 +333,9 @@ export const openConversationWithContactSchema = z
     contact_id: z.string().uuid().optional(),
     phone_number: z.string().min(8).max(32).optional(),
     name: z.string().trim().min(1).max(200).optional(),
+    // O número tem WhatsApp? Vale só para a ficha que a chamada CRIA; ausente,
+    // ela nasce `nao_sei` (DES-1950). Ficha existente não é tocada.
+    phone_whatsapp: telefoneWhatsappSchema.optional(),
   })
   .refine((d) => !!d.contact_id || !!d.phone_number?.trim(), {
     message: "Informe contact_id ou phone_number.",

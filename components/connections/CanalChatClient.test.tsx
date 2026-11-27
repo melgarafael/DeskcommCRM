@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiError } from "@/lib/api/types";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { makeQueryClient } from "@/lib/query/client";
 import { CanalChatClient } from "./CanalChatClient";
 
@@ -654,4 +657,11 @@ it("teto_anonimo aceita 150 (entre 100 e 200) e em branco não envia nada", asyn
   await waitFor(() =>
     expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 150 } }),
   );
+});
+
+it("o exemplo do campo de respostas rápidas passa por t() e tem tradução em espanhol", () => {
+  const fonte = readFileSync(resolve(__dirname, "CanalChatClient.tsx"), "utf8");
+  expect(fonte).not.toMatch(/placeholder="Ex\.: Sim"/);
+  expect(fonte).toMatch(/placeholder=\{t\("Ex\.: Sim"\)\}/);
+  expect(DICIONARIO["Ex.: Sim"]?.es).toBe("Ej.: Sí");
 });

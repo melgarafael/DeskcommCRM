@@ -181,6 +181,8 @@ export interface CanalDoAviso {
   aceitaMensagemLivre: boolean;
   /** Pausado pelo operador (`metadata.disabled`). Ausente = ligado, a leitura estrita de `canalDesativado`. */
   desativado?: boolean;
+  /** A ingestão desta conexão lê a resposta que CITA o aviso (#5257). Ausente = não lê. */
+  leCitacao?: boolean;
 }
 
 export interface PatchDaEntrega {
@@ -685,6 +687,7 @@ export async function aplicaAvisoDeCaso(
     // esse número: ensinar o comando a ele faria a resposta entrar no CRM como
     // mensagem comum. Para ele, o aviso diz para abrir o link (#3803).
     respostaWhatsappHabilitada: cfg.resposta_whatsapp_habilitada && destino.origem === "numero_da_empresa",
+    citacaoHabilitada: canal.leCitacao === true,
     ...(fato && caseEventId ? { atualizacao: { ...fato, eventId: caseEventId } } : {}),
   });
 
@@ -1064,7 +1067,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
       // A capacidade é resolvida em `lib/channels/` — este módulo nunca conhece
       // provedor. O import é TARDIO pelo mesmo motivo que `urlPublica` chega
       // pronta: o topo deste arquivo tem de carregar sem ambiente.
-      const { capabilitiesOf, transportaMensagem } = await import("@/lib/channels/capabilities");
+      const { capabilitiesOf, ingestaoLeCitacaoDoAviso, transportaMensagem } = await import("@/lib/channels/capabilities");
       let aceita = false;
       if (transportaMensagem(linha.provider)) {
         try {
@@ -1079,6 +1082,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         archived_at: linha.archived_at,
         aceitaMensagemLivre: aceita,
         desativado: canalDesativado(linha.metadata),
+        leCitacao: ingestaoLeCitacaoDoAviso(linha.provider),
       };
     },
 

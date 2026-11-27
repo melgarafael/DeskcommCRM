@@ -10,7 +10,12 @@ import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { logger } from "@/lib/logger";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
-import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
+import {
+  bloqueioProgressivoDeConta,
+  liberarBloqueioProgressivo,
+  mfaBloqueadoPorFalhas,
+  registrarFalhaDeMfa,
+} from "@/lib/auth/rate-limit";
 import { loadAuthUser } from "@/lib/auth/server";
 import { permanentAccessError } from "@/lib/impersonate/support";
 
@@ -106,6 +111,29 @@ export async function updatePassword(
   }
 
   await limparSenhaProvisoria(supabase, user.id, requestId);
+
+  // O DESBLOQUEIO (issue #4743, item 1). Este é o caminho real medido no
+  // produto: `/login` → "esqueci a senha" → link do e-mail → `/auth/confirm`
+  // (sessão de recuperação) → é aqui que a senha nova é gravada. Sem esta
+  // limpeza, o castigo de 30 minutos seguraria a conta DEPOIS de o dono já ter
+  // provado que controla o e-mail e trocado a senha.
+  const emailDaConta = user.email ?? null;
+  if (emailDaConta) {
+    const antes = await bloqueioProgressivoDeConta(emailDaConta);
+    await liberarBloqueioProgressivo(emailDaConta);
+    if (antes.bloqueado) {
+      await audit({
+        action: "auth.login_bloqueio_removido",
+        actorUserId: user.id,
+        // Sem o e-mail, nem em hash: a linha já tem o `actorUserId`, e o
+        // evento responde "a conta destravou e por quê", não "de quem é".
+        metadata: { degrau: antes.degrau },
+        requestId,
+        ip,
+        userAgent,
+      });
+    }
+  }
 
   await audit({
     action: "auth.password_reset_completed",

@@ -51,6 +51,13 @@ import { TEXTOS_AVISOS_DA_CENTRAL } from "./avisos-da-central";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Saldo insuficiente para o atendimento automático": { es: "Saldo insuficiente para la atención automática" },
+  "Saldo insuficiente em uma etapa da IA": { es: "Saldo insuficiente en una etapa de la IA" },
+  "Enquanto isso, responda pelo Inbox.": { es: "Mientras tanto, responde desde la bandeja de entrada." },
+  "Recarregue o saldo na conta do provedor.": { es: "Recarga el saldo en la cuenta del proveedor." },
+  "Avise quem administra o CRM.": { es: "Avisa a quien administra el CRM." },
+  "Ver provedores de IA": { es: "Ver proveedores de IA" },
+  "Não foi possível consultar o saldo da IA.": { es: "No se pudo consultar el saldo de la IA." },
   // Repetição das mensagens agendadas (segunda parte da #3118).
   "repetição": { es: "repetición" },
   "Recorrência": { es: "Repetición" },
@@ -10014,6 +10021,8 @@ export const DICIONARIO: Traducoes = {
   "Mostrando as conversas que já estavam na tela. Nada foi perdido.": {
     es: "Mostrando las conversaciones que ya estaban en pantalla. No se perdió nada.",
   },
+  "Verificando o acesso à conversa…": { es: "Verificando el acceso a la conversación…" },
+  "Não foi possível recuperar a conversa agora.": { es: "No se pudo recuperar la conversación en este momento." },
   "Tentar novamente": { es: "Intentar de nuevo" },
   "Analisar perfis e oportunidades": { es: "Analizar perfiles y oportunidades" },
   "Analisando clientes: {feitos} de {total}": {
@@ -11294,6 +11303,8 @@ export const DICIONARIO: Traducoes = {
   "Retorno agendado": { es: "Seguimiento programado" },
   "Retorno cancelado": { es: "Seguimiento cancelado" },
   "Desmarcado por uma pessoa da equipe": { es: "Cancelado por una persona del equipo" },
+  "Desmarcado por uma integração": { es: "Cancelado por una integración" },
+  "Desmarcado pelo agente de IA": { es: "Cancelado por el agente de IA" },
   "Sem motivo informado": { es: "Sin motivo indicado" },
   "Follow-up pausado": { es: "Follow-up pausado" },
   "Follow-up retomado": { es: "Follow-up retomado" },
@@ -11643,6 +11654,14 @@ export const DICIONARIO: Traducoes = {
   },
   "Já cadastrado. Preencha só para trocar.": {
     es: "Ya registrado. Complétalo solo para cambiarlo.",
+  },
+  // Nome do canal oferecido no "Editar contato" quando o cadastro não tem nome.
+  "Este contato ainda não tem nome no cadastro.": {
+    es: "Este contacto todavía no tiene nombre en su registro.",
+  },
+  "Usar este nome": { es: "Usar este nombre" },
+  "Só a equipe vê o nome da agenda. Ao salvá-lo como nome, ele pode aparecer em mensagens.": {
+    es: "Solo el equipo ve el nombre de la agenda. Al guardarlo como nombre, puede aparecer en mensajes.",
   },
   "Opcional.": { es: "Opcional." },
   // Autocompletar de etiquetas na ficha do contato (issue #2732).
@@ -14049,6 +14068,11 @@ export const DICIONARIO: Traducoes = {
   // Criar/renomear agente com nome que a organização já usa (#3952). `409
   // agent_name_taken`; a mesma frase é a do campo de nome na tela.
   "Já existe um agente com esse nome.": { es: "Ya existe un agente con este nombre." },
+  // Mover/reabrir um card quando o mesmo negócio já tem cópia aberta no funil
+  // (#5281). `409 copia_aberta_no_funil`.
+  "Este negócio já tem uma cópia aberta neste funil. Continue o atendimento por ela.": {
+    es: "Este negocio ya tiene una copia abierta en este embudo. Continúa la atención por ella.",
+  },
   "O rascunho foi salvo; o nome do agente não mudou.": { es: "El borrador se guardó; el nombre del agente no cambió." },
   "Já existe um contato com este CPF.": { es: "Ya existe un contacto con este CPF." },
   "Já existe um contato com este e-mail.": { es: "Ya existe un contacto con este correo electrónico." },
@@ -17452,6 +17476,8 @@ export const DICIONARIO: Traducoes = {
     { es: "El cliente parece haber pedido no recibir más mensajes" },
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa":
     { es: "Se alcanzó el límite de gasto en IA — el cliente no pidió hablar con una persona" },
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa":
+    { es: "La IA llegó al límite de respuestas para visitante sin contacto — el cliente no pidió hablar con una persona" },
   "O cliente demonstrou irritação na conversa":
     { es: "El cliente mostró molestia en la conversación" },
   // D11: só na passagem e no aviso da equipe (`MARCA_DO_JEV`), nunca ao cliente.
@@ -17504,6 +17530,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Para pedir que a IA esclareça algo com o cliente, envie:": {
     es: "Para pedirle a la IA que aclare algo con el cliente, envía:",
+  },
+  "Ou cite esta mensagem e escreva só a resposta; para perguntar ao cliente, comece com ?.": {
+    es: "O cite este mensaje y escriba solo la respuesta; para preguntar al cliente, empiece con ?.",
   },
   "Responder casos por este WhatsApp": { es: "Responder casos por este WhatsApp" },
   "Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.": {
@@ -21810,17 +21839,22 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Una meta antigua, sin indicador, sigue contando ventas ganadas: elegir valor aquí no cambia las metas ya registradas.",
     },
-  "A meta do vendedor soma só os negócios que ele fechou como ganho; a da empresa soma os da empresa inteira.":
+  "A meta do vendedor soma só os negócios que ele fechou como ganho; a do funil, só os ganhos daquele funil; a da empresa soma os da empresa inteira.":
     {
-      es: "La meta del vendedor suma solo los negocios que él cerró como ganados; la de la empresa suma los de toda la empresa.",
+      es: "La meta del vendedor suma solo los negocios que él cerró como ganados; la del embudo, solo los ganados de ese embudo; la de la empresa suma los de toda la empresa.",
     },
-  "A meta da empresa conta os negócios fechados como ganhos no mês; a do vendedor conta só os dele. Metas por funil e por trimestre ficam para as próximas fatias.":
+  "Não consegui ler as metas deste mês.": { es: "No pude leer las metas de este mes." },
+  "Lendo as metas deste mês…": { es: "Leyendo las metas de este mes…" },
+  "Esse funil não está mais disponível. Recarregue a página e escolha outro.": {
+    es: "Ese embudo ya no está disponible. Recarga la página y elige otro.",
+  },
+  "A meta da empresa conta os negócios fechados como ganhos no mês; a do funil, só os daquele funil; a do vendedor, só os dele. Metas por trimestre ficam para uma próxima fatia.":
     {
-      es: "La meta de la empresa cuenta los negocios cerrados como ganados en el mes; la del vendedor cuenta solo los de él. Las metas por embudo y por trimestre quedan para las próximas etapas.",
+      es: "La meta de la empresa cuenta los negocios cerrados como ganados en el mes; la del embudo, solo los de ese embudo; la del vendedor, solo los de él. Las metas por trimestre quedan para una próxima etapa.",
     },
-  "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
+  "Quanto a empresa — ou um funil, ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
     {
-      es: "Cuánto quiere vender la empresa — o un vendedor — este mes, en cantidad de ventas o en valor. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
+      es: "Cuánto quiere vender la empresa — o un embudo, o un vendedor — este mes, en cantidad de ventas o en valor. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
     },
   "No ritmo atual, o mês fecha em": { es: "Al ritmo actual, el mes cierra en" },
   "Leitura parcial: o realizado em valor soma o que foi lido no período.": {
@@ -23060,6 +23094,7 @@ export const DICIONARIO: Traducoes = {
   "Use um número inteiro de 0 a 120 segundos.": { es: "Usa un número entero de 0 a 120 segundos." },
   "Tocar som ao chegar resposta": { es: "Reproducir sonido al llegar una respuesta" },
   "Respostas rápidas do chat": { es: "Respuestas rápidas del chat" },
+  "Ex.: Sim": { es: "Ej.: Sí" },
   "Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.": { es: "Una respuesta rápida por línea, hasta 5, de 1 a 80 caracteres." },
   "Use até 5 respostas rápidas, de 1 a 80 caracteres cada.": { es: "Usa hasta 5 respuestas rápidas, de 1 a 80 caracteres cada una." },
   "Salvar ajustes": { es: "Guardar ajustes" },
@@ -23460,6 +23495,8 @@ export const DICIONARIO: Traducoes = {
   // Funil de entrada por número (migration 9430).
   "Contatos novos entram no funil": { es: "Los contactos nuevos entran en el embudo" },
   "Contatos novos entram no funil padrão": { es: "Los contactos nuevos entran en el embudo predeterminado" },
+  // #5142: interruptor "conversas novas criam negócio" desligado.
+  "Sem efeito enquanto a opção acima estiver desligada": { es: "Sin efecto mientras la opción de arriba esté desactivada" },
   "Funil de entrada atualizado.": { es: "Embudo de entrada actualizado." },
   "Não foi possível salvar o funil de entrada.": { es: "No fue posible guardar el embudo de entrada." },
   "Funil de entrada deste número": { es: "Embudo de entrada de este número" },
@@ -23598,6 +23635,10 @@ export const DICIONARIO: Traducoes = {
   "Salvar teto": { es: "Guardar límite" },
   "Use um número inteiro de 1 a 200.": { es: "Usa un número entero entre 1 y 200." },
   "Deixe em branco para não mudar.": { es: "Déjalo en blanco para no cambiarlo." },
+  // #4593 — a busca das listas de Follow-ups e de Funis casa também com o
+  // gatilho do fluxo e com as etapas do funil; a caixa diz isso.
+  "Buscar por nome ou gatilho…": { es: "Buscar por nombre o disparador…" },
+  "Buscar por nome ou etapa…": { es: "Buscar por nombre o etapa…" },
 };
 
 /**

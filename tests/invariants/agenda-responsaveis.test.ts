@@ -69,10 +69,10 @@ async function criaUsuario(id: string) {
     `${id}@responsaveis.test`,
   ]);
 }
-async function vincula(user: string, org: string, revogado = false) {
+async function vincula(user: string, org: string, revogado = false, papel = "agent") {
   await pool.query(
-    "insert into user_organizations(organization_id,user_id,role,accepted_at,revoked_at) values($1,$2,'agent',now(),$3) on conflict do nothing",
-    [org, user, revogado ? new Date() : null],
+    "insert into user_organizations(organization_id,user_id,role,accepted_at,revoked_at) values($1,$2,$4,now(),$3) on conflict do nothing",
+    [org, user, revogado ? new Date() : null, papel],
   );
 }
 /** Disponível a semana toda, em UTC: sem isso `fn_calendar_service_person_available` recusa por "sem jornada", e não pelo motivo que o caso testa. */
@@ -110,15 +110,15 @@ async function contato(org = A.org): Promise<string> {
   return id;
 }
 /** Serviço com a mesma semente de agenda-servicos.test.ts: terça às 14:00 locais (= 17:00Z), 40 min, sem aviso mínimo. */
-async function servico(modo = "collective_unlimited"): Promise<string> {
+async function servico(modo = "collective_unlimited", org = A.org): Promise<string> {
   const id = randomUUID();
   await pool.query(
     "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes,minimum_notice_minutes,service_enabled,booking_mode,service_capacity) values($1::uuid,$2,'Atividade fictícia',$1::text,40,0,true,$3,$4)",
-    [id, A.org, modo, null],
+    [id, org, modo, null],
   );
   await pool.query(
     "insert into calendar_service_schedule(organization_id,event_type_id,weekday,timing_kind,start_minute) values($1,$2,2,'fixed',840)",
-    [A.org, id],
+    [org, id],
   );
   return id;
 }
@@ -412,4 +412,182 @@ describe("responsáveis — preview e decisões em aberto", () => {
   });
 
   it.todo("F.6: adicional como principal de consulta coletiva no mesmo horário — decisão do Paulo (desenho, G.6)");
+});
+
+/**
+ * A CHAVE "COLEGAS PODEM MEXER NA AGENDA" VALE PARA OS ADICIONAIS (#5280).
+ *
+ * Com a chave desligada, quem está abaixo de gerente não marca na agenda de um
+ * colega como principal (`appointment_do_colega`). O adicional também ocupa a
+ * agenda de quem é incluído, então segue a mesma régua nas três portas: criação
+ * com equipe, edição da lista e reserva de serviço feita por pessoa.
+ * Organização própria (C), para ligar e desligar a chave sem tocar em A.
+ */
+describe("responsáveis — a chave de agenda dos colegas vale para os adicionais", () => {
+  const C = { org: randomUUID(), atendente: randomUUID(), gerente: randomUUID(), colega: randomUUID() };
+  const chave = (ligada: boolean) =>
+    pool.query(
+      "update organizations set settings=coalesce(settings,'{}'::jsonb)||jsonb_build_object('colegas_podem_mexer_na_agenda',$2::boolean) where id=$1",
+      [C.org, ligada],
+    );
+  let tipoC = "";
+
+  beforeAll(async () => {
+    await pool.query(
+      "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$2,'Responsáveis C','Responsáveis C') on conflict do nothing",
+      [C.org, `resp-c-${C.org.slice(0, 8)}`],
+    );
+    for (const u of [C.atendente, C.gerente, C.colega]) await criaUsuario(u);
+    await vincula(C.atendente, C.org);
+    await vincula(C.colega, C.org);
+    await vincula(C.gerente, C.org, false, "manager");
+    for (const u of [C.atendente, C.gerente, C.colega]) await disponivelNaSemanaToda(u, C.org);
+    tipoC = randomUUID();
+    await pool.query(
+      "insert into calendar_event_types(id,organization_id,name,slug,duration_minutes) values($1::uuid,$2,'Consulta fictícia',$1::text,60)",
+      [tipoC, C.org],
+    );
+    await chave(false);
+  });
+
+  /** Cria pela RPC da tela, como o usuário (JWT). Commita no sucesso, desfaz na recusa. */
+  async function criaComo(user: string, dono: string, adicionaisPedidos: string[]): Promise<string> {
+    const id = randomUUID();
+    const h = novoHorario();
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims',$1,true)", [
+        JSON.stringify({ sub: user, role: "authenticated", aal: "aal1" }),
+      ]);
+      await client.query("select fn_appointment_insert_with_responsibles($1,$2::jsonb,$3::uuid[])", [
+        C.org,
+        JSON.stringify({
+          id,
+          event_type_id: tipoC,
+          title: "Consulta fictícia",
+          starts_at: h.inicio,
+          ends_at: h.fim,
+          time_zone: "UTC",
+          owner_user_id: dono,
+          location_kind: "in_person",
+          team_guest_user_ids: [],
+        }),
+        adicionaisPedidos,
+      ]);
+      await client.query("commit");
+    } catch (erro) {
+      await client.query("rollback");
+      throw erro;
+    } finally {
+      client.release();
+    }
+    return id;
+  }
+  const existe = async (id: string) =>
+    Number((await pool.query("select count(*) n from calendar_appointments where id=$1", [id])).rows[0].n);
+  /** Reserva de serviço como pessoa (o ator que `fn_calendar_service_create_authenticated` monta). */
+  const reservaComo = async (user: string, tipo: string, semana: number, equipe: string[]) => {
+    const c = await contato(C.org);
+    const r = await pool.query("select fn_calendar_service_book($1,$2,$3) r", [
+      C.org,
+      { type: "user", id: user },
+      { event_type_id: tipo, starts_at: em("17:00:00Z", 7 * semana), contact_id: c, operation_key: randomUUID(), responsible_user_ids: equipe },
+    ]);
+    return { contato: c, consulta: r.rows[0].r as { id: string; responsible_user_ids: string[] } };
+  };
+  const reservasDoContato = async (c: string) =>
+    Number((await pool.query("select count(*) n from calendar_appointments where contact_id=$1", [c])).rows[0].n);
+
+  it("criação: o atendente que inclui um colega como adicional é recusado e nada é gravado", async () => {
+    await expect(criaComo(C.atendente, C.atendente, [C.colega])).rejects.toThrow("appointment_do_colega");
+    const { rows } = await pool.query(
+      "select count(*) n from calendar_appointments where organization_id=$1 and created_by_user_id=$2",
+      [C.org, C.atendente],
+    );
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it("criação (controles): o gerente inclui o colega; com a chave ligada, o atendente também", async () => {
+    const doGerente = await criaComo(C.gerente, C.gerente, [C.colega]);
+    expect(await existe(doGerente)).toBe(1);
+    expect(await adicionaisDe(doGerente)).toEqual([C.colega]);
+    await chave(true);
+    try {
+      const doAtendente = await criaComo(C.atendente, C.atendente, [C.colega]);
+      expect(await adicionaisDe(doAtendente)).toEqual([C.colega]);
+    } finally {
+      await chave(false);
+    }
+  });
+
+  it("edição: o atendente que põe um colega na lista do próprio compromisso é recusado e a lista não muda", async () => {
+    const minha = await compromisso(C.org, C.atendente);
+    await expect(alteraComo(C.atendente, C.org, minha, { responsible_user_ids: [C.colega] })).rejects.toThrow(
+      "appointment_do_colega",
+    );
+    expect(await adicionaisDe(minha)).toEqual([]);
+  });
+
+  it("edição: a lista enviada conta inteira — o colega que já estava não se mantém sem a chave; tirá-lo pode", async () => {
+    const minha = await compromisso(C.org, C.atendente);
+    await porDoAdicional(minha, C.colega, C.org); // posto antes (por um gerente, ou com a chave ligada)
+    await expect(alteraComo(C.atendente, C.org, minha, { responsible_user_ids: [C.colega] })).rejects.toThrow(
+      "appointment_do_colega",
+    );
+    expect(await adicionaisDe(minha)).toEqual([C.colega]);
+    await alteraComo(C.atendente, C.org, minha, { responsible_user_ids: [] });
+    expect(await adicionaisDe(minha)).toEqual([]);
+  });
+
+  it("edição (controles): o gerente põe o colega; com a chave ligada, o atendente também", async () => {
+    const doGerente = await compromisso(C.org, C.gerente);
+    await alteraComo(C.gerente, C.org, doGerente, { responsible_user_ids: [C.colega] });
+    expect(await adicionaisDe(doGerente)).toEqual([C.colega]);
+    const minha = await compromisso(C.org, C.atendente);
+    await chave(true);
+    try {
+      await alteraComo(C.atendente, C.org, minha, { responsible_user_ids: [C.colega] });
+    } finally {
+      await chave(false);
+    }
+    expect(await adicionaisDe(minha)).toEqual([C.colega]);
+  });
+
+  it("reserva de serviço: o atendente que traz um colega na equipe é recusado e nada é gravado", async () => {
+    const tipo = await servico("collective_unlimited", C.org);
+    const c = await contato(C.org);
+    await expect(
+      pool.query("select fn_calendar_service_book($1,$2,$3) r", [
+        C.org,
+        { type: "user", id: C.atendente },
+        { event_type_id: tipo, starts_at: em("17:00:00Z"), contact_id: c, operation_key: randomUUID(), responsible_user_ids: [C.colega] },
+      ]),
+    ).rejects.toThrow("appointment_do_colega");
+    expect(await reservasDoContato(c)).toBe(0);
+  });
+
+  it("reserva de serviço (controles): o atendente se inclui; o gerente traz o colega; com a chave ligada, o atendente também", async () => {
+    const proprio = await reservaComo(C.atendente, await servico("collective_unlimited", C.org), 1, [C.atendente]);
+    expect(proprio.consulta.responsible_user_ids).toEqual([C.atendente]);
+    const doGerente = await reservaComo(C.gerente, await servico("collective_unlimited", C.org), 2, [C.colega]);
+    expect(doGerente.consulta.responsible_user_ids).toEqual([C.colega]);
+    await chave(true);
+    try {
+      const comChave = await reservaComo(C.atendente, await servico("collective_unlimited", C.org), 3, [C.colega]);
+      expect(comChave.consulta.responsible_user_ids).toEqual([C.colega]);
+    } finally {
+      await chave(false);
+    }
+  });
+
+  it("edição de reserva sem profissional: o atendente se inclui como adicional, e o colega continua recusado", async () => {
+    const { consulta } = await reservaComo(C.atendente, await servico("collective_unlimited", C.org), 4, []);
+    await expect(alteraComo(C.atendente, C.org, consulta.id, { responsible_user_ids: [C.colega] })).rejects.toThrow(
+      "appointment_do_colega",
+    );
+    await alteraComo(C.atendente, C.org, consulta.id, { responsible_user_ids: [C.atendente] });
+    expect(await adicionaisDe(consulta.id)).toEqual([C.atendente]);
+  });
 });

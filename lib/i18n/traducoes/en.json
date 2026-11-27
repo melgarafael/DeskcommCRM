@@ -8271,6 +8271,7 @@
   "O cliente pediu para falar com uma pessoa": "The client asked to speak with a person",
   "O cliente parece ter pedido para não receber mais mensagens": "The client appears to have asked to stop receiving messages",
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa": "The AI spending limit was reached — the client didn't ask for a person",
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa": "The AI reached the reply limit for a visitor without contact details — the client didn't ask for a person",
   "O cliente demonstrou irritação na conversa": "The client showed irritation in the conversation",
   "(percebido pelo Jev)": "(detected by Jev)",
   "O assistente não teve confiança suficiente para responder": "The assistant wasn't confident enough to respond",
@@ -10056,5 +10057,12 @@
   "Não foi possível conferir a etapa.": "Could not verify the stage.",
   "Não foi possível ler a conexão.": "Could not read the connection.",
   "Continuar a conversa assim que a equipe devolver ao automático": "Continue the conversation as soon as the team returns it to automatic",
-  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": "When someone on the team takes over, sends the last message (a quote, for example) and clicks Return to automatic, the agent picks up from there right away, without waiting for the customer to write. It stays quiet if the customer has already replied, if the conversation has a follow-up in progress, or if the contact is marked for human service."
+  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": "When someone on the team takes over, sends the last message (a quote, for example) and clicks Return to automatic, the agent picks up from there right away, without waiting for the customer to write. It stays quiet if the customer has already replied, if the conversation has a follow-up in progress, or if the contact is marked for human service.",
+  "Saldo insuficiente para o atendimento automático": "Insufficient balance for automatic replies",
+  "Saldo insuficiente em uma etapa da IA": "Insufficient balance in an AI step",
+  "Enquanto isso, responda pelo Inbox.": "Meanwhile, reply from the Inbox.",
+  "Recarregue o saldo na conta do provedor.": "Top up the balance in the provider account.",
+  "Avise quem administra o CRM.": "Let your CRM admin know.",
+  "Ver provedores de IA": "View AI providers",
+  "Não foi possível consultar o saldo da IA.": "Could not check the AI balance."
 }

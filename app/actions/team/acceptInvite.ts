@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { bloqueioProgressivoDeConta, registrarFalhaNaRegua } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 export type AcceptInviteResult =
@@ -26,7 +27,8 @@ export type AcceptInviteResult =
         | "email_mismatch"
         | "not_authenticated"
         | "internal_error"
-        | "limite_do_plano";
+        | "limite_do_plano"
+        | "rate_limited";
       message?: string;
       expectedEmail?: string;
     };
@@ -34,6 +36,13 @@ export type AcceptInviteResult =
 export async function acceptInviteAction(token: string): Promise<AcceptInviteResult> {
   const payload = verifyInviteToken(token);
   if (!payload) return { ok: false, error: "invalid_or_expired" };
+
+  // MESMA RÉGUA DO LOGIN (issue #4743, item 1). O aceite é a terceira porta que
+  // confere credencial de conta (aqui, o token assinado). A página já tem teto
+  // por IP; o que faltava era a conta entrar na conta do bloqueio progressivo —
+  // senão trocar de IP a cada tentativa devolvia o orçamento inteiro.
+  const bloqueio = await bloqueioProgressivoDeConta(payload.email);
+  if (bloqueio.bloqueado) return { ok: false, error: "rate_limited" };
 
   const supabase = await createClient();
   const {
@@ -50,6 +59,9 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
   const userEmail = (user.email ?? "").trim().toLowerCase();
   const inviteEmail = payload.email.trim().toLowerCase();
   if (userEmail !== inviteEmail) {
+    // Um token válido apresentado por OUTRA conta é exatamente a varredura que
+    // a régua existe para frear: conta como falha da conta convidada.
+    await registrarFalhaNaRegua(payload.email);
     return { ok: false, error: "email_mismatch", expectedEmail: payload.email };
   }
 

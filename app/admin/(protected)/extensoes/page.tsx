@@ -10,6 +10,8 @@ import { lerAtrasoDoModulo, type AtrasoPorVinculo } from "@/lib/extensions/event
 import { checkCompatibility } from "@/lib/extensions/manifest";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { LeituraDosEventos } from "./_components/leitura-dos-eventos";
+
 /** O manifesto do artefato diz o perfil; só `connected` tem quem busque eventos. */
 function ehConectada(artefato: unknown): boolean {
   const a = Array.isArray(artefato) ? artefato[0] : artefato;
@@ -34,61 +36,6 @@ function motivoDeSuspensao(artefato: unknown): MotivoDeSuspensao | null {
   const r = checkCompatibility({ host_api: { min, max }, permissions: m.permissions as never, profile: "connected" });
   if (r.compatible) return null;
   return r.reason === "host_api_unsupported" ? "faixa" : "outro";
-}
-
-/**
- * O último cursor lido, quando, e o atraso de cada vínculo. A empresa NÃO é nomeada (decisão: o dono do
- * servidor vê o estado, não a lista de clientes). Selo só quando há atraso e faz mais de 24 h.
- */
-function LeituraDosEventos({
-  chave,
-  vinculos,
-  t,
-  dataEHora,
-}: {
-  chave: string;
-  vinculos: AtrasoPorVinculo[];
-  t: (s: string) => string;
-  dataEHora: (iso: string) => string;
-}) {
-  return (
-    <div data-testid={`leitura-eventos-${chave}`} className="mt-2 space-y-1 text-xs">
-      <p className="font-medium">{t("Leitura dos avisos pelo módulo")}</p>
-      {vinculos.map((v, i) => (
-        <div key={i} data-testid={`leitura-eventos-${chave}-${i}`} className="text-text-muted">
-          <p>
-            {t("Empresa {n}").replace("{n}", String(i + 1))} ·{" "}
-            {v.lidoEm === null || v.ultimoCursor === null
-              ? t("ainda não leu nenhum aviso")
-              : `${t("último aviso lido")} #${v.ultimoCursor} · ${t("lido em")} ${dataEHora(v.lidoEm)}`}
-            {" · "}
-            {v.atraso === 0
-              ? t("em dia")
-              : t("{n} aviso(s) por ler").replace("{n}", String(v.atraso))}
-            {v.atrasado ? (
-              <span
-                data-testid={`selo-atrasado-${chave}-${i}`}
-                className="ml-2 rounded-md bg-warning-bg px-1.5 py-0.5 font-medium text-warning-fg"
-              >
-                {t("Atrasado")}
-              </span>
-            ) : null}
-          </p>
-          {v.contatosPendentes > 0 ? (
-            <p data-testid={`leitura-eventos-lgpd-${chave}-${i}`}>
-              {t("Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).").replace(
-                "{n}",
-                String(v.contatosPendentes),
-              )}
-              {v.atrasado
-                ? ` ${t("Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.")}`
-                : ""}
-            </p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export const metadata = { title: "Extensões da instalação" };
@@ -169,15 +116,6 @@ export default async function Page() {
         if (atraso && atraso.length > 0) atrasoPorInstalacao.set(i.id, atraso);
       }),
   );
-
-  const dataEHora = (iso: string) =>
-    new Date(iso).toLocaleString(tagDeIdioma(idioma), {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
 
   const dataLegivel = (iso: string) =>
     new Date(iso).toLocaleDateString(tagDeIdioma(idioma), {
@@ -289,7 +227,7 @@ export default async function Page() {
                       chave={`${e.publisher}-${e.name}`}
                       vinculos={atrasoPorInstalacao.get(e.id) ?? []}
                       t={t}
-                      dataEHora={dataEHora}
+                      idioma={idioma}
                     />
                   ) : null}
                 </div>

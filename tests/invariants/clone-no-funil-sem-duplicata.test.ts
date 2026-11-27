@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import pg from "pg";
 import { afterAll, expect, it } from "vitest";
@@ -300,4 +301,120 @@ it("o replay não revela o card ligado a um contato marcado como pessoal", async
   await banco.query("update public.crm_leads set contact_id = $1 where id = $2", [contato, c.lead]);
   await expect(gravar(banco, c)).rejects.toMatchObject({ code: "PT404" });
   expect(await idsNoDestino(c)).toEqual([primeira.clone.id]);
+});
+
+// ── #5281: a regra vira fato da tabela ─────────────────────────────────────
+//
+// O índice único recusa a segunda cópia aberta de QUALQUER escritor — não só de
+// quem passa pela transação acima. E a migration que o cria deduplica antes o
+// que bancos antigos já têm, sem perder o que estava pendurado nas cópias.
+
+const MIGRATION_9496 = readFileSync(
+  "supabase/migrations/20261126141351_9496_clone_aberto_no_funil_indice_unico.sql", "utf8",
+);
+
+async function inserirCopia(c: Cenario, criadaEm: string, etapa = c.etapaDoDestino): Promise<string> {
+  const id = randomUUID();
+  await banco.query(
+    `insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, title, source_metadata, created_at)
+     values ($1, $2, $3, $4, 'Cópia', jsonb_build_object('clonado_de', jsonb_build_object('lead_id', $5::text)), $6)`,
+    [id, c.org, c.destino, etapa, c.lead, criadaEm],
+  );
+  return id;
+}
+
+it("a tabela recusa a segunda cópia aberta mesmo fora da transação, e só a ABERTA conta", async () => {
+  const c = await cenario();
+  const perdaNoDestino = randomUUID();
+  await banco.query(
+    `insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position, is_lost)
+     values ($1, $2, $3, 'Perda', 'perda', 2000, true)`,
+    [perdaNoDestino, c.org, c.destino],
+  );
+  const primeira = await inserirCopia(c, "2026-01-01T00:00:00Z");
+  await expect(inserirCopia(c, "2026-01-02T00:00:00Z")).rejects.toMatchObject({
+    code: "23505", constraint: "crm_leads_clone_aberto_no_funil_uidx",
+  });
+  await banco.query(
+    "update public.crm_leads set stage_id = $1, lost_reason = 'other' where id = $2", [perdaNoDestino, primeira],
+  );
+  const nova = await inserirCopia(c, "2026-01-03T00:00:00Z");
+  // A transação devolve a única aberta, não a encerrada.
+  expect((await gravar(banco, c)).clone.id).toBe(nova);
+});
+
+it("a migration 9496 é o mesmo bloco do apêndice do baseline", () => {
+  const bloco = /^do \$clone_aberto_unico\$[\s\S]*?^end \$clone_aberto_unico\$;$/m.exec(MIGRATION_9496)?.[0];
+  expect(bloco).toBeDefined();
+  expect(readFileSync("supabase/baseline.sql", "utf8")).toContain(bloco!);
+});
+
+it("a migration 9496 deduplica antes do índice: fica a mais antiga, o histórico vai junto, nenhum evento sai", async () => {
+  const c = await cenario();
+  await banco.query("drop index public.crm_leads_clone_aberto_no_funil_uidx");
+  try {
+    const mantida = await inserirCopia(c, "2026-01-01T00:00:00Z");
+    const descartada = await inserirCopia(c, "2026-01-02T00:00:00Z");
+    const outra = await inserirCopia(c, "2026-01-03T00:00:00Z");
+    const atividade = randomUUID();
+    await banco.query(
+      `insert into public.crm_lead_activities (id, organization_id, lead_id, source_module, type)
+       values ($1, $2, $3, 'invariant', 'system')`,
+      [atividade, c.org, descartada],
+    );
+    await banco.query(
+      `insert into public.crm_lead_links (organization_id, lead_id, target_kind, target_id, link_kind)
+       values ($1, $2, 'lead', $3, 'clone')`,
+      [c.org, c.lead, outra],
+    );
+    await banco.query(
+      `update public.crm_leads
+          set source_metadata = jsonb_build_object('movido_para', jsonb_build_object('lead_id', $1::text))
+        where id = $2`,
+      [outra, c.lead],
+    );
+
+    await banco.query(MIGRATION_9496);
+
+    const { rows: copias } = await banco.query<{
+      id: string; status: string; lost_reason: string | null; duplicata_de: string | null;
+    }>(
+      `select id, status, lost_reason, source_metadata->'duplicata_de'->>'lead_id' as duplicata_de
+         from public.crm_leads where pipeline_id = $1 order by created_at`,
+      [c.destino],
+    );
+    expect(copias).toEqual([
+      { id: mantida, status: "open", lost_reason: null, duplicata_de: null },
+      { id: descartada, status: "lost", lost_reason: "moved_to_another_pipeline", duplicata_de: mantida },
+      { id: outra, status: "lost", lost_reason: "moved_to_another_pipeline", duplicata_de: mantida },
+    ]);
+    const { rows: [depois] } = await banco.query(
+      `select (select lead_id from public.crm_lead_activities where id = $1) as atividade,
+              (select target_id from public.crm_lead_links where lead_id = $2 and target_kind = 'lead') as vinculo,
+              (select source_metadata->'movido_para'->>'lead_id' from public.crm_leads where id = $2) as movido_para,
+              (select count(*)::int from public.event_log
+                where entity_id = any($3::uuid[]) and event_type in ('lead.lost', 'lead.stage_changed')) as eventos,
+              (select tgenabled from pg_trigger
+                where tgrelid = 'public.crm_leads'::regclass and tgname = 'trg_emit_event_on_lead_change') as gatilho,
+              (select indisunique from pg_index
+                where indexrelid = 'public.crm_leads_clone_aberto_no_funil_uidx'::regclass) as unico`,
+      [atividade, c.lead, [descartada, outra]],
+    );
+    expect(depois).toEqual({
+      atividade: mantida, vinculo: mantida, movido_para: mantida, eventos: 0, gatilho: "O", unico: true,
+    });
+
+    // Reaplicar não muda nada (o update.sh do kit reaplica o baseline inteiro).
+    await banco.query(MIGRATION_9496);
+    const { rows: [reaplicada] } = await banco.query<{ abertas: number }>(
+      "select count(*)::int as abertas from public.crm_leads where pipeline_id = $1 and status = 'open'", [c.destino],
+    );
+    expect(reaplicada?.abertas).toBe(1);
+  } finally {
+    await banco.query(`
+      create unique index if not exists crm_leads_clone_aberto_no_funil_uidx
+        on public.crm_leads (organization_id, pipeline_id, (source_metadata->'clonado_de'->>'lead_id'))
+        where status = 'open' and source_metadata ? 'clonado_de'
+    `);
+  }
 });

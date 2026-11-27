@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const resultado = await adiaEnrollment(
-    { supabase: authz.supabase, admin: createAdminClient(), orgId: organizationId, userId: actorUserId, apiTokenId: authz.apiTokenId ?? null, requestId },
+    { supabase: authz.supabase, admin: createAdminClient(), orgId: organizationId, userId: actorUserId, apiTokenId: authz.apiTokenId ?? null, actor: authz.actor, requestId },
     id,
     parsed.data.next_eval_at,
   );
