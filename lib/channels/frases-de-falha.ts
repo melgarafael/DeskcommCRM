@@ -50,6 +50,7 @@ export const FRASES_DE_FALHA: Record<string, string> = {
   channel_disabled: "Este número está desativado. Reative em Conexões para enviar.",
   // Recusas assíncronas da plataforma oficial, gravadas pelo código numérico.
   "131026": "Este número não tem WhatsApp.",
+  numero_sem_whatsapp: "Este número não tem WhatsApp.",
   "131047": "A janela de 24 horas fechou. Envie um modelo aprovado ou aguarde o cliente escrever.",
 };
 

@@ -10,6 +10,7 @@
 export const ApiErrorCodes = {
   // 400 — body / params
   invalid_request: "invalid_request",
+  numero_sem_whatsapp: "numero_sem_whatsapp", // 422: todas as grafias consultadas não têm conta
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
   // POST /api/v1/avisos (#1418): `publicar_em` no futuro é recusado

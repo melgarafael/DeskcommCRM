@@ -87,7 +87,11 @@ import { canalMarcaLidasPorMensagem } from "@/lib/channels/capabilities";
 import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
-import { CHAVE_DA_FALHA_DE_ENVIO, registroDaFalhaDeEnvio } from "@/lib/channels/falha-de-envio";
+import {
+  CHAVE_DA_FALHA_DE_ENVIO,
+  registroDaFalhaDeEnvio,
+  codigoDaFalhaDeEnvio,
+} from "@/lib/channels/falha-de-envio";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -1765,9 +1769,10 @@ export async function sendMessageHandler(
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
-      const code = msg.startsWith("storage_sign_failed")
-        ? "storage_sign_failed"
-        : adapter.codes.sendFailed;
+      const code = codigoDaFalhaDeEnvio(
+        err,
+        msg.startsWith("storage_sign_failed") ? "storage_sign_failed" : adapter.codes.sendFailed,
+      );
 
       // Falta de CREDENCIAL não é falha desta mensagem: é canal ainda não
       // conectado, e o desfecho certo é `queued` — a mesma coisa que o ramo de
