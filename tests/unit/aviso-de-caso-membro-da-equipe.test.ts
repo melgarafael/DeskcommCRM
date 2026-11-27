@@ -89,6 +89,8 @@ function dbDeAviso(opcoes: {
   whatsapps?: Array<string | null>;
   membrosAtivos?: boolean;
   enabled?: boolean;
+  /** Caso da entrega que a citação acha em `entregas_de_aviso_de_caso` (#5257). */
+  casoCitado?: string;
 }) {
   const destino = opcoes.destino ?? NUMERO_DA_MEMBRO;
   const leituras: string[] = [];
@@ -122,6 +124,9 @@ function dbDeAviso(opcoes: {
         // O cinto de segurança pergunta pela ficha do contato.
         return { data: { phone_number: destino, wa_lid: null }, error: null };
       }
+      if (tabela === "entregas_de_aviso_de_caso" && opcoes.casoCitado) {
+        return { data: { case_id: opcoes.casoCitado, update_event_id: null }, error: null };
+      }
       return { data: null, error: null };
     };
     const builder: Record<string, unknown> = {};
@@ -131,6 +136,8 @@ function dbDeAviso(opcoes: {
       return builder;
     };
     builder.is = () => builder;
+    builder.in = () => builder;
+    builder.limit = () => builder;
     builder.not = () => builder;
     builder.update = () => builder;
     builder.maybeSingle = async () => resposta();
@@ -346,6 +353,24 @@ describe("consumirComResultado — o que a ingestão faz com a mensagem", () => 
     const { db } = dbDeAviso({ modo: "responsavel", whatsapps: [NUMERO_DA_MEMBRO] });
     const resultado = await consumirComResultado(db, entrada("aviso de caso", "outbound"));
     expect(resultado).toEqual({ consumed: true, result: null });
+  });
+
+  it("com a resposta pelo WhatsApp DESLIGADA, citar o aviso não corta o membro que é cliente", async () => {
+    // A citação só é comando quando a organização ligou a resposta pelo
+    // WhatsApp. Sem essa guarda, a mensagem do membro que responde ao aviso
+    // citando-o virava "comando", pulava a exceção acima e era descartada.
+    const { db, leituras } = dbDeAviso({
+      modo: "responsavel",
+      whatsapps: [NUMERO_DA_MEMBRO],
+      enabled: false,
+      casoCitado: CASE,
+    });
+    const resultado = await consumirComResultado(db, {
+      ...entrada("chego às 15h"),
+      citacao: { idsDoAviso: ["3EB0AVISOCITADO0001"] },
+    });
+    expect(resultado).toEqual({ consumed: false, result: null });
+    expect(leituras).not.toContain("entregas_de_aviso_de_caso");
   });
 
   it("a equipe sem número não abre exceção nenhuma", async () => {

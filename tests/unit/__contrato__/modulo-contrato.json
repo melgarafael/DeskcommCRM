@@ -85,6 +85,7 @@
       "GET /api/v1/ai/cases",
       "GET /api/v1/ai/cases/[id]",
       "GET /api/v1/ai/cases/[id]/chat",
+      "GET /api/v1/ai/credit-health",
       "GET /api/v1/ai/evolution",
       "GET /api/v1/ai/followup-flows",
       "GET /api/v1/ai/followup-flows/[id]",
@@ -548,7 +549,7 @@
         {
           "nome": "alterarSchema",
           "origem": "@/lib/agenda/tipos-de-agendamento",
-          "hash": "6245f5adcb258277"
+          "hash": "8b29d78104f1e902"
         },
         {
           "nome": "criarComRascunhoSchema",

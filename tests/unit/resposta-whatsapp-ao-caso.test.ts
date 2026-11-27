@@ -253,3 +253,157 @@ describe("confirmações de comando pelo WhatsApp", () => {
     }
   });
 });
+
+describe("resposta citando o aviso de caso (#5257)", () => {
+  const AVISO_ID = "3EB0AVISOCITADO0001";
+
+  // Banco com UMA entrega: o aviso `AVISO_ID` foi enviado pela conexão SESSION
+  // para o caso CASE. O `in` do filtro é guardado para provar que a busca usa o
+  // id citado e as variantes de id do WAHA, e que vem junto com a org e a sessão.
+  function dbComAviso(options: { result?: string; updateEventId?: string } = {}) {
+    const base = db(options);
+    const filtros: Array<{ coluna: string; valores: unknown }> = [];
+    const entregas: Array<Record<string, unknown>> = [];
+    const from = vi.fn((table: string) => {
+      const builder: Record<string, unknown> = {};
+      let citadoNoFiltro = false;
+      builder.select = () => builder;
+      builder.eq = (coluna: string, valor: unknown) => {
+        if (table === "entregas_de_aviso_de_caso") filtros.push({ coluna, valores: valor });
+        return builder;
+      };
+      builder.in = (coluna: string, valores: unknown[]) => {
+        if (table === "entregas_de_aviso_de_caso") {
+          filtros.push({ coluna, valores });
+          citadoNoFiltro = valores.includes(AVISO_ID);
+        }
+        return builder;
+      };
+      builder.limit = () => builder;
+      builder.maybeSingle = async () => {
+        if (table === "config_aviso_de_caso") {
+          return {
+            data: {
+              telefone_destino: PHONE,
+              destino_jid: null,
+              resposta_whatsapp_habilitada: true,
+              channel_session_id: SESSION,
+            },
+            error: null,
+          };
+        }
+        if (table === "entregas_de_aviso_de_caso") {
+          const linha = citadoNoFiltro
+            ? { case_id: CASE, update_event_id: options.updateEventId ?? null }
+            : null;
+          if (linha) entregas.push(linha);
+          return { data: linha, error: null };
+        }
+        return { data: null, error: null };
+      };
+      builder.update = () => builder;
+      builder.then = (resolve: (x: unknown) => unknown) => resolve({ error: null });
+      return builder;
+    });
+    (base.db as unknown as { from: typeof from }).from = from;
+    return { ...base, from, filtros };
+  }
+
+  const citado = (texto: string | null, externalId = "msg-resposta") => ({
+    ...entry(texto, externalId),
+    citacao: { idsDoAviso: [AVISO_ID] },
+  });
+
+  function parametrosDaRpc(rpc: ReturnType<typeof vi.fn>) {
+    return rpc.mock.calls.map((call: unknown[]) => call[1] as Record<string, unknown>)[0];
+  }
+
+  // O `rpc` também recebe o contador de ignoradas: só a função de resposta conta aqui.
+  function chamouRespostaDoCaso(rpc: ReturnType<typeof vi.fn>) {
+    return rpc.mock.calls.some((call: unknown[]) => call[0] === "fn_responder_caso_por_whatsapp");
+  }
+
+  beforeEach(() => {
+    mocks.decide.mockResolvedValue({ liberado: true });
+  });
+
+  it("uma resposta citando o aviso vira RESPONDER no caso do aviso", async () => {
+    const { db: client, rpc, filtros } = dbComAviso();
+    const result = await consumirComResultado(client, citado("Pode vir amanhã às 15h"));
+    expect(result).toEqual({ consumed: true, result: "accepted" });
+    const params = parametrosDaRpc(rpc);
+    expect(params).toMatchObject({
+      p_case: CASE,
+      p_action: "resolved",
+      p_body: "Pode vir amanhã às 15h",
+      p_session: SESSION,
+    });
+    expect(filtros).toEqual(expect.arrayContaining([
+      { coluna: "organization_id", valores: ORG },
+      { coluna: "channel_session_id", valores: SESSION },
+      expect.objectContaining({ coluna: "external_id" }),
+    ]));
+    expect(mocks.send).toHaveBeenCalledWith(ORG, expect.objectContaining({ id: SESSION }), { to: PHONE }, "Recebido. A IA vai seguir com o cliente.");
+  });
+
+  it("citar o aviso de ATUALIZAÇÃO leva o id da atualização até a RPC (#5288)", async () => {
+    // A entrega do aviso de atualização grava `update_event_id`, e a RPC só
+    // aceita a resposta com ele — é o `ATUALIZACAO <id>` do comando à mão. Sem
+    // o id, quem cita esse aviso, como ele mesmo manda, ouvia "caso indisponível".
+    const EVENTO = "02920000-5555-4000-8000-0000000000e1";
+    const { db: client, rpc } = dbComAviso({ updateEventId: EVENTO });
+    await consumirComResultado(client, citado("Pode remarcar para sexta"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_case: CASE, p_update_event: EVENTO });
+  });
+
+  it("citar o aviso do caso NOVO segue sem id de atualização", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado("Pode vir amanhã"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_case: CASE, p_update_event: null });
+  });
+
+  it("começar com ? vira pergunta ao cliente, sem o ? no texto", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado("? O paciente prefere manhã ou tarde?"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({
+      p_case: CASE,
+      p_action: "need_lead_info",
+      p_body: "O paciente prefere manhã ou tarde?",
+    });
+  });
+
+  it("PERGUNTAR sem UUID também pergunta ao cliente", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado("PERGUNTAR qual escola ele frequenta"));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_action: "need_lead_info", p_body: "qual escola ele frequenta" });
+  });
+
+  it("o comando com UUID continua valendo, mesmo citando outro aviso", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado(`RESPONDER ${CASE} Autorizado`));
+    expect(parametrosDaRpc(rpc)).toMatchObject({ p_case: CASE, p_action: "resolved", p_body: "Autorizado" });
+  });
+
+  it("citação que não casa com nenhum aviso segue ignorada, sem RPC", async () => {
+    const { db: client, rpc } = dbComAviso();
+    const citadoOutro = { ...entry("Pode vir amanhã", "msg-x"), citacao: { idsDoAviso: ["3EB0OUTRA"] } };
+    const result = await consumirComResultado(client, citadoOutro);
+    expect(result).toEqual({ consumed: true, result: null });
+    expect(chamouRespostaDoCaso(rpc)).toBe(false);
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("citação com texto vazio não vira resposta", async () => {
+    const { db: client, rpc } = dbComAviso();
+    await consumirComResultado(client, citado("?   "));
+    expect(chamouRespostaDoCaso(rpc)).toBe(false);
+  });
+
+  it("citação de aviso numa conexão que não envia avisos não resolve caso", async () => {
+    const { db: client, rpc } = dbComAviso();
+    const deVendas = { ...citado("Pode vir amanhã"), channelSessionId: SESSAO_DE_VENDAS };
+    await consumirComResultado(client, deVendas);
+    expect(chamouRespostaDoCaso(rpc)).toBe(false);
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+});

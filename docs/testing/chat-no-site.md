@@ -27,6 +27,7 @@ para criar a conexão. Quando o módulo sair da lista, o C2 passa a ligar pela t
 | C5 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela  | 
 | C6 | Girar a chave | Página com o código antigo mostra "Chat indisponível" ao abrir conversa nova  | 
 | C7 | Pausar o chat | `/chat/<chave>` passa a dar 404/indisponível; retomar volta a abrir  | 
+| C8 | Visitante anônimo atinge o teto de respostas da IA | O visitante manda mensagens até o teto configurado na aba (padrão 20); passado o teto, a IA para de responder e a conversa fica na Inbox para a equipe; quem deixa e-mail sai do teto  | 
 | C9 | Fora do horário e sem agente. (a) Na conexão de C2, sem agente publicado (ou com o único agente pausado): abrir a página de teste, aceitar, enviar uma mensagem. (b) Publicar um agente com horário de atendimento já fechado e um aviso configurado; abrir a janela e aceitar. | (a) Depois do envio aceito, a janela mostra "Recebemos sua mensagem. Nossa equipe responde por aqui.", uma vez só. (b) Aparece o aviso configurado no agente. Sem aviso, aparece "Estamos fora do horário de atendimento. Voltamos às HH:MM de DD/MM (no horário do seu aparelho)." e a conversa segue aberta | Prova o que o visitante lê na tela, não o código. A hora da volta confere com o horário do agente, no fuso do aparelho de teste |
 | C10 | Origem da página. (a) Abrir a página de teste pelo endereço `https://example.com/natal?utm_source=instagram&utm_campaign=natal`, com o código colado, aceitar o aviso e enviar a primeira mensagem. (b) Depois, no mesmo navegador, abrir outra página do site (ou a mesma sem UTM) e enviar a segunda mensagem. | (a) A ficha do contato mostra a origem da página: `utm_source` instagram e `utm_campaign` natal. (b) A segunda mensagem entra na mesma conversa, e a origem da ficha segue a da primeira mensagem | Prova o que o operador lê na ficha, não o código. A leitura desse rótulo na tela ainda não foi medida: é o primeiro item a conferir quando o roteiro rodar. A origem por página não aparece no relatório (só por canal) |
 
@@ -34,4 +35,4 @@ para criar a conexão. Quando o módulo sair da lista, o C2 passa a ligar pela t
 
 - Formatos da janela (painel, embutido, página inteira) — F2-B (Tarefa 9)
 - Feriado nacional e horário próprio do canal — F3 da issue #1333 usa o horário do agente da conexão e deixa ambos de fora (o caso C9 cobre o horário do agente)
-- Teto do visitante anônimo — F4 da issue #1333
+- Pedir o contato ao visitante e o aviso na Central quando o teto é atingido — F4 completa

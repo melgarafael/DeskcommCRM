@@ -16,13 +16,13 @@ export function useConversationNotes(conversationId: string | null) {
   const query = useQuery({
     queryKey,
     enabled: !!conversationId && podeConsultar,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
         return await apiClient.get<{ data: Note[] }>(
-          `/api/v1/conversations/${conversationId}/notes`,
+          `/api/v1/conversations/${conversationId}/notes`, { signal },
         );
       } catch (err) {
-        showApiError(err);
+        if (!signal.aborted) showApiError(err);
         throw err;
       }
     },

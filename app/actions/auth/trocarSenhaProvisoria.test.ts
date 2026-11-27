@@ -185,3 +185,32 @@ describe("trocarSenhaProvisoria — o gate do primeiro acesso", () => {
     expect(h.updateUser).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Issue #4743, item 1 — a MESMA régua do login vale na troca de senha.
+ *
+ * A régua tem três portas (login, troca de senha, aceite de convite); esta é a
+ * que GRAVA a senha. Conta sob bloqueio progressivo não troca por aqui.
+ */
+describe("trocarSenhaProvisoria — régua do bloqueio progressivo (issue #4743)", () => {
+  it("conta trancada no degrau mais alto não troca a senha, e o retorno diz o motivo", async () => {
+    const { registrarFalhaNaRegua } = await import("@/lib/auth/rate-limit");
+    for (let i = 0; i < 10; i++) await registrarFalhaNaRegua("pessoa@empresa.test");
+
+    const res = await trocarSenhaProvisoria(entrada);
+
+    expect(res).toMatchObject({ ok: false, error: "rate_limited" });
+    expect(h.updateUser).not.toHaveBeenCalled();
+    expect(h.redirect).not.toHaveBeenCalled();
+  });
+
+  it("conta livre continua trocando normalmente", async () => {
+    const { liberarBloqueioProgressivo } = await import("@/lib/auth/rate-limit");
+    await liberarBloqueioProgressivo("pessoa@empresa.test");
+
+    const res = await trocarSenhaProvisoria(entrada);
+
+    expect(h.updateUser).toHaveBeenCalledTimes(1);
+    expect(h.redirect).toHaveBeenCalledWith("/app");
+  });
+});
