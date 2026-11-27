@@ -139,6 +139,7 @@ describe("#1613 — a função nasce na migration e no baseline", () => {
     // palavras, e o teste tem de olhar só o SQL que roda.
     const corpo = texto
       .slice(inicio, texto.indexOf("$$;", inicio) + 3)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
       .split("\n")
       .map((linha) => linha.replace(/--.*$/, ""))
       .join("\n");

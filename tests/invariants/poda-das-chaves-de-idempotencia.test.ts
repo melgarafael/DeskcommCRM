@@ -105,40 +105,68 @@ function outraSessao(script: string): Promise<string> {
 
 describe("#1613 — fn_expurgar_chaves_de_idempotencia_vencidas", () => {
   it("a linha que outra sessão está renovando não trava a poda nem é apagada", async () => {
+    // Sinal entre as sessões: a sessão A só fecha a transação (e solta a trava)
+    // DEPOIS que a poda voltou — sem isso, um atraso do teste entre "vi a trava"
+    // e "podei" deixaria A commitar antes e o teste passaria sem trava nenhuma.
+    sql(`
+      create table if not exists public.sinal_do_teste_1613 (pode_soltar boolean not null);
+      delete from public.sinal_do_teste_1613;
+    `);
     // A sessão A renova a k-3 (como a leitura faz com uma reserva vencida) e
-    // segura a trava por 4 s.
+    // segura a trava até o sinal (no máximo ~15 s, para nunca pendurar a suíte).
     const a = outraSessao(`
       begin;
       update public.idempotency_keys set expires_at = now() + interval '60 seconds'
        where organization_id = '${ORG_A}' and key = 'k-3-vencida-ha-2-dias';
-      select pg_sleep(4);
+      do $espera_1613$
+      begin
+        for i in 1..300 loop
+          exit when exists (select 1 from public.sinal_do_teste_1613 where pode_soltar);
+          perform pg_sleep(0.05);
+        end loop;
+      end $espera_1613$;
       commit;
     `);
-    // Espera a trava existir antes de podar.
-    for (let i = 0; i < 40; i++) {
-      const travas = valor(`
-        select count(*) from pg_stat_activity
-         where state = 'active' and query like '%pg_sleep(4)%' and pid <> pg_backend_pid();
+    try {
+      // Espera a trava da sessão A existir antes de podar.
+      let travada = false;
+      for (let i = 0; i < 100 && !travada; i++) {
+        travada =
+          valor(`
+            select count(*) from pg_locks l join pg_stat_activity s on s.pid = l.pid
+             where s.query like '%espera_1613%' and s.pid <> pg_backend_pid()
+               and l.locktype = 'transactionid' and l.granted;
+          `) > 0;
+        if (!travada) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(travada, "a sessão A não chegou a travar a linha").toBe(true);
+      // A poda não espera a trava: com 1 s de `lock_timeout`, esperar seria erro.
+      const apagadas = valor(`
+        set lock_timeout = '1s';
+        set role service_role;
+        select public.fn_expurgar_chaves_de_idempotencia_vencidas(1, 1000);
+        reset role;
       `);
-      if (travas > 0) break;
-      await new Promise((r) => setTimeout(r, 100));
+      expect(apagadas).toBe(1); // só a k-4, da outra organização
+      // A trava AINDA estava lá quando a poda voltou.
+      expect(
+        valor(`
+          select count(*) from pg_stat_activity
+           where query like '%espera_1613%' and state = 'active' and pid <> pg_backend_pid();
+        `),
+      ).toBe(1);
+    } finally {
+      sql(`insert into public.sinal_do_teste_1613 values (true);`);
+      await a;
+      sql(`drop table if exists public.sinal_do_teste_1613;`);
     }
-    // A poda não espera a trava: com 1 s de `lock_timeout`, esperar seria erro.
-    const apagadas = valor(`
-      set lock_timeout = '1s';
-      set role service_role;
-      select public.fn_expurgar_chaves_de_idempotencia_vencidas(1, 1000);
-      reset role;
-    `);
-    expect(apagadas).toBe(1); // só a k-4, da outra organização
-    await a;
     expect(chavesQueRestam()).toEqual([
       "k-1-viva",
       "k-2-vencida-ha-12h",
       "k-3-vencida-ha-2-dias",
       "k-5-lgpd-vencida-ha-2-dias",
     ]);
-  }, 20_000);
+  }, 30_000);
 
   it("CONTROLE POSITIVO: a função existe e devolve inteiro", () => {
     expect(podar("1, 1000")).toBeGreaterThanOrEqual(0);
