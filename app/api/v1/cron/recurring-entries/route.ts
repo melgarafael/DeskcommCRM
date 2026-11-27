@@ -25,6 +25,26 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+/** O teto de linhas por resposta do PostgREST (`max_rows` em `supabase/config.toml`). */
+const PAGINA = 1000;
+// ponytail: 50 páginas = 50 mil moldes ativos; acima disso os que ficam fora da
+// leitura não geram no mês. Um agregado em SQL (RPC, com migration) é o passo
+// seguinte, quando alguma instalação chegar lá.
+const PAGINAS_MAX = 50;
+
+type MoldeRecorrente = {
+  id: string;
+  organization_id: string;
+  account_id: string;
+  account_plan_id: string | null;
+  direction: string;
+  amount_cents: number;
+  currency: string;
+  name: string;
+  day_of_month: number;
+  ends_on: string | null;
+};
+
 /**
  * A data da competência deste mês para um molde.
  *
@@ -65,24 +85,43 @@ async function handle(req: NextRequest): Promise<Response> {
   const ano = agora.getUTCFullYear();
   const mes = agora.getUTCMonth() + 1;
 
-  const { data: moldes, error } = await admin
-    .from("recurring_entries")
-    .select(
-      "id, organization_id, account_id, account_plan_id, direction, amount_cents, currency, name, day_of_month, ends_on",
-    )
-    .eq("is_active", true);
+  // ⚠️ UMA PÁGINA NÃO É A TABELA. O PostgREST devolve no máximo `max_rows`
+  // linhas por resposta (1.000 nesta instalação), então uma leitura só, sem
+  // `.range()`, deixava o molde devido de fora quando havia mais de 1.000
+  // ativos — e a rota respondia 200 com `gerados: 0` como se não houvesse nada
+  // a gerar. O laço é o mesmo desenho de `app/api/v1/ai/jev/route.ts`.
+  const moldes: MoldeRecorrente[] = [];
+  for (let pagina = 0; pagina < PAGINAS_MAX; pagina++) {
+    const { data, error } = await admin
+      .from("recurring_entries")
+      .select(
+        "id, organization_id, account_id, account_plan_id, direction, amount_cents, currency, name, day_of_month, ends_on",
+      )
+      .eq("is_active", true)
+      // Por `id`, a chave primária: ordem total e barata. Ela NÃO isola a
+      // leitura de quem muda no meio — o `id` é aleatório (`gen_random_uuid`),
+      // então um molde que nasce ou é desativado entre duas páginas desloca as
+      // seguintes em uma linha. Repetida, o índice único devolve `23505` ("já
+      // existia"); pulada, a competência que já chegou nasce na rodada
+      // seguinte, se ainda for o mesmo mês.
+      .order("id", { ascending: true })
+      .range(pagina * PAGINA, (pagina + 1) * PAGINA - 1);
 
-  if (error) {
-    logger.error("[recurring-entries] consulta falhou", { error: error.message, requestId });
-    return fail("internal_error", "Falha ao buscar recorrências.", 500, { requestId });
+    if (error) {
+      logger.error("[recurring-entries] consulta falhou", { error: error.message, requestId });
+      return fail("internal_error", "Falha ao buscar recorrências.", 500, { requestId });
+    }
+
+    moldes.push(...((data ?? []) as MoldeRecorrente[]));
+    if ((data ?? []).length < PAGINA) break;
   }
 
   let gerados = 0;
   let jaExistiam = 0;
   let falharam = 0;
 
-  for (const molde of moldes ?? []) {
-    const competencia = competenciaDoMes(ano, mes, molde.day_of_month as number);
+  for (const molde of moldes) {
+    const competencia = competenciaDoMes(ano, mes, molde.day_of_month);
 
     // Só gera quando a data já chegou. Sem isto, no dia 1 nasceriam as doze
     // contas do mês inteiro e a tela de pendências viraria uma lista de coisas
@@ -138,7 +177,7 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   return ok(
-    { moldes: (moldes ?? []).length, gerados, ja_existiam: jaExistiam, falharam },
+    { moldes: moldes.length, gerados, ja_existiam: jaExistiam, falharam },
     { requestId },
   );
 }
