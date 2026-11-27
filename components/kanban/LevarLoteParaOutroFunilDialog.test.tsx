@@ -27,7 +27,7 @@ vi.mock("@/hooks/kanban/useDestinosDeFunil", async (original) => ({
   useDestinosDeFunil: vi.fn(),
 }));
 
-import { useDestinosDeFunil } from "@/hooks/kanban/useDestinosDeFunil";
+import { useDestinosDeFunil, type EtapaDeDestino } from "@/hooks/kanban/useDestinosDeFunil";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { LevarLoteParaOutroFunilDialog } from "./LevarLoteParaOutroFunilDialog";
@@ -36,7 +36,7 @@ function comCliente(ui: ReactNode) {
   return <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>;
 }
 
-function destinos(lista: Array<{ id: string; name: string }>) {
+function destinos(lista: Array<{ id: string; name: string; stages?: EtapaDeDestino[] }>) {
   vi.mocked(useDestinosDeFunil).mockReturnValue({ data: lista } as never);
 }
 
