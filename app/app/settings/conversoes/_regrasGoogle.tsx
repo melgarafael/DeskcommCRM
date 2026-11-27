@@ -347,12 +347,12 @@ export function RegrasDeConversaoGoogle({
                       />
                     </div>
 
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div className="flex flex-col gap-2">
+                    <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+                      <div className="flex min-w-0 flex-col gap-2">
                         <Label htmlFor={`destino-conta-${idDom}`}>{t("Conta de destino")}</Label>
                         <select
                           id={`destino-conta-${idDom}`}
-                          className="rounded-md border bg-background p-2 text-sm"
+                          className="w-full min-w-0 rounded-md border bg-background p-2 text-sm"
                           value={r.destino}
                           onChange={(ev) =>
                             mudarDestino(r.chave, {
@@ -368,7 +368,7 @@ export function RegrasDeConversaoGoogle({
                       </div>
                       {r.destino === "especifica" && (
                         <>
-                          <div className="flex flex-col gap-2">
+                          <div className="flex min-w-0 flex-col gap-2">
                             <Label htmlFor={`conta-${idDom}`}>{t("ID da conta de destino")}</Label>
                             <Input
                               id={`conta-${idDom}`}
@@ -387,7 +387,7 @@ export function RegrasDeConversaoGoogle({
                               }}
                             />
                           </div>
-                          <div className="flex flex-col gap-2">
+                          <div className="flex min-w-0 flex-col gap-2">
                             <Label htmlFor={`mcc-${idDom}`}>
                               {t("ID da conta administradora (MCC, opcional)")}
                             </Label>
@@ -414,8 +414,8 @@ export function RegrasDeConversaoGoogle({
                     </div>
 
                     {r.enabled && (
-                      <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <div className="flex flex-col gap-2">
+                      <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+                        <div className="flex min-w-0 flex-col gap-2">
                           <Label htmlFor={`nome-${idDom}`}>{t("Nome da conversão")}</Label>
                           <Input
                             id={`nome-${idDom}`}
@@ -425,12 +425,13 @@ export function RegrasDeConversaoGoogle({
                             placeholder={t("ex.: Lead qualificado")}
                           />
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex min-w-0 flex-col gap-2">
                           <Label htmlFor={`acao-${idDom}`}>{t("Ação de conversão (ID)")}</Label>
-                          <div className="flex gap-2">
+                          <div className="flex flex-col gap-2 sm:flex-row">
                             <Input
                               id={`acao-${idDom}`}
                               inputMode="numeric"
+                              className="min-w-0 flex-1"
                               value={r.googleActionId}
                               onChange={(ev) =>
                                 mudar(r.chave, {
@@ -440,6 +441,7 @@ export function RegrasDeConversaoGoogle({
                               placeholder="123456789"
                             />
                             <CriarAcaoNoGoogle
+                              className="w-full sm:w-auto"
                               idioma={idioma}
                               habilitado={
                                 podeCriarAcao &&
@@ -470,13 +472,13 @@ export function RegrasDeConversaoGoogle({
                             />
                           </div>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex min-w-0 flex-col gap-2">
                           <Label htmlFor={`categoria-${idDom}`}>
                             {t("Categoria da conversão")}
                           </Label>
                           <select
                             id={`categoria-${idDom}`}
-                            className="rounded-md border bg-background p-2 text-sm"
+                            className="w-full min-w-0 rounded-md border bg-background p-2 text-sm"
                             value={r.category}
                             onChange={(ev) =>
                               mudar(r.chave, { category: ev.target.value as CategoriaDeConversao })
@@ -492,11 +494,11 @@ export function RegrasDeConversaoGoogle({
                             {t("É como o Google agrupa a conversão nos relatórios e nos lances.")}
                           </p>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex min-w-0 flex-col gap-2">
                           <Label htmlFor={`canal-${idDom}`}>{t("Canal de entrada")}</Label>
                           <select
                             id={`canal-${idDom}`}
-                            className="rounded-md border bg-background p-2 text-sm"
+                            className="w-full min-w-0 rounded-md border bg-background p-2 text-sm"
                             value={r.channel}
                             onChange={(ev) =>
                               mudar(r.chave, { channel: ev.target.value as CanalDeEntrada })
