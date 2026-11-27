@@ -58,14 +58,15 @@ import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
-import {
-  decideMotivoDaPerda,
-  recusaDeMotivoDaPerdaPeloBanco,
-} from "@/lib/leads/motivo-da-perda";
+import { decideMotivoDaPerda, recusaDeMotivoDaPerdaPeloBanco } from "@/lib/leads/motivo-da-perda";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 import { motivosDaCategoria } from "@/lib/leads/motivos-de-perda-do-funil";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
-import { ocultarProvaMetaNaResposta, removerProvaMetaLeadSubmitted } from "@/lib/leads/prova-meta-lead-submitted";
+import {
+  ocultarProvaMetaNaResposta,
+  removerProvaMetaLeadSubmitted,
+} from "@/lib/leads/prova-meta-lead-submitted";
 import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
 import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 
@@ -94,7 +95,10 @@ async function ownerPatchOrThrow(
       "validation_failed",
       undefined,
       ctx.requestId,
-      traduzir("Um lead tem um dono: informe owner_user_id OU owner_agent_id.", ctx.idioma ?? "pt-BR"),
+      traduzir(
+        "Um lead tem um dono: informe owner_user_id OU owner_agent_id.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
   if (!result.patch) return null;
@@ -175,7 +179,11 @@ async function ownerPatchOrThrow(
  * que o id existe noutro lugar. E responde ANTES do INSERT, para que um uuid
  * inexistente não vire 500 com a mensagem da FK.
  */
-async function contatoDaOrgOrThrow(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
+async function contatoDaOrgOrThrow(
+  supabase: SB,
+  ctx: HandlerCtx,
+  contactId: string,
+): Promise<void> {
   const { data: contato, error: contatoErr } = await supabase
     .from("contacts")
     .select("id, is_personal")
@@ -286,6 +294,12 @@ function recusaDaGuardaDoBanco(
       traduzir("Responsável não é um atendente ativo desta organização.", ctx.idioma ?? "pt-BR"),
     );
   }
+  // Uma cópia aberta por negócio de origem e funil (#5281): criar ou editar o
+  // card que viraria a segunda é recusa de negócio, não 500.
+  const copiaAberta = recusaDeCopiaAbertaPeloBanco(erro, ctx.idioma);
+  if (copiaAberta) {
+    return new ApiError(409, copiaAberta.codigo, undefined, ctx.requestId, copiaAberta.mensagem);
+  }
   // Só a policy de `crm_leads` (a régua mora no predicado); o 42501 de GRANT
   // faltando continua 500 com a mensagem do banco.
   if (ehRecusaDaVisibilidadeDoFunil(erro)) {
@@ -314,7 +328,11 @@ function actorAuditPayload(actor: Actor): {
     return {
       actorUserId: null,
       // A marca HERDADA (doc 301 = B): a regra rodou por causa da IA no assistido.
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id, ...marcaDoAssistido(actor) },
+      metadataActor: {
+        actor_type: "webhook_source",
+        actor_id: actor.id,
+        ...marcaDoAssistido(actor),
+      },
     };
   }
   // TOKEN DE SERVIDOR é caso próprio, e não o `else` de `ai_agent`: sem esta
@@ -432,7 +450,8 @@ export async function listLeadsHandler(
       .from("crm_pipelines")
       .select("id, settings")
       .eq("organization_id", ctx.organization_id);
-    if (funisErr) throw new ApiError(500, "internal_error", undefined, ctx.requestId, funisErr.message);
+    if (funisErr)
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, funisErr.message);
     const escopados = q.pipeline_id
       ? (funis ?? []).filter((f) => f.id === q.pipeline_id)
       : (funis ?? []);
@@ -486,12 +505,19 @@ export interface CountLeadsQuery {
   owner_user_id?: string;
   /** Só os negócios deste contato — o escopo do turno do agente, igual à listagem. */
   contact_id?: string;
+  /**
+   * Devolve também a contagem de CADA etapa do funil (`pipeline_id` obrigatório,
+   * `stage_id` não combina): uma chamada no lugar de uma por etapa.
+   */
+  por_etapa?: boolean;
 }
 
 export interface CountLeadsResult {
   total: number;
   /** Só quando a consulta não filtra por status: o mesmo total, aberto por status. */
   by_status?: { open: number; won: number; lost: number };
+  /** Só com `por_etapa`: uma linha por etapa do funil, na ordem do quadro. Só ids e números. */
+  por_etapa?: Array<{ stage_id: string; total: number }>;
 }
 
 /**
@@ -513,15 +539,28 @@ export async function countLeadsHandler(
   ctx: HandlerCtx,
   q: CountLeadsQuery,
 ): Promise<CountLeadsResult> {
+  if (q.por_etapa && (!q.pipeline_id || q.stage_id)) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      undefined,
+      ctx.requestId,
+      traduzir("por_etapa exige pipeline_id e não combina com stage_id.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+
   const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
 
-  const contar = async (status?: "open" | "won" | "lost"): Promise<number> => {
+  const contar = async (
+    status?: "open" | "won" | "lost",
+    etapa: string | undefined = q.stage_id,
+  ): Promise<number> => {
     let query = supabase
       .from("crm_leads")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", ctx.organization_id);
     if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
-    if (q.stage_id) query = query.eq("stage_id", q.stage_id);
+    if (etapa) query = query.eq("stage_id", etapa);
     if (status) query = query.eq("status", status);
     if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
     if (q.contact_id) query = query.eq("contact_id", q.contact_id);
@@ -535,15 +574,47 @@ export async function countLeadsHandler(
     return count ?? 0;
   };
 
-  if (q.status) return { total: await contar(q.status) };
+  // As etapas vêm do funil DA ORGANIZAÇÃO (`organization_id` na consulta): funil
+  // de outra empresa devolve lista vazia, nunca contagem alheia.
+  const etapas: string[] = [];
+  if (q.por_etapa) {
+    const { data, error } = await supabase
+      .from("crm_stages")
+      .select("id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("pipeline_id", q.pipeline_id as string)
+      // `id` desempata: etapas podem repetir `position` (medido num funil real, duas
+      // etapas com 5000), e sem desempate a ordem mudaria de uma chamada para outra.
+      .order("position", { ascending: true })
+      .order("id", { ascending: true });
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    for (const e of (data ?? []) as Array<{ id: string }>) etapas.push(e.id);
+  }
+  const porEtapa = (status?: "open" | "won" | "lost") =>
+    Promise.all(
+      etapas.map(async (stage_id) => ({ stage_id, total: await contar(status, stage_id) })),
+    );
 
-  const [total, open, won, lost] = await Promise.all([
+  if (q.status) {
+    const [total, linhas] = await Promise.all([
+      contar(q.status),
+      q.por_etapa ? porEtapa(q.status) : Promise.resolve(undefined),
+    ]);
+    return linhas ? { total, por_etapa: linhas } : { total };
+  }
+
+  const [total, open, won, lost, linhas] = await Promise.all([
     contar(),
     contar("open"),
     contar("won"),
     contar("lost"),
+    q.por_etapa ? porEtapa() : Promise.resolve(undefined),
   ]);
-  return { total, by_status: { open, won, lost } };
+  return linhas
+    ? { total, by_status: { open, won, lost }, por_etapa: linhas }
+    : { total, by_status: { open, won, lost } };
 }
 
 export async function getLeadHandler(
@@ -581,7 +652,13 @@ export async function getLeadHandler(
   // Negócio de pessoal some até por link direto (spec 21, etapa 12): o mesmo
   // 404 de "não existe", para não revelar que ele está lá — espelha o 404 da
   // conversa de pessoal em `conversations/_handler.ts`.
-  if (await contatoEfetivoEhPessoal(supabase, ctx, (data as { contact_id?: string | null }).contact_id)) {
+  if (
+    await contatoEfetivoEhPessoal(
+      supabase,
+      ctx,
+      (data as { contact_id?: string | null }).contact_id,
+    )
+  ) {
     throw new ApiError(
       404,
       "not_found",
@@ -596,6 +673,11 @@ export async function getLeadHandler(
 // ---------------------------------------------------------------------------
 // create
 // ---------------------------------------------------------------------------
+
+export type PersistirCriacaoDeLead = (linha: Record<string, unknown>) => Promise<{
+  data: Record<string, unknown> | null;
+  error: { code?: string; message: string } | null;
+}>;
 
 export async function createLeadHandler(
   supabase: SB,
@@ -674,6 +756,8 @@ export async function createLeadHandler(
      * do formulário (a mesma decisão do #2295 e do #2730).
      */
     manterForaDaLista?: boolean;
+    /** O clone usa a mesma linha preparada aqui, na transação da transferência. */
+    persistir?: PersistirCriacaoDeLead;
   } = {},
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -752,7 +836,7 @@ export async function createLeadHandler(
       ? {}
       : input.custom_fields_da_origem !== undefined
         ? camposQueMudaram(input.custom_fields, input.custom_fields_da_origem)
-        : input.custom_fields ?? {};
+        : (input.custom_fields ?? {});
 
   // ── O PADRÃO (#2730) — o valor do campo tem de CASAR antes de nascer ─────
   //
@@ -855,7 +939,11 @@ export async function createLeadHandler(
 
   // Nascer com dono e sem owner_kind é drift silencioso (o CHECK aceita kind
   // null): o lead teria dono e sumiria do filtro e das métricas por kind.
-  const semDono = { owner_user_id: null, owner_agent_id: null, owner_kind: null } satisfies OwnerPatch;
+  const semDono = {
+    owner_user_id: null,
+    owner_agent_id: null,
+    owner_kind: null,
+  } satisfies OwnerPatch;
   let donoHerdadoDescartado = false;
   let ownerPatch: OwnerPatch;
   try {
@@ -881,43 +969,47 @@ export async function createLeadHandler(
   // Sentry) em vez de lançar.
   const currency = input.currency ?? (await moedaDaOrganizacao(supabase, ctx.organization_id));
 
-  const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? null);
+  const serviceOrigin =
+    ctx.serviceOrigin ??
+    (await observeServiceOrigin(
+      createAdminClient(),
+      ctx.organization_id,
+      input.contact_id ?? null,
+    ));
   await guardServiceEffect();
-  const { data: lead, error: insErr } = await supabase
-    .from("crm_leads")
-    .insert({
-      organization_id: ctx.organization_id,
-      pipeline_id: input.pipeline_id,
-      stage_id: input.stage_id,
-      title: input.title,
-      description: input.description ?? null,
-      contact_id: input.contact_id ?? null,
-      value_cents: input.value_cents ?? null,
-      // O VALOR RECORRENTE — as três colunas da fatia 1 da #3602, SEMPRE
-      // nomeadas (nulas quando o negócio não tem recorrência). `value_cents`
-      // acima segue sendo o valor ÚNICO: nada é somado, e é por isso que o card
-      // consegue escrever "R$ 3.000 + R$ 500/mês". A coerência do trio
-      // (recorrente nulo ⇒ periodicidade e duração nulas; recorrente sem
-      // periodicidade ⇒ mensal) é da régua pura, a MESMA que o PATCH usa.
-      ...recorrenciaParaGravar(input),
-      currency,
-      ...ownerPatch,
-      assigned_at:
-        ownerPatch.owner_kind === null ? null : new Date().toISOString(),
-      expected_close_date: input.expected_close_date ?? null,
-      tags: input.tags ?? [],
-      source: input.source,
-      source_metadata: removerProvaMetaLeadSubmitted(input.source_metadata),
-      external_id: input.external_id ?? null,
-      webhook_source_id: input.webhook_source_id ?? null,
-      custom_fields: input.custom_fields ?? {},
-      retomado_de_lead_id: input.retomado_de_lead_id ?? null,
-      status: "open",
-      position_in_stage: nextPos,
-      created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
-    })
-    .select(LEAD_COLS)
-    .single();
+  const linha = {
+    organization_id: ctx.organization_id,
+    pipeline_id: input.pipeline_id,
+    stage_id: input.stage_id,
+    title: input.title,
+    description: input.description ?? null,
+    contact_id: input.contact_id ?? null,
+    value_cents: input.value_cents ?? null,
+    // O VALOR RECORRENTE — as três colunas da fatia 1 da #3602, SEMPRE
+    // nomeadas (nulas quando o negócio não tem recorrência). `value_cents`
+    // acima segue sendo o valor ÚNICO: nada é somado, e é por isso que o card
+    // consegue escrever "R$ 3.000 + R$ 500/mês". A coerência do trio
+    // (recorrente nulo ⇒ periodicidade e duração nulas; recorrente sem
+    // periodicidade ⇒ mensal) é da régua pura, a MESMA que o PATCH usa.
+    ...recorrenciaParaGravar(input),
+    currency,
+    ...ownerPatch,
+    assigned_at: ownerPatch.owner_kind === null ? null : new Date().toISOString(),
+    expected_close_date: input.expected_close_date ?? null,
+    tags: input.tags ?? [],
+    source: input.source,
+    source_metadata: removerProvaMetaLeadSubmitted(input.source_metadata),
+    external_id: input.external_id ?? null,
+    webhook_source_id: input.webhook_source_id ?? null,
+    custom_fields: input.custom_fields ?? {},
+    retomado_de_lead_id: input.retomado_de_lead_id ?? null,
+    status: "open",
+    position_in_stage: nextPos,
+    created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+  };
+  const { data: lead, error: insErr } = opcoes.persistir
+    ? await opcoes.persistir(linha)
+    : await supabase.from("crm_leads").insert(linha).select(LEAD_COLS).single();
 
   const recusaNoInsert = recusaDaGuardaDoBanco(ctx, insErr);
   if (recusaNoInsert) throw recusaNoInsert;
@@ -968,7 +1060,8 @@ export async function createLeadHandler(
       sourceModule: "crm",
       sourceId: leadId,
       actor: ctx.actor,
-      reason: "Nasceu sem responsável: quem cuidava do negócio de origem não atende mais nesta empresa",
+      reason:
+        "Nasceu sem responsável: quem cuidava do negócio de origem não atende mais nesta empresa",
       payload: { fields: ["owner_user_id", "owner_agent_id"], motivo: "dono_da_origem_inativo" },
     });
     if (!atividade.ok) {
@@ -1101,7 +1194,10 @@ export async function updateLeadHandler(
       const recusas = recusasDePadrao(
         defsDoPadraoDoFunil(settingsDaEdicao, "negocio"),
         // O `value` canônico já aplicado é o que a próxima régua lê.
-        camposQueMudaram(input.custom_fields, (existing as { custom_fields?: unknown }).custom_fields),
+        camposQueMudaram(
+          input.custom_fields,
+          (existing as { custom_fields?: unknown }).custom_fields,
+        ),
         testaComPrazo,
       );
       if (recusas.length > 0) throw erroDePadrao(recusas, ctx.requestId, ctx.idioma);
@@ -1119,9 +1215,7 @@ export async function updateLeadHandler(
     supabase,
     ctx,
     (input.contact_id ?? (existing as { contact_id?: string | null }).contact_id) as
-      | string
-      | null
-      | undefined,
+      string | null | undefined,
   );
 
   // ── AS ETIQUETAS DO NEGÓCIO (#4666) ────────────────────────────────────────
@@ -1138,7 +1232,16 @@ export async function updateLeadHandler(
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
   if (input.contact_id !== undefined) patch.contact_id = input.contact_id;
-  if (input.value_cents !== undefined) patch.value_cents = input.value_cents;
+  // Com venda registrada (`valor_pelas_vendas = true`), `value_cents` é derivado
+  // pelo gatilho das vendas (migration 9450) e não pode ser sobrescrito por
+  // PATCH/MCP/API. Ignorar preserva o restante da edição (ex.: ficha aberta
+  // antes da venda ser registrada).
+  if (
+    input.value_cents !== undefined &&
+    !(existing as { valor_pelas_vendas?: boolean }).valor_pelas_vendas
+  ) {
+    patch.value_cents = input.value_cents;
+  }
   // O RECORRENTE SÓ É TOCADO quando a requisição o menciona (fatia 1 da #3602):
   // um PATCH de título que carimbasse `null` nas três apagaria a mensalidade do
   // negócio em silêncio. E, tocado, vai o TRIO coerente — mandar só
@@ -1201,9 +1304,15 @@ export async function updateLeadHandler(
   // O filtro entra AQUI TAMBÉM, e não só no SELECT acima: entre ler e escrever
   // há uma janela, e defesa que depende de uma leitura anterior é defesa que
   // some quando alguém reordena o código.
-  const tagServiceOrigin = etiquetas !== undefined
-    ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
-    : null;
+  const tagServiceOrigin =
+    etiquetas !== undefined
+      ? (ctx.serviceOrigin ??
+        (await observeServiceOrigin(
+          createAdminClient(),
+          ctx.organization_id,
+          input.contact_id ?? existing.contact_id,
+        )))
+      : null;
   await guardServiceEffect();
   // Doc 301 = B: a troca de responsável vira `lead.assigned` pelo GATILHO, e o
   // gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
@@ -1266,7 +1375,9 @@ export async function updateLeadHandler(
     if (settingsDaEdicao !== undefined) {
       try {
         const settingsDaLoja =
-          settingsDaEdicao !== null && typeof settingsDaEdicao === "object" && !Array.isArray(settingsDaEdicao)
+          settingsDaEdicao !== null &&
+          typeof settingsDaEdicao === "object" &&
+          !Array.isArray(settingsDaEdicao)
             ? (settingsDaEdicao as Record<string, unknown>)
             : null;
         const armacao = await armarProximaRevisaoNoCard({
@@ -1332,7 +1443,9 @@ export async function updateLeadHandler(
   const camposDaAuditoria: Record<string, unknown> = { ...patch };
   if (input.custom_fields !== undefined) {
     const anteriores =
-      existing.custom_fields && typeof existing.custom_fields === "object" && !Array.isArray(existing.custom_fields)
+      existing.custom_fields &&
+      typeof existing.custom_fields === "object" &&
+      !Array.isArray(existing.custom_fields)
         ? (existing.custom_fields as Record<string, unknown>)
         : {};
     camposDaAuditoria.custom_fields = { ...anteriores, ...input.custom_fields };
@@ -1351,42 +1464,45 @@ export async function updateLeadHandler(
   // dossie e clicar Salvar geraria "Dados do negocio alterados" com a lista
   // vazia — ruido na timeline exatamente na superficie que promete contar a
   // vida do negocio.
-  const atividadeEdicao = fields.length === 0 ? { ok: true as const } : await emitLeadActivity(supabase, {
-    organizationId: existing.organization_id,
-    leadId,
-    contactId: (updated as { contact_id?: string | null }).contact_id ?? null,
-    type: "lead_edited",
-    sourceModule: "crm",
-    sourceId: leadId,
-    actor: ctx.actor,
-    // ⚠️ O REASON NOMEIA OS CAMPOS, NUNCA OS VALORES. Se você veio aqui para
-    // deixar a timeline "mais informativa" pondo o antes-e-depois — pare: neste
-    // produto o TÍTULO É O NOME DO CLIENTE ("Carlos — Clínica Vida Odonto"), e
-    // `custom_fields` é dado arbitrário do tenant, sem limite conhecido. O
-    // reason é RENDERIZADO NA TELA e vai junto em captura, exportação e ticket
-    // de suporte; o §9 proíbe PII nova em log, reason ou evidence.
-    //
-    // O VALOR DO TÍTULO, DA DESCRIÇÃO, DAS TAGS E DE `custom_fields` NÃO é
-    // guardado em lugar nenhum — nem aqui, nem no `api_audit_log`. Pôr essa
-    // PII lá ficaria fora do alcance da proteção: o audit é append-only
-    // (migration 0258) e a anonimização da LGPD (lib/lgpd/cascata.ts) não o
-    // reescreve — a cascata só insere a linha `lgpd.redact_executed`
-    // (migration 0019, passo 8). O que sobra é o expurgo por retenção (L-10:
-    // 5 anos, migration 0167).
-    //
-    // ANTES-E-DEPOIS SÓ DOS CAMPOS TIPADOS SEM PII vai para o audit desde a
-    // #1755: `value_cents`, `currency`, `owner_user_id`, `owner_agent_id` e
-    // `expected_close_date`, pela lista branca de `lib/leads/valores-audit.ts`
-    // — o mesmo par `{ antes, depois }` que `ai.budget_limit_changed` já grava
-    // e a ida e volta que `lead.moved` já grava em
-    // `from_stage_id`/`to_stage_id`.
-    //
-    // NÃO confunda com a atividade de autorização vencida (wave 4), que mostra
-    // antes-e-depois DE PROPÓSITO: lá o texto é a proposta do PRÓPRIO AGENTE,
-    // escrita por máquina. A origem do texto é que decide, não a forma da frase.
-    reason: `Alterou ${listaLegivel(fields)}`,
-    payload: { fields },
-  });
+  const atividadeEdicao =
+    fields.length === 0
+      ? { ok: true as const }
+      : await emitLeadActivity(supabase, {
+          organizationId: existing.organization_id,
+          leadId,
+          contactId: (updated as { contact_id?: string | null }).contact_id ?? null,
+          type: "lead_edited",
+          sourceModule: "crm",
+          sourceId: leadId,
+          actor: ctx.actor,
+          // ⚠️ O REASON NOMEIA OS CAMPOS, NUNCA OS VALORES. Se você veio aqui para
+          // deixar a timeline "mais informativa" pondo o antes-e-depois — pare: neste
+          // produto o TÍTULO É O NOME DO CLIENTE ("Carlos — Clínica Vida Odonto"), e
+          // `custom_fields` é dado arbitrário do tenant, sem limite conhecido. O
+          // reason é RENDERIZADO NA TELA e vai junto em captura, exportação e ticket
+          // de suporte; o §9 proíbe PII nova em log, reason ou evidence.
+          //
+          // O VALOR DO TÍTULO, DA DESCRIÇÃO, DAS TAGS E DE `custom_fields` NÃO é
+          // guardado em lugar nenhum — nem aqui, nem no `api_audit_log`. Pôr essa
+          // PII lá ficaria fora do alcance da proteção: o audit é append-only
+          // (migration 0258) e a anonimização da LGPD (lib/lgpd/cascata.ts) não o
+          // reescreve — a cascata só insere a linha `lgpd.redact_executed`
+          // (migration 0019, passo 8). O que sobra é o expurgo por retenção (L-10:
+          // 5 anos, migration 0167).
+          //
+          // ANTES-E-DEPOIS SÓ DOS CAMPOS TIPADOS SEM PII vai para o audit desde a
+          // #1755: `value_cents`, `currency`, `owner_user_id`, `owner_agent_id` e
+          // `expected_close_date`, pela lista branca de `lib/leads/valores-audit.ts`
+          // — o mesmo par `{ antes, depois }` que `ai.budget_limit_changed` já grava
+          // e a ida e volta que `lead.moved` já grava em
+          // `from_stage_id`/`to_stage_id`.
+          //
+          // NÃO confunda com a atividade de autorização vencida (wave 4), que mostra
+          // antes-e-depois DE PROPÓSITO: lá o texto é a proposta do PRÓPRIO AGENTE,
+          // escrita por máquina. A origem do texto é que decide, não a forma da frase.
+          reason: `Alterou ${listaLegivel(fields)}`,
+          payload: { fields },
+        });
   if (!atividadeEdicao.ok) {
     // Rastro de mutação já ocorrida: falha BAIXO, mas contada (ver
     // lib/leads/activity-write-failure.ts).
@@ -1543,11 +1659,7 @@ export async function moveLeadHandler(
     );
   }
   // Mover negócio de pessoal é escrita para fora da operação (spec 21, etapa 12).
-  await recusaPessoalNaEscrita(
-    supabase,
-    ctx,
-    (lead as { contact_id?: string | null }).contact_id,
-  );
+  await recusaPessoalNaEscrita(supabase, ctx, (lead as { contact_id?: string | null }).contact_id);
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
@@ -1704,7 +1816,9 @@ export async function moveLeadHandler(
     throw new ApiError(422, veredito.codigo, undefined, ctx.requestId, veredito.mensagem);
   }
 
-  const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
+  const serviceOrigin =
+    ctx.serviceOrigin ??
+    (await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id));
   const nowIso = new Date().toISOString();
   await guardServiceEffect();
   // Doc 301 = B: etapa de ganho/perda vira `lead.won`/`lead.lost` pelo GATILHO,
@@ -1733,6 +1847,11 @@ export async function moveLeadHandler(
     const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, ctx.idioma);
     if (recusa) {
       throw new ApiError(422, recusa.codigo, undefined, ctx.requestId, recusa.mensagem);
+    }
+    // Reabrir/mover a cópia quando o negócio já tem outra aberta no funil (#5281).
+    const copiaAberta = recusaDeCopiaAbertaPeloBanco(updErr, ctx.idioma);
+    if (copiaAberta) {
+      throw new ApiError(409, copiaAberta.codigo, undefined, ctx.requestId, copiaAberta.mensagem);
     }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
@@ -1856,12 +1975,14 @@ export async function moveLeadHandler(
         .order("performed_at", { ascending: false })
         .limit(5);
 
-      const anteriores = ((historico ?? []) as Array<{
-        actor_kind: string | null;
-        actor_agent_id: string | null;
-        payload: { from_stage_id?: string; to_stage_id?: string } | null;
-        performed_at: string;
-      }>)
+      const anteriores = (
+        (historico ?? []) as Array<{
+          actor_kind: string | null;
+          actor_agent_id: string | null;
+          payload: { from_stage_id?: string; to_stage_id?: string } | null;
+          performed_at: string;
+        }>
+      )
         // A atividade que ACABOU de ser emitida está aqui: descartá-la é o que
         // impede o movimento de se comparar consigo mesmo e virar "correção".
         .filter((h) => h.performed_at < new Date(Date.now() - 500).toISOString())
@@ -1965,7 +2086,6 @@ export async function moveLeadHandler(
   return ocultarProvaMetaNaResposta(finalLead);
 }
 
-
 export interface RetomarLeadInput {
   /**
    * A etapa da NOVA tentativa — a que quem arrastou tentou usar. Sem ela, a
@@ -2012,7 +2132,13 @@ export async function retomarLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
   }
   if (!origem || origem.organization_id !== ctx.organization_id) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, traduzir("Lead não encontrado.", idioma));
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", idioma),
+    );
   }
   const origemTipada = origem as {
     id: string;
@@ -2151,8 +2277,8 @@ export async function retomarLeadHandler(
     title: origemTipada.title,
     contact_id: origemTipada.contact_id ?? null,
     source: "retomada",
-    tags: copia("tags") ? origemTipada.tags ?? [] : [],
-    custom_fields: copia("custom_fields") ? origemTipada.custom_fields ?? {} : {},
+    tags: copia("tags") ? (origemTipada.tags ?? []) : [],
+    custom_fields: copia("custom_fields") ? (origemTipada.custom_fields ?? {}) : {},
     custom_fields_da_origem: origemTipada.custom_fields ?? {},
     retomado_de_lead_id: origemTipada.id,
     // O ponteiro da coluna é a cadeia; este registro guarda TAMBÉM o desfecho

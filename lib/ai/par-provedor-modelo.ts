@@ -47,7 +47,7 @@ export type ResultadoDoPar =
   | { valido: false; motivo: string };
 
 /** Provedores que servem QUALQUER id: o prefixo do fabricante é parte do endereço. */
-const AGREGADORES: ReadonlySet<string> = new Set(["openrouter", "requesty", "custom"]);
+const AGREGADORES: ReadonlySet<string> = new Set(["openrouter", "requesty", "aimlapi", "custom"]);
 
 /**
  * Os provedores diretos, DERIVADOS de `./pontos/provedores.ts` e nunca escritos

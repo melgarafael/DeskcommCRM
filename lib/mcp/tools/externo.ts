@@ -50,6 +50,7 @@ import type {
   ServidorDoAgenteProntoNoTurno,
 } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { parametroDoDesafio } from "@/lib/mcp/servidor-externo/do-agente/oauth";
+import { prazoDoLinkEmMinutos } from "@/lib/mcp/servidor-externo/do-agente/prazo-do-link";
 import { TIMEOUT_DA_CHAMADA_NO_TURNO_MS } from "@/lib/mcp/servidor-externo/tempos-do-turno";
 import {
   nomeDaFerramentaDeAcesso,
@@ -341,11 +342,14 @@ export function ferramentaDeSolicitarAcesso(
   if (!pedirAcesso) return null;
   const { servidor } = montado;
   const jaAutorizado = montado.estado === "pronto";
+  // #5126: o prazo do link é do SERVIDOR — o texto que o modelo repassa ao
+  // cliente não pode dizer "10 minutos" quando o cadastro permite 24 horas.
+  const prazoDoLink = prazoDoLinkEmMinutos(servidor.oauth?.prazo_do_link_minutos);
   return {
     name: nomeDaFerramentaDeAcesso(servidor.slug),
     description: jaAutorizado
       ? `Gera um link para o cliente AMPLIAR o acesso que deu a "${servidor.nome}" (use só quando uma ferramenta desse servidor disser que o acesso não cobre a ação). Envie o link ao cliente e explique que ele vai entrar na conta dele em "${servidor.nome}".`
-      : `O cliente ainda não autorizou o acesso à conta dele em "${servidor.nome}", e por isso as ferramentas desse servidor não estão disponíveis. Esta ferramenta gera um link de autorização (vale 10 minutos, uso único). Envie o link ao cliente, explique que ele vai entrar na conta dele em "${servidor.nome}" para autorizar, e que depois ele pode voltar a esta conversa.`,
+      : `O cliente ainda não autorizou o acesso à conta dele em "${servidor.nome}", e por isso as ferramentas desse servidor não estão disponíveis. Esta ferramenta gera um link de autorização (vale ${prazoDoLink} minutos, uso único). Envie o link ao cliente, explique que ele vai entrar na conta dele em "${servidor.nome}" para autorizar, e que depois ele pode voltar a esta conversa.`,
     inputSchema: {
       escopos: z.array(z.string().max(128)).max(20).optional(),
     },
@@ -359,7 +363,7 @@ export function ferramentaDeSolicitarAcesso(
         return { texto: `Não foi possível gerar o link de autorização de "${servidor.nome}" agora. Siga a conversa sem esse acesso.` };
       }
       return {
-        texto: `Link de autorização (vale 10 minutos, uso único): ${pedido.link}`,
+        texto: `Link de autorização (vale ${Math.max(1, Math.round((pedido.expiraEm.getTime() - Date.now()) / 60_000))} minutos, uso único): ${pedido.link}`,
         dados: { link: pedido.link, expira_em: pedido.expiraEm.toISOString() },
       };
     },

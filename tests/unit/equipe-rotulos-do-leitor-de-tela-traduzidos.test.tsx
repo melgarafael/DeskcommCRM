@@ -105,4 +105,14 @@ describe("Equipe › Atendentes no leitor de tela", () => {
     noIdioma("pt-BR", <RoutingCard canManage />);
     expect(screen.getByRole("combobox", { name: "Modo de roteamento" })).toBeInTheDocument();
   });
+
+  // #5252 — o botão de salvar do RoutingCard estava solto em português.
+  it("em espanhol, o botão do cartão Modo de roteamento se chama Guardar; em português, Salvar", () => {
+    noIdioma("es", <RoutingCard canManage />);
+    expect(screen.getByRole("button", { name: "Guardar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
+    cleanup();
+    noIdioma("pt-BR", <RoutingCard canManage />);
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeInTheDocument();
+  });
 });

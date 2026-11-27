@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { logger } from "@/lib/logger";
+
 import { decidirElegibilidadeDaConversaViaSupabase } from "./consulta-supabase";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -216,6 +218,48 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
       ttlMs: TTL,
     });
     expect(d).toBeNull();
+  });
+
+  it("canal com teto + contagem que falha: o gate passa e o aviso cai no logger do projeto", async () => {
+    // A conversa vem do embed; a contagem (`from("messages")`) devolve erro.
+    const conversa = {
+      select: () => conversa,
+      eq: () => conversa,
+      maybeSingle: () =>
+        Promise.resolve({
+          data: linha({
+            contacts: { force_human: false, ai_authorized_at: null, phone_number: null, email: null },
+            channel_sessions: { metadata: {}, provider: "webchat" },
+          }),
+          error: null,
+        }),
+    };
+    const contagem = {
+      select: () => contagem,
+      eq: () => contagem,
+      neq: () => Promise.resolve({ count: null, error: { message: "banco fora" } }),
+    };
+    const admin = {
+      from: vi.fn((t: string) => (t === "messages" ? contagem : conversa)),
+    } as never;
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const d = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+        organizationId: ORG,
+        conversationId: CONV,
+        agora: AGORA,
+        ttlMs: TTL,
+      });
+      expect(d).toMatchObject({ permite: true });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[1]).toMatchObject({
+        organization_id: ORG,
+        conversation_id: CONV,
+        erro: "banco fora",
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("erro de banco → LANÇA (fail-closed: o chamador trata como 'não responder')", async () => {

@@ -294,7 +294,8 @@ function motivoDoAgenteExterno(texto: string | null | undefined): HandoffReason 
   return codigo === "suspected_optout" ||
     codigo === "caso_escalado" ||
     codigo === "verificacao_manual" ||
-    codigo === "restricao_comercial"
+    codigo === "restricao_comercial" ||
+    codigo === "teto_do_visitante_anonimo"
     ? "low_confidence"
     : codigo;
 }

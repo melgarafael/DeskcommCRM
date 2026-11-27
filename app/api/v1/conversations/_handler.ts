@@ -818,3 +818,85 @@ export async function markConversationReadHandler(
   }
   return data as unknown as Conversation;
 }
+
+// ---------------------------------------------------------------------------
+// count (#4996, item 2)
+// ---------------------------------------------------------------------------
+
+export const STATUS_DE_CONVERSA = [
+  "open",
+  "pending",
+  "claimed",
+  "ai_handling",
+  "closed",
+  "archived",
+] as const;
+export type StatusDeConversa = (typeof STATUS_DE_CONVERSA)[number];
+
+export interface CountConversationsQuery {
+  status?: StatusDeConversa;
+  /** Escopo do turno (contexto de confiança, nunca do modelo): só as conversas deste contato. */
+  contact_id?: string;
+}
+
+export interface CountConversationsResult {
+  total: number;
+  /** Só quando a consulta não filtra por status: o mesmo total, aberto por status. */
+  by_status?: Record<StatusDeConversa, number>;
+}
+
+/**
+ * Conta conversas SEM listá-las: devolve só números, sem prévia nem conteúdo.
+ *
+ * Existe pelo mesmo motivo de `countLeadsHandler`: `listConversationsHandler`
+ * pagina de 50 em 50 e traz a prévia da última mensagem, e quem só precisa
+ * responder "quantas conversas abertas?" acabava levando as mensagens ao modelo.
+ * Contar no banco (`head: true`, `count: exact`) não traz nenhuma linha.
+ *
+ * Mesma régua de visibilidade da listagem, para os números fecharem com a lista:
+ *  - `organization_id` é a PRIMEIRA cláusula (client service-role no MCP, RLS não vale);
+ *  - conversa de contato pessoal não conta, e o ator do MCP nunca vê o pessoal;
+ *  - conversa de canal desativado (quarentena) não conta;
+ *  - o contato do turno limita a contagem às conversas do próprio cliente.
+ */
+export async function countConversationsHandler(
+  supabase: SupabaseClient,
+  ctx: HandlerCtx,
+  q: CountConversationsQuery,
+): Promise<CountConversationsResult> {
+  const [pessoais, desativados] = await Promise.all([
+    idsDeContatosPessoais(supabase, ctx.organization_id),
+    idsDosCanaisDesativados(supabase, ctx.organization_id),
+  ]);
+
+  const contar = async (status?: StatusDeConversa): Promise<number> => {
+    let query = supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.organization_id);
+    if (status) query = query.eq("status", status);
+    if (q.contact_id) query = query.eq("contact_id", q.contact_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
+    if (desativados.length > 0) {
+      query = query.not("channel_session_id", "in", `(${desativados.join(",")})`);
+    }
+    const { count, error } = await query;
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    return count ?? 0;
+  };
+
+  if (q.status) return { total: await contar(q.status) };
+
+  const [total, ...porStatus] = await Promise.all([
+    contar(),
+    ...STATUS_DE_CONVERSA.map((s) => contar(s)),
+  ]);
+  const by_status = Object.fromEntries(
+    STATUS_DE_CONVERSA.map((s, i) => [s, porStatus[i]]),
+  ) as Record<StatusDeConversa, number>;
+  return { total, by_status };
+}

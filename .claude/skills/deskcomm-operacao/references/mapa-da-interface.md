@@ -103,7 +103,7 @@ Hub: "Ver tudo em Análise" → `/app/analise`
 
 | Tela | Caminho | Serve para | Quem vê | Observação |
 |---|---|---|---|---|
-| Desempenho | Análise → Desempenho `/app/metrics` | Funil e performance por atendente nos últimos 30 dias. | todos |  |
+| Desempenho | Análise → Desempenho `/app/metrics` | Atrito, funil e desempenho por atendente. | todos |  |
 | Meta Ads | Análise → Meta Ads `/app/ads/meta` | Quanto custou cada resultado das campanhas que trazem gente para cá. | gerente ou acima |  |
 | Atividades | Análise → Atividades `/app/activities` | Relatório do que a equipe e os agentes fizeram no período: quanto, quem e de que tipo. | todos |  |
 | Painel de atendimento | Análise → Hub "Ver tudo em Análise" → Painel de atendimento `/app/painel` | Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número. | todos | Só aparece se o módulo `painel_atendimento` estiver ligado. |

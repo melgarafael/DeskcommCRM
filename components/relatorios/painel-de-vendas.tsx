@@ -25,6 +25,7 @@ import {
 } from "recharts";
 
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 import { normalizarTagDoRelatorio } from "@/lib/relatorios/comercial";
 import type { LinhaDeRanking } from "@/lib/relatorios/painel-de-vendas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,14 +33,10 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { usePainelDeVendas } from "@/hooks/reports/usePainelDeVendas";
 import { formatCents } from "@/lib/money";
-import {
-  ATALHOS_DE_PERIODO,
-  atalhoDoPeriodo,
-  periodoDoAtalho,
-  type AtalhoDePeriodo,
-  type Periodo,
-} from "@/lib/relatorios/atalhos-de-periodo";
+import type { Periodo } from "@/lib/relatorios/atalhos-de-periodo";
 import { cn } from "@/lib/utils";
+
+import { SeletorDePeriodo } from "./SeletorDePeriodo";
 
 type Metrica = "valor" | "vendas";
 
@@ -50,7 +47,7 @@ interface RecorteDeVendas {
 }
 
 const CLASSE_DO_SELETOR =
-  "rounded-md border border-border bg-surface-elevated p-2 text-sm text-text max-md:min-h-11";
+  "min-w-40 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text max-md:min-h-11";
 
 function Cartao({ titulo, valor, detalhe, testId }: { titulo: string; valor: ReactNode; detalhe?: ReactNode; testId: string }) {
   return (
@@ -87,16 +84,7 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
   }
   const comRecorte = recorte.pipelineId !== "" || recorte.tag !== "";
 
-  const rotuloDoAtalho: Record<AtalhoDePeriodo, string> = {
-    hoje: t("Hoje"),
-    "7d": t("7 dias"),
-    "30d": t("30 dias"),
-    mes: t("Este mês"),
-    mes_passado: t("Mês passado"),
-  };
-  // O atalho marcado é o que produz o período da tela HOJE; datas escolhidas à
-  // mão não marcam nenhum.
-  const atalhoAtivo = atalhoDoPeriodo(periodo, new Date(), tz);
+  const periodoMudou = periodo.de !== periodoInicial.de || periodo.ate !== periodoInicial.ate;
 
   const porcentagem = useMemo(
     () => new Intl.NumberFormat(tagDeIdioma, { style: "percent", maximumFractionDigits: 1 }),
@@ -117,49 +105,12 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
 
   return (
     <div className="flex flex-col gap-4" data-testid="painel-de-vendas">
-      {/* ── O período ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        {ATALHOS_DE_PERIODO.map((atalho) => (
-          <button
-            key={atalho}
-            type="button"
-            data-testid={`atalho-${atalho}`}
-            aria-pressed={atalhoAtivo === atalho}
-            onClick={() => setPeriodo(periodoDoAtalho(atalho, new Date(), tz))}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-sm transition-colors max-md:min-h-11",
-              atalhoAtivo === atalho
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-border bg-surface hover:bg-surface-elevated",
-            )}
-          >
-            {rotuloDoAtalho[atalho]}
-          </button>
-        ))}
-        <div className="flex items-center gap-2 text-sm">
-          <input
-            type="date"
-            aria-label={t("Data inicial")}
-            value={periodo.de}
-            max={periodo.ate}
-            onChange={(e) => e.target.value && setPeriodo((p) => ({ ...p, de: e.target.value }))}
-            className="rounded-md border border-border bg-surface px-2 py-1.5"
-          />
-          <span className="text-text-muted">{t("até")}</span>
-          <input
-            type="date"
-            aria-label={t("Data final")}
-            value={periodo.ate}
-            min={periodo.de}
-            onChange={(e) => e.target.value && setPeriodo((p) => ({ ...p, ate: e.target.value }))}
-            className="rounded-md border border-border bg-surface px-2 py-1.5"
-          />
-        </div>
-        {isFetching && !isLoading ? <span className="text-xs text-text-muted">{t("Atualizando…")}</span> : null}
-      </div>
-
-      {/* ── O recorte: vale para os cartões, o gráfico e a lista ────────────── */}
+      {/* ── O período e o recorte, numa linha só: valem para tudo abaixo ───── */}
       <div className="flex flex-wrap items-end gap-3" data-testid="recorte-do-painel">
+        <div className="flex flex-col gap-1 text-xs text-text-muted">
+          {t("Período")}
+          <SeletorDePeriodo periodo={periodo} tz={tz} aoMudar={setPeriodo} />
+        </div>
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           {t("Funil")}
           <select
@@ -192,16 +143,20 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
             ))}
           </select>
         </label>
-        {comRecorte && (
+        {(comRecorte || periodoMudou) && (
           <button
             type="button"
             data-testid="painel-limpar"
-            onClick={() => setRecorte({ pipelineId: "", tag: "" })}
-            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-surface-elevated max-md:min-h-11"
+            onClick={() => {
+              setRecorte({ pipelineId: "", tag: "" });
+              setPeriodo(periodoInicial);
+            }}
+            className="rounded-md px-2 py-2 text-sm text-text-muted hover:text-text max-md:min-h-11"
           >
-            {t("Limpar filtros")}
+            {t("Restaurar filtros")}
           </button>
         )}
+        {isFetching && !isLoading ? <span className="pb-2 text-xs text-text-muted">{t("Atualizando…")}</span> : null}
       </div>
 
       {isLoading ? (
@@ -386,6 +341,7 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
                     <th className="py-1 pr-3 font-medium">{t("Cliente")}</th>
                     <th className="py-1 pr-3 font-medium max-md:hidden">{t("Negócio")}</th>
                     <th className="py-1 pr-3 font-medium max-md:hidden">{t("Funil")}</th>
+                    <th className="py-1 pr-3 font-medium">{t("Vendedor")}</th>
                     <th className="py-1 pr-3 font-medium">{t("Tags")}</th>
                     <th className="py-1 text-right font-medium">{t("Valor")}</th>
                   </tr>
@@ -403,6 +359,11 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
                       </td>
                       <td className="py-1.5 pr-3 max-md:hidden">
                         {v.pipeline_id ? (painel.nomes_dos_funis[v.pipeline_id] ?? t("Funil sem nome")) : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3" data-testid="vendedor-da-venda">
+                        {v.vendedor_user_id
+                          ? rotuloDoMembro({ full_name: painel.vendedores?.[v.vendedor_user_id] ?? null, email: null, user_id: v.vendedor_user_id }, t)
+                          : <span className="text-text-muted">{t("Sem vendedor")}</span>}
                       </td>
                       <td className="py-1.5 pr-3">
                         <div className="flex flex-wrap gap-1">

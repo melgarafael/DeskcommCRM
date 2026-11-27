@@ -71,6 +71,8 @@ export type MotivoDoAviso =
   | "suspeita_de_opt_out"
   /** O teto de gasto com IA parou o atendimento automático. */
   | "orcamento_de_ia"
+  /** O teto de respostas da IA para visitante anônimo parou o atendimento automático. */
+  | "teto_do_visitante_anonimo"
   /** O sistema decidiu escalar (sentimento, baixa confiança, etapa, termo jurídico…). */
   | "outro";
 
@@ -92,6 +94,7 @@ export function motivoDoAviso(reason: string): MotivoDoAviso {
   if (reason === "requested_human") return "pediu_humano";
   if (reason === "suspected_optout") return "suspeita_de_opt_out";
   if (reason === "orcamento_de_ia") return "orcamento_de_ia";
+  if (reason === "teto_do_visitante_anonimo") return "teto_do_visitante_anonimo";
   return "outro";
 }
 
@@ -137,6 +140,11 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
     "Vou passar seu atendimento para uma pessoa da equipe.",
     "A partir daqui quem continua com você é alguém do time.",
     "Estou transferindo esta conversa para um atendente humano.",
+  ],
+  teto_do_visitante_anonimo: [
+    "Para continuar, deixe aqui seu telefone ou e-mail, e uma pessoa da equipe segue com você.",
+    "Me passa seu telefone ou e-mail? Assim alguém da equipe continua o seu atendimento.",
+    "Daqui em diante quem continua é a equipe. Deixe seu telefone ou e-mail para falarem com você.",
   ],
   outro: [
     "Esse caso é melhor resolvido por uma pessoa. Já acionei o time.",
@@ -193,6 +201,11 @@ const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
     "A partir de aquí te atiende alguien del equipo.",
     "Estoy transfiriendo esta conversación a una persona del equipo.",
   ],
+  teto_do_visitante_anonimo: [
+    "Para continuar, déjame aquí tu teléfono o correo, y una persona del equipo sigue contigo.",
+    "¿Me dejas tu teléfono o correo? Así alguien del equipo continúa tu atención.",
+    "Desde aquí sigue el equipo. Deja tu teléfono o correo para que te contacten.",
+  ],
   outro: [
     "Esto lo resuelve mejor una persona del equipo. Ya les avisé.",
     "Ya le pedí a alguien del equipo que lo vea contigo.",
@@ -241,6 +254,11 @@ const ABERTURAS_TR: Record<MotivoDoAviso, readonly string[]> = {
     "Görüşmenizi ekibimizden birine aktarıyorum.",
     "Bundan sonra sizinle ekibimizden biri ilgilenecek.",
     "Bu konuşmayı ekibimizden bir çalışana aktarıyorum.",
+  ],
+  teto_do_visitante_anonimo: [
+    "Devam edebilmemiz için telefonunuzu veya e-postanızı buraya bırakın; ekibimizden biri sizinle ilgilenecek.",
+    "Telefonunuzu veya e-postanızı paylaşır mısınız? Böylece ekibimizden biri görüşmeyi sürdürür.",
+    "Bundan sonra ekibimiz devam edecek. Size ulaşabilmeleri için telefonunuzu veya e-postanızı bırakın.",
   ],
   outro: [
     "Bu konuyu bir çalışanımız daha iyi çözer. Ekibe haber verdim.",

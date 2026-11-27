@@ -17,6 +17,8 @@ export type RespostaDoPainelDeVendas = PainelDeVendas & {
   truncado: boolean;
   contatos: Record<string, ContatoDoPainel>;
   nomes_dos_funis: Record<string, string | null>;
+  /** Nome de quem vendeu, por id (sem service role, vem vazio). */
+  vendedores?: Record<string, string | null>;
 };
 
 export function usePainelDeVendas(periodo: {

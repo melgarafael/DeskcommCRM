@@ -147,3 +147,47 @@ describe("servidor novo: o DCR registra o endereço de retorno DESTE servidor", 
     expect(r.ok && r.data.redirectUri).toBe(registros[0]!.redirectUri);
   });
 });
+
+/**
+ * #5126: o prazo do link mora no jsonb `oauth_metadados` (sem coluna nova).
+ * O que este bloco prova é o CAMINHO DA TELA: o que a action grava é o que o
+ * turno depois lê para calcular o `expira_em` — clampado, e sem perder o resto
+ * do metadado quando o endereço muda e a descoberta é refeita.
+ */
+describe("prazo do link de autorização gravado no jsonb (#5126)", () => {
+  function metadados() {
+    return banco.tabelas.ai_agent_mcp_servers![0]!.oauth_metadados as Record<string, unknown>;
+  }
+
+  it("informado na tela: vai para o jsonb com o resto do metadado intacto", async () => {
+    const antes = metadados();
+    const r = await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, { ...entrada(), prazoDoLinkMinutos: 1440 });
+    expect(r.ok).toBe(true);
+    expect(metadados().prazo_do_link_minutos).toBe(1440);
+    expect(metadados().emissor).toBe(antes.emissor);
+    expect(metadados().authorization_endpoint).toBe(antes.authorization_endpoint);
+  });
+
+  it("fora da faixa: 0 vira 10 (piso) e 99999 vira 1440 (teto) — nunca NaN", async () => {
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, { ...entrada(), prazoDoLinkMinutos: 0 });
+    expect(metadados().prazo_do_link_minutos).toBe(10);
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, { ...entrada(), prazoDoLinkMinutos: 99999 });
+    expect(metadados().prazo_do_link_minutos).toBe(1440);
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, { ...entrada(), prazoDoLinkMinutos: "abc" });
+    expect(metadados().prazo_do_link_minutos).toBe(10);
+  });
+
+  it("edição sem o campo preserva o prazo já gravado; endereço novo também não o perde", async () => {
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, { ...entrada(), prazoDoLinkMinutos: 720 });
+    expect(metadados().prazo_do_link_minutos).toBe(720);
+
+    // Sem o campo no corpo: mantém 720 (não volta ao padrão por acidente).
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, entrada({ nome: "Casa Nova" }));
+    expect(metadados().prazo_do_link_minutos).toBe(720);
+
+    // Endereço novo refaz a DESCOBERTA: o prazo não é do endereço, não se perde.
+    await salvarServidorMcpDoAgente(AGENTE, SERVIDOR, entrada({ endpoint: "https://mcp-novo.example.com/mcp" }));
+    expect(metadados().prazo_do_link_minutos).toBe(720);
+    expect(metadados().emissor).toBe("https://mcp-novo.example.com");
+  });
+});

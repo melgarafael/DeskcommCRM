@@ -24,6 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
+import { ErroDoPainel } from "./ErroDoPainel";
 import { useT } from "@/hooks/i18n/useT";
 import { useChannelMetrics } from "@/hooks/metrics/useChannelMetrics";
 import { formatarDuracao, rotuloCanal, totalDeConversas } from "@/lib/metrics/canais";
@@ -34,13 +36,14 @@ const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left ma
 interface Props {
   /** O filtro de atendente da página (`null` = todos); a RLS escopa quem olha. */
   owner: string | null;
+  janela: JanelaDeMetricas;
 }
 
-export function CanaisPanel({ owner }: Props) {
+export function CanaisPanel({ owner, janela }: Props) {
   const t = useT();
-  const { data, isLoading, isError } = useChannelMetrics(owner);
+  const { data, isLoading, isError, isFetching, refetch } = useChannelMetrics(owner, janela);
 
-  if (isLoading) {
+  if (janela === undefined || isLoading) {
     return (
       <div className="flex flex-col gap-2" aria-busy="true" aria-label={t("Por canal")}>
         <Skeleton className="h-5 w-40" />
@@ -56,7 +59,7 @@ export function CanaisPanel({ owner }: Props) {
           <CardTitle className="text-base">{t("Por canal")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-destructive">{t("Erro ao carregar os canais.")}</p>
+          <ErroDoPainel mensagem={t("Erro ao carregar os canais.")} tentando={isFetching} onRetry={() => void refetch()} />
         </CardContent>
       </Card>
     );
@@ -83,7 +86,7 @@ export function CanaisPanel({ owner }: Props) {
                 <TableHead>{t("Canal")}</TableHead>
                 <TableHead className="text-right">{t("Conversas")}</TableHead>
                 <TableHead className="text-right">{t("1ª resposta (média)")}</TableHead>
-                <TableHead className="text-right">{t("Sem resposta")}</TableHead>
+                <TableHead className="text-right">{t("Ainda sem resposta")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="max-md:block">
@@ -104,7 +107,7 @@ export function CanaisPanel({ owner }: Props) {
                   <TableCell data-rotulo={t("1ª resposta (média)")} className={CELULA_DE_NUMERO}>
                     {formatarDuracao(c.avg_first_response_seconds)}
                   </TableCell>
-                  <TableCell data-rotulo={t("Sem resposta")} className={CELULA_DE_NUMERO}>
+                  <TableCell data-rotulo={t("Ainda sem resposta")} className={CELULA_DE_NUMERO}>
                     {c.sem_resposta}
                   </TableCell>
                 </TableRow>

@@ -29,7 +29,7 @@ export const TOOLS_FUNIL = declararTools([
     category: "read",
     rotulo: "Contar oportunidades do funil",
     explicacao:
-      "Conta quantas oportunidades de venda existem, por funil, etapa ou situação, sem abrir nenhuma delas: devolve só números.",
+      "Conta quantas oportunidades de venda existem, por funil, etapa ou situação, sem abrir nenhuma delas: devolve só números. Num funil, pode devolver de uma vez o total de cada etapa.",
     oQueToca: "Funil de vendas",
     risco: "seguro",
     // "reter" e não "vender": "vender" é o pacote padrão do onboarding e cada

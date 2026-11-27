@@ -154,7 +154,7 @@ function FichaCapacidade({
           </span>
         ) : null}
         {mostrarNomeTecnico ? (
-          <code className="block font-mono text-[11px] text-muted-foreground">
+          <code className="block font-mono text-[11px] break-all text-muted-foreground">
             {capacidade.name}
           </code>
         ) : null}

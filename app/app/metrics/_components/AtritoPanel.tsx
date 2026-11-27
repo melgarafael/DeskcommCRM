@@ -3,6 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState } from "react";
 
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
+import { ErroDoPainel } from "./ErroDoPainel";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,17 +131,17 @@ function ReguaAbandono({ horas, padrao, podeEditar }: { horas: number; padrao: n
   );
 }
 
-export function AtritoPanel({ podeEditarRegua }: { podeEditarRegua: boolean }) {
+export function AtritoPanel({ podeEditarRegua, janela }: { podeEditarRegua: boolean; janela: JanelaDeMetricas }) {
   const t = useT();
-  const { data, isLoading, isError } = useAtritoMetrics();
+  const { data, isLoading, isError, isFetching, refetch } = useAtritoMetrics(janela);
 
-  if (isLoading) {
+  if (janela === undefined || isLoading) {
     return <p className="text-sm text-muted-foreground">{t("Carregando o índice de atrito…")}</p>;
   }
   // Falha aberta na informação: dizer que não carregou é melhor que sumir com a
   // seção — seção ausente lê-se como "não há atrito" (doutrina cap. 4.5).
   if (isError || !data) {
-    return <p className="text-sm text-destructive">{t("Erro ao carregar o índice de atrito.")}</p>;
+    return <ErroDoPainel mensagem={t("Erro ao carregar o índice de atrito.")} tentando={isFetching} onRetry={() => void refetch()} />;
   }
 
   const { escopo, pares, regua } = data.data;
@@ -153,15 +155,10 @@ export function AtritoPanel({ podeEditarRegua }: { podeEditarRegua: boolean }) {
         <h2 className="text-base font-medium">{t("Atrito")}</h2>
         <p className="text-sm text-muted-foreground">
           {t("O que o resultado custou para os dois lados.")}{" "}
-          {escopo.demandas === 0 ? (
-            <>{t("Nenhuma demanda encerrada no período — os números abaixo ainda não têm base.")}</>
-          ) : (
-            <>
-              {t("Base:")} {escopo.demandas}{" "}
-              {escopo.demandas === 1 ? t("demanda encerrada") : t("demandas encerradas")}{" "}
-              {t("nos últimos 30 dias, e")} {escopo.demandas_abertas} {t("ainda abertas.")}
-            </>
-          )}
+          {escopo.demandas}{" "}
+          {escopo.demandas === 1 ? t("demanda encerrada") : t("demandas encerradas")}{" "}
+          {t("no período.")}{" "}
+          {escopo.demandas_abertas} {t("em aberto agora.")}
         </p>
         {/* A régua fica AQUI, no cabeçalho, e não no rodapé da seção: o rótulo
             do dano interpola as horas ("após 72h") e quem lê o número precisa

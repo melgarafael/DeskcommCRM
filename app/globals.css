@@ -57,6 +57,8 @@
   --color-canal-instagram: #c13584;
   --color-canal-messenger: #0866ff;
   --color-canal-telegram: #0088cc;
+  --color-canal-webchat: #6d28d9;
+  --color-canal-tiktok: #111111;
 
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
@@ -296,6 +298,8 @@
   --color-canal-instagram: #c13584;
   --color-canal-messenger: #0866ff;
   --color-canal-telegram: #0088cc;
+  --color-canal-webchat: #6d28d9;
+  --color-canal-tiktok: #111111;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -390,6 +394,8 @@
   --color-canal-instagram: #f472b6;
   --color-canal-messenger: #60a5fa;
   --color-canal-telegram: #38bdf8;
+  --color-canal-webchat: #a78bfa;
+  --color-canal-tiktok: #f1f1f2;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
   --color-accent-50: #f3f6f1;
@@ -769,30 +775,11 @@
 
   html {
     color-scheme: light;
-    /* Rede de segurança DE VERDADE contra scroll horizontal da PÁGINA — a
-       de `main` (app/app/_components/AppShell.tsx) não bastava porque
-       TopBar e Sidebar ficam FORA de `main`; qualquer estouro ali (ou em
-       qualquer página que esqueça de conter o próprio overflow) ainda
-       chegava até aqui e movia a tela inteira. Isto NUNCA deixa a barra de
-       scroll horizontal aparecer, não importa o que role solto lá dentro —
-       o componente que precisa de scroll horizontal (tabela, kanban)
-       continua rolando, contido nele mesmo; só a página como um todo não.
-
-       ⚠️ `clip` DEPOIS de `hidden`, e as duas linhas são necessárias.
-
-       `overflow-x: hidden` faz o elemento virar CONTÊINER DE ROLAGEM (a
-       especificação computa o eixo oposto para `auto`), e um contêiner de
-       rolagem no `<html>` quebra `position: sticky` lá dentro: a barra lateral
-       — que é `sticky top-0 h-screen` em `components/shell/Sidebar.tsx`, com um
-       comentário longo explicando por que não é `fixed` — deixava de grudar e
-       rolava com a página, sumindo do alto e deixando faixa vazia embaixo.
-
-       `overflow-x: clip` corta igual e NÃO cria contêiner de rolagem, então a
-       proteção continua inteira e o sticky volta. A linha `hidden` fica como
-       reserva para motor que não conhece `clip` (Safari < 16): lá o
-       comportamento segue exatamente o de hoje — protegido, sem sticky. */
-    overflow-x: hidden;
-    overflow-x: clip;
+    /* SEM overflow aqui, de propósito (#5215). Com `overflow` no `<html>`, o
+       do `<body>` deixa de passar para a janela e o `<body>` vira contêiner
+       próprio: quando o Radix trava a rolagem (menu do perfil, seletor de
+       organização, busca), a página salta e a barra lateral sticky some para
+       cima. A rede contra rolagem lateral mora num `div` do app/layout.tsx. */
   }
   [data-theme="dark"] {
     color-scheme: dark;
@@ -806,14 +793,11 @@
   }
 
   body {
-    /* Mesma trava do `html` logo acima, duplicada aqui de propósito: alguns
-       motores móveis (Safari/iOS em particular) ignoram `overflow-x` só no
-       `html` em certas versões — as duas juntas é o par que realmente
-       bloqueia em todo navegador testado pela comunidade.
-
-       Mesmo par `hidden` + `clip` do `<html>`, e pela mesma razão: sem o `clip`
-       aqui o `<body>` volta a ser contêiner de rolagem e a barra lateral perde
-       o sticky de novo — consertar só um dos dois não conserta nada. */
+    /* Reserva da rede contra rolagem lateral. A rede de verdade é o `div`
+       `overflow-x-clip` em volta das páginas (app/layout.tsx): este valor, com
+       o `<html>` sem overflow, passa para a janela como `hidden` — segura a
+       roda, mas não o foco num campo fora da tela. Fica para motor que não
+       conhece `clip` (Safari < 16), onde o `div` não corta nada. */
     overflow-x: hidden;
     overflow-x: clip;
     background-color: var(--color-bg);

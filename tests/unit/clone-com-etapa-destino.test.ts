@@ -28,8 +28,8 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createLeadHandler } from "@/app/api/v1/leads/_handler";
-import { encerraDemanda } from "@/lib/leads/encerramento";
+import { createLeadHandler, getLeadHandler } from "@/app/api/v1/leads/_handler";
+import { preparaEncerramentoDemanda, registraEncerramentoDemanda } from "@/lib/leads/encerramento";
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -47,10 +47,18 @@ vi.mock("@/lib/leads/activity-emitter", () => ({
 vi.mock("@/lib/leads/activity-write-failure", () => ({
   registraFalhaDeAtividade: vi.fn(async () => undefined),
 }));
-// As duas ESCRITAS da troca, dubladas: o alvo aqui é a escolha da etapa, e o
-// que se afirma é o PAYLOAD que a criação recebe (o clone "nasce" nele).
-vi.mock("@/app/api/v1/leads/_handler", () => ({ createLeadHandler: vi.fn() }));
-vi.mock("@/lib/leads/encerramento", () => ({ encerraDemanda: vi.fn() }));
+// A criação e o fecho da origem, dublados: o alvo aqui é a escolha da etapa, e o
+// que se afirma é o PAYLOAD que a criação recebe (o clone "nasce" nele). A
+// gravação é a transação `fn_levar_negocio_para_funil` (#5229), que o
+// `createLeadHandler` alcança pelo `persistir` que a rota lhe passa.
+vi.mock("@/app/api/v1/leads/_handler", () => ({
+  createLeadHandler: vi.fn(),
+  getLeadHandler: vi.fn(),
+}));
+vi.mock("@/lib/leads/encerramento", () => ({
+  preparaEncerramentoDemanda: vi.fn(),
+  registraEncerramentoDemanda: vi.fn(async () => undefined),
+}));
 
 import { POST } from "@/app/api/v1/leads/[id]/clone/route";
 
@@ -132,7 +140,7 @@ interface Escrita {
  *
  * As duas leituras de `crm_leads` se distinguem pela ORDEM (a primeira é a
  * origem; a segunda é o `update(...).select("*")` que grava `movido_para`), e
- * as de `crm_pipelines` pelo conjunto de colunas (`id, name` = destino;
+ * as de `crm_pipelines` pelo conjunto de colunas (`id, name, is_archived` = destino;
  * `settings, name` = origem; `settings` = a régua de campos exigidos do
  * destino). Toda escrita é registrada em `escritas` — é a asserção de
  * "nada foi gravado" nas recusas.
@@ -152,8 +160,8 @@ function clienteFake(): { cliente: never; escritas: Escrita[] } {
     if (tabela === "crm_leads" && colunas === "source_metadata") {
       return { data: { source_metadata: {} }, error: null };
     }
-    if (tabela === "crm_pipelines" && colunas === "id, name") {
-      return { data: { id: FUNIL_DESTINO, name: "Vendas" }, error: null };
+    if (tabela === "crm_pipelines" && colunas === "id, name, is_archived") {
+      return { data: { id: FUNIL_DESTINO, name: "Vendas", is_archived: false }, error: null };
     }
     if (tabela === "crm_pipelines" && colunas === "settings, name") {
       return { data: { settings: {}, name: "Prospecção" }, error: null };
@@ -194,7 +202,30 @@ function clienteFake(): { cliente: never; escritas: Escrita[] } {
     return q;
   };
 
-  return { cliente: { from } as never, escritas };
+  // A transação do clone (#5229). Sem linha e sem fecho é só a CONSULTA da cópia
+  // aberta (não há nenhuma); com linha, é a gravação, e entra em `escritas`.
+  const rpc = async (nome: string, args: Record<string, unknown>) => {
+    if (args.p_linha == null && args.p_fechamento == null) return { data: null, error: null };
+    escritas.push({ tabela: nome, metodo: "rpc", linha: args });
+    const linha = (args.p_linha ?? {}) as Record<string, unknown>;
+    return {
+      data: {
+        clone: { id: LEAD_NOVO, pipeline_id: linha.pipeline_id, stage_id: linha.stage_id },
+        origem: { ...origem(), status: "lost" },
+        criou: true,
+        fechou: true,
+      },
+      error: null,
+    };
+  };
+  const auth = {
+    getClaims: async () => ({
+      data: { claims: { sub: USER, session_id: "sessao-1", aal: "aal1", role: "authenticated" } },
+      error: null,
+    }),
+  };
+
+  return { cliente: { from, rpc, auth } as never, escritas };
 }
 
 function pedido(corpo: Record<string, unknown>) {
@@ -224,16 +255,22 @@ beforeEach(() => {
     user: { id: USER, idioma: "pt-BR" },
     org: { orgId: ORG },
   } as never);
+  vi.mocked(getLeadHandler).mockResolvedValue(origem() as never);
   vi.mocked(createLeadHandler).mockImplementation((async (
     _supabase: unknown,
     _ctx: unknown,
     payload: Record<string, unknown>,
-  ) => ({
-    id: LEAD_NOVO,
-    pipeline_id: payload.pipeline_id,
-    stage_id: payload.stage_id,
-  })) as never);
-  vi.mocked(encerraDemanda).mockResolvedValue({ lead: { id: LEAD, status: "lost" } } as never);
+    opcoes?: { persistir?: (linha: Record<string, unknown>) => Promise<{ data: unknown }> },
+  ) => {
+    const { data } = await opcoes!.persistir!({ ...payload, organization_id: ORG });
+    return data;
+  }) as never);
+  vi.mocked(preparaEncerramentoDemanda).mockResolvedValue({
+    lead: origem(),
+    jaEstava: false,
+    etapa: { id: ETAPA_DE_PERDA_DA_ORIGEM, name: "Perdido" },
+    patch: { stage_id: ETAPA_DE_PERDA_DA_ORIGEM },
+  } as never);
 });
 
 describe("POST /clone com etapa de destino (#3643)", () => {

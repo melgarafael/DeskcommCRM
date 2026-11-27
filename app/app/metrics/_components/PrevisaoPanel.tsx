@@ -64,6 +64,7 @@ export function PrevisaoPanel() {
       <CardHeader>
         <CardTitle className="text-sm font-semibold">{t("Previsão")}</CardTitle>
         <p className="text-xs text-muted-foreground">
+          {t("Por mês previsto de fechamento.")}{" "}
           {data.fonte === "ia_quando_houver"
             ? t("Chance vinda da inteligência artificial quando existe, e da etapa quando não.")
             : t("Chance de fechamento definida em cada etapa do funil.")}
