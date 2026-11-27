@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -71,13 +71,6 @@ vi.mock("@/components/contacts/RoteirosDoContato", () => ({ RoteirosDoContato: (
 // O bloco Carteira busca a própria rota; o dublê de `get` deste arquivo devolve
 // o resumo do painel para TODA URL, então o cartão sai da cena aqui.
 vi.mock("@/components/contacts/CartaoDaCarteira", () => ({ CartaoDaCarteira: () => null }));
-// A lista de vendas do negócio vira um dublê que só mostra o que recebeu: o que
-// interessa aqui é o painel decidir quem pode APAGAR venda (#5087).
-vi.mock("@/components/vendas/VendasDoNegocio", () => ({
-  VendasDoNegocio: (p: { somenteLeitura?: boolean }) => (
-    <div data-testid="vendas-do-negocio" data-somente-leitura={String(Boolean(p.somenteLeitura))} />
-  ),
-}));
 
 // O Select do Radix pede estas APIs do navegador, que o jsdom não implementa.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -133,84 +126,45 @@ beforeEach(() => {
   patch.mockResolvedValue({ data: { ...NEGOCIO, value_cents: 123456 } });
 });
 
-describe("painel do inbox — quem pode apagar venda (#5087)", () => {
-  it("viewer: a lista de vendas vem só para leitura, sem lixeira", async () => {
-    estado.papel = "viewer";
-    renderPainel();
-    const lista = await screen.findByTestId("vendas-do-negocio");
-    expect(lista.getAttribute("data-somente-leitura")).toBe("true");
-  });
-
-  it("agent: a lista de vendas permite apagar", async () => {
-    renderPainel();
-    const lista = await screen.findByTestId("vendas-do-negocio");
-    expect(lista.getAttribute("data-somente-leitura")).toBe("false");
-  });
-});
-
-describe("painel do inbox — valor do negócio editável", () => {
-  it("1. o campo aparece abaixo de 'Etapa do funil' e grava «1.234,56» como 123456 centavos", async () => {
+/*
+ * O Valor do negócio deixou de ser digitado no Inbox. Digitar e
+ * salvar gravava o negócio e NÃO entrava em Vendas — a equipe via o número
+ * parado na caixa e a venda em lugar nenhum. Agora a porta é uma só: o botão
+ * "Registrar venda", com as vendas já registradas logo abaixo, e o Valor do
+ * negócio é a soma delas (gatilho do banco).
+ */
+describe("painel do inbox — vendas no lugar do valor digitado", () => {
+  it("1. abaixo de 'Etapa do funil' vem 'Registrar venda', e salvar vai para Vendas (não para o negócio)", async () => {
+    post.mockResolvedValue({ data: { id: "v-1" } });
     renderPainel();
     const user = userEvent.setup();
 
     const etapa = await screen.findByTestId("inbox-etapa-do-negocio");
     const bloco = await screen.findByTestId("inbox-valor-do-negocio");
-    // "logo abaixo de Etapa do funil": o bloco do valor vem DEPOIS do Select.
-    expect(
-      etapa.compareDocumentPosition(bloco) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(etapa.compareDocumentPosition(bloco) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // O campo de digitar o valor e o "Salvar" saíram.
+    expect(screen.queryByTestId("inbox-valor-input")).toBeNull();
+    expect(screen.queryByTestId("inbox-valor-salvar")).toBeNull();
 
-    const campo = screen.getByTestId("inbox-valor-input") as HTMLInputElement;
-    await user.clear(campo);
-    await user.type(campo, "1.234,56");
-    await user.click(screen.getByTestId("inbox-valor-salvar"));
+    await user.click(within(bloco).getByTestId("abrir-registrar-venda"));
+    await user.type(await screen.findByLabelText("Valor"), "1.234,56");
+    await user.click(screen.getByTestId("salvar-venda"));
 
-    // O MESMO caminho do quadro: `PATCH /api/v1/leads/[id]` via `useEditLead`.
-    await waitFor(() =>
-      expect(patch).toHaveBeenCalledWith("/api/v1/leads/l-1", { value_cents: 123456 }),
-    );
-    const enviado = patch.mock.calls[0]![1] as { value_cents: number };
-    // Inteiro de centavos — nunca float (float no `int` do banco é 422).
-    expect(Number.isInteger(enviado.value_cents)).toBe(true);
-    expect(enviado.value_cents).toBe(123456);
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const [url, corpo] = post.mock.calls[0] as [string, { lead_id: string; valor_cents: number }];
+    expect(url).toBe("/api/v1/vendas");
+    expect(corpo.lead_id).toBe("l-1");
+    expect(corpo.valor_cents).toBe(123456);
+    // O valor do negócio NÃO é gravado à mão: quem o escreve é a soma das vendas.
+    expect(patch).not.toHaveBeenCalledWith("/api/v1/leads/l-1", expect.anything());
   });
 
-  it("2. quem está abaixo do piso vê o valor e NÃO recebe input", async () => {
+  it("2. quem está abaixo do piso vê as vendas e NÃO recebe o botão", async () => {
     estado.papel = "viewer";
     renderPainel();
 
-    // Controle de vacuidade: o bloco desenhou, e mostra o valor do negócio.
     const bloco = await screen.findByTestId("inbox-valor-do-negocio");
-    expect(bloco.textContent).toContain("R$");
-    expect(bloco.textContent).toContain("500,00");
-    // A leitura existe; o input, não.
-    expect(screen.queryByTestId("inbox-valor-input")).toBeNull();
-    expect(screen.queryByTestId("inbox-valor-salvar")).toBeNull();
-  });
-
-  it("3. campo vazio não apaga o valor existente em silêncio", async () => {
-    renderPainel();
-    const user = userEvent.setup();
-
-    const campo = (await screen.findByTestId("inbox-valor-input")) as HTMLInputElement;
-    await user.clear(campo);
-    await user.click(screen.getByTestId("inbox-valor-salvar"));
-
-    // Nada é enviado: apagar exige um pedido explícito, e este não é um.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(patch).not.toHaveBeenCalled();
-  });
-
-  it("4. texto inválido não apaga o valor existente nem envia requisição", async () => {
-    renderPainel();
-    const user = userEvent.setup();
-
-    const campo = (await screen.findByTestId("inbox-valor-input")) as HTMLInputElement;
-    await user.clear(campo);
-    await user.type(campo, "abc");
-    await user.click(screen.getByTestId("inbox-valor-salvar"));
-
-    await new Promise((r) => setTimeout(r, 50));
-    expect(patch).not.toHaveBeenCalled();
+    expect(within(bloco).getByTestId("vendas-do-negocio")).toBeTruthy();
+    expect(within(bloco).queryByTestId("abrir-registrar-venda")).toBeNull();
   });
 });
