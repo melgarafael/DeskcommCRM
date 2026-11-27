@@ -85719,9 +85719,14 @@ notify pgrst, 'reload schema';
 -- ---- agenda do Outlook (migration 9511) ----
 -- manifest: **Agenda do Outlook (Microsoft 365 e conta pessoal): o horário ocupado lá fora bloqueia a grade daqui (#1754, fatia 1).** `calendar_connections.provider` passa a aceitar `microsoft_calendar`; tabela de instalação `platform_microsoft_oauth` (singleton, RLS sem policy, grants só de service_role, segredo cifrado), irmã de `platform_google_oauth`; função `fn_microsoft_calendar_save` (service_role) troca numa transação o espelho de ocupação de UMA agenda e carimba a cobertura. `fn_google_selection` e `fn_calendar_service_sources_to_refresh` passam a mexer só em agendas do Google, para salvar a escolha do Google não desligar a do Outlook e o leitor do Google não receber agenda alheia. Aditiva e idempotente, sem backfill. Espelho no apêndice do `supabase/baseline.sql`, antes da cascata da 9243 e da VARREDURA anon.
 
-alter table public.calendar_connections drop constraint if exists calendar_connections_provider_check;
-alter table public.calendar_connections add constraint calendar_connections_provider_check
-  check (provider in ('google_calendar','microsoft_calendar'));
+-- Num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit, e uma
+-- falha entre o drop e o add deixaria a tabela sem regra de provedor. O CHECK
+-- novo contém o antigo, então nenhum dado existente o viola.
+do $provider_check$ begin
+  alter table public.calendar_connections drop constraint if exists calendar_connections_provider_check;
+  alter table public.calendar_connections add constraint calendar_connections_provider_check
+    check (provider in ('google_calendar','microsoft_calendar'));
+end $provider_check$;
 
 create table if not exists public.platform_microsoft_oauth (
   id smallint primary key default 1,
