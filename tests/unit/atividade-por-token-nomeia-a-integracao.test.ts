@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { atorDaIntervencao } from "@/lib/followup/intervencao";
 import { buildLeadActivityRow } from "@/lib/leads/activity-emitter";
 import { createClient } from "@/lib/supabase/server";
+import { insereAtividadeDoLead } from "@/lib/tarefas/atividade";
 
 /**
  * A ATIVIDADE FEITA POR TOKEN DIZ QUAL INTEGRAÇÃO AGIU (#5160, item 2).
@@ -23,8 +25,14 @@ import { createClient } from "@/lib/supabase/server";
  *     escritores por `pg` que listam as colunas).
  *  2. LEITURA: o `crm-summary` pede só o id (`metadata->>actor_api_token_id`,
  *     nunca o `metadata` inteiro), resolve `api_tokens.name` com o tenant no
- *     filtro e devolve `integracao: { nome }`; sem nome, `nome: null`; linha
- *     que não é de token, `integracao: null`.
+ *     filtro e devolve `integracao: { nome }`; token que não existe nesta
+ *     organização e linha que não é de token, `integracao: null`.
+ *  3. Os escritores internos que usam o ator `api_token` com um rótulo no `id`
+ *     (`cron:proposal-expiry`, `amigo-sync`…) não viram integração, e um valor
+ *     desses numa linha não derruba a leitura dos nomes da janela.
+ *  4. O escritor por `pg` das tarefas grava a mesma coluna, e a IA autenticada
+ *     por token (`actor:ai_agent`) não é reconstruída como `api_token` nas
+ *     intervenções de follow-up.
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -141,6 +149,36 @@ describe("#5160 — escrita: a linha do token guarda qual token agiu", () => {
     expect(linha.metadata).toEqual({ actor_api_token_id: TOKEN });
   });
 
+  it("ator api_token com rótulo interno no id (não é token): sem metadata", () => {
+    for (const id of ["cron:proposal-expiry", "proposal:send", "amigo-sync", "amigo-reminder-check"]) {
+      const linha = buildLeadActivityRow({ ...base, actor: { type: "api_token", id } }) as unknown as Linha;
+      expect(Object.prototype.hasOwnProperty.call(linha, "metadata")).toBe(false);
+    }
+  });
+
+  it("o escritor por pg das tarefas leva o metadata do token ao INSERT", async () => {
+    const chamadas: Array<{ sql: string; params: unknown[] }> = [];
+    const db = { query: async (sql: string, params: unknown[]) => (chamadas.push({ sql, params }), { rows: [] }) };
+    const r = await insereAtividadeDoLead(db as never, {
+      ...base,
+      type: "task_created",
+      sourceModule: "tarefas",
+      actor: { type: "api_token", id: TOKEN },
+    });
+    expect(r.ok).toBe(true);
+    const [insert] = chamadas;
+    expect(insert?.sql).toContain("metadata");
+    expect(insert?.params).toContainEqual({ actor_api_token_id: TOKEN });
+  });
+
+  it("intervenção de follow-up por token de IA não vira integração", () => {
+    const ia = { type: "ai_agent", id: "run-1", role: "admin", api_token_id: TOKEN } as const;
+    const ator = atorDaIntervencao({ userId: null, apiTokenId: TOKEN, actor: ia } as never);
+    expect(ator).toEqual(ia);
+    const linha = buildLeadActivityRow({ ...base, actor: ator }) as unknown as Linha;
+    expect(Object.prototype.hasOwnProperty.call(linha, "metadata")).toBe(false);
+  });
+
   it("os outros atores não ganham metadata", () => {
     const atores = [
       { type: "user", id: "u-1" },
@@ -182,10 +220,21 @@ describe("#5160 — leitura: o crm-summary devolve o nome da integração", () =
     expect(admin.filtros).toContainEqual(["organization_id", ORG]);
   });
 
-  it("token sem linha (apagado ou de outra empresa): integracao.nome é null", async () => {
+  it("token que não existe nesta organização: integracao é null (segue «Sistema»)", async () => {
     admin.tokens = [{ id: TOKEN_SEM_LINHA, organization_id: "org-2", name: "De outra empresa" }];
     const { atividades } = await ler([atividade("a-1", { actor_api_token_id: TOKEN_SEM_LINHA })]);
-    expect(atividades[0]?.integracao).toEqual({ nome: null });
+    expect(atividades[0]?.integracao).toBeNull();
+  });
+
+  it("valor que não é UUID na linha não entra na consulta e não derruba os outros nomes", async () => {
+    admin.tokens = [{ id: TOKEN, organization_id: ORG, name: "Zapier" }];
+    const { atividades } = await ler([
+      atividade("a-1", { actor_api_token_id: "cron:proposal-expiry" }),
+      atividade("a-2", { actor_api_token_id: TOKEN }),
+    ]);
+    expect(atividades.map((a) => a.integracao)).toEqual([null, { nome: "Zapier" }]);
+    const ids = admin.filtros.find(([col]) => col === "id")?.[1];
+    expect(ids).toEqual([TOKEN]);
   });
 
   it("linha que não é de token: integracao é null", async () => {

@@ -61,10 +61,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Admin client porque a operação compartilhada escreve atividade e lê o
   // negócio dono do contato; a organização vem do token/sessão, nunca do
   // caminho nem do body, e toda query da operação filtra por ela.
-  const actor: Actor =
-    authz.actor.type === "user"
-      ? { type: "user", id: authz.actor.id }
-      : { type: "api_token", id: authz.apiTokenId ?? "desconhecido" };
+  // O ator autenticado como veio (#5160): o token com `actor:ai_agent` é a IA,
+  // não uma integração, e reconstruí-lo como `api_token` faria a timeline
+  // dizer "Integração · <token>" para ela.
+  const actor: Actor = authz.actor;
   const resultado = await cancelaRetornoNoCrm(
     {
       admin: createAdminClient(),

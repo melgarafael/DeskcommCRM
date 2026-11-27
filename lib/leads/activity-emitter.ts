@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor } from "@/lib/api/handlers/types";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
-import { CHAVE_DO_TOKEN_DA_ATIVIDADE } from "@/lib/leads/integracao-da-atividade";
+import { CHAVE_DO_TOKEN_DA_ATIVIDADE, tokenDoAtor } from "@/lib/leads/integracao-da-atividade";
 
 /** Os cinco atores que `crm_lead_activities.actor_kind` aceita (migration 0071). */
 export type ActivityActorKind = "user" | "ai" | "system" | "rule" | "contact";
@@ -98,6 +98,7 @@ export function buildLeadActivityRow(input: EmitLeadActivityInput): LeadActivity
   // actor_agent_id: não afirma a autoria da IA sem prova, mas não apaga que o
   // agente estava envolvido. Mesma regra do backfill da 0071.
   const actorKind: ActivityActorKind = kind === "ai" && !temLastro ? "system" : kind;
+  const tokenDaLinha = tokenDoAtor(input.actor);
 
   return {
     organization_id: input.organizationId,
@@ -114,9 +115,7 @@ export function buildLeadActivityRow(input: EmitLeadActivityInput): LeadActivity
     payload: input.payload ?? {},
     // Sem isto a linha do token é indistinguível da plataforma agindo sozinha,
     // e o painel "Atividade" diz "Sistema" (#5160).
-    ...(input.actor.type === "api_token"
-      ? { metadata: { [CHAVE_DO_TOKEN_DA_ATIVIDADE]: input.actor.id } }
-      : {}),
+    ...(tokenDaLinha ? { metadata: { [CHAVE_DO_TOKEN_DA_ATIVIDADE]: tokenDaLinha } } : {}),
   };
 }
 

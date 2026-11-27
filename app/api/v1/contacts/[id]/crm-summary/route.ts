@@ -312,9 +312,11 @@ async function responderCrmSummary(
       orders: orders.data ?? [],
       activities: linhas.map(({ actor_api_token_id: _token, ...a }) => {
         const token = tokenDaAtividade({ actor_api_token_id: _token });
-        const integracao: IntegracaoDaAtividade = token
-          ? { nome: integracoes.get(token) ?? null }
-          : null;
+        // Só o token que EXISTE nesta organização vira "Integração": id que
+        // não casa (outra empresa, linha que sumiu, leitura caída) segue o
+        // rótulo do ator, em vez de afirmar uma integração que não se confirmou.
+        const integracao: IntegracaoDaAtividade =
+          token && integracoes.has(token) ? { nome: integracoes.get(token) ?? null } : null;
         return {
           ...a,
           performed_by_name: a.performed_by_user_id

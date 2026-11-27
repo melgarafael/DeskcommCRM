@@ -27,13 +27,32 @@ export const CHAVE_DO_TOKEN_DA_ATIVIDADE = "actor_api_token_id";
 /** O pedaço do `select` do PostgREST que traz só o id, nunca o `metadata` inteiro. */
 export const SELECT_DO_TOKEN_DA_ATIVIDADE = `${CHAVE_DO_TOKEN_DA_ATIVIDADE}:metadata->>${CHAVE_DO_TOKEN_DA_ATIVIDADE}`;
 
-/** O que o `crm-summary` devolve por linha: `null` quando não foi um token. */
+/**
+ * O que o `crm-summary` devolve por linha: `null` quando não foi um token desta
+ * organização (ou o token não pôde ser lido) — a linha segue o rótulo do ator.
+ */
 export type IntegracaoDaAtividade = { nome: string | null } | null;
 
-/** O id do token de uma linha lida com `SELECT_DO_TOKEN_DA_ATIVIDADE`. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * O id do token que entra na linha, ou `null`.
+ *
+ * Só UUID: vários escritores internos usam o ator `api_token` com um rótulo no
+ * `id` (`cron:proposal-expiry`, `proposal:send`, `amigo-sync`,
+ * `amigo-reminder-check`). Esses não são integração nenhuma e seguem como
+ * "Sistema"; gravá-los faria a tela dizer "Integração" e, na leitura, um valor
+ * que não é UUID derrubaria a consulta de `api_tokens` da janela inteira.
+ */
+export function tokenDoAtor(actor: { type: string; id?: unknown }): string | null {
+  if (actor.type !== "api_token") return null;
+  return typeof actor.id === "string" && UUID.test(actor.id) ? actor.id : null;
+}
+
+/** O id do token de uma linha lida com `SELECT_DO_TOKEN_DA_ATIVIDADE` (só UUID). */
 export function tokenDaAtividade(linha: Record<string, unknown>): string | null {
   const id = linha[CHAVE_DO_TOKEN_DA_ATIVIDADE];
-  return typeof id === "string" && id.trim() ? id : null;
+  return typeof id === "string" && UUID.test(id) ? id : null;
 }
 
 /**
