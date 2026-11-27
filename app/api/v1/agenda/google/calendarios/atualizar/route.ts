@@ -5,6 +5,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { refreshCatalog } from "@/lib/agenda/google/calendar-executor";
+import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 export async function POST(req: Request) {
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
   const requestId = randomUUID();const auth = await requireRole("agent", { requestId, resource: "agenda" });if (!auth.ok) return auth.response;
   const parsed = z.object({ connection_id: z.uuid() }).strict().safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", "Confira a conexão escolhida.", 422, { requestId });
-  const { data, error } = await (await createClient()).from("calendar_connections").select("id").eq("organization_id", auth.org.orgId).eq("user_id", auth.user.id).eq("id", parsed.data.connection_id).maybeSingle();
+  const { data, error } = await (await createClient()).from("calendar_connections").select("id").eq("organization_id", auth.org.orgId).eq("user_id", auth.user.id).eq("id", parsed.data.connection_id).eq("provider", PROVEDOR_GOOGLE).maybeSingle();
   if (error || !data) return fail("not_found", "Conexão indisponível.", 404, { requestId });
   try {
     await refreshCatalog(createAdminClient(), auth.org.orgId, data.id);

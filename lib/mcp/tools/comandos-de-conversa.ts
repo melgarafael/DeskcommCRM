@@ -132,14 +132,34 @@ export const crmResumeAi: McpToolDefinition<typeof comandoShape> = {
   },
 };
 
-export const crmCloseConversation: McpToolDefinition<typeof comandoShape> = {
+const closeShape = {
+  ...comandoShape,
+  safe_close: z
+    .boolean()
+    .optional()
+    .describe("Quando true, valida atomicamente no banco todas as pré-condições antes de encerrar."),
+  expected_status: z
+    .enum(["open", "pending", "claimed", "ai_handling", "closed", "resolved", "archived"])
+    .optional(),
+  expected_last_inbound_message_id: z
+    .string()
+    .uuid()
+    .nullable()
+    .optional()
+    .describe("UUID da última mensagem inbound conhecida; recusa se chegou nova mensagem."),
+  expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
+  expected_sector_id: z.string().uuid().nullable().optional(),
+  idempotency_key: z.string().trim().min(1).max(200).optional(),
+};
+
+export const crmCloseConversation: McpToolDefinition<typeof closeShape> = {
   name: "crm_close_conversation",
   description:
     "Encerra o atendimento desta conversa — a MESMA transição do botão Encerrar da tela: " +
     "registra o fim no atendimento e libera a fila. Não reabre depois por acidente; para voltar " +
     "atrás use crm_reopen_conversation. Se a conversa mudou desde que você leu, informe " +
-    "expected_revision e a chamada recusa em vez de encerrar por cima.",
-  inputSchema: comandoShape,
+    "expected_revision (ou safe_close + pré-condições) e a chamada recusa em vez de encerrar por cima.",
+  inputSchema: closeShape,
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
@@ -147,13 +167,32 @@ export const crmCloseConversation: McpToolDefinition<typeof comandoShape> = {
     recusarAgente(ctx);
     exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_CONVERSAS_ESCRITA);
 
-    const { conversation, devolucao } = await fecharConversaHandler(
+    const { conversation, devolucao, already_closed, idempotent_replay } = await fecharConversaHandler(
       ctx.supabase,
       ctxDoHandler(ctx),
       input.conversation_id,
-      input.expected_revision !== undefined ? { expectedRevision: input.expected_revision } : {},
+      {
+        ...(input.expected_revision !== undefined ? { expectedRevision: input.expected_revision } : {}),
+        ...(input.safe_close !== undefined ? { safeClose: input.safe_close } : {}),
+        ...(input.expected_status !== undefined ? { expectedStatus: input.expected_status } : {}),
+        ...(input.expected_last_inbound_message_id !== undefined
+          ? { expectedLastInboundMessageId: input.expected_last_inbound_message_id }
+          : {}),
+        ...(input.expected_assigned_to_user_id !== undefined
+          ? { expectedAssignedToUserId: input.expected_assigned_to_user_id }
+          : {}),
+        ...(input.expected_sector_id !== undefined
+          ? { expectedSectorId: input.expected_sector_id }
+          : {}),
+        ...(input.idempotency_key !== undefined ? { idempotencyKey: input.idempotency_key } : {}),
+      },
     );
-    return { ...conversation, ...(devolucao ? { devolucao } : {}) };
+    return {
+      ...conversation,
+      ...(devolucao ? { devolucao } : {}),
+      ...(already_closed !== undefined ? { already_closed } : {}),
+      ...(idempotent_replay !== undefined ? { idempotent_replay } : {}),
+    };
   },
 };
 

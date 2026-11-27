@@ -1006,6 +1006,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Bot API do Telegram (canal nativo do #3440): é para onde `lib/channels/bot/credentials.ts` envia `sendMessage` e registra o webhook. Endpoint padrão fixo de propósito — instalação que não configura nada tem de funcionar —, com override por TELEGRAM_API_BASE_URL para a prova em tela.",
   },
+  "graph.microsoft.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API da Microsoft que a agenda do Outlook lê (#1754). O aplicativo é do cliente; o domínio é do fornecedor.",
+  },
+  "login.microsoftonline.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "consentimento e token do OAuth da Microsoft para a agenda do Outlook (`lib/agenda/microsoft/oauth.ts`).",
+  },
   "www.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

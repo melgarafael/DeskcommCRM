@@ -35,15 +35,20 @@ export const ESCOPO_CONTATOS_ESCRITA = "contacts:write";
  * separadamente por quem emite o token.
  */
 export const ESCOPO_CONVERSAS_ESCRITA = "conversations:write";
+/**
+ * ENVIO INSTITUCIONAL SEM EFEITOS COLATERAIS NO ATENDIMENTO.
+ *
+ * Autoriza o token (REST ou MCP) a enviar mensagens com
+ * `dispatch_mode = "institutional"` em uma conversa ativa inequívoca, sem
+ * alterar fila, SLA, silêncio da IA, carteira ou últimas interações.
+ */
+export const ESCOPO_MENSAGENS_INSTITUCIONAIS = "messages:institutional";
 
 /**
  * O token tem o escopo? `undefined` (sessão de navegador, que não tem escopos)
  * devolve `false` de propósito: quem pergunta isto está no ramo de TOKEN, e uma
  * resposta "sim" para quem não é token abriria a porta pelo caminho errado.
  */
-export function tokenTemEscopo(
-  scopes: readonly string[] | undefined,
-  escopo: string,
-): boolean {
+export function tokenTemEscopo(scopes: readonly string[] | undefined, escopo: string): boolean {
   return Array.isArray(scopes) && scopes.includes(escopo);
 }

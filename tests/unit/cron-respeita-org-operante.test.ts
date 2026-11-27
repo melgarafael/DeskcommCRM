@@ -50,6 +50,7 @@ const SEM_FILTRO: Record<string, string> = {
   "agenda-google-push": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
   "agenda-google-refresh": "renova token do Google Agenda: deliberadamente não gatilhado (spec §4)",
   "agenda-google-sync": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
+  "agenda-microsoft-sync": "só lê a ocupação do Outlook, como a sincronia do Google (spec §4)",
   "agent-dispatcher": "no-op permanente desde a convergência; não há o que filtrar",
   "canal-mudo-watcher": "só abre aviso na Central da própria org; sem custo nem saída",
   "case-stale-watcher": "só reabre aviso de caso na Central; sem custo nem saída",

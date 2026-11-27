@@ -42,6 +42,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { readServiceBoundarySupabase } from "@/lib/atendimento/origem";
 
 import { resolverAgenteDaConversa, type CandidatoDeAgente } from "@/lib/ai/agents/agente-da-conversa";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 
 import { ultimaFalaEDaEquipe, type MensagemParaRegua } from "./fala-da-equipe";
 
@@ -254,15 +255,16 @@ export function createSupabaseRetomadaAoDevolverDb(admin: SupabaseClient): Retom
     async ultimaMensagem(orgId, conversationId) {
       const { data, error } = await admin
         .from("messages")
-        .select("direction, sent_via")
+        .select("direction, sent_via, metadata")
         .eq("organization_id", orgId)
         .eq("conversation_id", conversationId)
         .order("sent_at", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
       if (error) throw new Error(error.message);
-      return (data as UltimaMensagem | null) ?? null;
+      const linhas = (data ?? []) as Array<UltimaMensagem & { metadata?: unknown }>;
+      const operacional = linhas.find((m) => !ehMensagemInstitucional(m.metadata));
+      return operacional ? { direction: operacional.direction, sent_via: operacional.sent_via } : null;
     },
 
     async acompanhamentoVivo(orgId, contactId) {

@@ -29,6 +29,7 @@
  *   passa por `fundirTokens` antes de qualquer escrita.
  */
 
+import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { NextResponse, type NextRequest } from "next/server";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 
@@ -96,6 +97,8 @@ export async function renovarAgendasDoGoogle(
     .select(
       "id, organization_id, user_id, account_email, status, token_expires_at, oauth_access_token_encrypted, oauth_refresh_token_encrypted, scopes",
     )
+    // Só as do Google: renovar o acesso de outro provedor aqui o marcaria como quebrado.
+    .in("provider", [PROVEDOR_GOOGLE])
     .in("status", ["healthy", "rate_limited"])
     .not("token_expires_at", "is", null)
     .lte("token_expires_at", limite)
