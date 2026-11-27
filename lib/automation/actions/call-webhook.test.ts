@@ -441,6 +441,38 @@ describe("executeCallWebhook", () => {
     }
   });
 
+  it("google_campaign_id e utm_campaign vencem campaign_id/campaign_name, na ordem documentada", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-6",
+      source_metadata: {
+        ad_platform: "google_ads",
+        campaign_id: "camp-do-formulario",
+        google_campaign_id: "camp-google",
+        campaign_name: "nome-do-formulario",
+        utm_campaign: "verao-2026",
+      },
+    });
+
+    expect(data.contact).toEqual({
+      id: "contact-6",
+      attribution: { platform: "google_ads", campaign_id: "camp-google", campaign_name: "verao-2026" },
+    });
+  });
+
+  it("contato de prospecção: o campaign_id da abordagem interna não vira attribution", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-7",
+      source: "prospecting",
+      source_metadata: {
+        campaign_id: "11111111-2222-3333-4444-555555555555",
+        place_id: "place-1",
+        maps_url: "https://maps.example/x",
+      },
+    });
+
+    expect(data.contact).toEqual({ id: "contact-7" });
+  });
+
   it("SSRF via redirect: 302 não é seguido, falha com redirect_not_followed, target não recebe hit", async () => {
     let targetHits = 0;
     const target = createServer((req, res) => {

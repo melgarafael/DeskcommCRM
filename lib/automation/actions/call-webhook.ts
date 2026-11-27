@@ -254,8 +254,8 @@ const CAMPOS_DA_ATRIBUICAO = [
   ["click_id", ["ad_source_id"]],
   ["click_source", ["ad_click_source"]],
   ["ad_id", ["ad_id", "google_ad_id"]],
-  ["campaign_id", ["campaign_id", "google_campaign_id"]],
-  ["campaign_name", ["campaign_name", "utm_campaign"]],
+  ["campaign_id", ["google_campaign_id", "campaign_id"]],
+  ["campaign_name", ["utm_campaign", "campaign_name"]],
 ] as const;
 
 function atribuicaoPublica(sourceMetadata: unknown): Record<string, string> | undefined {
@@ -278,7 +278,15 @@ function atribuicaoPublica(sourceMetadata: unknown): Record<string, string> | un
 function contatoPublico(row: unknown): Record<string, unknown> | undefined {
   const contact = projectPublicFields(row, CONTACT_PUBLIC_FIELDS);
   if (!contact) return undefined;
-  const atribuicao = atribuicaoPublica((row as Record<string, unknown>).source_metadata);
+  const linha = row as Record<string, unknown>;
+  // A prospecção grava em `source_metadata.campaign_id` o id da campanha
+  // INTERNA de abordagem (`lib/prospecting/store.ts`), não um anúncio: sair
+  // como `attribution.campaign_id` seria id interno no envelope.
+  const meta =
+    linha.source === "prospecting" && linha.source_metadata && typeof linha.source_metadata === "object"
+      ? { ...(linha.source_metadata as Record<string, unknown>), campaign_id: undefined }
+      : linha.source_metadata;
+  const atribuicao = atribuicaoPublica(meta);
   return atribuicao ? { ...contact, attribution: atribuicao } : contact;
 }
 
