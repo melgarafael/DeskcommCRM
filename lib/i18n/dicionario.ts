@@ -21529,6 +21529,17 @@ export const DICIONARIO: Traducoes = {
   "Ficou com {nome}, o dono da carteira do cliente.": { es: "Quedó con {nome}, el dueño de la cartera del cliente." },
   "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.": { es: "Ningún destino del negocio sirvió: quedó con {nome}, la persona fija del respaldo." },
   "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.": { es: "Nadie pudo recibir este negocio: el responsable y la cartera del cliente no existen o están fuera del equipo, y el respaldo tampoco pudo atender. El negocio quedó sin responsable." },
+  // #3804 item 3 — a MESMA decisão, agora na passagem para humano, e a tela que
+  // a liga (`settings.atendimento.destino_do_handoff`).
+  "Quando a IA passa a conversa para uma pessoa, para quem ela vai?": { es: "Cuando la IA pasa la conversación a una persona, ¿a quién va?" },
+  "Desligado, a conversa cai na fila da Central e alguém a assume — o de sempre. Ligado, ela vai direto para quem já é dono do assunto: o responsável do negócio e, se não houver, o dono da carteira do cliente.": { es: "Desactivado, la conversación cae en la cola de la Central y alguien la toma — lo de siempre. Activado, va directo a quien ya es dueño del tema: el responsable del negocio y, si no lo hay, el dueño de la cartera del cliente." },
+  "Entregar a quem é o responsável do negócio ou o dono da carteira": { es: "Entregar a quien es el responsable del negocio o el dueño de la cartera" },
+  "O pós-venda de quem vendeu: uma configuração só para a equipe toda, sem uma pessoa escolhida na regra.": { es: "El posventa de quien vendió: una sola configuración para todo el equipo, sin una persona elegida en la regla." },
+  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a entrega segue para o próximo. A Atividade mostra qual destino decidiu.": { es: "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la entrega pasa al siguiente. La Actividad muestra qué destino decidió." },
+  "Se nenhum destino servir": { es: "Si ningún destino sirve" },
+  "Mandar para o rodízio de atendentes": { es: "Enviar a la rotación de asesores" },
+  "Deixar na fila da Central": { es: "Dejar en la cola de la Central" },
+  "Sem nenhum dos dois, ninguém recebe e a conversa fica na fila. Nada vai para uma pessoa escolhida no escuro.": { es: "Sin ninguno de los dos, nadie recibe y la conversación queda en la cola. Nada va a una persona elegida a ciegas." },
   // #3881 — a ação `define_sector` e o seletor da automação: a conversa vai
   // para um SETOR de atendimento. A frase da paleta diz o efeito (o setor da
   // conversa), e a caixa de sobrescrita diz a precedência do trabalho manual.

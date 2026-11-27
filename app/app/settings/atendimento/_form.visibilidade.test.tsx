@@ -45,6 +45,12 @@ const inicial: AtendimentoConfig = {
   handoff_return_after_minutes: null,
   conversation_stays_with_attendant: false,
   manual_reply_silence_minutes: null,
+  // #3804 item 3 — o padrão do produto é DESLIGADO (`null`): a conversa fica na
+  // fila da Central. Este arquivo mede o texto dos modos de visibilidade, não a
+  // entrega ao dono; o valor entra para o fixture ser um `AtendimentoConfig`
+  // inteiro, como o `initial` que a rota devolve para uma empresa sem a caixa
+  // marcada — e não para afrouxar o tipo.
+  destino_do_handoff: null,
 };
 
 function renderizar(locale: "pt-BR" | "es") {
