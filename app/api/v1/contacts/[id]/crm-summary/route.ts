@@ -312,11 +312,18 @@ async function responderCrmSummary(
       orders: orders.data ?? [],
       activities: linhas.map(({ actor_api_token_id: _token, ...a }) => {
         const token = tokenDaAtividade({ actor_api_token_id: _token });
-        // Só o token que EXISTE nesta organização vira "Integração": id que
-        // não casa (outra empresa, linha que sumiu, leitura caída) segue o
-        // rótulo do ator, em vez de afirmar uma integração que não se confirmou.
-        const integracao: IntegracaoDaAtividade =
-          token && integracoes.has(token) ? { nome: integracoes.get(token) ?? null } : null;
+        // Leitura feita: só o token que EXISTE nesta organização vira
+        // "Integração" (o app só revoga token, nunca apaga a linha; id que não
+        // casa é de outra empresa ou não é de token nenhum, e segue o rótulo do
+        // ator). Leitura caída: a linha diz que foi um token, só falta o nome,
+        // então "Integração" sem nome.
+        const integracao: IntegracaoDaAtividade = !token
+          ? null
+          : !integracoes.lido
+            ? { nome: null }
+            : integracoes.nomes.has(token)
+              ? { nome: integracoes.nomes.get(token) ?? null }
+              : null;
         return {
           ...a,
           performed_by_name: a.performed_by_user_id
@@ -339,15 +346,16 @@ async function responderCrmSummary(
  *
  * Service role porque `api_tokens` não é legível por quem atende; o tenant vai
  * no filtro (R3 de `admin-client-exige-filtro-de-tenant`), então token de outra
- * organização não ganha nome. Sem service role, ou com a leitura caída, o mapa
- * volta vazio e a linha diz só "Integração" — nunca derruba o painel.
+ * organização não ganha nome. Sem service role, ou com a leitura caída, volta
+ * `lido: false` e a linha diz só "Integração" — nunca derruba o painel.
  */
 async function nomesDosTokens(
   orgId: string,
   tokenIds: Array<string | null>,
-): Promise<Map<string, string | null>> {
+): Promise<{ lido: boolean; nomes: Map<string, string | null> }> {
   const unicos = [...new Set(tokenIds.filter((id): id is string => Boolean(id)))];
-  if (unicos.length === 0 || !isServiceRoleConfigured()) return new Map();
+  if (unicos.length === 0) return { lido: true, nomes: new Map() };
+  if (!isServiceRoleConfigured()) return { lido: false, nomes: new Map() };
   try {
     const { data, error } = await createAdminClient()
       .from("api_tokens")
@@ -356,7 +364,7 @@ async function nomesDosTokens(
       .in("id", unicos);
     if (error) {
       logger.warn("[crm-summary] nomes dos tokens não lidos", { organizationId: orgId, erro: error.message });
-      return new Map();
+      return { lido: false, nomes: new Map() };
     }
     const nomes = new Map<string, string | null>();
     for (const linha of (data ?? []) as Array<{ id?: unknown; name?: unknown }>) {
@@ -364,13 +372,13 @@ async function nomesDosTokens(
       const nome = typeof linha.name === "string" ? linha.name.trim() : "";
       nomes.set(linha.id, nome || null);
     }
-    return nomes;
+    return { lido: true, nomes };
   } catch (err) {
     logger.warn("[crm-summary] leitura dos nomes dos tokens lançou", {
       organizationId: orgId,
       erro: err instanceof Error ? err.message : String(err),
     });
-    return new Map();
+    return { lido: false, nomes: new Map() };
   }
 }
 

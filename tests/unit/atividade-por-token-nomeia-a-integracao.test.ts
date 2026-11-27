@@ -45,6 +45,7 @@ vi.mock("@/lib/auth/require-role", () => ({
 const admin = vi.hoisted(() => ({
   tokens: [] as Array<Record<string, unknown>>,
   filtros: [] as Array<[string, unknown]>,
+  falha: false,
 }));
 vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<typeof import("@/lib/audit")>()),
@@ -70,7 +71,10 @@ vi.mock("@/lib/supabase/admin", () => ({
         order: () => chain,
         limit: () => chain,
         maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
-        then: (res: (v: unknown) => unknown) => Promise.resolve({ data: linhas, error: null }).then(res),
+        then: (res: (v: unknown) => unknown) =>
+          Promise.resolve(
+            admin.falha ? { data: null, error: { message: "leitura caiu" } } : { data: linhas, error: null },
+          ).then(res),
       };
       return chain;
     },
@@ -140,6 +144,7 @@ const base = {
 beforeEach(() => {
   admin.tokens = [];
   admin.filtros = [];
+  admin.falha = false;
 });
 
 describe("#5160 — escrita: a linha do token guarda qual token agiu", () => {
@@ -224,6 +229,13 @@ describe("#5160 — leitura: o crm-summary devolve o nome da integração", () =
     admin.tokens = [{ id: TOKEN_SEM_LINHA, organization_id: "org-2", name: "De outra empresa" }];
     const { atividades } = await ler([atividade("a-1", { actor_api_token_id: TOKEN_SEM_LINHA })]);
     expect(atividades[0]?.integracao).toBeNull();
+  });
+
+  it("leitura dos nomes caída: a linha de token diz «Integração» sem nome, não «Sistema»", async () => {
+    admin.tokens = [{ id: TOKEN, organization_id: ORG, name: "Zapier" }];
+    admin.falha = true;
+    const { atividades } = await ler([atividade("a-1", { actor_api_token_id: TOKEN })]);
+    expect(atividades[0]?.integracao).toEqual({ nome: null });
   });
 
   it("valor que não é UUID na linha não entra na consulta e não derruba os outros nomes", async () => {
