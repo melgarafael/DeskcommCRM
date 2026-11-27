@@ -23575,6 +23575,9 @@ export const DICIONARIO: Traducoes = {
   "Levar": { es: "Llevar" },
   "Levando": { es: "Llevando" },
   "Levando…": { es: "Llevando…" },
+  // #5232: o resultado do lote com um só negócio dizia "1 de 1 negócios
+  // levados." — par singular próprio, e não plural por heurística.
+  "negócio levado.": { es: "negocio llevado." },
   "negócios levados.": { es: "negocios llevados." },
   "Não foram levados:": { es: "No se llevaron:" },
   "O negócio já foi criado no funil de destino. Confira-o antes de tentar novamente.": {

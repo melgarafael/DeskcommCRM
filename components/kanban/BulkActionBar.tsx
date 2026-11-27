@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { apiClient } from "@/lib/api/client";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
@@ -32,6 +34,22 @@ import type { PipelineVocabulary, Stage } from "@/lib/kanban/types";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { LevarLoteParaOutroFunilDialog } from "./LevarLoteParaOutroFunilDialog";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
+
+/**
+ * O substantivo do funil é um RÓTULO: sozinho na tela ele vem capitalizado
+ * ("Negócio", "Negocio"), e é assim que está no dicionário. No MEIO de uma
+ * frase o espanhol não capitaliza substantivo comum — "1 Negocio seleccionado"
+ * está errado (#5232), e a barra monta a frase colando o rótulo no meio.
+ *
+ * Só a PRIMEIRA letra desce, e só fora do pt-BR: em português a tela continua
+ * exatamente a de hoje ("1 Negócio selecionado"), porque traduzir não pode
+ * mudar o produto de quem já usa (a regra do guarda de i18n). Palavra livre do
+ * funil que já venha em minúscula ("pedido") passa intacta.
+ */
+function noMeioDaFrase(texto: string, idioma: Idioma): string {
+  if (idioma === "pt-BR" || texto === "") return texto;
+  return texto.charAt(0).toLocaleLowerCase(idioma) + texto.slice(1);
+}
 
 interface BulkActionBarProps {
   selectedIds: string[];
@@ -69,6 +87,7 @@ export function BulkActionBar({
 }: BulkActionBarProps) {
   const [outroFunilOpen, setOutroFunilOpen] = useState(false);
   const t = useT();
+  const idioma = useIdioma();
   const user = useUser();
   const activeOrg = useActiveOrg();
   const vocab = resolveVocabulary(vocabulary);
@@ -116,12 +135,15 @@ export function BulkActionBar({
   );
   const { data: members } = useAssignableMembers(podeAtribuir);
 
-  // "Levar para outro funil" também é ESCRITA em lote: a rota só aceita
-  // `agent`+ (toda ação que não é `assign` usa `agent` em
-  // `app/api/v1/leads/bulk/route.ts`). Para o `viewer` a opção some, como já
-  // acontece em funil arquivado — desabilitar com dica ainda prometeria uma
-  // ação que o servidor recusa com 403.
-  const podeLevarParaOutroFunil = Boolean(
+  // Todo o RESTO da barra é escrita de `agent`+ — a rota em lote só sobe para
+  // `manager` no `assign` (`app/api/v1/leads/bulk/route.ts`,
+  // `roleDoLote`); para o `viewer` a escrita é recusada por desenho, ele é
+  // read-only. Sem este gate o `viewer` via as etapas do "Mover para…",
+  // "Tag…", "Marcar como perdido…" e "Excluir": quatro cliques que morriam em
+  // 403, e a barra parecendo quebrada para quem só queria olhar (#5232).
+  // Some o controle, como já acontece em funil arquivado — desabilitar com dica
+  // ainda prometeria uma ação que o servidor recusa.
+  const podeEscreverEmLote = Boolean(
     user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
   );
 
@@ -146,9 +168,10 @@ export function BulkActionBar({
   // selecionados", e nunca fica errado.
   // O card é o NEGÓCIO (`vocab.deal`: "Pedido" no e-commerce), não a pessoa
   // (`vocab.lead`: "Cliente") — o resto do funil já chama o card de negócio (#3811).
+  // No meio da frase ele desce a inicial fora do pt-BR (#5232).
   const rotuloDaContagem =
     selectedIds.length === 1
-      ? `1 ${t(vocab.deal)} ${t("selecionado")}`
+      ? `1 ${noMeioDaFrase(t(vocab.deal), idioma)} ${t("selecionado")}`
       : `${selectedIds.length} ${t("selecionados")}`;
 
   const runMove = (stageId: string) => {
@@ -250,24 +273,27 @@ export function BulkActionBar({
       >
         <span className="text-sm font-medium">{rotuloDaContagem}</span>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" disabled={bulk.isPending}>
-              {t("Mover para…")}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>{t("Etapa")}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {stages.map((s) => (
-              <DropdownMenuItem key={s.id} onClick={() => runMove(s.id)}>
-                {s.name}
-              </DropdownMenuItem>
-            ))}
-            {/* Outro FUNIL fica no mesmo menu: é a mesma pergunta ("para
-                onde vai?"), e quem procura não precisa achar um segundo botão. */}
-            {podeLevarParaOutroFunil && (
-              <>
+        {podeEscreverEmLote && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={bulk.isPending}>
+                  {t("Mover para…")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>{t("Etapa")}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {stages.map((s) => (
+                  <DropdownMenuItem key={s.id} onClick={() => runMove(s.id)}>
+                    {s.name}
+                  </DropdownMenuItem>
+                ))}
+                {/* Outro FUNIL fica no mesmo menu: é a mesma pergunta ("para
+                    onde vai?"), e quem procura não precisa achar um segundo botão. */}
+                {/* "Outro funil…" fica sob o MESMO gate da escrita em lote —
+                    a rota trata toda ação que não é `assign` como `agent`+
+                    (#5024, #5232): para o `viewer` nem o menu existe. */}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   data-testid="lote-outro-funil"
@@ -275,117 +301,119 @@ export function BulkActionBar({
                 >
                   {t("Outro funil…")}
                 </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {/* Extraído do PR #418 (@clinicacentrodosorrisosc-code): a lista de
-            atendentes. Antes só dava para atribuir a SI MESMO, e "redistribuir
-            a carteira" — o caso que faz a ação em lote existir — era o único
-            que a barra não atendia. */}
-        {podeAtribuir && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" disabled={bulk.isPending}>
-                {t("Responsável…")}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => runAssign(user.id)}>{t("Eu")}</DropdownMenuItem>
-              {(members ?? [])
-                .filter((m) => m.user_id !== user.id)
-                .map((m) => (
-                  <DropdownMenuItem key={m.user_id} onClick={() => runAssign(m.user_id)}>
-                    {rotuloDoMembro(m, t)}
+            {/* Extraído do PR #418 (@clinicacentrodosorrisosc-code): a lista de
+                atendentes. Antes só dava para atribuir a SI MESMO, e "redistribuir
+                a carteira" — o caso que faz a ação em lote existir — era o único
+                que a barra não atendia.
+                Gate PRÓPRIO, e mais estreito: `assign` é ≥manager, então ele fica
+                dentro do de escrita (`agent`+) e o `agent` não o vê. */}
+            {podeAtribuir && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={bulk.isPending}>
+                    {t("Responsável…")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => runAssign(user.id)}>{t("Eu")}</DropdownMenuItem>
+                  {(members ?? [])
+                    .filter((m) => m.user_id !== user.id)
+                    .map((m) => (
+                      <DropdownMenuItem key={m.user_id} onClick={() => runAssign(m.user_id)}>
+                        {rotuloDoMembro(m, t)}
+                      </DropdownMenuItem>
+                    ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => runAssign(null)}>
+                    {t("Remover responsável")}
                   </DropdownMenuItem>
-                ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => runAssign(null)}>
-                {t("Remover responsável")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" disabled={bulk.isPending}>
-              Tag…
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <div className="flex items-center gap-2 p-2">
-              <Input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                placeholder={t("nova tag")}
-                className="h-8 w-40"
-                onKeyDown={(e) => {
-                  // ⚠️ O MENU DO RADIX FAZ TYPEAHEAD A CADA TECLA DE UM
-                  // CARACTERE dentro do conteúdo — sem exceção para `<input>`
-                  // (@radix-ui/react-menu 2.1.24, `onKeyDown` do Content:
-                  // `if (!isModifierKey && isCharacterKey) handleTypeaheadSearch(key)`,
-                  // que faz `newItem.focus()` no item que casa o prefixo).
-                  //
-                  // Enquanto o menu não tinha item nenhum, isso era inofensivo.
-                  // Com a lista de tags existentes ao lado, digitar "verão" com
-                  // "vip" na lista levava o foco para o item "vip" já na PRIMEIRA
-                  // tecla: as teclas seguintes não chegavam ao campo e o Enter
-                  // aplicava "vip" a TODOS os selecionados — que ainda emite
-                  // `lead.tag_added` por lead, gatilho real de automação.
-                  // Medido em jsdom: sem esta linha o campo recebia "g" ao
-                  // digitar "goo".
-                  //
-                  // A condição é a MESMA do Radix, e não um `stopPropagation`
-                  // seco: assim ArrowUp/ArrowDown continuam navegando os itens a
-                  // partir do campo. O Escape não depende disto — o
-                  // DismissableLayer escuta `keydown` no document com
-                  // `{ capture: true }`, fase que roda antes de qualquer handler
-                  // React, então o menu continua fechando.
-                  if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    e.stopPropagation();
-                  }
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    runTagAdd();
-                  }
-                }}
-              />
-              <Button size="sm" onClick={() => runTagAdd()} disabled={!tagInput.trim()}>
-                {t("Adicionar")}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={bulk.isPending}>
+                  Tag…
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <div className="flex items-center gap-2 p-2">
+                  <Input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    placeholder={t("nova tag")}
+                    className="h-8 w-40"
+                    onKeyDown={(e) => {
+                      // ⚠️ O MENU DO RADIX FAZ TYPEAHEAD A CADA TECLA DE UM
+                      // CARACTERE dentro do conteúdo — sem exceção para `<input>`
+                      // (@radix-ui/react-menu 2.1.24, `onKeyDown` do Content:
+                      // `if (!isModifierKey && isCharacterKey) handleTypeaheadSearch(key)`,
+                      // que faz `newItem.focus()` no item que casa o prefixo).
+                      //
+                      // Enquanto o menu não tinha item nenhum, isso era inofensivo.
+                      // Com a lista de tags existentes ao lado, digitar "verão" com
+                      // "vip" na lista levava o foco para o item "vip" já na PRIMEIRA
+                      // tecla: as teclas seguintes não chegavam ao campo e o Enter
+                      // aplicava "vip" a TODOS os selecionados — que ainda emite
+                      // `lead.tag_added` por lead, gatilho real de automação.
+                      // Medido em jsdom: sem esta linha o campo recebia "g" ao
+                      // digitar "goo".
+                      //
+                      // A condição é a MESMA do Radix, e não um `stopPropagation`
+                      // seco: assim ArrowUp/ArrowDown continuam navegando os itens a
+                      // partir do campo. O Escape não depende disto — o
+                      // DismissableLayer escuta `keydown` no document com
+                      // `{ capture: true }`, fase que roda antes de qualquer handler
+                      // React, então o menu continua fechando.
+                      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        e.stopPropagation();
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        runTagAdd();
+                      }
+                    }}
+                  />
+                  <Button size="sm" onClick={() => runTagAdd()} disabled={!tagInput.trim()}>
+                    {t("Adicionar")}
+                  </Button>
+                </div>
+                {filtrarEtiquetas(tagsExistentes, tagInput)
+                  .slice(0, 10)
+                  .map((tag) => (
+                    <DropdownMenuItem key={tag} onClick={() => runTagAdd(tag)}>
+                      <PontoDaEtiqueta tag={tag} className="mr-2" />
+                      {tag}
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {etapaDePerda && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setLoseOpen(true)}
+                disabled={bulk.isPending}
+              >
+                {t("Marcar como perdido…")}
               </Button>
-            </div>
-            {filtrarEtiquetas(tagsExistentes, tagInput)
-              .slice(0, 10)
-              .map((tag) => (
-                <DropdownMenuItem key={tag} onClick={() => runTagAdd(tag)}>
-                  <PontoDaEtiqueta tag={tag} className="mr-2" />
-                  {tag}
-                </DropdownMenuItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            )}
 
-        {etapaDePerda && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setLoseOpen(true)}
-            disabled={bulk.isPending}
-          >
-            {t("Marcar como perdido…")}
-          </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setConfirmDelete(true)}
+              disabled={bulk.isPending}
+            >
+              {t("Excluir")}
+            </Button>
+          </>
         )}
-
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => setConfirmDelete(true)}
-          disabled={bulk.isPending}
-        >
-          {t("Excluir")}
-        </Button>
 
         <Button size="sm" variant="ghost" onClick={onClear}>
           {t("Cancelar")}
@@ -397,7 +425,7 @@ export function BulkActionBar({
           <DialogHeader>
             <DialogTitle>
               {selectedIds.length === 1
-                ? `${t("Excluir")} 1 ${t(vocab.deal)}?`
+                ? `${t("Excluir")} 1 ${noMeioDaFrase(t(vocab.deal), idioma)}?`
                 : `${t("Excluir")} ${selectedIds.length} ${t("selecionados")}?`}
             </DialogTitle>
             <DialogDescription>
