@@ -35,6 +35,7 @@ de quem é a mensagem.
 | `phone_number` | um dos dois | o número do destinatário, E.164 com `+` ou só dígitos. |
 | `body` | sim¹ | texto da mensagem, 1 a 4096 caracteres. |
 | `type` | não | `text` (padrão), `template`, `image`, `audio`… — o mesmo vocabulário da rota. |
+| `dispatch_mode` | não | `"operational"` (padrão) ou `"institutional"` (exige escopo `messages:institutional` e só aceita `conversation_id`, sem efeitos no atendimento). |
 | `metadata` | não | objeto livre, gravado com a mensagem. |
 | `channel_session_id` | não | uuid da sessão de canal por onde a mensagem sai. Vale só com `phone_number`; com `conversation_id` é inerte, porque a conversa já fixa o canal. |
 
@@ -108,12 +109,16 @@ conversa duplicados.
 |---|---|---|
 | 401 | `unauthenticated` | token ausente, inválido, revogado ou expirado |
 | 403 | `forbidden` / `forbidden_role` | token sem `mcp:write`; `on_behalf_of_user_id` sem o escopo `messages:on_behalf`; contato marcado como pessoal; papel abaixo de atendente |
+| 403 | `forbidden` | `dispatch_mode: "institutional"` sem o escopo `messages:institutional`, por sessão de navegador ou por agente de IA |
 | 404 | `not_found` | sem `channel_session_id`: não há sessão de canal que possa enviar |
 | 409 | `state_conflict` | sem `channel_session_id`: canal desligado ou fora do ar (`session_unavailable`) — retentar depois |
 | 409 | `idempotency_conflict` | ver a §4 |
 | 409 | `idempotency_in_progress` | ver a §4 |
+| 409 | `state_conflict` | `dispatch_mode: "institutional"` numa conversa encerrada, resolvida ou arquivada (`details.conversation_status`); também quando ela é encerrada entre a leitura e o envio — a mensagem fica `failed` com `error_code = conversation_closed` |
 | 422 | `ambiguous_target` | `conversation_id` **e** `phone_number` no mesmo corpo |
 | 422 | `validation_error` | corpo inválido, telefone inválido, nenhum identificador; `channel_session_id` inexistente, de outra organização ou fora do ar — resposta única, com `details.campo: "channel_session_id"`, que não diz se a sessão existe em outra organização |
+| 422 | `validation_failed` | `dispatch_mode: "institutional"` com `phone_number`, sem `conversation_id` ou com `on_behalf_of_user_id` |
+| 422 | `numero_sem_whatsapp` | `phone_number` sem conta de WhatsApp em nenhuma grafia consultada — recusa definitiva, não adianta retentar (#5298) |
 | 429 | `rate_limited` | teto por token ou por organização; `details.retry_after_seconds` |
 | 500 | `internal_error` | falha ao abrir a conversa deste telefone |
 
@@ -145,6 +150,10 @@ recibo. O id que o conector guarda é `data.id`; o da conversa é
   organização" são indistinguíveis sem consultar as outras organizações.
 - **Não muda o conector do DeskVoice.** Ele vive em outro repositório
   (`packages/tools/src/connectors/deskcomm.ts`); este lado entrega a porta.
+- **Não envia modo institucional por telefone.** `dispatch_mode: "institutional"`
+  exige `conversation_id` explícito de uma conversa não encerrada e token com o
+  escopo `messages:institutional` (além de `mcp:write`); combinar com
+  `phone_number` ou `on_behalf_of_user_id` devolve `422 validation_failed`.
 
 ## 8. Uma nota de operação
 

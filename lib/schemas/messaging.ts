@@ -134,6 +134,12 @@ const camposDoEnvio = z.object({
    * linha do token e o membership, no banco.
    */
   on_behalf_of_user_id: z.string().uuid().optional(),
+  /**
+   * Classificação explícita do disparo pelo token (`operational` = padrão atual;
+   * `institutional` = aviso/lembrete/comunicado sem efeitos colaterais no
+   * atendimento). Sem default para manter intacto o hash legado de idempotência.
+   */
+  dispatch_mode: z.enum(["operational", "institutional"]).optional(),
 });
 
 /**

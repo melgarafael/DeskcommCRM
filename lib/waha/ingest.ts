@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { descartarSessaoQueNuncaPareou } from "@/lib/channels/descartar-sem-parear";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { gravarReacaoDeMensagem } from "@/lib/channels/reacao";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
@@ -177,11 +178,12 @@ async function ehEcoDeEnvioNosso(
   organizationId: string,
   conversationId: string,
   p: WahaPayload,
+  estado?: { institucional: boolean },
 ): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type, external_id, status")
+    .select("id, body, type, external_id, status, metadata")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -244,6 +246,7 @@ async function ehEcoDeEnvioNosso(
       type?: string | null;
       external_id?: string | null;
       status?: string | null;
+      metadata?: unknown;
     };
 
     // ── MARCA 2 (#3165): o CARIMBO do envio já está NESTA linha, com o id do
@@ -255,7 +258,10 @@ async function ehEcoDeEnvioNosso(
     // pergunta e a comparação de corpo abaixo leem o MESMO retrato: o carimbo que
     // cair no meio da ingestão aparece aqui, e não escapa para o lado de fora da
     // janela como escapava quando o filtro era `.is("external_id", null)` no SQL.
-    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) return true;
+    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) {
+      if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+      return true;
+    }
 
     // ── MARCA 1: linha ainda SEM id, num status de `STATUS_DE_ENVIO_NOSSO` (o
     // filtro do SQL acima; `sent` sem id é o #3138). Linha com id que NÃO é desta mensagem (outro envio
@@ -266,14 +272,20 @@ async function ehEcoDeEnvioNosso(
     if (p.type && p.type !== "chat") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.
-      if ((l.type ?? "chat") !== "chat") return true;
+      if ((l.type ?? "chat") !== "chat") {
+        if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+        return true;
+      }
       continue;
     }
     // Com a assinatura do emissor ligada (#2066), o eco traz `*Nome*\ntexto` e a
     // linha guarda `texto`: sem tirar a linha do nome, o eco do próprio envio
     // assinado seria lido como digitação no celular e calaria a IA.
     const gravado = (l.body ?? "").trim();
-    if (corpo.length > 0 && (gravado === corpo || gravado === semAssinatura(corpo).trim())) return true;
+    if (corpo.length > 0 && (gravado === corpo || gravado === semAssinatura(corpo).trim())) {
+      if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+      return true;
+    }
   }
   return false;
 }
@@ -1808,8 +1820,6 @@ async function handleOutboundFromUserPhone(
     }
   }
 
-  await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
-
   // ── CONTROLE DO AUTOMÁTICO NESTA CONVERSA ─────────────────────────────────
   //
   // Três desfechos para uma mensagem `fromMe` que NÃO é eco:
@@ -1835,8 +1845,9 @@ async function handleOutboundFromUserPhone(
   //   mexer no automa. -> ESTRITO   (na dúvida NÃO age; calar/ligar a IA por
   //                                  engano é pior que não agir)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
-  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
   let comandoAplicado: typeof comando = null;
+  const ecoEstado = { institucional: false };
+  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p, ecoEstado);
   if (!ehEco) {
     let revogar = true;
     // C-076: o interruptor é do agente que atende ESTA conversa
@@ -1886,6 +1897,12 @@ async function handleOutboundFromUserPhone(
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
     if (comandoAplicado && revogar) await revogarComando(session, chatId, p.id);
+  }
+  // Mensagem institucional não pode alterar last_outbound_at/last_message_at/
+  // last_message_preview/contacts.last_activity_at mesmo quando o webhook de
+  // eco chega na janela anterior ao carimbo do external_id.
+  if (!(ehEco && ecoEstado.institucional)) {
+    await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
   }
 
   // ── A CONVERSA QUE COMEÇA PELO CELULAR NASCE NO FUNIL (#2448) ────────────

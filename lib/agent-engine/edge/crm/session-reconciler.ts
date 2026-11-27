@@ -32,6 +32,10 @@ import { chatIndividualDaMensagem, chatSegueNaFicha } from '@/lib/waha/ultima-re
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
 import { canalDesativado } from '@/lib/channels/desativado';
 import {
+  conversaEncerradaParaEnvioInstitucional,
+  ehMensagemInstitucional,
+} from '@/lib/messaging/modo-de-envio';
+import {
   CHAVE_DO_VIGIA_DE_STARTING,
   decidirStartingPreso,
   estadoParaMetadata,
@@ -645,11 +649,19 @@ export async function redriveQueued(
       // A lista pode mudar enquanto a mensagem espera ou entre itens do lote.
       // Este redrive fala direto com o WAHA, portanto também precisa da guarda
       // do sink. Falha de leitura cai no catch e NÃO envia.
-      const { rows: acesso } = await pool.query<{ metadata: unknown; phone_number: string | null; operante: boolean }>(
-        `select s.metadata, c.phone_number, public.fn_org_operante(m.organization_id) as operante
+      const { rows: acesso } = await pool.query<{
+        metadata: unknown;
+        phone_number: string | null;
+        operante: boolean;
+        conversation_status?: string | null;
+        message_metadata?: unknown;
+      }>(
+        `select s.metadata, c.phone_number, public.fn_org_operante(m.organization_id) as operante,
+                v.status as conversation_status, m.metadata as message_metadata
          from messages m
          join channel_sessions s on s.id = m.channel_session_id and s.organization_id = m.organization_id
          join contacts c on c.id = m.contact_id and c.organization_id = m.organization_id
+         join conversations v on v.id = m.conversation_id and v.organization_id = m.organization_id
          where m.id = $1 and m.organization_id = $2 and m.status = 'queued'`,
         [m.id, m.organization_id],
       );
@@ -661,6 +673,19 @@ export async function redriveQueued(
       if (signal?.aborted) break;
       const atual = acesso[0];
       if (!atual) continue;
+      if (
+        ehMensagemInstitucional(atual.message_metadata) &&
+        conversaEncerradaParaEnvioInstitucional(atual.conversation_status)
+      ) {
+        await pool.query(
+          `update messages set status = 'failed', error_code = 'conversation_closed',
+             error_message = 'Envio institucional bloqueado: a conversa foi encerrada.'
+           where id = $1 and organization_id = $2 and status = 'queued'`,
+          [m.id, m.organization_id],
+        );
+        log.info('watchdog: reenvio institucional bloqueado — conversa encerrada', { message_id: m.id });
+        continue;
+      }
       // Organização parada não fala: o resgate direto ao WAHA não pode ser a
       // porta dos fundos da suspensão. Mesmo desfecho que a suspensão grava.
       if (atual.operante !== true) {
