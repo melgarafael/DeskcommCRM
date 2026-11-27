@@ -23,8 +23,6 @@ export interface OpcoesEncerramentoSeguro {
   expectedLastInboundAt?: string | null;
   expectedAssignedToUserId?: string | null;
   expectedSectorId?: string | null;
-  rejectHumanAssigned?: boolean;
-  rejectOpenPendencies?: boolean;
   idempotencyKey?: string;
 }
 
@@ -66,8 +64,6 @@ export function usaEncerramentoSeguro(opcoes: OpcoesEncerramentoSeguro): boolean
     opcoes.expectedLastInboundAt !== undefined ||
     opcoes.expectedAssignedToUserId !== undefined ||
     opcoes.expectedSectorId !== undefined ||
-    opcoes.rejectHumanAssigned !== undefined ||
-    opcoes.rejectOpenPendencies !== undefined ||
     opcoes.idempotencyKey !== undefined
   );
 }
@@ -112,9 +108,9 @@ function extrairDetalhesConflito(error: {
 
 export function temAncoraDeConcorrencia(opcoes: OpcoesEncerramentoSeguro): boolean {
   return (
-    opcoes.expectedRevision !== undefined ||
-    opcoes.expectedLastInboundMessageId !== undefined ||
-    opcoes.expectedLastInboundAt !== undefined
+    opcoes.expectedRevision !== undefined &&
+    (opcoes.expectedLastInboundMessageId !== undefined ||
+      opcoes.expectedLastInboundAt !== undefined)
   );
 }
 
@@ -139,7 +135,7 @@ export async function fecharConversaComSeguranca(
       "validation_failed",
       undefined,
       requestId,
-      "Encerramento seguro exige ao menos expected_revision ou expected_last_inbound_message_id.",
+      "Encerramento seguro exige expected_revision e expected_last_inbound_message_id (ou expected_last_inbound_at).",
     );
   }
 
@@ -155,8 +151,8 @@ export async function fecharConversaComSeguranca(
     p_enforce_assignee: opcoes.expectedAssignedToUserId !== undefined,
     p_expected_sector_id: opcoes.expectedSectorId ?? null,
     p_enforce_sector: opcoes.expectedSectorId !== undefined,
-    p_reject_human_assigned: opcoes.rejectHumanAssigned ?? true,
-    p_reject_open_pendencies: opcoes.rejectOpenPendencies ?? true,
+    p_reject_human_assigned: true,
+    p_reject_open_pendencies: true,
     p_idempotency_key: opcoes.idempotencyKey ?? null,
   });
 

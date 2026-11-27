@@ -90,8 +90,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     expected_last_inbound_at: z.string().datetime({ offset: true }).nullable().optional(),
     expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
     expected_sector_id: z.string().uuid().nullable().optional(),
-    reject_human_assigned: z.boolean().optional(),
-    reject_open_pendencies: z.boolean().optional(),
+    reject_human_assigned: z.literal(true).optional(),
+    reject_open_pendencies: z.literal(true).optional(),
     idempotency_key: z.string().trim().min(1).max(200).optional(),
   }).safeParse(body);
   if (!parsed.success) return fail("validation_failed", "Parâmetros de encerramento inválidos.", 422, { requestId });
@@ -155,12 +155,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
           : {}),
         ...(parsed.data.expected_sector_id !== undefined
           ? { expectedSectorId: parsed.data.expected_sector_id }
-          : {}),
-        ...(parsed.data.reject_human_assigned !== undefined
-          ? { rejectHumanAssigned: parsed.data.reject_human_assigned }
-          : {}),
-        ...(parsed.data.reject_open_pendencies !== undefined
-          ? { rejectOpenPendencies: parsed.data.reject_open_pendencies }
           : {}),
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       },

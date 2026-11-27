@@ -149,8 +149,6 @@ const closeShape = {
     .describe("UUID da última mensagem inbound conhecida; recusa se chegou nova mensagem."),
   expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
   expected_sector_id: z.string().uuid().nullable().optional(),
-  reject_human_assigned: z.boolean().optional(),
-  reject_open_pendencies: z.boolean().optional(),
   idempotency_key: z.string().trim().min(1).max(200).optional(),
 };
 
@@ -185,12 +183,6 @@ export const crmCloseConversation: McpToolDefinition<typeof closeShape> = {
           : {}),
         ...(input.expected_sector_id !== undefined
           ? { expectedSectorId: input.expected_sector_id }
-          : {}),
-        ...(input.reject_human_assigned !== undefined
-          ? { rejectHumanAssigned: input.reject_human_assigned }
-          : {}),
-        ...(input.reject_open_pendencies !== undefined
-          ? { rejectOpenPendencies: input.reject_open_pendencies }
           : {}),
         ...(input.idempotency_key !== undefined ? { idempotencyKey: input.idempotency_key } : {}),
       },

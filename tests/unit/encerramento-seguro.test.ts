@@ -320,6 +320,7 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
 
     const res = await chamarRota({
       safe_close: true,
+      expected_revision: 3,
       expected_last_inbound_message_id: MSG_IN_1,
     });
     const json = (await res.json()) as { error: { details?: { reason?: string } } };
@@ -335,6 +336,7 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     const res = await chamarRota({
       safe_close: true,
       expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
     });
     const json = (await res.json()) as { error: { details?: { reason?: string } } };
 
@@ -348,8 +350,8 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     const res = await chamarRota({
       safe_close: true,
       expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
       expected_assigned_to_user_id: USER_1,
-      reject_human_assigned: false,
     });
     const json = (await res.json()) as { error: { details?: { reason?: string } } };
 
@@ -365,6 +367,7 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     const res = await chamarRota({
       safe_close: true,
       expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
     });
     const json = (await res.json()) as { error: { details?: { reason?: string } } };
 
@@ -378,6 +381,7 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     const res = await chamarRota({
       safe_close: true,
       expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
       expected_sector_id: SECTOR_1,
     });
     const json = (await res.json()) as { error: { details?: { reason?: string } } };
@@ -394,6 +398,7 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
       const res = await chamarRota({
         safe_close: true,
         expected_revision: 3,
+        expected_last_inbound_message_id: MSG_IN_1,
       });
       const json = (await res.json()) as { error: { details?: { reason?: string } } };
 
@@ -404,8 +409,16 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
 
   it("9. Encerramentos simultâneos com expected_revision: apenas um fecha, o segundo recebe 409", async () => {
     const [r1, r2] = await Promise.all([
-      chamarRota({ safe_close: true, expected_revision: 3 }),
-      chamarRota({ safe_close: true, expected_revision: 3 }),
+      chamarRota({
+        safe_close: true,
+        expected_revision: 3,
+        expected_last_inbound_message_id: MSG_IN_1,
+      }),
+      chamarRota({
+        safe_close: true,
+        expected_revision: 3,
+        expected_last_inbound_message_id: MSG_IN_1,
+      }),
     ]);
     const statuses = [r1.status, r2.status].sort((a, b) => a - b);
 
@@ -416,14 +429,14 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
 
   it("10. Solicitação duplicada com mesma idempotency_key retorna 200 idempotente sem duplicar audit", async () => {
     const r1 = await chamarRota(
-      { safe_close: true, expected_revision: 3 },
+      { safe_close: true, expected_revision: 3, expected_last_inbound_message_id: MSG_IN_1 },
       { "Idempotency-Key": "dup-1" },
     );
     expect(r1.status).toBe(200);
     expect(audit).toHaveBeenCalledTimes(1);
 
     const r2 = await chamarRota(
-      { safe_close: true, expected_revision: 3 },
+      { safe_close: true, expected_revision: 3, expected_last_inbound_message_id: MSG_IN_1 },
       { "Idempotency-Key": "dup-1" },
     );
     const j2 = (await r2.json()) as {
@@ -441,7 +454,11 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     estado.conversation.status = "closed";
     estado.conversation.service_revision = 4;
 
-    const res = await chamarRota({ safe_close: true, expected_revision: 4 });
+    const res = await chamarRota({
+      safe_close: true,
+      expected_revision: 4,
+      expected_last_inbound_message_id: MSG_IN_1,
+    });
     const json = (await res.json()) as { data: { already_closed?: boolean; status: string } };
 
     expect(res.status).toBe(200);
@@ -454,7 +471,11 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     estado.conversation.status = "open";
     estado.conversation.service_revision = 5;
 
-    const res = await chamarRota({ safe_close: true, expected_revision: 3 });
+    const res = await chamarRota({
+      safe_close: true,
+      expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
+    });
     expect(res.status).toBe(409);
   });
 
@@ -548,15 +569,35 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     expect(res.service_revision).toBe(4);
   });
 
-  it("17. Pré-condições incompletas (safe_close sem âncora de revisão ou última mensagem) recusam com 422", async () => {
-    const res = await chamarRota({
+  it("17. Pré-condições incompletas ou tentativa de desligar proteções recusam com 422", async () => {
+    const rSemMsg = await chamarRota({
       safe_close: true,
+      expected_revision: 3,
       expected_status: "open",
     });
-    const json = (await res.json()) as { error: { code: string } };
+    expect(rSemMsg.status).toBe(422);
 
-    expect(res.status).toBe(422);
-    expect(json.error.code).toBe("validation_failed");
+    const rSemRev = await chamarRota({
+      safe_close: true,
+      expected_last_inbound_message_id: MSG_IN_1,
+    });
+    expect(rSemRev.status).toBe(422);
+
+    const rContornoHumano = await chamarRota({
+      safe_close: true,
+      expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
+      reject_human_assigned: false,
+    });
+    expect(rContornoHumano.status).toBe(422);
+
+    const rContornoPendencia = await chamarRota({
+      safe_close: true,
+      expected_revision: 3,
+      expected_last_inbound_message_id: MSG_IN_1,
+      reject_open_pendencies: false,
+    });
+    expect(rContornoPendencia.status).toBe(422);
     expect(estado.conversation.status).toBe("open");
   });
 });

@@ -228,8 +228,6 @@ inputSchema: z.object({
   expected_last_inbound_message_id: z.string().uuid().nullable().optional(),
   expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
   expected_sector_id: z.string().uuid().nullable().optional(),
-  reject_human_assigned: z.boolean().optional(),
-  reject_open_pendencies: z.boolean().optional(),
   idempotency_key: z.string().min(1).max(200).optional()
 })
 ```
