@@ -24,7 +24,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
-import { cancelaRetornoNoCrm } from "@/lib/followup/retorno-crm";
+import { cancelaRetornoNoCrm, motivoDoCancelamentoPelaFila } from "@/lib/followup/retorno-crm";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -61,10 +61,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Admin client porque a operação compartilhada escreve atividade e lê o
   // negócio dono do contato; a organização vem do token/sessão, nunca do
   // caminho nem do body, e toda query da operação filtra por ela.
-  const actor: Actor =
-    authz.actor.type === "user"
-      ? { type: "user", id: authz.actor.id }
-      : { type: "api_token", id: authz.apiTokenId ?? "desconhecido" };
+  // O ator autenticado como veio (#5160): o token com `actor:ai_agent` é a IA,
+  // não uma integração, e reconstruí-lo como `api_token` faria a timeline
+  // dizer "Integração · <token>" para ela.
+  const actor: Actor = authz.actor;
   const resultado = await cancelaRetornoNoCrm(
     {
       admin: createAdminClient(),
@@ -75,7 +75,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     id,
     // Motivo fixo e legível: quem cancela pela fila não escreve texto, e o que
     // importa para o agente é QUEM desmarcou, não uma justificativa inventada.
-    { motivo: "desmarcado por uma pessoa da equipe" },
+    // Pelo token o "quem" não é uma pessoa (#5160): a linha diria "Integração ·
+    // <token>" ao lado de "por uma pessoa da equipe".
+    { motivo: motivoDoCancelamentoPelaFila(authz.actor) },
   );
 
   if (!resultado.ok) {

@@ -459,6 +459,10 @@ export function ProspectingClient() {
     config.texto_da_saida,
     data?.organization_locale,
   );
+  // #5133: a janela invertida (início chegando ao fim) é a MESMA régua do aviso
+  // embaixo das horas — uma régua só. Sem ela no `disabled`, o clique passava e o
+  // erro genérico subia para o topo, longe do campo que o causou.
+  const janelaInvalida = config.janela != null && config.janela.inicio >= config.janela.fim;
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -2465,6 +2469,7 @@ export function ProspectingClient() {
                                       max={23}
                                       value={config.janela.inicio}
                                       disabled={busy}
+                                      aria-invalid={janelaInvalida}
                                       onChange={(e) =>
                                         update("janela", {
                                           ...config.janela!,
@@ -2485,6 +2490,7 @@ export function ProspectingClient() {
                                       max={24}
                                       value={config.janela.fim}
                                       disabled={busy}
+                                      aria-invalid={janelaInvalida}
                                       onChange={(e) =>
                                         update("janela", {
                                           ...config.janela!,
@@ -2495,7 +2501,7 @@ export function ProspectingClient() {
                                     />
                                   </div>
                                 </div>
-                                {config.janela.inicio >= config.janela.fim && (
+                                {janelaInvalida && (
                                   <p className="text-xs text-destructive" role="alert">
                                     {t(
                                       "A janela precisa começar antes de terminar (ex.: 7h às 12h).",
@@ -2757,7 +2763,8 @@ export function ProspectingClient() {
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING") ||
                             etiquetasComProblema !== null ||
-                            problemaDoTextoDaSaida !== null
+                            problemaDoTextoDaSaida !== null ||
+                            janelaInvalida
                           }
                         >
                           {t("Iniciar abordagens com IA")}

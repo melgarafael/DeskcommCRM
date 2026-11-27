@@ -666,6 +666,10 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
     "não vem, use `crm_cancel_appointment`; se ela quer outro dia, `crm_reschedule_appointment`.",
   not_found: "não encontrei esse compromisso nesta empresa: ele não existe ou é de outra organização. Confirme com `crm_list_appointments` antes de tentar de novo.",
   internal_error: "não consegui completar agora. Avise que alguém da equipe confirma, e não repita a tentativa.",
+  idempotency_conflict:
+    "essa chave de idempotência já foi usada com outro pedido, e nada mudou. Para um pedido novo, use uma chave nova.",
+  idempotency_in_progress:
+    "o mesmo pedido, com essa chave, ainda está em curso. Nada foi feito de novo; tente outra vez em instantes, com a mesma chave.",
 };
 
 /** Captura o `ApiError` do handler e devolve recusa de NEGÓCIO, nunca exceção. */
@@ -1216,6 +1220,7 @@ const remarcarShape = {
     ),
   new_starts_at: z.string().datetime({ offset: true }).describe("o novo início, vindo de `crm_find_free_slots`"),
   notes: z.string().max(2000).optional(),
+  idempotency_key: z.string().min(1).max(200).optional().describe("repetir com a mesma chave não remarca de novo (24h)"),
 };
 
 export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> = {
@@ -1236,9 +1241,20 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("remarcado", async () => {
+      // A chave do argumento ou a do cabeçalho `Idempotency-Key` do MCP: sem ela,
+      // a operação no Amigo caía no `requestId`, novo a cada requisição, e a
+      // repetição remarcava de novo (DES-1952).
+      const idempotencyKey = input.idempotency_key ?? ctx.idempotencyKey;
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds: ctx.amigoAgentToolIds },
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+          amigoAgentExecution: Boolean(ctx.contatoDoTurno),
+          amigoAgentToolIds: ctx.amigoAgentToolIds,
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        },
         {
           id: input.appointment_id,
           starts_at: input.new_starts_at,

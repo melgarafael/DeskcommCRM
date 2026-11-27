@@ -16,6 +16,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { listMessagesQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { identidadeIndisponivel } from "@/lib/supabase/falha-de-identidade";
+import { conferirOrgNaLeitura } from "@/lib/inbox/autorizacao-da-leitura";
 import { comNomeDeQuemEnviou } from "@/lib/users/nome-de-quem-enviou";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -59,18 +61,26 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     data: { user },
     error: authErr,
   } = await supabase.auth.getUser();
+  if (identidadeIndisponivel(authErr)) {
+    return fail("auth_unavailable", "Authentication is temporarily unavailable.", 503, { requestId });
+  }
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  if (!authUser) {
+    return fail("auth_unavailable", "Authentication is temporarily unavailable.", 503, { requestId });
+  }
+  const t = (texto: string) => traduzir(texto, authUser.idioma ?? "pt-BR");
   const ativa = await orgAtivaDaApi(authUser, requestId);
   if (!ativa.ok) return ativa.response;
   const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  const orgDivergente = conferirOrgNaLeitura(req, activeOrg.orgId, requestId);
+  if (orgDivergente) return orgDivergente;
 
   return responderMensagens(
     supabase,
@@ -79,7 +89,8 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     req,
     requestId,
     { type: "user", id: user.id },
-    authUser?.idioma,
+    authUser.idioma,
+    true,
   );
 }
 
@@ -91,6 +102,7 @@ async function responderMensagens(
   requestId: string,
   actor: Actor,
   idioma: Idioma | undefined,
+  confirmarConversa = false,
 ): Promise<Response> {
   const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
 
@@ -117,6 +129,7 @@ async function responderMensagens(
       },
       conversationId,
       qsParsed.data,
+      confirmarConversa ? { confirmarConversa } : undefined,
     );
     // #4031 — O NOME DE QUEM DA EQUIPE ENVIOU, no payload.
     //
