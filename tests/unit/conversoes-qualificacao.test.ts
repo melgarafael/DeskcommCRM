@@ -10,18 +10,30 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.admin }));
 vi.mock("@/lib/plataformas-de-anuncio/credenciais", () => ({
-  lerCredencial: async () => ({
-    ok: true,
-    credencial: {
-      testEventCode: null,
-      google: {
-        customerId: "1234567890",
-        loginCustomerId: "9876543210",
-        conversionActionId: "compra",
-        api: "data_manager",
-      },
+  lerCredencial: async (
+    _admin: unknown,
+    _org: string,
+    _plataforma: string,
+    opcoes: {
+      destinoGoogle?: { customerId: string; loginCustomerId: string | null };
     },
-  }),
+  ) =>
+    motivoSemCredencial
+      ? { ok: false, motivo: motivoSemCredencial }
+      : {
+          ok: true,
+          credencial: {
+            testEventCode: null,
+            google: {
+              customerId: opcoes.destinoGoogle?.customerId ?? contaGlobal,
+              loginCustomerId: opcoes.destinoGoogle
+                ? opcoes.destinoGoogle.loginCustomerId
+                : "9876543210",
+              conversionActionId: "compra",
+              api: apiGlobal,
+            },
+          },
+        },
 }));
 vi.mock("@/lib/plataformas-de-anuncio/registry", () => ({
   ehPlataformaConhecida: (p: string) => ["google_ads", "meta_ads"].includes(p),
@@ -49,6 +61,11 @@ const row: EventRow = {
 let registros: Record<string, Record<string, unknown>>;
 let consultas: Array<{ tabela: string; filtros: Record<string, unknown> }>;
 let config: Record<string, unknown> | null;
+let regrasExtras: Array<Record<string, unknown>>;
+let contaGlobal: string;
+let apiGlobal: "google_ads" | "data_manager";
+let falhaAoRegistrar: boolean;
+let motivoSemCredencial: "sem_conexao" | null;
 let erroLeitura: boolean;
 let erroLeituraContas: boolean;
 let contasDeRelatorio: Array<{ organization_id: string; customer_id: string }>;
@@ -72,6 +89,11 @@ beforeEach(() => {
   etapaExiste = true;
   links = [];
   permiteConsultar = true;
+  regrasExtras = [];
+  contaGlobal = "1234567890";
+  apiGlobal = "data_manager";
+  falhaAoRegistrar = false;
+  motivoSemCredencial = null;
   origemDoNegocio = {
     ad_platform: "google_ads",
     ad_source_id: "braid",
@@ -113,9 +135,14 @@ beforeEach(() => {
           return q;
         },
         limit: () =>
-          tabela === "google_ads_reporting_accounts"
+          tabela === "google_ads_reporting_accounts" || tabela === "google_ads_conversion_rules"
             ? q
             : { data: tabela === "crm_lead_links" ? links : [], error: null },
+        then: (resolve: (v: unknown) => unknown) =>
+          Promise.resolve({
+            data: [config, ...regrasExtras].filter((r) => r && r.stage_id === filtros.stage_id),
+            error: erroLeitura ? { message: "offline" } : null,
+          }).then(resolve),
         maybeSingle: async () => {
           if (erroLeitura) return { data: null, error: { message: "offline" } };
           if (tabela === "google_ads_reporting_accounts") {
@@ -133,9 +160,17 @@ beforeEach(() => {
             tabela === "ad_conversion_dispatches"
               ? (registros[`${filtros.lead_id}:${filtros.event_name}`] ?? null)
               : tabela === "google_ads_conversion_rules"
-                ? config && filtros.stage_id === config.stage_id
-                  ? config
-                  : null
+                ? filtros["neq.google_customer_id"]
+                  ? ([config, ...regrasExtras].find(
+                      (r) =>
+                        r &&
+                        (!Object.hasOwn(filtros, "enabled") || r.enabled === filtros.enabled) &&
+                        r.google_customer_id &&
+                        r.google_customer_id !== filtros["neq.google_customer_id"],
+                    ) ?? null)
+                  : config && filtros.stage_id === config.stage_id
+                    ? config
+                    : null
                 : tabela === "crm_stages"
                   ? etapaExiste
                     ? { id: ETAPA }
@@ -153,6 +188,7 @@ beforeEach(() => {
           return { data, error: null };
         },
         upsert: async (dado: Record<string, unknown>) => {
+          if (falhaAoRegistrar) return { error: { message: "offline" } };
           const chave = `${dado.lead_id}:${dado.event_name}`;
           registros[chave] = { ...registros[chave], ...dado };
           return { error: null };
@@ -472,6 +508,362 @@ describe("qualificação por etapa", () => {
     expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
     expect(mocks.enviar).toHaveBeenCalledOnce();
   });
+  it("não faz POST quando não consegue persistir o destino antes da tentativa", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    falhaAoRegistrar = true;
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+  });
+
+  it("duas contas na mesma etapa escolhem uma ação por clique sem fanout", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    regrasExtras = [
+      { ...config, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    origensDosNegocios.outro = {
+      source: "google_ads",
+      source_metadata: {
+        ad_platform: "google_ads",
+        ad_source_id: "clique-outro",
+        google_customer_id: "1112223333",
+      },
+    };
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+    expect(
+      await conversaoDeQualificacaoHandler.handle({ ...row, entity_id: "outro" }),
+    ).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledTimes(2);
+    expect(
+      mocks.enviar.mock.calls.map(([credencial]) => [
+        credencial.google.customerId,
+        credencial.google.conversionActionId,
+        credencial.google.loginCustomerId,
+      ]),
+    ).toEqual([
+      ["1234567890", "42", null],
+      ["1112223333", "77", null],
+    ]);
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      google_customer_id: "1234567890",
+      google_login_customer_id: null,
+      google_api: "data_manager",
+      google_destination_explicit: true,
+    });
+    origemDoNegocio.google_customer_id = "1112223333";
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      detail: "ja_enviada",
+    });
+    expect(mocks.enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([undefined, "1112223333"])(
+    "um destino explícito nunca aceita clique de outra conta ou sem conta (%s)",
+    async (conta) => {
+      config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+      origemDoNegocio.google_customer_id = conta;
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+        status: "skipped",
+        detail: conta ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente",
+      });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      expect(registros["lead:QualifiedLead"]!.google_action_id).toBeUndefined();
+    },
+  );
+
+  it("regras explícitas não criam pendências Google para origem orgânica ou Meta", async () => {
+    config = { ...config!, google_customer_id: "1234567890" };
+    origensDosNegocios.lead = { source: "whatsapp", source_metadata: {} };
+    await conversaoDeQualificacaoHandler.handle(row);
+    origensDosNegocios.lead = {
+      source: "meta_ads",
+      source_metadata: { ad_platform: "meta_ads", ad_source_id: "ctwa" },
+    };
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      detail: "qualificacao_sem_origem_google",
+    });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(registros).toEqual({});
+  });
+
+  it("uma regra global não contorna outro destino de envio sem conta de relatório", async () => {
+    regrasExtras = [
+      { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    delete origemDoNegocio.google_customer_id;
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      status: "skipped",
+      detail: "conta_google_do_clique_ausente",
+    });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+  });
+
+  // Revisão do @webtecnica no #5286 (achado 1): na etapa mista, o clique de uma
+  // terceira conta cai na regra global em `selecionarRegraGoogle`. Quem recusa é o
+  // envio (`motivoDeContaDaEtapaGoogle`), não a seleção — este caso prova isso.
+  it("etapa mista: clique de uma terceira conta não sai pela global e fica registrado", async () => {
+    regrasExtras = [
+      { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    origemDoNegocio.google_customer_id = "5556667777";
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      status: "skipped",
+      detail: "conta_google_do_clique_divergente",
+    });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      status: "skipped",
+      reason: "conta_google_do_clique_divergente",
+      google_destination_explicit: false,
+    });
+  });
+
+  it("etapa mista: o clique da própria conta da conexão segue saindo pela global", async () => {
+    regrasExtras = [
+      { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        google: expect.objectContaining({ customerId: "1234567890", conversionActionId: "42" }),
+      }),
+      expect.anything(),
+    );
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      status: "sent",
+      google_destination_explicit: false,
+    });
+  });
+
+  // Achado 2 da mesma revisão: a etapa só com a global também não envia nem grava
+  // linha para negócio sem clique ou vindo da Meta (`envio.handler.ts`, "Sai sem
+  // linha no livro-razão"). Ganhar uma regra explícita não pode mudar isso.
+  it.each([
+    {
+      caso: "sem atribuição",
+      origem: { source: "whatsapp", source_metadata: {} },
+      motivo: "sem_atribuicao",
+    },
+    {
+      caso: "vindo da Meta",
+      origem: {
+        source: "meta_ads",
+        source_metadata: { ad_platform: "meta_ads", ad_source_id: "ctwa" },
+      },
+      motivo: "qualificacao_sem_origem_google",
+    },
+  ])(
+    "negócio $caso: a etapa mista tem o mesmo desfecho da etapa só com a global",
+    async ({ origem, motivo }) => {
+      origensDosNegocios.lead = origem;
+      origemDoContato = { ...origem.source_metadata };
+      const soGlobal = await conversaoDeQualificacaoHandler.handle(row);
+      regrasExtras = [
+        { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+      ];
+      const mista = await conversaoDeQualificacaoHandler.handle(row);
+      expect(soGlobal).toMatchObject({ status: "skipped", detail: motivo });
+      expect(mista).toMatchObject({ status: "skipped", detail: motivo });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      expect(registros).toEqual({});
+    },
+  );
+
+  it.each([undefined, "1112223333"])(
+    "pausar a conta B não torna seu clique ou a conta ausente elegível para a global A (%s)",
+    async (conta) => {
+      regrasExtras = [
+        {
+          ...config!,
+          id: "segunda",
+          enabled: false,
+          google_customer_id: "1112223333",
+          google_action_id: "77",
+        },
+      ];
+      origemDoNegocio.google_customer_id = conta;
+      expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+        status: "skipped",
+        detail: conta ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente",
+      });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      expect(registros["lead:QualifiedLead"]).toMatchObject({ status: "skipped" });
+    },
+  );
+
+  it("retry conserva conta, MCC direto, API e ação mesmo após mudar regra e conta global", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    mocks.enviar.mockResolvedValueOnce({ tipo: "transitorio", detalhe: "rede" });
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
+    contaGlobal = "9999999999";
+    apiGlobal = "google_ads";
+    config = { ...config, google_customer_id: "1112223333", google_action_id: "777" };
+    expect(
+      await conversaoDeQualificacaoHandler.handle({
+        ...row,
+        event_type: "ad_conversion.retry_requested",
+        payload: { event_name: "QualifiedLead" },
+      }),
+    ).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        google: expect.objectContaining({
+          customerId: "1234567890",
+          loginCustomerId: null,
+          conversionActionId: "42",
+          api: "data_manager",
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("um movimento novo não envia o snapshot A pausado só porque a regra B está ativa", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    mocks.enviar.mockResolvedValueOnce({ tipo: "transitorio", detalhe: "rede" });
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
+    config = { ...config, enabled: false };
+    regrasExtras = [
+      {
+        ...config,
+        id: "B",
+        google_customer_id: "1112223333",
+        enabled: true,
+        google_action_id: "77",
+      },
+    ];
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      detail: "etapa_sem_qualificacao",
+    });
+    expect(mocks.enviar).toHaveBeenCalledOnce();
+    expect(mocks.consultar).not.toHaveBeenCalled();
+  });
+
+  it("um protocolo de A pausada continua só em consulta quando B está ativa", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    mocks.enviar.mockResolvedValueOnce({
+      tipo: "processando",
+      protocolo: "A",
+      detalhe: "aguardando",
+    });
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "retry" });
+    config = { ...config, enabled: false };
+    regrasExtras = [
+      {
+        ...config,
+        id: "B",
+        google_customer_id: "1112223333",
+        enabled: true,
+        google_action_id: "77",
+      },
+    ];
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledOnce();
+    expect(mocks.consultar).toHaveBeenCalledWith(
+      expect.objectContaining({ google: expect.objectContaining({ customerId: "1234567890" }) }),
+      "A",
+    );
+  });
+
+  it("o snapshot explícito mantém a igualdade de conta mesmo no retry de um único destino", async () => {
+    config = { ...config!, google_customer_id: "1234567890", google_login_customer_id: null };
+    mocks.enviar.mockResolvedValueOnce({ tipo: "transitorio", detalhe: "rede" });
+    await conversaoDeQualificacaoHandler.handle(row);
+    origemDoNegocio.google_customer_id = "1112223333";
+    expect(
+      await conversaoDeQualificacaoHandler.handle({
+        ...row,
+        event_type: "ad_conversion.retry_requested",
+        payload: { event_name: "QualifiedLead" },
+      }),
+    ).toMatchObject({ detail: "conta_google_do_clique_divergente" });
+    expect(mocks.enviar).toHaveBeenCalledOnce();
+  });
+
+  it("o snapshot global preserva o caso legado de conta filha no retry", async () => {
+    origemDoNegocio.google_customer_id = "1112223333";
+    mocks.enviar.mockResolvedValueOnce({ tipo: "transitorio", detalhe: "rede" });
+    await conversaoDeQualificacaoHandler.handle(row);
+    expect(registros["lead:QualifiedLead"]!.google_destination_explicit).toBe(false);
+    expect(
+      await conversaoDeQualificacaoHandler.handle({
+        ...row,
+        event_type: "ad_conversion.retry_requested",
+        payload: { event_name: "QualifiedLead" },
+      }),
+    ).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledTimes(2);
+  });
+
+  it("retry resolve o transporte depois de conectar, preservando a identidade explícita conhecida", async () => {
+    config = {
+      ...config!,
+      google_customer_id: "1112223333",
+      google_login_customer_id: null,
+      google_action_id: "77",
+    };
+    origemDoNegocio.google_customer_id = "1112223333";
+    motivoSemCredencial = "sem_conexao";
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      detail: "sem_conexao",
+    });
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      google_customer_id: "1112223333",
+      google_login_customer_id: null,
+      google_destination_explicit: true,
+      google_api: null,
+      google_action_id: "77",
+    });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    config = null;
+    motivoSemCredencial = null;
+    expect(
+      await conversaoDeQualificacaoHandler.handle({
+        ...row,
+        event_type: "ad_conversion.retry_requested",
+        payload: { event_name: "QualifiedLead" },
+      }),
+    ).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        google: expect.objectContaining({
+          customerId: "1112223333",
+          loginCustomerId: null,
+          conversionActionId: "77",
+          api: "data_manager",
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(registros["lead:QualifiedLead"]!.google_api).toBe("data_manager");
+  });
+
+  it("um protocolo legado sem destino registrado só é consultado na conexão global", async () => {
+    registros["lead:QualifiedLead"] = {
+      status: "skipped",
+      platform: "google_ads",
+      google_action_id: "42",
+      event_occurred_at: ocorridoEm,
+      remote_request_id: "legado",
+      remote_requested_at: new Date().toISOString(),
+    };
+    config = null;
+    expect(
+      await conversaoDeQualificacaoHandler.handle({
+        ...row,
+        event_type: "ad_conversion.retry_requested",
+        payload: { event_name: "QualifiedLead" },
+      }),
+    ).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(mocks.consultar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        google: expect.objectContaining({ customerId: "1234567890" }),
+      }),
+      "legado",
+    );
+    expect(registros["lead:QualifiedLead"]!.google_customer_id).toBeUndefined();
+  });
+
   it("o reenvio de etapa nova não aciona o consumidor de compra", async () => {
     expect(
       await conversaoDeVendaHandler.handle({

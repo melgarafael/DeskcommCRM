@@ -58,6 +58,18 @@ export const DICIONARIO: Traducoes = {
   "Avise quem administra o CRM.": { es: "Avisa a quien administra el CRM." },
   "Ver provedores de IA": { es: "Ver proveedores de IA" },
   "Não foi possível consultar o saldo da IA.": { es: "No se pudo consultar el saldo de la IA." },
+  "Conta padrão": { es: "Cuenta predeterminada" },
+  "Conta específica": { es: "Cuenta específica" },
+  "Acesso direto": { es: "Acceso directo" },
+  "ID da conta de destino": { es: "ID de la cuenta de destino" },
+  "ID da conta administradora (MCC, opcional)": { es: "ID de la cuenta administradora (MCC, opcional)" },
+  "Adicionar conta nesta etapa": { es: "Añadir cuenta en esta etapa" },
+  "Informe a conta padrão na conexão Google acima ou escolha uma conta específica.": { es: "Introduce la cuenta predeterminada en la conexión Google de arriba o elige una cuenta específica." },
+  "Use 10 dígitos. Deixe o MCC vazio para acesso direto à conta.": { es: "Usa 10 dígitos. Deja el MCC vacío para acceder directamente a la cuenta." },
+  "Informe os 10 dígitos da conta de destino e, se houver, do MCC.": { es: "Introduce los 10 dígitos de la cuenta de destino y, si corresponde, del MCC." },
+  "Todas as regras usam a autorização de envio da conexão Google acima. Ela precisa ter acesso a cada conta de destino. Conectar uma conta para relatórios não autoriza o envio de conversões.": { es: "Todas las reglas usan la autorización de envío de la conexión Google de arriba. Debe tener acceso a cada cuenta de destino. Conectar una cuenta para informes no autoriza el envío de conversiones." },
+  "Se uma conversão não sair, confira a pendência no Histórico de envios. Pausar uma regra preserva seus campos e o histórico.": { es: "Si una conversión no se envía, revisa el pendiente en el Historial de envíos. Pausar una regla conserva sus campos y el historial." },
+  "Toda etapa ligada precisa de nome e ID da ação. Use cada conta de destino uma única vez por etapa.": { es: "Toda etapa activada necesita nombre e ID de la acción. Usa cada cuenta de destino una sola vez por etapa." },
   // Repetição das mensagens agendadas (segunda parte da #3118).
   "repetição": { es: "repetición" },
   "Recorrência": { es: "Repetición" },
@@ -1115,9 +1127,9 @@ export const DICIONARIO: Traducoes = {
   'Incluir na coluna "Conversões" (os lances otimizam por ela)': {
     es: 'Incluir en la columna "Conversiones" (las pujas optimizan por ella)',
   },
-  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.":
+  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Uma conta específica sempre exige que o clique identifique a mesma conta. Só a Conta padrão permite enviar sem identificação da conta no clique ou com outra conta, quando há uma única conta cadastrada. Com várias contas, incluindo destinos de regras pausadas, o clique precisa identificar a conta de destino.":
     {
-      es: "La regla usa el clic del propio negocio y se aplica a los cambios de etapa que haga el equipo, la IA o una automatización después de activarla. Si hay una sola cuenta de Google Ads registrada, el CRM le envía la conversión incluso si el clic no identifica la cuenta o indica otra. Si hay varias cuentas, solo la envía si el clic identifica la cuenta de destino.",
+      es: "La regla usa el clic del propio negocio y se aplica a los cambios de etapa que haga el equipo, la IA o una automatización después de activarla. Una cuenta específica siempre exige que el clic identifique esa misma cuenta. Solo la Cuenta predeterminada permite enviar sin identificar la cuenta en el clic o con otra cuenta, cuando hay una única cuenta registrada. Si hay varias cuentas, incluidos los destinos de reglas pausadas, el clic debe identificar la cuenta de destino.",
     },
   "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.":
     {
