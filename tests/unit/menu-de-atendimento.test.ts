@@ -92,6 +92,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { aplicarEfeitosPosEntrada, type EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { logger } from "@/lib/logger";
+import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import {
   CHAVE_NO_METADATA,
   lerEstadoDoMenu,
@@ -577,5 +578,18 @@ describe("menu de atendimento sem IA na entrada (#4594)", () => {
       .mocked(logger)
       .info.mock.calls.map(([, meta]) => (meta as { motivo?: string } | undefined)?.motivo);
     expect(motivos).toContain("menu_em_disputa");
+  });
+
+  it("envio do menu FALHOU: a posse é devolvida e a próxima mensagem recebe o menu (#5137)", async () => {
+    const registro = db({ metadata: { outra: "chave" } });
+    vi.mocked(sendMessageHandler).mockResolvedValueOnce({ status: "failed" } as Awaited<ReturnType<typeof sendMessageHandler>>);
+
+    await passar(registro, { messageId: "msg-1", texto: "oi" });
+    expect(estadoGravado(registro)).toBeNull();
+    expect((registro.tabelas.conversations[0] as { metadata?: Record<string, unknown> }).metadata).toEqual({ outra: "chave" });
+
+    await passar(registro, { messageId: "msg-2", texto: "oi de novo" });
+    expect(menusEnviados()).toHaveLength(1);
+    expect(estadoGravado(registro)?.estado).toBe("aguardando");
   });
 });
