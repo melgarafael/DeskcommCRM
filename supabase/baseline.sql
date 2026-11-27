@@ -35764,7 +35764,7 @@ do $x$
 begin
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'webchat'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram', 'webchat', 'tiktok'));
 end
 $x$;
 
@@ -92247,6 +92247,10 @@ begin
     where status = 'open' and source_metadata ? 'clonado_de';
 end $clone_aberto_unico$;
 
+-- ---- canal TikTok (migration 9476, A21) ----
+-- Espelho de supabase/migrations/20261125103015_9476_canal_tiktok.sql.
+-- `'tiktok'` foi somado ao bloco ÚNICO de `conversations_channel_check`, lá em cima
+-- (uma constraint, um bloco: `tests/unit/baseline-constraint-reconstruida.test.ts`);
+-- este bloco só registra a migration. Não há coluna, função nem índice novo.
 
 notify pgrst, 'reload schema';
-

@@ -26,6 +26,14 @@ export const AI_TEST_PHONE_NUMBERS_KEY = "ai_test_phone_numbers" as const;
 export const AI_TEST_SOCIAL_IDENTITIES_KEY = "ai_test_social_identities" as const;
 
 /**
+ * LISTA EXPLÍCITA, não "tudo menos". Entrar no catálogo não dá a um canal novo a
+ * identidade de testador: a RPC de gravação e `fn_automatico_da_conversa` só
+ * aceitam `facebook|instagram:<24 hex>`, e o TikTok tem janela e formato próprios.
+ * Quem quiser ser testável declara aqui E ensina o SQL.
+ */
+const REDES_COM_TESTADOR_SOCIAL_DECLARADAS: readonly string[] = ["facebook", "instagram"];
+
+/**
  * As redes cuja identidade pode ser testadora: as de `CANAIS_DE_CONVERSA` que
  * entram pelo intermediário social. `whatsapp` tem a lista de telefones, e o
  * `telegram` (bot nativo) grava outra forma de identidade — a do robô, não a
@@ -33,7 +41,7 @@ export const AI_TEST_SOCIAL_IDENTITIES_KEY = "ai_test_social_identities" as cons
  * identidade do visitante do site, e fica de fora pelo mesmo motivo.
  */
 export const REDES_COM_TESTADOR_SOCIAL: readonly string[] = CANAIS_DE_CONVERSA.filter(
-  (canal) => canal !== "whatsapp" && canal !== "telegram" && canal !== "webchat",
+  (canal) => REDES_COM_TESTADOR_SOCIAL_DECLARADAS.includes(canal),
 );
 
 /** Teto da lista por canal — é lista de teste, não de público. O mesmo teto vive na RPC. */

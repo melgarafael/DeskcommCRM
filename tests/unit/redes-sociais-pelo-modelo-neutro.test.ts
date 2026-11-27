@@ -124,6 +124,7 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
     expect(SOCIAL_NETWORKS.filter((r) => r.inbox).map((r) => r.id)).toEqual([
       "instagram",
       "facebook",
+      "tiktok", // A21: o TikTok vira canal de conversa (migration 9476)
     ]);
     // `googlebusiness` e `telegram` entram aqui de propósito: são as duas redes
     // que o produto nomeia sem ter transporte próprio, e o modelo não as toca.
@@ -136,7 +137,14 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
     // diferente do Telegram do catálogo social, que segue `inbox: false`): é a
     // mudança que o PR faz de propósito, e a fotografia acompanha. `webchat` é o
     // chat no site (Spec 36): canal de conversa sem rede social por trás.
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "webchat", "instagram", "facebook"]);
+    expect([...CANAIS_DE_CONVERSA]).toEqual([
+      "whatsapp",
+      "telegram",
+      "webchat",
+      "instagram",
+      "facebook",
+      "tiktok",
+    ]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {

@@ -262,6 +262,9 @@ export const ApiErrorCodes = {
   // O Asaas recusa trocar o plano com a cobrança do período em uso ainda pendente (spec §6.2, §7e).
   pagamento_do_periodo_pendente: "pagamento_do_periodo_pendente",
   channel_without_session: "channel_without_session", // operação de sessão (reiniciar, parear) pedida a canal que não tem sessão no transporte — o oficial
+  // POST /messages numa rede com limite próprio de resposta (TikTok, A21): a janela de 48 h fechou,
+  // as 10 respostas já saíram, ou as 2 últimas são da equipe e quem pediu é o agente por token.
+  limite_da_rede: "limite_da_rede",
   janela_fechada: "janela_fechada", // POST /messages por token/agente com texto livre fora das 24h em canal com restrição (131047) — a saída é modelo aprovado (#1614)
   // POST /api/v1/messages/{id}/retry (lib/messaging/reenvio.ts): a regra não permite reenviar (403),
   // a mensagem pode ter chegado e falta a confirmação (409), ou outro toque já travou a linha (409).

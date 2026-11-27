@@ -43,7 +43,7 @@ export const SOCIAL_NETWORKS = [
   { id: "facebook", label: "Facebook", inbox: true, portas: ["direta", "intermediada"] },
   { id: "linkedin", label: "LinkedIn", inbox: false, portas: ["intermediada"] },
   { id: "twitter", label: "X", inbox: false, portas: ["intermediada"] },
-  { id: "tiktok", label: "TikTok", inbox: false, portas: ["intermediada"] },
+  { id: "tiktok", label: "TikTok", inbox: true, portas: ["intermediada"] },
   { id: "youtube", label: "YouTube", inbox: false, portas: ["intermediada"] },
   { id: "threads", label: "Threads", inbox: false, portas: ["intermediada"] },
   { id: "reddit", label: "Reddit", inbox: false, portas: ["intermediada"] },

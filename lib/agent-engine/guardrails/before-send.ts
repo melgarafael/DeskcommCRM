@@ -86,6 +86,13 @@ import {
   tetoDeRespostasGate,
 } from '../agent/teto-de-respostas';
 import type { RespostasDaConversa, TetoDeRespostasArmado } from '../agent/teto-de-respostas';
+// Limite de resposta que a REDE impõe (A21, TikTok: 48 h, 10 mensagens, 2 para a
+// equipe). Mora ao lado do teto vizinho, pelo mesmo motivo: a conta é da conversa.
+import {
+  carregarLimiteDaRede,
+  limiteDaRedeGate,
+  type LimiteDaRedeDoEnvio,
+} from '../agent/limite-da-rede';
 // Módulo PURO de propósito (`capabilities`, não `index`): o seam não arrasta o
 // adapter — e com ele o cliente HTTP do canal — para dentro do worker.
 import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER, notaDeVozDoCanal } from '@/lib/channels/capabilities';
@@ -205,6 +212,14 @@ export interface GateContext {
    * da doutrina. Não confundir com o campo ausente.
    */
   tetoDeRespostas?: RespostasDaConversa;
+  /**
+   * O limite de resposta que a REDE da sessão impõe (A21). **AUSENTE = a rede não
+   * tem limite próprio medido** (WhatsApp, Instagram, Facebook): o gate registra
+   * `skipped: 'not_applicable'` (invariante 4 da doutrina). `respostasNaJanela:
+   * null` = a rede tem limite e a leitura da contagem falhou (`nao_conferido`).
+   * Lido SOB o lock do número, como o teto vizinho.
+   */
+  limiteDaRede?: LimiteDaRedeDoEnvio;
   /**
    * Tabela de preços/promessas versionada da org (F4-01), carregada por ponteiro
    * sob o lock. null = org não fiscaliza promessa (gate no-op).
@@ -1352,7 +1367,11 @@ const spinningGate: Gate = {
 // automáticas por CONVERSA numa janela. Fecha o pingue-pongue entre dois robôs (216 respostas em
 // 1 h para o mesmo contato), que nenhum gate de conteúdo pega porque cada resposta isolada é
 // legítima. Armado só pelo turno de entrada; disparo e follow-up não entram na conta.
-export const BEFORE_SEND_CHAIN_VERSION = 14;
+// v15 (A21): insere `limiteDaRedeGate` entre `teto_de_respostas` e `spinning` — o limite de
+// resposta que a PRÓPRIA REDE impõe (TikTok: 48 h, 10 mensagens, 2 só para a equipe).
+// Hetero-restrição: em rede sem limite medido registra `skipped: 'not_applicable'`, então a
+// v15 não muda o destino de nenhum envio que já existia — muda o TRACE.
+export const BEFORE_SEND_CHAIN_VERSION = 15;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1419,6 +1438,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   pacingGate,
   messagingWindowGate,
   tetoDeRespostasGate,
+  limiteDaRedeGate,
   spinningGate,
   promiseGate,
   concessaoSemLastroGate,
@@ -1890,6 +1910,14 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
             log: args.log,
           })
         : undefined;
+    // A21 — o limite que a REDE impõe à resposta (TikTok), lido SOB o mesmo lock. Rede sem
+    // limite medido devolve `undefined` depois de UMA leitura da sessão: nenhum outro canal
+    // paga mais que isso.
+    const limiteDaRede = await carregarLimiteDaRede(client, {
+      organizationId: args.tenantId,
+      contactId: args.leadId,
+      channelSessionId: args.channelSessionId,
+    });
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
@@ -1942,6 +1970,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       },
       spinning: { knobs: spinningKnobs, window },
       ...(respostasDaConversa !== undefined ? { tetoDeRespostas: respostasDaConversa } : {}),
+      ...(limiteDaRede !== undefined ? { limiteDaRede } : {}),
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
       promise: {
         table: promise?.table ?? null,

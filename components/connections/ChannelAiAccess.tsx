@@ -1,5 +1,6 @@
 "use client";
 
+import { redeSocial } from "@/lib/channels/social/catalog";
 import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -31,7 +32,8 @@ interface Access {
  */
 function rotuloDaIdentidade(identidade: string): string {
   const [rede = "", , participante = ""] = identidade.split(":");
-  const nome = rede === "instagram" ? "Instagram" : rede === "facebook" ? "Facebook" : rede;
+  // O nome vem do catálogo de redes (Instagram, Facebook, TikTok...), não de uma lista aqui.
+  const nome = redeSocial(rede)?.label ?? rede;
   return `${nome} · …${participante.slice(-6)}`;
 }
 
