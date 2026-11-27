@@ -98,8 +98,12 @@ async function handle(req: NextRequest): Promise<Response> {
         "id, organization_id, account_id, account_plan_id, direction, amount_cents, currency, name, day_of_month, ends_on",
       )
       .eq("is_active", true)
-      // CRESCENTE de propósito: na paginação por posição, o molde que entra
-      // durante a leitura cai no fim, e nenhuma página anterior se desloca.
+      // Por `id`, a chave primária: ordem total e barata. Ela NÃO isola a
+      // leitura de quem muda no meio — o `id` é aleatório (`gen_random_uuid`),
+      // então um molde que nasce ou é desativado entre duas páginas desloca as
+      // seguintes em uma linha. Repetida, o índice único devolve `23505` ("já
+      // existia"); pulada, a competência que já chegou nasce na rodada
+      // seguinte, se ainda for o mesmo mês.
       .order("id", { ascending: true })
       .range(pagina * PAGINA, (pagina + 1) * PAGINA - 1);
 
