@@ -7,9 +7,31 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { zernioAdapter } from "../adapters/zernio";
 import { zernioCredsForAccountId } from "../zernio/credentials";
 import { socialMessageId, SOCIAL_PROVIDER } from "./catalog";
+import { recusaDeFormatoDaRede } from "./formato-do-envio";
 import { socialRequest } from "./client";
 import { FalhaDeEnvioDoCanal } from "../falha-de-envio";
 import type { ChannelAdapter } from "../types";
+
+/**
+ * A rede desta conta (`metadata.social_platform` da sessão), ou `null`. Nunca lança:
+ * sem a rede o envio segue sem as regras de formato próprias dela — o pior que
+ * acontece é a rede recusar com o erro que sempre devolveu.
+ */
+async function redeDaConta(organizationId: string, accountId: string): Promise<string | null> {
+  try {
+    const { data } = await createAdminClient()
+      .from("channel_sessions")
+      .select("metadata")
+      .eq("organization_id", organizationId)
+      .eq("zernio_account_id", accountId)
+      .is("archived_at", null)
+      .maybeSingle();
+    const rede = (data?.metadata as Record<string, unknown> | null | undefined)?.social_platform;
+    return typeof rede === "string" ? rede : null;
+  } catch {
+    return null;
+  }
+}
 
 export const socialAdapter: ChannelAdapter = {
   ...zernioAdapter,
@@ -114,6 +136,19 @@ export const socialAdapter: ChannelAdapter = {
       throw new FalhaDeEnvioDoCanal("Aguarde uma mensagem do cliente para responder nesta rede.", "permanente");
     if (!["text", "image", "video", "audio"].includes(envelope.kind))
       throw new FalhaDeEnvioDoCanal("Este tipo de mensagem ainda não é suportado nesta rede.", "permanente");
+    // A21 — o formato que a REDE aceita (TikTok: texto OU uma imagem JPG/PNG, sem legenda).
+    // A recusa é nossa e diz a saída; o erro cru do provedor não diria. Definitiva para esta
+    // mensagem, como as de cima: repetir o turno só repetiria o mesmo balão vermelho.
+    const recusaDoFormato = recusaDeFormatoDaRede(
+      await redeDaConta(envelope.organizationId, envelope.sessionRef),
+      {
+        kind: envelope.kind,
+        mime: envelope.media?.mime,
+        legenda: envelope.media?.caption,
+        texto: envelope.body,
+      },
+    );
+    if (recusaDoFormato !== null) throw new FalhaDeEnvioDoCanal(recusaDoFormato, "permanente");
     const creds = await zernioCredsForAccountId(createAdminClient(), {
       organizationId: envelope.organizationId,
       accountId: envelope.sessionRef,

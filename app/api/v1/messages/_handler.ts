@@ -52,6 +52,9 @@ import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { CHAVE_DO_NOME_DA_INTEGRACAO } from "@/lib/messaging/nome-da-integracao";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import { decidirLimiteDaRede, limitesDaRede } from "@/lib/channels/social/limites-da-rede";
+import { instanteDoBanco } from "@/lib/tempo/agora";
+import { contarRespostasNaJanela } from "@/lib/channels/social/respostas-na-janela";
 import {
   CHAVE_DO_NOME_NA_METADATA,
   nomeDeArquivoLimpo,
@@ -885,6 +888,58 @@ export async function sendMessageHandler(
     }
   }
 
+  // ─── O limite que a REDE impõe à resposta (A21, TikTok) ──────────────────
+  //
+  // O TikTok só deixa a empresa responder, dentro de 48 h da última mensagem do
+  // cliente e com no máximo 10 mensagens. A cadeia `before_send` aplica isto à IA
+  // (gate `limite_da_rede`); esta porta é a de QUEM DIGITA e de quem integra, e a
+  // régua é a MESMA função pura. Sem esta recusa a mensagem nasce `queued`, sai
+  // e volta `failed` com o erro cru do TikTok, que ninguém sabe ler.
+  //
+  // Rede sem limite próprio medido (todas as outras) não paga nada além de ler um
+  // campo que já veio na consulta da conversa. O autor `ia` é o agente por token:
+  // a reserva de 2 respostas é da equipe, e vale aqui também.
+  const redeDaSessao = c.channel_sessions?.metadata?.social_platform;
+  const limitesDaRedeSocial = limitesDaRede(typeof redeDaSessao === "string" ? redeDaSessao : null);
+  if (limitesDaRedeSocial !== null) {
+    // A mesma régua de transporte da cadeia da IA (`instanteDoBanco`): a borda é
+    // exatamente 48 h, e as duas portas leem a hora do banco do mesmo jeito.
+    const instanteDoCliente = instanteDoBanco(c.last_inbound_at);
+    const ultimaDoCliente = instanteDoCliente === null ? null : new Date(instanteDoCliente);
+    const respostas =
+      ultimaDoCliente === null
+        ? 0
+        : await contarRespostasNaJanela(supabase, {
+            organizationId: c.organization_id,
+            conversationId: c.id,
+            desde: ultimaDoCliente,
+          });
+    // `null` = a leitura falhou: o envio segue (fail-open), como na cadeia da IA.
+    if (respostas !== null) {
+      const veredito = decidirLimiteDaRede({
+        limites: limitesDaRedeSocial,
+        autor: ctx.actor.type === "ai_agent" ? "ia" : "equipe",
+        respostasNaJanela: respostas,
+        lastInboundAt: ultimaDoCliente,
+        now: new Date(),
+      });
+      if (!veredito.permitido) {
+        throw new ApiError(
+          422,
+          "limite_da_rede",
+          {
+            codigo: veredito.codigo,
+            rede: redeDaSessao,
+            ultima_mensagem_do_cliente: c.last_inbound_at,
+            respostas_na_janela: respostas,
+          },
+          ctx.requestId,
+          veredito.mensagem,
+        );
+      }
+    }
+  }
+
   if (
     input.media_storage_path &&
     !isMediaPathOwnedBy(input.media_storage_path, c.organization_id, c.id)
@@ -1290,6 +1345,18 @@ export async function sendMessageHandler(
       )
     )
       return created as unknown as Message;
+  }
+  // O trigger `trg_limite_da_rede_na_insercao` (9480) é a rede de proteção do teto: duas
+  // mensagens no mesmo segundo leem a mesma contagem, e quem perde a corrida volta aqui
+  // com o MESMO 422 que a checagem de cima dá, em vez de nascer `failed` com erro cru.
+  if (insErr?.hint === "limite_da_rede") {
+    throw new ApiError(
+      422,
+      "limite_da_rede",
+      { codigo: "teto_da_rede", rede: "tiktok" },
+      ctx.requestId,
+      "Limite do TikTok: 10 respostas desde a última mensagem do cliente, e elas já foram usadas. Só depois que o cliente escrever de novo dá para responder.",
+    );
   }
   if (insErr || !created) {
     throw new ApiError(

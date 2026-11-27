@@ -320,6 +320,17 @@ import {
 } from '@/lib/escalacao/briefing-da-passagem';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { CORRECAO_DO_TURNO_MUDO, PASSOS_DA_CORRECAO, turnoMudoPedeCorrecao } from './turno-mudo';
+// A21 — o limite de resposta que a PRÓPRIA REDE impõe (TikTok): janela, teto e reserva.
+import {
+  CODIGOS_DO_LIMITE_DA_REDE,
+  avisarEquipeDoLimiteDaRede,
+  carregarLimiteDaRede,
+  carregarRedeDoCanal,
+  configDoAgenteNaRede,
+  fotosQueCabemNaJanela,
+  tetosDeEnvioDoTurno,
+} from './limite-da-rede';
+import { limitesDaRede, politicaDaRede } from '@/lib/channels/social/limites-da-rede';
 // #4590 — o teto de respostas por CONVERSA e os seus defaults (N/W). Fica em
 // `agent/` porque a conta é do atendimento; a cadeia só sabe aplicá-la.
 import {
@@ -3181,7 +3192,13 @@ async function executarTurnoDoAgente(
         conversationId: input.conversationId,
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog, jev: deps.jev });
-  const agentConfig = routed.config;
+  // A21 — rede com limite próprio (TikTok): UMA mensagem de texto por turno, sem dividir em
+  // bolhas (cada bolha gastaria uma das 10 respostas da janela) e com as fotos sem legenda.
+  // Preview não tem canal: segue como sempre foi.
+  const redeDoCanal = preview ? null : await carregarRedeDoCanal(pool, tenantId, input.channelSessionId);
+  const limitesDoCanal = limitesDaRede(redeDoCanal);
+  const politicaDoCanal = politicaDaRede(redeDoCanal);
+  const agentConfig = configDoAgenteNaRede(routed.config, limitesDoCanal);
   // O traço grava o agente que o turno RESOLVEU: follow-up e resposta de caso
   // não passam `resolvedAgent`, e sem isto a linha ficaria sem agente nem fontes.
   if (input.tracoDoTurno !== undefined) input.tracoDoTurno.desfecho.config = agentConfig;
@@ -4410,7 +4427,13 @@ async function executarTurnoDoAgente(
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
   // barra o modelo sem gastar uma chamada de before-send à toa.
-  const maxSendsPerTurn = deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN;
+  // A21: na rede com limite próprio o turno manda UM texto e, depois dele, até
+  // `politicaDoCanal.fotosPorTurnoDaIa` fotos sem legenda — o teto físico do turno é a soma, e o do TEXTO
+  // (o que `send_message` confere) é 1, para o modelo não gastar as respostas da janela.
+  const { maxSendsPerTurn, maxTextosPorTurno } = tetosDeEnvioDoTurno(
+    politicaDoCanal,
+    deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
+  );
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -5257,13 +5280,13 @@ async function executarTurnoDoAgente(
             vetos: falseEmptyInboundVetoCount,
           });
         }
-        if (seq >= maxSendsPerTurn) {
+        if (seq >= maxTextosPorTurno) {
           return {
             ok: false,
             error: {
               code: 'max_sends_per_turn',
               message:
-                `você já enviou ${seq} mensagens neste turno (teto: ${maxSendsPerTurn}). ` +
+                `você já enviou ${seq} mensagens neste turno (teto: ${maxTextosPorTurno}). ` +
                 'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
             },
           };
@@ -5772,8 +5795,19 @@ async function executarTurnoDoAgente(
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
-              return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
+              return enviarComSaidaConfiguravel(saida, finalBody, async (finalBody) => {
                   corposEnviados.push(finalBody);
+                  // A21: as fotos só usam o saldo da janela que sobra depois do texto e da reserva da
+                  // equipe. Leitura fora de transação; se falhar, vale o teto fixo e o gate segue barrando.
+                  let maxFotosDaRede = politicaDoCanal?.fotosPorTurnoDaIa ?? 0;
+                  if (limitesDoCanal !== null && politicaDoCanal !== null && input.channelSessionId) {
+                    try {
+                      const estado = await carregarLimiteDaRede(pool, { organizationId: tenantId, contactId: leadId, channelSessionId: input.channelSessionId });
+                      if (estado?.respostasNaJanela != null) maxFotosDaRede = fotosQueCabemNaJanela(limitesDoCanal, politicaDoCanal, estado.respostasNaJanela);
+                    } catch (err) {
+                      runLog.warn('limite_da_rede: saldo da janela não lido; usando o teto fixo de fotos', { err: String(err) });
+                    }
+                  }
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto. O material da
                   // empresa (#4129) entra pela MESMA cadeia — um anexo só.
@@ -5784,6 +5818,9 @@ async function executarTurnoDoAgente(
                       sleep,
                       jitter,
                       restantes: () => maxSendsPerTurn - seq,
+                      ...(limitesDoCanal !== null
+                        ? { legendaSeparada: true, maxFotos: maxFotosDaRede }
+                        : {}),
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                       enviarTexto: (texto) =>
                         enviarVoz(texto, seqDoEnvio) ??
@@ -6001,6 +6038,17 @@ async function executarTurnoDoAgente(
                   log: runLog,
                 });
               }
+            }
+            // A21 — o limite que a REDE impõe: a IA não tenta de novo (o texto do veto já diz
+            // "encerre o turno") e a equipe é AVISADA na Central, um aviso por conversa e motivo.
+            if (!preview && (CODIGOS_DO_LIMITE_DA_REDE as readonly string[]).includes(chain.code)) {
+              await avisarEquipeDoLimiteDaRede(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                codigo: chain.code,
+                mensagem: chain.message,
+                log: runLog,
+              });
             }
             if (VETOS_IRREVOGAVEIS.has(chain.code)) vetoIrrevogavel = true;
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o

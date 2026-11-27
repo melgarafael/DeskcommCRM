@@ -171,9 +171,28 @@ export async function enviarComFotos<T extends BubbleOutcome>(
     sleep: (ms: number) => Promise<void>;
     jitter: () => number;
     restantes?: () => number;
+    /**
+     * A rede NÃO aceita imagem e texto na mesma mensagem (TikTok, A21): o texto sai
+     * primeiro, sozinho, e as fotos depois, sem legenda. Ausente = o comportamento de
+     * sempre (texto como legenda da primeira foto).
+     */
+    legendaSeparada?: boolean;
+    /** Teto de fotos neste envio. Ausente = todas, como sempre. */
+    maxFotos?: number;
   },
 ): Promise<T> {
   const cabeMaisUma = () => (opts.restantes?.() ?? Number.POSITIVE_INFINITY) > 0;
+  if (opts.legendaSeparada === true) {
+    const doTurno = opts.maxFotos === undefined ? fotos : fotos.slice(0, Math.max(0, opts.maxFotos));
+    let ultimo = await opts.enviarTexto(body);
+    for (const foto of doTurno) {
+      if (!OK_KINDS.has(ultimo.kind)) return ultimo;
+      if (!cabeMaisUma()) return ultimo;
+      await opts.sleep(opts.jitter());
+      ultimo = await opts.enviarFoto(foto, '');
+    }
+    return ultimo;
+  }
   const [capa, ...demais] = fotos;
   if (!capa || !cabeMaisUma()) return opts.enviarTexto(body);
   const legendaCabe = body.length <= LIMITE_DA_LEGENDA;

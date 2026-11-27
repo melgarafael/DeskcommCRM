@@ -63,6 +63,7 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
     porque:
       "depende de quantas respostas esta conversa já recebeu na janela — e o teste do agente não conta como resposta enviada",
   },
+  { gate: "limite_da_rede", porque: "depende de quantas mensagens a conversa já recebeu da empresa e de quando o cliente escreveu por último — o teste do agente não é uma conversa real" },
   { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
   {
