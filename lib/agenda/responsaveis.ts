@@ -40,7 +40,7 @@ export const ERRO_RESPONSAVEIS = {
   responsible_unavailable: {
     status: 409,
     code: "responsavel_indisponivel",
-    message: "Responsável adicional já tem compromisso neste horário.",
+    message: "Responsável adicional não está disponível neste horário.",
   },
   service_team_conflict: {
     status: 409,
@@ -77,6 +77,14 @@ export const ERRO_RESPONSAVEIS = {
 } as const;
 
 export type ErroResponsaveis = keyof typeof ERRO_RESPONSAVEIS;
+
+type QuemOcupa = { responsavelId: string; responsaveis?: string[] };
+
+/** Os dois compromissos ocupam a agenda de alguma pessoa em comum? (#3067) */
+export function dividemQuemConduz(a: QuemOcupa, b: QuemOcupa): boolean {
+  const deA = new Set([a.responsavelId, ...(a.responsaveis ?? [])]);
+  return [b.responsavelId, ...(b.responsaveis ?? [])].some((id) => deA.has(id));
+}
 
 /**
  * Traduz a exceção NOMEADA do banco (ver `ERRO_RESPONSAVEIS`) para ApiError.

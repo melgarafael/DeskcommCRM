@@ -29,6 +29,7 @@ import {
   type HorarioPublicado,
   type MotivoDaGradeTravada,
 } from "@/lib/agenda/grade-interativa";
+import { dividemQuemConduz } from "@/lib/agenda/responsaveis";
 import {
   SEMANAS_NA_VISAO_DE_MES,
   primeiroDiaDaVisaoDeMes,
@@ -514,6 +515,7 @@ function BlocoDeAgendamento({
   agendamento,
   pessoa,
   convidados = [],
+  conduzem = [],
   onAbrir,
   fuso,
   coluna,
@@ -532,6 +534,8 @@ function BlocoDeAgendamento({
    * id de quem saiu da equipe não vira nome inventado nem quebra o card.
    */
   convidados?: Pessoa[];
+  /** Quem conduz junto com o principal (#3067), com a mesma filtragem dos convidados. */
+  conduzem?: Pessoa[];
   onAbrir?: (id: string) => void;
   fuso: string;
   coluna: number;
@@ -618,13 +622,14 @@ function BlocoDeAgendamento({
       aria-label={`${agendamento.titulo}, ${rotuloHora(comeca, fuso)} ${t("às")} ${rotuloHora(termina, fuso)}${
         agendamento.quemSeraAtendido ? `, ${t("com")} ${agendamento.quemSeraAtendido}` : ""
       }${pessoa ? `, ${t("atendido por")} ${pessoa.nome}` : ""}${
-        // A equipe entra no rótulo SEMPRE, inclusive no compromisso curto em que
-        // a linha visível não cabe: é a única pista de que este bloco não é só
-        // do responsável para quem lê a agenda com leitor de tela (#4006).
-        convidados.length > 0
-          ? `, ${t("com a equipe")} ${convidados.map((p) => p.nome).join(", ")}`
-          : ""
-      }${
+        // Quem conduz junto e a equipe entram no rótulo SEMPRE, inclusive no
+        // compromisso curto em que a linha visível não cabe: é a única pista de
+        // que este bloco não é só do responsável para quem lê a agenda com leitor
+        // de tela (#4006, #3067).
+        conduzem.length > 0 ? `, ${t("conduz com")} ${conduzem.map((p) => p.nome).join(", ")}` : ""
+      }${convidados.length > 0
+        ? `, ${t("com a equipe")} ${convidados.map((p) => p.nome).join(", ")}`
+        : ""}${
         doGoogle ? `, ${t("ocupado na agenda externa")}` : ""
       }`}
       className={cn(
@@ -687,10 +692,20 @@ function BlocoDeAgendamento({
           {agendamento.quemSeraAtendido ? ` · ${agendamento.quemSeraAtendido}` : ""}
         </span>
       )}
-      {convidados.length > 0 && duracao >= 60 && (
+      {conduzem.length > 0 && duracao >= 60 && (
+        <span
+          data-testid={`responsaveis-do-compromisso-${agendamento.id}`}
+          className="ml-1 truncate text-[10px] leading-3 text-text-muted"
+        >
+          {t("Conduz com:")} {conduzem.map((p) => p.nome).join(", ")}
+        </span>
+      )}
+      {convidados.length > 0 && duracao >= (conduzem.length > 0 ? 75 : 60) && (
         /* 60min = 48px: cabe a terceira linha (16 + 12 + 12 + padding). Abaixo
            disso o `overflow-hidden` do card cortaria o nome ao meio, e um nome
-           cortado é pior que nenhum — o rótulo acessível leva a lista inteira. */
+           cortado é pior que nenhum — o rótulo acessível leva a lista inteira.
+           Com quem conduz também presente, sobe para 75 min: a linha de quem
+           conduz tem prioridade e a de convidados só cabe num card mais largo. */
         <span
           data-testid={`convidados-do-compromisso-${agendamento.id}`}
           className="ml-1 truncate text-[10px] leading-3 text-text-muted"
@@ -1000,6 +1015,9 @@ function ColunaDeDia({
             agendamento={agendamento}
             pessoa={pessoas.find((p) => p.id === agendamento.responsavelId)}
             convidados={(agendamento.convidadosDaEquipe ?? [])
+              .map((id) => pessoas.find((p) => p.id === id))
+              .filter((p): p is Pessoa => p !== undefined)}
+            conduzem={(agendamento.responsaveis ?? [])
               .map((id) => pessoas.find((p) => p.id === id))
               .filter((p): p is Pessoa => p !== undefined)}
             onAbrir={onAbrir}
@@ -1493,13 +1511,13 @@ export function GradeDaAgenda({
       const geo = geometriaDoFim(a);
       const fim = geo.instanteDaParada(fimMin);
       const original = fimMin === geo.fimOriginalMin;
-      // Quem ocupa é o que o servidor contaria (`exigeSemSobreposicao`): o MESMO
-      // responsável — compromisso ou Google dele —, fora quem cancelou ou faltou.
+      // Quem ocupa é o que o servidor contaria (`exigeSemSobreposicao`): alguém que
+      // conduz os dois — principal ou adicional —, fora quem cancelou ou faltou.
       // O colega ao lado na grade não é conflito, e a rota também não o vê.
       const ocupado = ocupacao.some(
         (b) =>
           b.id !== a.id &&
-          b.responsavelId === a.responsavelId &&
+          dividemQuemConduz(a, b) &&
           b.situacao !== "cancelled" &&
           b.situacao !== "no_show" &&
           new Date(b.comeca) < fim &&

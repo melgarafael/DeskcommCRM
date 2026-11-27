@@ -668,6 +668,8 @@ export interface AgendamentoListado {
    * explica por que ele aparece na agenda de quem não é o dono.
    */
   convidadosDaEquipe?: string[];
+  /** Responsáveis ADICIONAIS (#3067): conduzem junto com o dono e ocupam a agenda. */
+  responsaveis?: string[];
   servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number; lugar: string | null };
 }
 
@@ -984,10 +986,18 @@ export async function listaAgendamentos(
   // O `+ 1` é o truque do `has_more` de sempre: vendo uma linha a mais do que
   // o `limite` eu sei que sobrou página, sem contar tudo. A folga é cortada na
   // montagem da resposta, então quem chama continua recebendo no máximo `limite`.
+  // #3067: a mesma consulta roda duas vezes quando há recorte por pessoa — uma para
+  // o que ela atende como dona ou convidada, outra para o que ela conduz como
+  // adicional (embed com apelido `meu`, `!inner`). Sem lista de ids na URL.
+  const COLUNAS =
+    "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids, service_space_id, calendar_resources!calendar_appointments_service_space_fk(name), calendar_appointment_responsibles(user_id)";
+  const montar = async (comoAdicional: boolean) => {
   let q = supabase
     .from("calendar_appointments")
+    // O tipo das linhas sai de COLUNAS: a união dos dois textos quebra o analisador
+    // de `select` do supabase-js (51 erros), e `meu` só serve para filtrar.
     .select(
-      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids, service_space_id, calendar_resources!calendar_appointments_service_space_fk(name)",
+      (comoAdicional ? `${COLUNAS}, meu:calendar_appointment_responsibles!inner(user_id)` : COLUNAS) as typeof COLUNAS,
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1015,17 +1025,19 @@ export async function listaAgendamentos(
      * `cs` é "contém" de array no PostgREST, e o id é uuid validado a montante:
      * não há vírgula nem chave para escapar na expressão `or`.
      */
-    q = q.or(
-      `owner_user_id.eq.${params.ownerUserId},team_guest_user_ids.cs.{${params.ownerUserId}}`,
-    );
+    q = comoAdicional
+      ? q.eq("meu.user_id", params.ownerUserId)
+      : q.or(
+          `owner_user_id.eq.${params.ownerUserId},team_guest_user_ids.cs.{${params.ownerUserId}}`,
+        );
   }
   if (params.situacao) q = q.eq("status", params.situacao);
   if (params.depoisDe) {
     const cursor = decodificarCursorDaLista(params.depoisDe);
     if (!cursor) {
       return {
-        ok: false,
-        codigo: "cursor_invalido",
+        ok: false as const,
+        codigo: "cursor_invalido" as const,
         motivoParaOperador:
           "`depois_de` não é um cursor que esta listagem emitiu. Passe `proximo` exatamente como veio, " +
           "ou comece a leitura sem cursor.",
@@ -1082,7 +1094,26 @@ export async function listaAgendamentos(
     q = q.gte("starts_at", new Date().toISOString());
   }
 
-  const { data, error } = await q;
+  return await q;
+  };
+
+  const respostas = await Promise.all(params.ownerUserId ? [montar(false), montar(true)] : [montar(false)]);
+  const lidas = [];
+  let error: { message: string } | null = null;
+  for (const resposta of respostas) {
+    if ("ok" in resposta) return resposta;
+    if (resposta.error) error = resposta.error;
+    lidas.push(...(resposta.data ?? []));
+  }
+  // Cada consulta já vem ordenada e cortada em `limite + 1`; juntas, sem repetir,
+  // os primeiros `limite` são os mesmos de uma consulta única.
+  const data = [...new Map(lidas.map((l) => [String(l.id), l])).values()];
+  if (respostas.length > 1) {
+    data.sort(
+      (a, b) =>
+        Date.parse(String(a.starts_at)) - Date.parse(String(b.starts_at)) || String(a.id).localeCompare(String(b.id)),
+    );
+  }
   if (error) {
     return {
       ok: false,
@@ -1159,6 +1190,9 @@ export async function listaAgendamentos(
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
         convidadosDaEquipe: Array.isArray(l.team_guest_user_ids)
           ? (l.team_guest_user_ids as unknown[]).map(String)
+          : [],
+        responsaveis: Array.isArray(l.calendar_appointment_responsibles)
+          ? (l.calendar_appointment_responsibles as { user_id: unknown }[]).map((r) => String(r.user_id))
           : [],
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),

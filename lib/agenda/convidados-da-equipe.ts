@@ -101,16 +101,21 @@ export function equipeParaSalvar(
 }
 
 /**
- * A agenda de uma pessoa é o que ela atende E aquilo a que foi chamada: a mesma
- * regra do recorte `?owner_user_id=` em `lib/agenda/consulta.ts`, para a tela e a
- * rota não discordarem de quem aparece.
+ * A agenda de uma pessoa é o que ela atende, o que conduz junto (#3067) e
+ * aquilo a que foi chamada: a mesma regra do recorte `?owner_user_id=` em
+ * `lib/agenda/consulta.ts`, para a tela e a rota não discordarem de quem aparece.
  */
 export function estaNaAgendaDe(
-  compromisso: { responsavelId?: string | null; convidadosDaEquipe?: string[] },
+  compromisso: {
+    responsavelId?: string | null;
+    convidadosDaEquipe?: string[];
+    responsaveis?: string[];
+  },
   pessoaId: string,
 ): boolean {
   return (
     compromisso.responsavelId === pessoaId ||
+    (compromisso.responsaveis ?? []).includes(pessoaId) ||
     (compromisso.convidadosDaEquipe ?? []).includes(pessoaId)
   );
 }

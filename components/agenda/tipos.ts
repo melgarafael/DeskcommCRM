@@ -63,6 +63,8 @@ export type Agendamento = {
   responsavelId: string;
   /** Pessoas da equipe convidadas: o compromisso também é da agenda delas (#4006). */
   convidadosDaEquipe?: string[];
+  /** Responsáveis adicionais (#3067): conduzem junto e ocupam a agenda. */
+  responsaveis?: string[];
   /** ISO-8601. */
   comeca: string;
   termina: string;

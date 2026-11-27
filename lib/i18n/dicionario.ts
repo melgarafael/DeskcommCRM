@@ -15389,8 +15389,21 @@ export const DICIONARIO: Traducoes = {
   "opcional": { es: "opcional" },
   // Convidados da equipe no compromisso (#4006).
   "Equipe no compromisso": { es: "Equipo en el compromiso" },
+  // Quem conduz (#3067).
+  "Quem conduz": { es: "Quién conduce" },
+  "Conduz com": { es: "Conduce con" },
+  "Salvar quem conduz": { es: "Guardar quién conduce" },
+  "principal": { es: "principal" },
+  "Quem conduz fica com este horário ocupado.": { es: "Quien conduce queda ocupado en este horario." },
+  "Retirar {nome}": { es: "Quitar a {nome}" },
+  "{n} de {teto}": { es: "{n} de {teto}" },
+  "{nome} não está disponível neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.": { es: "{nome} no está disponible en este horario. Elija otro horario o quite a esa persona de Quién conduce." },
+  "A equipe desta sessão coletiva é definida por quem abre a sessão.": { es: "El equipo de esta sesión grupal lo define quien abre la sesión." },
+  "Sessão coletiva: quem abre a sessão define a equipe; quem entra depois fica com a mesma.": { es: "Sesión grupal: quien abre la sesión define el equipo; quien entra después queda con el mismo." },
   "Com a equipe:": { es: "Con el equipo:" },
   "com a equipe": { es: "con el equipo" },
+  "Conduz com:": { es: "Conduce con:" },
+  "conduz com": { es: "conduce con" },
   "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.": {
     es: "El responsable ya recibe la invitación. Marca a quién más debe participar: cada persona ve el compromiso en su propia agenda.",
   },
