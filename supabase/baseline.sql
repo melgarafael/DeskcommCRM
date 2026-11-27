@@ -70703,8 +70703,8 @@ notify pgrst, 'reload schema';
 
 -- ---- modulo conectado: atraso do módulo (migration 9446) ----
 -- Espelho idempotente da 9446 (racional no arquivo da migration): `fn_extensions_events_lag`.
--- A 9452 redefiniu a função (rótulo estável por hash do id e fuso da organização, #5097): o corpo
--- abaixo é o da 9452, a última da cadeia — quem aplica a cadeia e quem aplica este baseline recebem
+-- A 9507 redefiniu a função (rótulo estável por hash do id e fuso da organização, #5097): o corpo
+-- abaixo é o da 9507, a última da cadeia — quem aplica a cadeia e quem aplica este baseline recebem
 -- o mesmo. `md5` está no `pg_catalog` e sobrevive ao `search_path = ''`.
 
 create or replace function public.fn_extensions_events_lag(p_installation uuid)

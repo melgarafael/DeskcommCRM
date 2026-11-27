@@ -1,6 +1,6 @@
 -- manifest: **`/admin/extensoes` — o rótulo estável da empresa e o "lido em" no fuso dela (#5097).** Redefine `fn_extensions_events_lag(p_installation)` para devolver, por vínculo, `rotulo` — os 6 primeiros caracteres do `md5` do id da organização — e `fuso` (o `organizations.timezone` dela), junto dos números e datas que ela já devolvia. O rótulo sai do HASH, nunca da posição: a lista é ordenada por atraso e a empresa que acabou de ler muda de lugar, então índice não identifica ninguém entre duas aberturas da tela nem entre dois dias. Nome e id da organização continuam não saindo da função (6 hex não reconstroem o uuid), e o fuso é o que faz o "lido em" sair na hora de quem opera, não na do servidor. Espelho idempotente no apêndice do `supabase/baseline.sql`, no bloco da 9446. Prova em `tests/unit/extensoes-rotulo-estavel-do-modulo.test.ts`.
 -- ============================================================================
--- 9452 — EXTENSÕES: O RÓTULO DA EMPRESA NÃO DEPENDE DA ORDEM DA LISTA.
+-- 9507 — EXTENSÕES: O RÓTULO DA EMPRESA NÃO DEPENDE DA ORDEM DA LISTA.
 --
 -- O defeito era de tela (o índice da lista virava nome), mas o conserto não
 -- cabe na tela: a função do atraso NÃO devolvia nada que identificasse a

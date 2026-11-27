@@ -742,7 +742,7 @@ describe("o atraso mostrado em /admin/extensoes (9446)", () => {
     expect(deB.last_read_at).toBeNull();
     expect(deB.oldest_unread_at).not.toBeNull();
 
-    // O rótulo é do ID, não da posição (9452, #5097): o mesmo hash que a tela espera, e nada mais.
+    // O rótulo é do ID, não da posição (9507, #5097): o mesmo hash que a tela espera, e nada mais.
     const rotuloDe = (id: string) => createHash("md5").update(id).digest("hex").slice(0, 6);
     expect(linhas.map((l) => l.rotulo).sort()).toEqual([rotuloDe(orgA), rotuloDe(orgB)].sort());
     for (const l of linhas) expect(l.rotulo).toMatch(/^[0-9a-f]{6}$/);
