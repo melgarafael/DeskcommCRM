@@ -199,9 +199,14 @@ do expediente, declare no `.env` da instalação — o mesmo arquivo que o insta
 raiz do projeto — a hora em que a atualização pode rodar:
 
 ```bash
-SYSTEM_UPDATE_WINDOW=*/5 2-5 * * *        # das 2h às 5h59, de 5 em 5 minutos
-SYSTEM_UPDATE_WINDOW_TZ=America/Sao_Paulo # o fuso em que essa janela é lida
+# das 2h às 5h59, de 5 em 5 minutos
+SYSTEM_UPDATE_WINDOW=*/5 2-5 * * *
+# o fuso em que essa janela é lida (nome IANA)
+SYSTEM_UPDATE_WINDOW_TZ=America/Sao_Paulo
 ```
+
+Comentário sempre em linha própria: o agente lê como valor tudo o que vem depois do `=`, e um
+`# ...` na mesma linha faz a janela ser recusada.
 
 Com a janela configurada, a atualização **espera a janela**: o clique das 10h não reinicia nada
 na hora, e a tela passa a mostrar **"Atualização agendada para 02h00"**. O pedido fica pendente
