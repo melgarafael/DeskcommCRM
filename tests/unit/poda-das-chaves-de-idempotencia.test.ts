@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  MAX_LOTES,
   type PodaDb,
   TAMANHO_DO_LOTE,
   houveEfeito,
@@ -46,7 +47,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 
 const FUNCAO = "fn_expurgar_chaves_de_idempotencia_vencidas";
 
-function dbFalso(lotesDaChave: number[], erro = false) {
+function dbFalso(lotesDaChave: number[], erro = false, falhaNoLote?: number) {
   const chamadas: Array<{ nome: string; dias: number; limite: number }> = [];
   const restante = [...lotesDaChave];
   const db: PodaDb = {
@@ -54,6 +55,10 @@ function dbFalso(lotesDaChave: number[], erro = false) {
       chamadas.push({ nome, dias: args.p_retencao_dias, limite: args.p_limite });
       if ((nome as string) !== FUNCAO) return { data: 0, error: null };
       if (erro) return { data: null, error: { message: "permission denied (dublê)" } };
+      const lote = chamadas.filter((c) => c.nome === FUNCAO).length;
+      if (falhaNoLote !== undefined && lote >= falhaNoLote) {
+        return { data: null, error: { message: "timeout (dublê)" } };
+      }
       return { data: restante.shift() ?? 0, error: null };
     },
     async apagarRascunhos() {
@@ -76,6 +81,22 @@ describe("#1613 — o cron diário poda as chaves de idempotência vencidas", ()
     expect(r.chaves_de_idempotencia_apagadas).toBe(2 * TAMANHO_DO_LOTE + 7);
     expect(r.lotes_chaves_de_idempotencia).toBe(3);
     expect(r.chaves_de_idempotencia_tem_resto).toBe(false);
+  });
+
+  it("backlog: para no teto de lotes da rodada e declara que sobrou", async () => {
+    const { db, chamadas } = dbFalso(Array(MAX_LOTES + 5).fill(TAMANHO_DO_LOTE));
+    const r = (await podarHistorico(db, {})) as unknown as Record<string, unknown>;
+    expect(chamadas.filter((c) => c.nome === FUNCAO)).toHaveLength(MAX_LOTES);
+    expect(r.chaves_de_idempotencia_apagadas).toBe(MAX_LOTES * TAMANHO_DO_LOTE);
+    expect(r.chaves_de_idempotencia_tem_resto).toBe(true);
+  });
+
+  it("falha no segundo lote: o que o primeiro apagou fica no relatório, com a falha nomeada", async () => {
+    const { db } = dbFalso([TAMANHO_DO_LOTE, TAMANHO_DO_LOTE], false, 2);
+    const r = (await podarHistorico(db, {})) as unknown as Record<string, unknown> & { falhas: string[] };
+    expect(r.chaves_de_idempotencia_apagadas).toBe(TAMANHO_DO_LOTE);
+    expect(r.falhas.some((f) => f.startsWith(`${FUNCAO}: `))).toBe(true);
+    expect(houveEfeito(r as never)).toBe(true);
   });
 
   it("rodada que só podou chaves conta como efeito (deixa a trilha)", async () => {
@@ -119,6 +140,11 @@ describe("#1613 — a função nasce na migration e no baseline", () => {
     expect(corpo).toMatch(/set search_path to 'public', 'pg_temp'/);
     expect(corpo).toMatch(/p_retencao_dias is null or p_retencao_dias < 1/);
     expect(corpo).toMatch(/expires_at < now\(\) - make_interval\(days => p_retencao_dias\)/);
+    // A linha travada por quem a reescreve não é apagada; o vencimento é
+    // conferido de novo no `delete`; o recibo da aprovação LGPD fica fora.
+    expect(corpo).toMatch(/for update skip locked/);
+    expect(corpo).toMatch(/and k\.expires_at < now\(\) - make_interval\(days => p_retencao_dias\)/);
+    expect(corpo).toMatch(/endpoint not like '\/api\/v1\/lgpd\/%'/);
     const resto = texto.slice(inicio);
     expect(resto).toMatch(
       new RegExp(`revoke execute on function public\\.${FUNCAO}\\(int, int\\) from public, anon, authenticated;`),
