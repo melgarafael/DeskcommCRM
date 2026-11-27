@@ -11294,6 +11294,8 @@ export const DICIONARIO: Traducoes = {
   "Retorno agendado": { es: "Seguimiento programado" },
   "Retorno cancelado": { es: "Seguimiento cancelado" },
   "Desmarcado por uma pessoa da equipe": { es: "Cancelado por una persona del equipo" },
+  "Desmarcado por uma integração": { es: "Cancelado por una integración" },
+  "Desmarcado pelo agente de IA": { es: "Cancelado por el agente de IA" },
   "Sem motivo informado": { es: "Sin motivo indicado" },
   "Follow-up pausado": { es: "Follow-up pausado" },
   "Follow-up retomado": { es: "Follow-up retomado" },

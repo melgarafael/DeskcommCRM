@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as AuditModuleNs from "@/lib/audit";
 import { atorDaIntervencao } from "@/lib/followup/intervencao";
+import { motivoDoCancelamentoPelaFila } from "@/lib/followup/retorno-crm";
 import { buildLeadActivityRow } from "@/lib/leads/activity-emitter";
 import { createClient } from "@/lib/supabase/server";
 import { insereAtividadeDoLead } from "@/lib/tarefas/atividade";
@@ -48,7 +50,7 @@ const admin = vi.hoisted(() => ({
   falha: false,
 }));
 vi.mock("@/lib/audit", async (orig) => ({
-  ...(await orig<typeof import("@/lib/audit")>()),
+  ...(await orig<typeof AuditModuleNs>()),
   isServiceRoleConfigured: () => true,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
@@ -182,6 +184,14 @@ describe("#5160 — escrita: a linha do token guarda qual token agiu", () => {
     expect(ator).toEqual(ia);
     const linha = buildLeadActivityRow({ ...base, actor: ator }) as unknown as Linha;
     expect(Object.prototype.hasOwnProperty.call(linha, "metadata")).toBe(false);
+  });
+
+  it("retorno desmarcado pela fila por token não diz «por uma pessoa da equipe»", () => {
+    expect(motivoDoCancelamentoPelaFila({ type: "user", id: "u-1" })).toBe("desmarcado por uma pessoa da equipe");
+    expect(motivoDoCancelamentoPelaFila({ type: "api_token", id: TOKEN })).toBe("desmarcado por uma integração");
+    expect(
+      motivoDoCancelamentoPelaFila({ type: "ai_agent", id: "run-1", role: "admin", api_token_id: TOKEN }),
+    ).toBe("desmarcado pelo agente de IA");
   });
 
   it("os outros atores não ganham metadata", () => {
