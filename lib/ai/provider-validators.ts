@@ -8,7 +8,7 @@
  *
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
-import { AIMLAPI_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { AIMLAPI_ENDPOINT, STRAITLY_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
 import { caminhoDaProva, ORIGEM_PADRAO, type OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
@@ -339,6 +339,49 @@ export async function validateAimlapiKey(apiKey: string): Promise<ValidationResu
 }
 
 /**
+ * A Straitly prova a chave pelo `GET /v1/key`, que EXIGE a credencial (medido:
+ * 401 com chave falsa, 200 com a real) e não gasta token. O `GET /v1/models`
+ * NÃO serve de prova: é o catálogo público e responde 200 até com chave falsa,
+ * por isso ele vem depois, SEM o header, só para listar os modelos.
+ *
+ * `redirect: "error"` nas duas chamadas: a chave nunca segue redirect para fora
+ * de `api.straitly.ai`.
+ */
+export async function validateStraitlyKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(`${STRAITLY_ENDPOINT}/key`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      redirect: "error",
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const lista = await timedFetch(`${STRAITLY_ENDPOINT}/models`, {
+      method: "GET",
+      redirect: "error",
+    });
+    if (!lista.ok) {
+      return { ok: false, error: `provider_status_${lista.status}` };
+    }
+    const json = (await lista.json()) as { data?: { id?: string }[] };
+    const models = [
+      ...new Set(
+        (json.data ?? [])
+          .map((m) => m.id ?? "")
+          .filter(Boolean),
+      ),
+    ];
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
+/**
  * O Jev (TypeSafe AI) prova a chave pelo `GET /v1/models`, que EXIGE a
  * credencial (medido: 401 com chave falsa, 403 sem chave, 200 com a real) e não
  * gasta token. O formato do catálogo é `{ models: [{ name }] }`, diferente do
@@ -500,6 +543,8 @@ export function validateProviderKey(
       return validateRequestyKey(apiKey);
     case "aimlapi":
       return validateAimlapiKey(apiKey);
+    case "straitly":
+      return validateStraitlyKey(apiKey);
     case "custom":
       return validateCustomKey(apiKey, baseUrl);
     case "typesafe":

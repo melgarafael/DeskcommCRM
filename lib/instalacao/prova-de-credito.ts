@@ -25,6 +25,7 @@ import {
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
+  STRAITLY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 
 export type ResultadoDaProva =
@@ -133,6 +134,16 @@ export function montarRequisicaoDeProva(
       // `redirect: "error"`: a chave não segue redirect para outro host.
       return {
         url: `${AIMLAPI_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 16, messages: msg },
+        redirect: "error",
+      };
+    case "straitly":
+      // OpenAI-compatível, endpoint fixo. `max_tokens: 16` pelo mesmo motivo da
+      // Requesty e da AI/ML API: modelos da OpenAI atrás do agregador recusam valor menor.
+      // `redirect: "error"`: a chave não segue redirect para outro host.
+      return {
+        url: `${STRAITLY_ENDPOINT}/chat/completions`,
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 16, messages: msg },
         redirect: "error",

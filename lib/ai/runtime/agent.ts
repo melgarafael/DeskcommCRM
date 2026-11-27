@@ -37,6 +37,7 @@ import {
   OPENAI_CODEX_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
+  STRAITLY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
 import { lerLoginCodexRenovandoSeProxima } from "@/lib/ai/credenciais/login-codex";
@@ -238,6 +239,13 @@ export function buildModel(
         apiKey,
         baseURL: AIMLAPI_ENDPOINT,
         fetch: fetchDoProvedor(AIMLAPI_ENDPOINT),
+      }).chat(modelId);
+    // Straitly: o mesmo transporte contido do registry (chave só para `api.straitly.ai`).
+    case "straitly":
+      return createOpenAI({
+        apiKey,
+        baseURL: STRAITLY_ENDPOINT,
+        fetch: fetchDoProvedor(STRAITLY_ENDPOINT),
       }).chat(modelId);
     // Provedor personalizado (#1642): o endereço vem da credencial, junto da
     // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a

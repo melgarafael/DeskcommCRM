@@ -107,7 +107,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_ai_agents": { tokens: 115, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_version": { tokens: 294, motivo: EDITAR_ASSISTENTES },
   "crm_get_ai_agent_turn": { tokens: 265, motivo: EDITAR_ASSISTENTES },
-  "crm_save_ai_agent_draft": { tokens: 1019, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens), +4 com o provedor aimlapi no enum; nunca montada no turno do agente" },
+  "crm_save_ai_agent_draft": { tokens: 1023, motivo: "editar assistentes: +478 com `configuracoes` (modelo, voz, ferramentas, passar para pessoa, dividir, imagens), +4 aimlapi e +4 straitly no enum; nunca montada no turno do agente" },
   "crm_test_ai_agent_version": { tokens: 406, motivo: EDITAR_ASSISTENTES },
   "crm_publish_ai_agent_version": { tokens: 264, motivo: EDITAR_ASSISTENTES },
   "crm_rollback_ai_agent": { tokens: 235, motivo: EDITAR_ASSISTENTES },
@@ -283,7 +283,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // não somado à mão.
 // +41 do `phone_whatsapp` em `crm_start_conversation_and_send` (DES-1950). MEDIDO neste
 // head sobre a main de 2026-11-26 (`b2b5d4c0d`, que tinha 47945): 47986 = 47945 + 41.
-const TETO_TOTAL = 47986;
+// +4 do provedor `straitly` no enum de `crm_save_ai_agent_draft`. MEDIDO em 2026-11-27: 47990 = 47986 + 4.
+const TETO_TOTAL = 47990;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -24,6 +24,7 @@ describe("createDefaultRegistry", () => {
       "openai-assinatura",
       "openrouter",
       "requesty",
+      "straitly",
     ]);
   });
   it("cada factory produz um LanguageModel (não lança ao instanciar)", () => {
@@ -35,6 +36,7 @@ describe("createDefaultRegistry", () => {
     expect(() => reg.deepseek!("k", "deepseek-flash")).not.toThrow();
     expect(() => reg.requesty!("k", "openai/gpt-4o-mini")).not.toThrow();
     expect(() => reg.aimlapi!("k", "openai/gpt-4o-mini")).not.toThrow();
+    expect(() => reg.straitly!("k", "deepseek/deepseek-v4-1-flash-1017")).not.toThrow();
     // Endpoint próprio (gateway compatível, ou modelo local no roteiro).
     expect(() => reg.openrouter!("k", "x/y", "https://gateway.exemplo/v1")).not.toThrow();
     expect(() => reg.deepseek!("k", "deepseek-flash", "https://gateway.exemplo/v1")).not.toThrow();

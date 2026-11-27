@@ -986,6 +986,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da AI/ML API (agregador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
   },
+  "api.straitly.ai": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da Straitly (agregador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
+  },
   "generativelanguage.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:
@@ -1104,6 +1109,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "CONSOLE",
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave da AI/ML API (`ondePegarAChave` em lib/ai/pontos/provedores.ts, `/app/keys`). Endereço do fornecedor, não nosso.",
+  },
+  "straitly.ai": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave da Straitly (`ondePegarAChave` em lib/ai/pontos/provedores.ts, `/console/keys`). Endereço do fornecedor, não nosso.",
   },
   "app.requesty.ai": {
     categoria: "CONSOLE",
@@ -1527,6 +1537,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): assinatura de HTML do
       // Wix no raio-X — nunca chamada, nunca exibida.
       "static.wixstatic.com",
+      // Decisão escrita: painel de chaves da Straitly, o mesmo caso da
+      // Requesty e da AI/ML API (o link "Onde pegar a chave" da tela de Credenciais).
+      "straitly.ai",
       // Ver a decisão escrita em `fb.com`: mesma classe, mesmo módulo, o rótulo
       // da rede na 1ª mensagem.
       "tiktok.com",

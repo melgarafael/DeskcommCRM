@@ -95,6 +95,16 @@ export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
 export const AIMLAPI_ENDPOINT = 'https://api.aimlapi.com/v1';
 
 /**
+ * A Straitly é um agregador OpenAI-compatível com mais de 100 modelos de
+ * vários fabricantes em Chat Completions. Mesma fábrica, sem SDK novo.
+ *
+ * Assim como na AI/ML API, o endpoint é FIXO (`aceitaEndpointProprio: false`):
+ * a chave só viaja para `api.straitly.ai`, e o transporte contido
+ * (`fetchDoProvedor`) recusa redirect para qualquer outro host.
+ */
+export const STRAITLY_ENDPOINT = 'https://api.straitly.ai/v1';
+
+/**
  * O endpoint do CODEX — o mesmo login do ChatGPT, falando a API de resposta.
  *
  * A assinatura (`openai-assinatura`) não tem chave: o `access_token` SIWC
@@ -461,6 +471,16 @@ export function createDefaultRegistry(opts?: {
      */
     aimlapi: (apiKey, modelId) =>
       createOpenAI({ apiKey, baseURL: AIMLAPI_ENDPOINT, fetch: contain(AIMLAPI_ENDPOINT) }).chat(
+        modelId,
+      ),
+    /**
+     * Straitly: agregador OpenAI-compatível, em `.chat()` como Requesty e AI/ML API.
+     * Sem `baseUrl` de propósito: a lista diz `aceitaEndpointProprio: false`,
+     * então a chave vai sempre para o endpoint canônico, e a allowlist do
+     * egress é só ele (redirect para fora vira `EgressBlockedError`).
+     */
+    straitly: (apiKey, modelId) =>
+      createOpenAI({ apiKey, baseURL: STRAITLY_ENDPOINT, fetch: contain(STRAITLY_ENDPOINT) }).chat(
         modelId,
       ),
     /**

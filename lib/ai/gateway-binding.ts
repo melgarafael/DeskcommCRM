@@ -31,6 +31,7 @@ import {
   DEEPSEEK_ENDPOINT,
   fetchDoProvedor,
   REQUESTY_ENDPOINT,
+  STRAITLY_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-internos-autorizados";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
@@ -402,7 +403,7 @@ async function lerBinding(
  * de modelo: quem já está dentro do provedor recebe só o nome, e é o que
  * `resolveLanguageModel` faz ao rotear pelo prefixo. A OpenRouter é a exceção
  * porque é agregadora — lá o prefixo é parte do endereço e vai inteiro.
- * A Requesty e a AI/ML API também são agregadoras, e seguem a mesma regra.
+ * A Requesty, a AI/ML API e a Straitly também são agregadoras, e seguem a mesma regra.
  *
  * O `null` é o freio do PR #151: id de outro provedor não vira chamada com a
  * chave da organização, vira queda para `resolveLanguageModel`, que sabe achar
@@ -415,6 +416,7 @@ function idParaOProvider(provider: string, id: string): string | null {
     provider === "openrouter" ||
     provider === "requesty" ||
     provider === "aimlapi" ||
+    provider === "straitly" ||
     provider === "custom"
   )
     return id;
@@ -602,6 +604,7 @@ async function padraoDaOrganizacao(
     llm.provider === "openrouter" ||
     llm.provider === "requesty" ||
     llm.provider === "aimlapi" ||
+    llm.provider === "straitly" ||
     llm.provider === "custom" ||
     defaultModel.startsWith(`${llm.provider}/`)
       ? defaultModel
@@ -884,6 +887,14 @@ function instanciar(
         apiKey,
         baseURL: AIMLAPI_ENDPOINT,
         fetch: fetchDoProvedor(AIMLAPI_ENDPOINT),
+      }).chat(modelId);
+    // Straitly: endpoint fixo (sem `baseUrl`), e a chave só sai para
+    // `api.straitly.ai`, inclusive em redirect. Ver providers.ts.
+    case "straitly":
+      return createOpenAI({
+        apiKey,
+        baseURL: STRAITLY_ENDPOINT,
+        fetch: fetchDoProvedor(STRAITLY_ENDPOINT),
       }).chat(modelId);
     // Provedor personalizado (#1642): endpoint do operador. Sem `baseUrl` não
     // há onde ir — `null` deixa o chamador cair no padrão COM AVISO, que é o

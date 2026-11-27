@@ -377,6 +377,28 @@ export const PROVEDORES = [
     prefixoDaChave: "a1b2c3…",
   },
   {
+    id: "straitly",
+    rotulo: "Straitly",
+    // NÃO DECLARADO: a Straitly escolhe o provedor de origem por modelo, como a
+    // OpenRouter e a AI/ML API, e este repo não tem fonte citável com data para
+    // a sede nem para uma região de processamento. O documento diz "não declara
+    // o país; consulte a política do provedor" em vez de chutar.
+    pais: "desconhecido",
+    sede: null,
+    paisDeclarado: null,
+    fonteDoPais: null,
+    motivoDaRegiaoNaoDeclarada:
+      "roteia cada chamada entre provedores conforme o modelo e a disponibilidade, sem declarar país único de processamento",
+    // Endpoint fixo em `api.straitly.ai`: não há base URL própria a apontar.
+    ondeExecutaComEndpointProprio: null,
+    quandoUsar:
+      "Uma chave só para mais de 100 modelos de vários fabricantes (Claude, GPT, Gemini, Grok, DeepSeek e outros), com cobrança por token em créditos pré-pagos numa conta só. Bom para comparar modelos sem abrir conta em cada provedor.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: true,
+    ondePegarAChave: "https://straitly.ai/console/keys",
+    prefixoDaChave: "sk-…",
+  },
+  {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
     // O endpoint é do próprio operador (gateway, LiteLLM, proxy corporativo):
