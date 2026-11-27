@@ -152,6 +152,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada mais do fluxo mudou: o `state` continua de uso único e 256 bits, o PKCE S256, o endereço de retorno fixo por servidor e a revogação depois do encerramento da conversa seguem iguais, e pedido vencido continua sendo recusado tanto na abertura quanto no retorno — o prazo maior só aumenta a janela em que o link pode ser aberto. Não há migration: a preferência fica no `oauth_metadados` que já existia no cadastro.
 
+  Contribuição de @webtecnica (#5189).
+
 - **O lembrete de cada degrau pode sair sem o link da reunião** Quem usa Google Meet ou Link de vídeo agora escolhe, em cada lembrete, se ele leva a linha com o link da reunião. Ligado por padrão, o comportamento não muda para quem não mexer; desligado, aquele aviso sai sem o link e sem a frase de que ele chega pela conversa. Contribuição de @yunshu0909, a partir da issue #5154.
 
 - **Responda ao aviso de caso citando a mensagem** No WhatsApp, a equipe pode responder a um aviso de caso segurando a mensagem
@@ -216,6 +218,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **As abas de Configurações › Conversões cabem num celular de 375px** Num celular de 375px, a barra de abas de Configurações › Conversões era mais larga que a tela e empurrava o painel para o lado, com a aba "Links rastreáveis" fora da vista. Agora a barra rola sozinha na horizontal, cada aba fica numa linha só, e o painel não rola mais para o lado, em português e em espanhol. A partir da issue #5224.
 
+  Contribuição de @AyhamJo7 (#5240).
+
 - **Levar para outro funil reaproveita a cópia aberta** Confirmar o mesmo negócio em duas abas ou repetir o pedido pela API devolve o mesmo card aberto no funil de destino. A criação, o vínculo entre os cards e o encerramento da origem são gravados juntos. Um card já ganho ou perdido fica no histórico e permite uma nova tentativa quando a regra do funil autoriza.
 
   Contribuição de @yunshu0909, a partir da issue #5229.
@@ -224,6 +228,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   diretamente ao negócio (**Abrir negócio**) em vez de abrir o Radar inteiro. Se outro negócio
   vencer enquanto esse aviso ainda estiver aberto, o aviso passa para o Radar com a contagem
   atualizada.
+
+  Contribuição de @Yshuro (#5243).
 
 - **O botão "Salvar" do cartão Modo de roteamento aparece como "Guardar" em espanhol** Em Equipe, o cartão Modo de roteamento mostrava o botão "Salvar" em português mesmo com a tela em espanhol. Agora ele segue o idioma da tela, como o botão do horário do atendente já fazia.
 
@@ -241,6 +247,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Os responsáveis adicionais seguem a opção de agenda dos colegas** Com "Atendentes podem mexer na agenda dos colegas" desligado, quem está abaixo de gerente já não marcava consulta na agenda de um colega como responsável principal. Agora a mesma regra vale para os responsáveis adicionais, que também ocupam a agenda de quem é incluído: o atendente só inclui a si mesmo, na criação, na edição da lista e na reserva de serviço. Gerente e administrador seguem incluindo qualquer membro, e com a opção ligada (o padrão) nada muda. Tirar adicionais continua permitido.
 
+  A partir do #5280 de @paulolimajr77.
+
 - **Um negócio tem uma só cópia aberta em cada funil de destino** As automações e o encaminhamento do assistente para outro funil não criam mais um segundo card aberto do mesmo negócio no mesmo funil: quando o card já existe, eles usam esse card. O banco passa a recusar a segunda cópia aberta, venha ela de onde vier. Reabrir ou mover um card que viraria a segunda cópia aberta mostra o aviso "Este negócio já tem uma cópia aberta neste funil", em vez de um erro do sistema.
 
   Se a sua instalação já tinha cópias abertas repetidas, a atualização mantém a mais antiga e encerra as outras como perda, com o motivo "levado para outro funil", que não entra nas métricas de perda comercial. O histórico, as tarefas e os vínculos dessas cópias passam para o card que ficou. Nenhum card é apagado, e essa limpeza não dispara automações.
@@ -255,9 +263,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O agente confirma a consulta dizendo quem vai atender** Com a conferência de promessa ligada, a confirmação que citava o nome de quem atende era barrada, e o cliente podia recebê-la sem o nome. Agora a conferência recebe da agenda quem atende aquela reserva. Nome de outro profissional continua barrado.
 
+  Contribuição de @paulolimajr77 (#5321).
+
 - **Contato criado ao abrir conversa por telefone (API, MCP) não aparece mais como "tem WhatsApp" sem ninguém saber** Quem abria uma conversa por telefone pela API (`POST /api/v1/conversations/open-with-contact`, `POST /api/v1/messages`) ou pela ferramenta MCP `crm_start_conversation_and_send`, com um número que ainda não era de nenhum contato, ganhava um contato novo marcado "WhatsApp: sim". Agora ele nasce "não sei", e vira "sim" quando a pessoa escreve pelo WhatsApp, como antes. A rota e a ferramenta aceitam o campo opcional `phone_whatsapp` (`sim`, `nao` ou `nao_sei`) para o contato que criarem; contato que já existe não muda.
 
 - **O "Editar contato" mostra o nome do WhatsApp quando o contato ainda não tem nome no cadastro** Num contato que chegou pelo WhatsApp, a ficha mostrava um nome no topo e o formulário de edição abria só com o telefone, como se não tivesse carregado. Agora o formulário avisa que o cadastro ainda não tem nome e oferece o nome da agenda do celular e o do WhatsApp, com o botão "Usar este nome". Nada é gravado sem o clique.
+
+  Contribuição de @allisonwilliancandido (#5314).
 
 ## [1.126.0] — 2026-11-25
 
