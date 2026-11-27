@@ -68,8 +68,13 @@ O telefone não é convertido pela rota, e sim pelo **mesmo caminho** que o bot�
 2. `encontrarContatoPorTelefone` procura a ficha **da organização do token**,
    pelas grafias do número (com e sem o nono dígito) e também nos telefones
    extras da ficha.
-3. Não achou? `fn_upsert_wa_contact` cria o contato **nesta** organização. É o
-   mesmo upsert das outras portas de entrada.
+3. Não achou? `openSharedContactConversation` cria o contato **nesta**
+   organização (o `organization_id` do token, nunca do corpo), com
+   `phone_whatsapp = 'nao_sei'`: quem abre por token não sabe ainda se o número
+   tem WhatsApp. Ele vira `sim` quando chega a primeira mensagem RECEBIDA pelo
+   WhatsApp (o upsert do webhook, `fn_upsert_wa_contact`). A rota
+   `open-with-contact` e a tool MCP aceitam `phone_whatsapp` (`sim`, `nao` ou
+   `nao_sei`) para a ficha que criarem; ficha que já existe não é alterada.
 4. `openSharedContactConversation` (o mesmo ponto único do botão e da tool MCP)
    abre a conversa 1:1 — ou **reaproveita** a que já existe, inclusive reabrindo
    uma fechada — na sessão de canal escolhida por `escolherSessaoParaEnvio` com

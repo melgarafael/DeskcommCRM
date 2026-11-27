@@ -379,12 +379,19 @@ export interface ListMessagesResult {
   has_more: boolean;
 }
 
-export async function listMessagesHandler(
-  supabase: SB,
-  ctx: HandlerCtx,
-  conversationId: string,
-  q: ListMessagesQuery,
-): Promise<ListMessagesResult> {
+function conversaNaoEncontrada(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    404,
+    "not_found",
+    undefined,
+    ctx.requestId,
+    traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
+async function conferirConversaDoHistorico(
+  supabase: SB, ctx: HandlerCtx, conversationId: string, confirmarConversa: boolean,
+) {
   // Pessoal não é alcançável pelo histórico de QUEM NÃO É DONO (spec 21, etapa
   // 7): a conversa sumiu da lista e o link direto dá 404, então o histórico
   // recusa junto — defesa em profundidade, com o mesmo 404 mudo para não
@@ -396,22 +403,31 @@ export async function listMessagesHandler(
   //
   // Duas consultas planas (sem embed, sem `maybeSingle`): o dublê do invariante
   // de paginação traduz a cadeia em SQL literal e só modela esses métodos.
-  const { data: donas } = await supabase
+  const { data: donas, error: erroDaConversa } = await supabase
     .from("conversations")
     .select("contact_id")
     .eq("id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .limit(1);
+  if (confirmarConversa && erroDaConversa) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDaConversa.message);
+  }
+  if (confirmarConversa && !donas?.length) {
+    throw conversaNaoEncontrada(ctx);
+  }
   const contatoId = ((donas ?? []) as Array<{ contact_id?: string | null }>)[0]?.contact_id ?? null;
   let contatoDaConversa: { is_personal?: boolean; personal_owner_user_id?: string | null } | null =
     null;
   if (contatoId) {
-    const { data: contato } = await supabase
+    const { data: contato, error: erroDoContato } = await supabase
       .from("contacts")
       .select("is_personal, personal_owner_user_id")
       .eq("id", contatoId)
       .eq("organization_id", ctx.organization_id)
       .limit(1);
+    if (confirmarConversa && erroDoContato) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDoContato.message);
+    }
     contatoDaConversa =
       ((contato ?? []) as Array<{
         is_personal?: boolean;
@@ -419,14 +435,18 @@ export async function listMessagesHandler(
       }>)[0] ?? null;
   }
   if (!podeVerPessoal(ctx.actor, contatoDaConversa)) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+    throw conversaNaoEncontrada(ctx);
   }
+}
+
+export async function listMessagesHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  conversationId: string,
+  q: ListMessagesQuery,
+  { confirmarConversa = false }: { confirmarConversa?: boolean } = {},
+): Promise<ListMessagesResult> {
+  await conferirConversaDoHistorico(supabase, ctx, conversationId, confirmarConversa);
 
   // A CONSULTA VAI DO MAIS NOVO PARA O MAIS VELHO — de propósito.
   //
@@ -491,6 +511,11 @@ export async function listMessagesHandler(
   }
 
   const rows = (data ?? []) as unknown as Message[];
+  // A RLS pode fechar o histórico depois da primeira leitura do pai. Uma
+  // página vazia só confirma acesso se a conversa continua legível.
+  if (confirmarConversa && rows.length === 0) {
+    await conferirConversaDoHistorico(supabase, ctx, conversationId, true);
+  }
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
 
@@ -639,13 +664,7 @@ export async function sendMessageHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr.message);
   }
   if (!conv) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+    throw conversaNaoEncontrada(ctx);
   }
 
   type Joined = {

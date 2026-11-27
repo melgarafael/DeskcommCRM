@@ -10,6 +10,7 @@ import { canalDesativado } from "@/lib/channels/desativado";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
 import { phoneLookupVariants, canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { parseDialablePhone } from "@/lib/messaging/contact-card";
+import type { TelefoneWhatsapp } from "@/lib/schemas/contacts";
 
 type Admin = SupabaseClient;
 
@@ -18,6 +19,8 @@ export interface OpenSharedContactInput {
   contact_id?: string;
   phone_number?: string;
   name?: string;
+  /** Só para a ficha que ESTA chamada cria; ficha existente não é tocada. Ausente = `nao_sei`. */
+  phone_whatsapp?: TelefoneWhatsapp;
 }
 
 export interface OpenSharedContactResult {
@@ -61,22 +64,38 @@ async function resolveContactId(
   const existente = await findContactByPhoneVariants(admin, orgId, canonico);
   if (existente) return existente.id;
 
-  const waid = canonico.replace(/\D/g, "");
-  const { data: contactId, error: upsertErr } = await admin.rpc(
-    "fn_upsert_wa_contact" as never,
-    {
-      p_org: orgId,
-      p_kind: "phone",
-      p_phone: canonico,
-      p_lid: null,
-      p_chat_id: waid,
-      p_notify: input.name?.trim() || null,
-    } as never,
-  );
-  if (upsertErr || !contactId) {
-    throw new Error(upsertErr?.message ?? "contact_upsert_failed");
+  // A ficha nova NÃO nasce pela RPC do webhook (`fn_upsert_wa_contact`): o
+  // INSERT de lá grava `phone_whatsapp = 'sim'`, que é verdade para quem acabou
+  // de escrever pelo WhatsApp e mentira para quem é aberto por token (uma
+  // ligação do DeskVoice, um cadastro). Aqui ninguém sabe ainda: `nao_sei`, ou
+  // o que quem chama informou. A mensagem RECEBIDA depois marca `sim` pela
+  // regra de sempre (a RPC do webhook atualiza a ficha que já existe).
+  // Mesmo padrão de `lib/voip/resolve-caller.ts`. Sem `source_metadata`: o
+  // identificador de conversa do canal só existe quando o número escreve, e
+  // quem o grava é a RPC do webhook (o `nome` vai para `display_name`).
+  const nome = input.name?.trim() || null;
+  const { data: criado, error: insertErr } = await admin
+    .from("contacts")
+    .insert({
+      organization_id: orgId,
+      phone_number: canonico,
+      phone_whatsapp: input.phone_whatsapp ?? "nao_sei",
+      source: "whatsapp",
+      display_name: nome,
+    })
+    .select("id")
+    .single();
+  if (!insertErr && criado) return (criado as { id: string }).id;
+
+  // Corrida: outra porta (o webhook, outro clique) gravou a ficha do mesmo
+  // número entre a busca e o INSERT. `uniq_contacts_org_phone` ou a regra "um
+  // número, uma ficha" recusam com 23505; quem venceu é a ficha, e o WhatsApp
+  // dela não é desta chamada.
+  if (insertErr?.code === "23505") {
+    const vencedor = await findContactByPhoneVariants(admin, orgId, canonico);
+    if (vencedor) return vencedor.id;
   }
-  return contactId as string;
+  throw new Error(insertErr?.message ?? "contact_upsert_failed");
 }
 
 /** Garante contato + conversa na sessão indicada; reabre conversa fechada se existir. */

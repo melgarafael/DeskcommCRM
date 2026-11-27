@@ -21,7 +21,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sendMock = vi.fn();
+const sendMock = vi.fn().mockResolvedValue(undefined);
 const uploadMock = vi.fn();
 const getMock = vi.fn();
 const fetchMock = vi.fn();
@@ -70,7 +70,7 @@ const RECURSOS = [
 ];
 
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useCreateNote", () => ({
   useCreateNote: () => ({ mutate: vi.fn(), isPending: false }),
@@ -110,7 +110,7 @@ function renderComposer() {
   );
 }
 
-/** O que cada `send.mutate` levou, na ordem: o tipo do anexo e o `body`. */
+/** O que cada envio levou, na ordem: o tipo do anexo e o `body`. */
 function enviados() {
   return sendMock.mock.calls.map(([dados]) => {
     const { type, body } = dados as { type: string; body?: string };
@@ -136,9 +136,6 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", fetchMock);
   uploadMock.mockImplementation(uploadFile);
-  sendMock.mockImplementation((_dados: unknown, opcoes?: { onSuccess?: () => void }) => {
-    opcoes?.onSuccess?.();
-  });
 });
 
 describe("Composer: a legenda vai só com o anexo que a leva (#3151)", () => {

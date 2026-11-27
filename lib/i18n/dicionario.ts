@@ -10014,6 +10014,8 @@ export const DICIONARIO: Traducoes = {
   "Mostrando as conversas que já estavam na tela. Nada foi perdido.": {
     es: "Mostrando las conversaciones que ya estaban en pantalla. No se perdió nada.",
   },
+  "Verificando o acesso à conversa…": { es: "Verificando el acceso a la conversación…" },
+  "Não foi possível recuperar a conversa agora.": { es: "No se pudo recuperar la conversación en este momento." },
   "Tentar novamente": { es: "Intentar de nuevo" },
   "Analisar perfis e oportunidades": { es: "Analizar perfiles y oportunidades" },
   "Analisando clientes: {feitos} de {total}": {
@@ -11643,6 +11645,14 @@ export const DICIONARIO: Traducoes = {
   },
   "Já cadastrado. Preencha só para trocar.": {
     es: "Ya registrado. Complétalo solo para cambiarlo.",
+  },
+  // Nome do canal oferecido no "Editar contato" quando o cadastro não tem nome.
+  "Este contato ainda não tem nome no cadastro.": {
+    es: "Este contacto todavía no tiene nombre en su registro.",
+  },
+  "Usar este nome": { es: "Usar este nombre" },
+  "Só a equipe vê o nome da agenda. Ao salvá-lo como nome, ele pode aparecer em mensagens.": {
+    es: "Solo el equipo ve el nombre de la agenda. Al guardarlo como nombre, puede aparecer en mensajes.",
   },
   "Opcional.": { es: "Opcional." },
   // Autocompletar de etiquetas na ficha do contato (issue #2732).
@@ -17453,6 +17463,8 @@ export const DICIONARIO: Traducoes = {
     { es: "El cliente parece haber pedido no recibir más mensajes" },
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa":
     { es: "Se alcanzó el límite de gasto en IA — el cliente no pidió hablar con una persona" },
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa":
+    { es: "La IA llegó al límite de respuestas para visitante sin contacto — el cliente no pidió hablar con una persona" },
   "O cliente demonstrou irritação na conversa":
     { es: "El cliente mostró molestia en la conversación" },
   // D11: só na passagem e no aviso da equipe (`MARCA_DO_JEV`), nunca ao cliente.
