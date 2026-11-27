@@ -1225,6 +1225,19 @@ export const DICIONARIO: Traducoes = {
     es: "Desactivado, ganar no toca el financiero: la tienda con checkout, el infoproducto y la inmobiliaria no viven de cuentas por cobrar. Activado, arrastrar a la etapa de ganado y el botón Ganar abren una orden de servicio con el valor y el contacto del negocio.",
   },
   "Motivo do ganho": { es: "Motivo del negocio ganado" },
+  // #5181 — a caixa que o item "Marcar como ganho" do card abre quando o funil
+  // tem lista de motivos ou exige o motivo. Antes ele fechava sem perguntar.
+  "Escolha o motivo do ganho deste funil.": {
+    es: "Elige el motivo del negocio ganado en este embudo.",
+  },
+  "Informe o motivo do ganho. Essa informação ajuda a entender o que traz resultado.": {
+    es: "Indica el motivo del negocio ganado. Esa información ayuda a entender qué trae resultados.",
+  },
+  "Este funil exige o motivo do ganho para fechar o negócio.": {
+    es: "Este embudo exige el motivo del negocio ganado para cerrar la operación.",
+  },
+  "Fechar sem motivo": { es: "Cerrar sin motivo" },
+  "Confirmar ganho": { es: "Confirmar negocio ganado" },
   "A etapa escolhida exige alguns dados. Preencha para continuar.": {
     es: "La etapa elegida exige algunos datos. Complétalos para continuar.",
   },
