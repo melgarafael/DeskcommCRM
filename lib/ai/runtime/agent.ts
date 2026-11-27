@@ -273,6 +273,20 @@ function totalUsage(steps: ReadonlyArray<{ usage?: { inputTokens?: number; outpu
   return { inputTokens, outputTokens };
 }
 
+/**
+ * O uso de cada passo, na forma que `computeCostCents` lê para aplicar o degrau
+ * do Haiku 5.5 POR REQUISIÇÃO (#5239). O total do turno não é a régua: um turno
+ * de vários passos curtos somaria mais de 100 mil e sairia a 5× indevidamente.
+ */
+function passosParaCusto(
+  steps: ReadonlyArray<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+) {
+  return steps.map((s) => ({
+    inputTokens: s.usage?.inputTokens,
+    outputTokens: s.usage?.outputTokens,
+  }));
+}
+
 export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
   const admin = createAdminClient();
   const startedAt = Date.now();
@@ -731,6 +745,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         model: version.model,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        steps: passosParaCusto(
+          steps as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+        ),
       });
       // Preço desconhecido (`null`) não estoura o limite por chamada: sem
       // número não se compara contra o teto — e também não é contado como 0
@@ -783,6 +800,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       model: version.model,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      steps: passosParaCusto(
+        result.steps as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+      ),
     });
     const latencyMs = Date.now() - startedAt;
     const trace = serializeSteps(result.steps as never);
