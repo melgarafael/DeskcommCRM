@@ -458,8 +458,15 @@ export function PipelinesClient({
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
   const [busca, setBusca] = useState("");
-  // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
-  const visiveis = funisQueCasam(pipelines, busca);
+  // `null` = sem busca. A régua é a de `filtrar-funis` (#4593), e as etapas que
+  // ela enxerga são só as VIVAS: a arquivada não recebe card.
+  const visiveis = funisQueCasam(
+    pipelines.map((p) => ({
+      ...p,
+      etapas: (etapas[p.id] ?? []).filter((e) => !e.is_archived).map((e) => e.name),
+    })),
+    busca,
+  );
   const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
@@ -510,7 +517,7 @@ export function PipelinesClient({
           que nasce aberto. */}
       {pipelines.length > 1 && (
         <Input
-          placeholder={t("Buscar por nome…")}
+          placeholder={t("Buscar por nome ou etapa…")}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           className="w-full sm:w-64"

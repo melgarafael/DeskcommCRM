@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import { filtrarFluxos } from "@/lib/followup/filtrar-fluxos";
+import { rotuloDoGatilhoNaLista } from "@/lib/followup/rotulo-do-gatilho";
 import { funisQueCasam } from "@/lib/pipelines/filtrar-funis";
 
 const FLUXOS = [
@@ -104,5 +105,21 @@ describe("U6 — cada palavra casa num campo inteiro, nunca na junta entre dois"
     // «...(site)» + «novo contato» emendados dariam «site)novo» / «site) novo».
     expect(funis("site)novo")).toEqual([]);
     expect(funis("pos-vendaaguardando")).toEqual([]);
+  });
+});
+
+describe("o rótulo do gatilho que a busca usa segue o que o editor mostra", () => {
+  it("configuração sem `kind` é «Manual», como no editor", () => {
+    expect(rotuloDoGatilhoNaLista(null)).toBe("Manual");
+  });
+
+  it("linha ainda sem a coluna (recém-escrita no cache) não ganha rótulo inventado", () => {
+    expect(rotuloDoGatilhoNaLista(undefined)).toBeNull();
+  });
+
+  it("tipo desconhecido não ganha rótulo; tipo conhecido ganha o do seletor", () => {
+    expect(rotuloDoGatilhoNaLista("conversation_end")).toBeNull();
+    expect(rotuloDoGatilhoNaLista("toString")).toBeNull();
+    expect(rotuloDoGatilhoNaLista("silence")).toBe("Silêncio");
   });
 });

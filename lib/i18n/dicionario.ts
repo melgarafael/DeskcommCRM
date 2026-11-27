@@ -23603,6 +23603,10 @@ export const DICIONARIO: Traducoes = {
   "Salvar teto": { es: "Guardar límite" },
   "Use um número inteiro de 1 a 200.": { es: "Usa un número entero entre 1 y 200." },
   "Deixe em branco para não mudar.": { es: "Déjalo en blanco para no cambiarlo." },
+  // #4593 — a busca das listas de Follow-ups e de Funis casa também com o
+  // gatilho do fluxo e com as etapas do funil; a caixa diz isso.
+  "Buscar por nome ou gatilho…": { es: "Buscar por nombre o disparador…" },
+  "Buscar por nome ou etapa…": { es: "Buscar por nombre o etapa…" },
 };
 
 /**
