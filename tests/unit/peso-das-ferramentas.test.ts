@@ -65,8 +65,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
     motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
   },
   "crm_close_conversation": {
-    tokens: 256,
-    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+    tokens: 715,
+    motivo: "PR 01: ganhou pré-condições de encerramento seguro condicional (safe_close, expected_status, expected_last_inbound_message_id, expected_assigned_to_user_id, expected_sector_id, idempotency_key), medido após merge com origin/main",
   },
   "crm_reopen_conversation": {
     tokens: 242,
@@ -287,7 +287,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // com a main de 2026-11-27 (`f28f722ae5`, que tinha 47986): 48024 = 47986 + 38, não somado à mão.
 // +47 do `dispatch_mode` opcional em `crm_send_whatsapp_message` (#5284, mensagens
 // institucionais). MEDIDO no merge com a main de 2026-11-27 (`127390e21e`, que tinha 48024).
-const TETO_TOTAL = 48071;
+// +459 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional
+// (#5311, @fcostamil-hub). MEDIDO no merge com a main de 2026-11-27 (`795f5f2379`, que tinha
+// 48071): 48530 = 48071 + 459, não somado à mão.
+const TETO_TOTAL = 48530;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

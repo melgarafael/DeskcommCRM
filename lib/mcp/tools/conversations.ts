@@ -262,12 +262,33 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
     const queue_position = isInQueue(conv)
       ? ((await getQueuePositions(ctx.supabase, ctx.organizationId)).get(conv.id) ?? null)
       : null;
+    let last_inbound_message_id: string | null = null;
+    try {
+      const { data: ultimaInbound } = await ctx.supabase
+        .from("messages")
+        .select("id")
+        .eq("organization_id", ctx.organizationId)
+        .eq("conversation_id", conv.id)
+        .eq("direction", "inbound")
+        .neq("type", "reaction")
+        .order("sent_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      last_inbound_message_id = (ultimaInbound as { id?: string } | null)?.id ?? null;
+    } catch {
+      last_inbound_message_id = null;
+    }
     return {
       id: conv.id,
       contact_id: conv.contact_id,
       channel_session_id: conv.channel_session_id,
       channel: conv.channel,
       status: conv.status,
+      service_revision: conv.service_revision,
+      sector_id: conv.sector_id ?? null,
+      last_inbound_message_id,
       assigned_to_user_id: conv.assigned_to_user_id,
       assignee_kind: conv.assignee_kind,
       assigned_to_user_name: conv.assigned_to_user_id

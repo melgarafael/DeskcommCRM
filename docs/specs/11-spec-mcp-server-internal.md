@@ -211,8 +211,28 @@ Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusul
 
 ```ts
 inputSchema: z.object({ conversation_id: z.string().uuid() })
-outputSchema: ConversationDetail (with last_message_at, contact, channel_session)
+outputSchema: ConversationDetail (with service_revision, sector_id, last_inbound_message_id, last_message_at, contact, channel_session)
 ```
+
+#### `crm_close_conversation`
+**Maps to**: `POST /api/v1/conversations/:id/close` (escopo `conversations:write`; proibido para `ai_agent`)
+
+Aceita encerramento condicional seguro (`safe_close`) com validação atômica via `fn_safe_close_conversation`:
+
+```ts
+inputSchema: z.object({
+  conversation_id: z.string().uuid(),
+  expected_revision: z.number().int().positive().optional(),
+  safe_close: z.boolean().optional(),
+  expected_status: z.enum(['open', 'pending', 'claimed', 'ai_handling', 'closed', 'resolved', 'archived']).optional(),
+  expected_last_inbound_message_id: z.string().uuid().nullable().optional(),
+  expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
+  expected_sector_id: z.string().uuid().nullable().optional(),
+  idempotency_key: z.string().min(1).max(200).optional()
+})
+```
+O modo condicional liga com `safe_close: true` ou com qualquer `expected_*` além de `expected_revision` (que sozinho segue o encerramento de sempre; `idempotency_key` não liga o modo). Nele, `expected_revision` e `expected_last_inbound_message_id` são obrigatórios (sem eles, 422), e a recusa por humano atribuído e por pendência aberta é sempre aplicada.
+Em caso de divergência ou pendência aberta, retorna `409 Conflict` (`error.details.reason`).
 
 #### `crm_get_conversation_history`
 **Maps to**: `GET /api/v1/messages?conversation_id=...&limit=...`
