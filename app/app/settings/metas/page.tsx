@@ -42,13 +42,15 @@ export default async function MetaDeVendasPage() {
   const supabase = await createClient();
   // Todas as metas do MÊS (empresa, vendedor, funil): o formulário mostra a que
   // já existe para a combinação escolhida em vez de fingir campo vazio. Os
-  // outros meses o formulário lê quando a pessoa troca o mês (`lerMetasDoMes`).
-  const { data } = await supabase
+  // outros meses o formulário lê quando a pessoa troca o mês. Leitura que
+  // falhou vai como `null`: o formulário tenta de novo, em vez de mostrar
+  // "ainda não há meta" para um mês que pode ter.
+  const { data, error: erroDasMetas } = await supabase
     .from("crm_metas")
     .select("indicador, vendedor_id, pipeline_id, alvo")
     .eq("organization_id", activeOrg.orgId)
     .eq("periodo", `${mes}-01`);
-  const metas = (
+  const metas = erroDasMetas ? null : (
     (data ?? []) as Array<{ indicador: string; vendedor_id: string | null; pipeline_id: string | null; alvo: number }>
   )
     .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")

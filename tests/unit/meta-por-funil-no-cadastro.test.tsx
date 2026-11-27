@@ -221,7 +221,7 @@ describe("#4796 — a action grava a meta do funil", () => {
 });
 
 describe("#4796 — o formulário oferece o funil", () => {
-  async function montar(metas: Array<Record<string, unknown>> = []) {
+  async function montar(metas: Array<Record<string, unknown>> | null = []) {
     vi.doMock("@/app/actions/settings/definirMetaMensal", () => ({
       definirMetaMensal: vi.fn(async (entrada: unknown) => {
         form.definir(entrada);
@@ -375,6 +375,34 @@ describe("#4796 — o formulário oferece o funil", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(alvo.value).toBe("18");
     expect(form.lidos.length).toBe(leiturasAntes);
+  });
+
+  it("no mesmo mês, a resposta de um salvar não troca o que já se digita em outro indicador", async () => {
+    form.segurarSalvar = true;
+    await montar([
+      { periodo: "2026-11", indicador: "valor_vendido", vendedor_id: null, pipeline_id: null, alvo: 90000 },
+    ]);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    fireEvent.change(alvo, { target: { value: "5" } });
+    fireEvent.submit(alvo.closest("form")!);
+    await waitFor(() => expect(form.definir).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("combobox", { name: "Indicador" }));
+    fireEvent.click(await screen.findByRole("option", { name: /Valor vendido/ }));
+    await waitFor(() => expect(alvo.value).toBe("900.00"));
+    fireEvent.change(alvo, { target: { value: "1800" } });
+    form.liberarSalvar?.();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(alvo.value).toBe("1800");
+  });
+
+  it("a página não conseguiu ler o mês: o formulário lê sozinho, sem dizer «sem meta»", async () => {
+    form.porMes["2026-11"] = [
+      { periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 9 },
+    ];
+    await montar(null);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    await waitFor(() => expect(form.lidos).toContain("2026-11"));
+    await waitFor(() => expect(alvo.value).toBe("9"));
   });
 
   it("a meta já gravada do funil aparece ao escolher o funil", async () => {

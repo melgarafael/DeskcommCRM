@@ -95,7 +95,8 @@ export function FormularioDaMeta({
   funis = [],
 }: {
   mes: string;
-  metas: readonly MetaGravada[];
+  /** `null` = a página não conseguiu ler: o formulário lê sozinho, em vez de mostrar "sem meta". */
+  metas: readonly MetaGravada[] | null;
   /** Moeda da organização (ISO-4217): a unidade do alvo em valor, a mesma de `value_cents`. */
   moeda: string;
   /** Os funis em uso (não arquivados) da organização, que podem ter meta própria. */
@@ -114,14 +115,19 @@ export function FormularioDaMeta({
   // diante todo mês — inclusive esse — vem da última leitura, e trocar de mês
   // ou salvar descarta a leitura (`null` = ainda não chegou: o campo e o salvar
   // ficam travados).
-  const [lidas, setLidas] = useState<{ periodo: string; metas: readonly MetaGravada[] } | null>(() => ({
-    periodo: mes,
-    metas,
-  }));
+  const [lidas, setLidas] = useState<{ periodo: string; metas: readonly MetaGravada[] } | null>(() =>
+    metas ? { periodo: mes, metas } : null,
+  );
   const [falhaAoLer, setFalhaAoLer] = useState<string | null>(null);
   const metasDoPeriodo: readonly MetaGravada[] | null = lidas?.periodo === periodo ? lidas.metas : null;
-  // O mês que está NA TELA agora — a resposta de um salvar antigo confere com ele.
-  const periodoNaTela = useRef(periodo);
+  // A leitura mais recente, para o efeito do campo consultar sem depender dela:
+  // o campo só se repõe quando muda a COMBINAÇÃO (mês, indicador, dono) ou
+  // quando a leitura do mês chega — nunca porque um salvar anterior voltou.
+  const metasAtuais = useRef(metasDoPeriodo);
+  useEffect(() => {
+    metasAtuais.current = metasDoPeriodo;
+  }, [metasDoPeriodo]);
+  const mesLido = metasDoPeriodo !== null;
   const erroAoLer = falhaAoLer === periodo && metasDoPeriodo === null;
   const lendo = metasDoPeriodo === null && !erroAoLer;
   // Cada "Tentar de novo" é uma leitura nova do mesmo mês.
@@ -133,7 +139,6 @@ export function FormularioDaMeta({
    * tempo — salvar em cima dele desfaria a correção.
    */
   function trocarMes(novo: string) {
-    periodoNaTela.current = novo;
     setPeriodo(novo);
     setLidas(null);
     setFalhaAoLer(null);
@@ -200,7 +205,7 @@ export function FormularioDaMeta({
 
   useEffect(() => {
     // Enquanto o mês novo não chega, o campo não carrega o número de outro mês.
-    const existente = (metasDoPeriodo ?? []).find(
+    const existente = (metasAtuais.current ?? []).find(
       (m) =>
         (m.periodo ?? periodo) === periodo &&
         m.indicador === indicador &&
@@ -214,7 +219,7 @@ export function FormularioDaMeta({
     setAlvo(
       indicador === "valor_vendido" ? (existente.alvo / 100).toFixed(2) : String(existente.alvo),
     );
-  }, [periodo, indicador, vendedorId, pipelineId, metasDoPeriodo]);
+  }, [periodo, indicador, vendedorId, pipelineId, mesLido]);
 
   const numero = indicador === "valor_vendido" ? Number(alvo.replace(",", ".")) : Number(alvo);
   const alvoEmUnidade = Math.round(numero * (indicador === "valor_vendido" ? 100 : 1));
@@ -251,9 +256,34 @@ export function FormularioDaMeta({
       });
       if (resultado.ok) {
         toast.success(t("Meta salva."));
-        // Relê o mês salvo — só se ele ainda é o da tela: a resposta de um
-        // salvar antigo não pode apagar o que a pessoa já digita em outro mês.
-        if (periodoNaTela.current === periodo) setLidas(null);
+        // A meta salva entra na leitura do mês SEM reler e sem mexer no campo:
+        // a resposta de um salvar anterior não pode trocar o que a pessoa já
+        // digita em outra combinação ou em outro mês.
+        const salva: MetaGravada = {
+          periodo,
+          indicador,
+          vendedor_id: vendedorId,
+          pipeline_id: pipelineId,
+          alvo: alvoEmUnidade,
+        };
+        setLidas((atual) =>
+          atual && atual.periodo === periodo
+            ? {
+                periodo,
+                metas: [
+                  ...atual.metas.filter(
+                    (m) =>
+                      !(
+                        m.indicador === salva.indicador &&
+                        (m.vendedor_id ?? null) === salva.vendedor_id &&
+                        (m.pipeline_id ?? null) === salva.pipeline_id
+                      ),
+                  ),
+                  salva,
+                ],
+              }
+            : atual,
+        );
         router.refresh();
         return;
       }
