@@ -215,3 +215,87 @@ export async function peekRateLimit(bucket: string, windowSec: number): Promise<
     return emMemoria();
   }
 }
+
+/**
+ * PENALIDADE COM PRAZO — o contador de janela fixa não sabe expressar
+ * "bloqueado pelos próximos 30 minutos a partir de AGORA".
+ *
+ * `checkRateLimit`/`peekRateLimit` derivam a chave do INÍCIO da janela
+ * (`floor(agora / windowSec)`), então uma janela de 1800 s criada às 10:29 vale
+ * até as 10:30 — 1 minuto de bloqueio para quem pediu 30. Para o teto de abuso
+ * isso é irrelevante (o alvo é a taxa); para o bloqueio progressivo por conta
+ * (issue #4743) não é: o degrau PROMETE 30 minutos, e a resposta ao dono da
+ * conta bloqueada é esse número.
+ *
+ * Daí uma chave com TTL próprio, gravada no MESMO lugar que o resto do módulo
+ * (Upstash quando há, memória do processo quando não há) — nenhum segundo
+ * mecanismo de armazenamento nasce aqui.
+ *
+ * A memória é escrita SEMPRE, mesmo com Redis saudável: se a escrita no Redis
+ * falhar (MISCONF, cota), a leitura abaixo ainda acha o bloqueio neste
+ * processo. É a mesma política de `peekRateLimit` — contar o maior, nunca o
+ * menor.
+ */
+export async function aplicarPenalidade(bucket: string, segundos: number): Promise<void> {
+  if (!(segundos > 0)) return;
+  _memBuckets.set(bucket, { count: 1, expiresAt: Date.now() + segundos * 1000 });
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.set(bucket, 1, { ex: segundos });
+  } catch (err) {
+    logger.warn("[ai-dispatcher.rate-limit] redis set da penalidade falhou; vale a memória", {
+      error: err instanceof Error ? err.message : String(err),
+      bucket,
+    });
+  }
+}
+
+/** Segundos que ainda restam da penalidade. `0` = livre. */
+export async function segundosDePenalidade(bucket: string): Promise<number> {
+  const agora = Date.now();
+  const emMemoria = (): number => {
+    const balde = _memBuckets.get(bucket);
+    if (!balde || balde.expiresAt <= agora) return 0;
+    return Math.ceil((balde.expiresAt - agora) / 1000);
+  };
+
+  const redis = getRedis();
+  if (!redis) return emMemoria();
+  try {
+    const restante = await redis.ttl(bucket);
+    return Math.max(restante > 0 ? restante : 0, emMemoria());
+  } catch {
+    return emMemoria();
+  }
+}
+
+/**
+ * Apaga o contador de um balde — o desbloqueio (issue #4743).
+ *
+ * `janelasSec` são as janelas cujo contador se quer zerar; só a janela CORRENTE
+ * de cada uma é apagada, que é a única que `peekRateLimit` lê (a chave embute o
+ * início da janela, então as anteriores já são inalcançáveis). O TTL do Redis e
+ * a varredura da memória cuidam do resto.
+ */
+export async function limparRateLimit(
+  bucket: string,
+  janelasSec: readonly number[] = [],
+): Promise<void> {
+  const agora = Date.now();
+  const chaves = [
+    bucket,
+    ...janelasSec.map((janela) => `${bucket}:${Math.floor(agora / (janela * 1000))}`),
+  ];
+  for (const chave of chaves) _memBuckets.delete(chave);
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.del(...chaves);
+  } catch (err) {
+    logger.warn("[ai-dispatcher.rate-limit] redis del do desbloqueio falhou", {
+      error: err instanceof Error ? err.message : String(err),
+      bucket,
+    });
+  }
+}

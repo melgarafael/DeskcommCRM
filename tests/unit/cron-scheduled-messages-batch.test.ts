@@ -8,9 +8,11 @@ import { encaminharAgendamento } from "@/lib/agendamento-mensagem/envio";
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => admin }));
+vi.mock("@/lib/agendamento-mensagem/sessao-do-contato", () => ({
+  resolverConversaConectada: vi.fn(async () => ({ conversation_id: "conversa-conectada", channel_session_id: "sessao-conectada" })),
+}));
 vi.mock("@/lib/agendamento-mensagem/envio", () => ({
   autorAindaTemAcesso: vi.fn(async () => true),
-  sessaoEstaConectada: vi.fn(async () => true),
   encaminharAgendamento: vi.fn(async () => ({
     desfecho: "encaminhada",
     message_id: "message",

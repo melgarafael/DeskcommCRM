@@ -91,7 +91,6 @@ vi.mock(import("@/lib/organizacao/operante"), async (importOriginal) => ({
 vi.mock("@/lib/agendamento-mensagem/envio", () => ({
   autorAindaTemAcesso: async () => true,
   encaminharAgendamento: h.enviarAgendadas,
-  sessaoEstaConectada: async () => true,
 }));
 
 /** Cliente supabase-js de mentira: toda cadeia resolve vazia e NÃO faz rede. */

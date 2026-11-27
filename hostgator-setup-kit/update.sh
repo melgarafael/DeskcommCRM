@@ -872,6 +872,29 @@ export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
 export SCHEDULER_IMAGE="${IMG_SCHEDULER}:${VERSAO_ALVO}"
 export VOICE_AGENT_IMAGE="${IMG_VOICE_AGENT}:${VERSAO_ALVO}"
+# ── A IDENTIDADE DO BUILD QUE O `up -d` FAZ SOZINHO (#5196) ─────────────────
+#
+# Worker, scheduler e voice-agent têm `build:` ao lado do `image:` e o Compose
+# os constrói sozinhos quando o `pull` acima falha — gravando o resultado SOB A
+# TAG OFICIAL desta versão (`${WORKER_IMAGE}` etc.). Até aqui esse caminho
+# passava ZERO de identidade: a imagem saía com `APP_VERSION=dev` (o default
+# dos Dockerfiles) e sem `org.opencontainers.image.revision`, e o
+# `_runtime.sh` — que lê exatamente esse label — gravava `source_verified:
+# false`. Com `*_PULL_POLICY=missing` no `.env`, a tag já existia no disco e o
+# Docker nunca mais puxava a oficial: a confirmação de versão do parque ficava
+# travada sem ninguém ter pedido build nenhum.
+#
+# `APP_VERSION` é a versão ALVO: o código no disco É ela (o `git checkout` da
+# tag aconteceu lá em cima). `APP_REVISION` é o commit que o `checkout` deixou
+# — a revisão de onde a imagem é construída de verdade —, mas SÓ com a árvore
+# limpa: o `git checkout` mantém mudança local que não diverge da versão nova,
+# e o `COPY . .` a levaria para dentro de uma imagem carimbada como oficial.
+# Árvore suja, ou git que não responde, vai vazia: label vazio é aceito pelo
+# Compose e o `_runtime.sh` já o trata como não-medido (igual a hoje). A regra
+# mora em `revisao_da_arvore_limpa` (_common.sh). Nada de herdar `APP_REVISION`
+# do ambiente: o valor é medido aqui, nunca aceito de fora.
+export APP_VERSION="$VERSAO_ALVO"
+export APP_REVISION="$(revisao_da_arvore_limpa "$PROJECT_DIR")"
 # `gravar_imagens` também cria, só na lacuna, o par VAPID dos avisos com o app
 # fechado (`completar_par_vapid`), e nunca troca um par que já existe. Mora lá
 # dentro, e não numa linha daqui, porque é ela que o update.sh ANTIGO chama
@@ -899,6 +922,24 @@ VOZ_CRIADA="$(completar_segredos_da_voz .env)" || VOZ_CRIADA=""
 # `build_local_permitido` — construir aqui ou recusar, conforme o registro
 # responde ou não.
 if ! dc pull; then
+  # ── A RETENTATIVA QUE FALTAVA (#5196) ─────────────────────────────────────
+  #
+  # MEDIDO na issue: o preflight já confirmou as imagens no GHCR e o pull cai
+  # no meio do download com `read: connection reset by peer` — queda
+  # TRANSITÓRIA da CDN. Sem retentativa, a atualização ia direto para o
+  # build local, que é a mais cara das duas: 15 a 25 min de tela parada
+  # e, antes do #5196, imagem sem versão e sem revisão gravada sob a tag
+  # oficial. Uma segunda tentativa custa os layers que faltam (o Docker
+  # reaproveita o que já baixou) e resolve o caso transitório.
+  #
+  # UMA vez, não um laço: retentativa infinita contra registro fora do ar
+  # trocaria "cai no build local" por "atualização que nunca termina", e o
+  # `up -d` de baixo é justamente quem aciona o portão da #1955.
+  c_ylw "⚠ O pull das imagens da versão ${VERSAO_ALVO} falhou na primeira tentativa."
+  c_ylw "  Queda transitória de rede/CDN é comum: vou tentar o pull UMA vez mais."
+  if dc pull; then
+    c_grn "✓ O pull passou na segunda tentativa — nada será construído aqui por causa dele."
+  else
   # A mensagem distingue os dois casos porque a CAUSA é diferente, e uma frase
   # tranquilizadora sobre o caso errado é o pior desfecho possível. Se a do app
   # veio, o que faltar em worker, scheduler ou voz o Compose constrói sozinho no
@@ -911,16 +952,18 @@ if ! dc pull; then
   # também contam coisas distintas: "o app veio e falta outra peça" × "o app não
   # veio", que aponta para a versão ainda não publicada (ou o pacote privado).
   if dc pull app >/dev/null 2>&1; then
-    c_ylw "⚠ Não consegui puxar todas as imagens da versão ${VERSAO_ALVO}."
+    c_ylw "⚠ Não consegui puxar todas as imagens da versão ${VERSAO_ALVO} (nem na retentativa)."
     c_ylw "  A do app veio; o que faltar é construído aqui (mais lento, mesmo resultado)."
+    c_ylw "  A construção leva a versão e a revisão junto (#5196): não é imagem anônima."
   else
-    c_ylw "⚠ Não consegui puxar a imagem do APP na versão ${VERSAO_ALVO}."
+    c_ylw "⚠ Não consegui puxar a imagem do APP na versão ${VERSAO_ALVO} (nem na retentativa)."
     c_ylw "  Causas comuns: a versão ainda está publicando, ou o pacote está privado no GHCR."
     c_ylw "  Vou tentar subir mesmo assim — se o up -d falhar, quem decide o passo"
     c_ylw "  seguinte é a recuperação: com o registro respondendo ela constrói as"
     c_ylw "  imagens desta versão aqui (15 a 25 min); sem resposta do registro ela"
     c_ylw "  recusa, de propósito, para não gastar a memória desta VPS."
     c_ylw "  Se não subir, rode de novo em alguns minutos."
+  fi
   fi
 fi
 # A rede do proxy externo é declarada como EXTERNA no compose: se ela sumiu

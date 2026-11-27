@@ -11,6 +11,8 @@ export function channelBrand(
       return "whatsapp";
     case "telegram":
       return "telegram";
+    case "webchat":
+      return "webchat";
     case "zernio_social":
       if (session.social_platform === "instagram") return "instagram";
       if (session.social_platform === "facebook") return "messenger";
@@ -18,6 +20,7 @@ export function channelBrand(
       // intermediada: sem esta linha, conversa dele cairia no genérico e o aviso
       // não teria como dizer de onde veio (#4094).
       if (session.social_platform === "telegram") return "telegram";
+      if (session.social_platform === "tiktok") return "tiktok";
       return "unknown";
     default:
       return "unknown";

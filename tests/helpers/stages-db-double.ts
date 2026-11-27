@@ -448,6 +448,21 @@ export function makeDb(opts: DbOpts = {}): Registro {
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
     const disjuncoes: Clausula[][] = [];
+    /**
+     * As colunas de `.is(col, null)` — `IS NULL` de verdade, e não igualdade
+     * estrita.
+     *
+     * Até a #5137 o `.is(c, null)` caía no `filtros` e casava por `=== null`:
+     * uma coluna AUSENTE da linha (`undefined`) não casava, embora no banco ela
+     * seja NULL. Isso era invisível enquanto o único uso era uma coluna que
+     * sempre existia na linha; a posse do menu filtra uma chave de jsonb que
+     * NÃO existe na conversa nova, e o dublê recusaria a posse justamente no
+     * caso em que o banco a concede. Aqui a semântica é a do SQL.
+     *
+     * E, ao contrário do `eq`, aceita caminho jsonb (`metadata->chave`), pelo
+     * mesmo `valorDaColuna`.
+     */
+    const nulos: string[] = [];
     let patch: Record<string, unknown> | null = null;
     let nova: Record<string, unknown> | Record<string, unknown>[] | null = null;
     let colunas: string[] | null = null;
@@ -473,6 +488,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     const casam = () =>
       (tables[table] ?? [])
         .filter((r) => filtros.every(([c, v]) => valorDaColuna(r, c) === v))
+        .filter((r) => nulos.every((c) => valorDaColuna(r, c) === null || valorDaColuna(r, c) === undefined))
         .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])))
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
@@ -560,7 +576,9 @@ export function makeDb(opts: DbOpts = {}): Registro {
         tipo,
         table,
         patch: corpo,
-        filtros: [...filtros],
+        // O `.is(col, null)` entra no registro como filtro: a escrita foi pedida
+        // com ele, e um teste que confere a consulta precisa vê-lo.
+        filtros: [...filtros, ...nulos.map((c) => [c, null] as [string, unknown])],
         ...(Object.keys(cabecalhos).length ? { cabecalhos: { ...cabecalhos } } : {}),
       });
       registro.eventos.push(`start:${table}:${i}`);
@@ -581,8 +599,16 @@ export function makeDb(opts: DbOpts = {}): Registro {
       // garantir é NUNCA chegar ao delete com dependente vivo, e é isso que os
       // testes medem: a escrita que não sai.
       if (apagar) {
-        const alvos = casam();
+        // ⚠️ O ALVO É RESOLVIDO NA HORA DE APLICAR, DEPOIS da folga — e não
+        // antes dela. No banco, o filtro e a escrita são a MESMA instrução, sob
+        // o lock da linha: é isso que faz um UPDATE condicional servir de trava
+        // para dois chamadores concorrentes (#5137). Resolvendo o alvo antes do
+        // `await`, os dois liam a linha ANTES de qualquer escrita e os dois
+        // "venciam" — o dublê provava o contrário do banco. Resolvido aqui, o
+        // primeiro que aplica muda a linha e o segundo já não casa o filtro.
+        let alvos: Linha[] = [];
         const r = await escreve("delete", {}, () => {
+          alvos = casam();
           const restantes = (tables[table] ?? []).filter((l) => !alvos.includes(l));
           tables[table] = restantes;
           registro.tabelas[table as keyof Registro["tabelas"]] = restantes;
@@ -590,8 +616,9 @@ export function makeDb(opts: DbOpts = {}): Registro {
         return r.error ? r : { ...r, data: alvos.map((l) => ({ ...l })) };
       }
       if (patch) {
-        const alvos = casam();
+        let alvos: Linha[] = [];
         const r = await escreve("update", patch, () => {
+          alvos = casam();
           for (const linha of alvos) Object.assign(linha, patch);
         });
         return r.error ? r : { ...r, data: alvos.map((l) => ({ ...l })) };
@@ -653,9 +680,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
         filtros.push([c, v]);
         return b;
       },
-      /** `.is(col, null)` — o único uso real no repo é "convite não revogado". */
+      /**
+       * `.is(col, null)` — `col IS NULL` (inclui coluna/chave AUSENTE, como no
+       * SQL) e aceita caminho jsonb. `.is(col, outro)` continua igualdade.
+       */
       is: (c: string, v: unknown) => {
-        filtros.push([c, v]);
+        if (v === null) nulos.push(c);
+        else filtros.push([c, v]);
         return b;
       },
       /** `.in(col, [...])` vira um filtro de pertinência, não de igualdade. */
@@ -732,13 +763,59 @@ export function makeDb(opts: DbOpts = {}): Registro {
     return b;
   }
 
-  // `rpc` só existe para o aviso de atividade perdida (`emit_event`): sem ele, a
-  // rota estouraria no caminho de falha e o teste mediria um TypeError em vez do
-  // comportamento ("o arquivamento não é desfeito por causa do rastro").
+  // `rpc` cobre o aviso de atividade perdida (`emit_event`) e, desde a #4802
+  // (item 3), `fn_mover_leads_em_lote`: a transferência em massa de negócios entre
+  // funis passa por ESTA função, e um dublê que devolvesse `null` deixaria a rota
+  // responder "movi 0" justamente no caminho que se quer medir. Ele aplica a
+  // escrita como o banco aplica — `stage_id` E `pipeline_id` da etapa de destino —
+  // para a contagem de depois ser a do "banco", não a do otimismo da rota.
+  //
+  // E APLICA O GATILHO: `fn_crm_lead_close_on_stage` é quem escreve `status` e
+  // `closed_at` no Postgres, e sem espelhá-lo aqui o teste do negócio encerrado
+  // mediria um banco que não existe — o dublê diria "ficou encerrado" qualquer que
+  // fosse o código da rota. A regra espelhada é a P-02, sem exceção: etapa de
+  // ganho/perda encerra; etapa aberta reabre o encerrado (por isso a
+  // transferência só leva negócio em andamento — doc 400, opção B).
   const rpc = async (nome: string, args: unknown) => {
     registro.rpcs.push({ nome, args });
     const declarada = opts.rpcResult?.(nome, args);
-    return declarada ?? { data: null, error: null };
+    // Quem declara a resposta pelo dublê manda: é o gancho genérico da main.
+    if (declarada !== undefined) return declarada;
+    if (nome === "fn_mover_leads_em_lote") {
+      const a = args as { p_organization_id: string; p_lead_ids: string[]; p_stage_id: string };
+      const etapa = registro.tabelas.crm_stages.find((s) => s.id === a.p_stage_id) as
+        | { pipeline_id?: string; is_won?: boolean; is_lost?: boolean }
+        | undefined;
+      const movidos: Array<{ lead_id: string; from_stage_id: string; pipeline_id: string }> = [];
+      for (const linha of registro.tabelas.crm_leads) {
+        if (linha.organization_id !== a.p_organization_id) continue;
+        if (!a.p_lead_ids.includes(linha.id as string)) continue;
+        const funilAntes = linha.pipeline_id as string;
+        const statusAntes = linha.status as string | undefined;
+        movidos.push({
+          lead_id: linha.id as string,
+          from_stage_id: linha.stage_id as string,
+          pipeline_id: funilAntes,
+        });
+        linha.stage_id = a.p_stage_id;
+        if (etapa?.pipeline_id) linha.pipeline_id = etapa.pipeline_id;
+
+        // ── `fn_crm_lead_close_on_stage` (P-02) ──────────────────────────────
+        if (etapa?.is_won) {
+          linha.status = "won";
+          linha.closed_at = linha.closed_at ?? new Date().toISOString();
+        } else if (etapa?.is_lost) {
+          linha.status = "lost";
+          linha.closed_at = linha.closed_at ?? new Date().toISOString();
+        } else if (statusAntes === "won" || statusAntes === "lost") {
+          // Etapa aberta: é a reabertura de sempre.
+          linha.status = "open";
+          linha.closed_at = null;
+        }
+      }
+      return { data: movidos, error: null };
+    }
+    return { data: null, error: null };
   };
 
   // A sessão do cookie (#2995): `getUser()` é a primeira coisa que a rota do

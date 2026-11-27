@@ -56,6 +56,10 @@ vi.mock("@/hooks/pipelines/usePipelines", () => ({
   useCriarFunil: () => ({ isPending: false, mutate: vi.fn() }),
   useEditarFunil: () => ({ isPending: false, mutate: vi.fn() }),
   useArquivarFunil: () => ({ isPending: false, mutate: vi.fn() }),
+  // #4802 (item 3) — `_client` monta `TransferirNegocios`, que lê estes três.
+  useNegociosDoFunil: () => ({ negocios: 0, carregando: false, erro: null }),
+  useEtapasDoFunil: () => ({ etapas: [], carregando: false }),
+  useMoverNegociosDoFunil: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/app/app/kanban/_components/ImportarLeads", () => ({ ImportarLeads: () => null }));
 

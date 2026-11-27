@@ -86,4 +86,18 @@ describe("triggerHandoff · gate de elegibilidade", () => {
     expect(avisarLeadDoCrm).toHaveBeenCalledOnce();
     expect(r.triggered).toBe(true);
   });
+
+  it("motivo teto_do_visitante_anonimo é aceito pelo vocabulário da passagem", async () => {
+    // Se o motivo não estiver em MOTIVO_DA_PASSAGEM, o orchestrador não
+    // reconheceria o teto do visitante anônimo como motivo válido.
+    decidir.mockResolvedValue({ permite: true, motivo: "autorizado", bloqueioPorAllowlist: false });
+    const r = await triggerHandoff({
+      conversationId: CONV,
+      organizationId: ORG,
+      reason: "teto_do_visitante_anonimo",
+      origem: "teto_de_gasto",
+    });
+    expect(avisarLeadDoCrm).toHaveBeenCalledOnce();
+    expect(r.triggered).toBe(true);
+  });
 });

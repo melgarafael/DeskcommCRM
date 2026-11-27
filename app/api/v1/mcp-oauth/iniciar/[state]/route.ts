@@ -5,7 +5,8 @@
  *
  * Público no `proxy` (`lib/auth/public-paths.ts`): quem clica é o cliente
  * final, sem sessão nossa. A autoridade é o `state` (256 bits, uso único,
- * 10 min) — esta rota só CONFERE validade e uso, sem consumir, e responde 302
+ * validade definida no cadastro do servidor — 10 min por padrão desde a #5126)
+ * — esta rota só CONFERE validade e uso, sem consumir, e responde 302
  * para o authorization server com PKCE S256. Quem consome é o callback.
  * Rate limit por IP: o `state` não é adivinhável, mas a rota não precisa
  * aceitar varredura. Módulo opcional `mcp_por_agente` desligado (doc 252) =

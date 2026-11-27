@@ -965,7 +965,7 @@ export const NAV_CATALOG = [
     href: "/app/vendas",
     label: "Vendas",
     description: "Quanto você vendeu, o ticket médio e a conversão, com o gráfico do período.",
-    icon: "ChartBar",
+    icon: "CurrencyDollar",
     group: "analise",
     section: "Os números do período",
     minRole: "viewer",
@@ -973,7 +973,7 @@ export const NAV_CATALOG = [
   {
     href: "/app/metrics",
     label: "Desempenho",
-    description: "Funil e performance por atendente nos últimos 30 dias.",
+    description: "Atrito, funil e desempenho por atendente.",
     icon: "ChartBar",
     group: "analise",
     section: "Os números do período",

@@ -60,6 +60,11 @@ export interface Lead {
    */
   value_cents: number | null;
   /**
+   * 9450: `true` quando há ao menos uma venda registrada e `value_cents` é
+   * mantido pelo gatilho como a soma das vendas na moeda do negócio.
+   */
+  valor_pelas_vendas?: boolean;
+  /**
    * A MENSALIDADE (fatia 1 da #3602), separada do valor único de propósito.
    * Somar os dois num número só é o defeito que a issue descreve: ninguém
    * sabe quanto entra todo mês e o contrato perde o tamanho real.

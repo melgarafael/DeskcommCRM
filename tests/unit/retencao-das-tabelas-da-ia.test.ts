@@ -46,12 +46,25 @@ let apagadasPorFuncao: Record<string, number> = {};
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async (nome: string) => ({ data: apagadasPorFuncao[nome] ?? 0, error: null }),
+    // #5139: o dreno dos arquivos da abordagem lista `organizations` (vazio
+    // aqui: este arquivo mede as podas de banco) e só então tocaria o Storage.
+    storage: {
+      from: () => ({
+        list: async () => ({ data: [], error: null }),
+        remove: async () => ({ data: [], error: null }),
+      }),
+    },
     from: () => {
       const q: Record<string, unknown> = {
         eq: () => q,
         in: () => q,
         limit: () => q,
-        then: (r: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(r),
+        // A paginação do dreno de Storage (#5139): sem `.order()`/`.range()` a
+        // leitura de `organizations` estourava e a rodada virava 500.
+        order: () => q,
+        range: () => q,
+        then: (r: (v: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null, count: 0 }).then(r),
       };
       const apagando: Record<string, unknown> = {
         lt: () => apagando,

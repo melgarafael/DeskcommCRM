@@ -290,7 +290,7 @@ describe("Bloqueio da IA durante atendimento humano — Validação dos 8 Requis
       expect(i).toBeGreaterThan(-1);
       const corpo = FONTE.slice(i, FONTE.indexOf("};", i));
       expect(corpo).toContain("if (preview) return false;");
-      expect(corpo).toContain("iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId)");
+      expect(corpo).toContain("iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId, { jobDoTurno: liveJob().id })");
       expect(corpo).toContain("turnoDescartado = true;");
     });
 

@@ -22,6 +22,11 @@ export const TETO_DE_LEMBRETES_EXTRAS = 20;
 export interface PassoDeLembrete {
   minutes: number;
   body: string;
+  /**
+   * A opção POR DEGRAU da issue #5154: este aviso leva a linha automática do
+   * link da reunião? Padrão `true` — é o comportamento de sempre.
+   */
+  comLink: boolean;
 }
 
 export interface LembretesEmpacotados {
@@ -29,6 +34,8 @@ export interface LembretesEmpacotados {
   extras: number[];
   corpoPrincipal: string;
   corposExtras: Record<string, string>;
+  /** Degraus (minutos) cujo aviso sai SEM a linha do link. Vazio = todos levam. */
+  degrausSemLink: number[];
 }
 
 export function lerCorposDoLembrete(bruto: unknown): Record<string, string> {
@@ -57,7 +64,7 @@ export function empacotarLembretes(linhas: PassoDeLembrete[]): LembretesEmpacota
     if (!Number.isInteger(m) || m < LEMBRETE_MIN_MINUTOS || m > LEMBRETE_MAX_MINUTOS) continue;
     if (vistos.has(m)) continue;
     vistos.add(m);
-    limpos.push({ minutes: m, body: (l.body ?? "").trim().slice(0, 1000) });
+    limpos.push({ minutes: m, body: (l.body ?? "").trim().slice(0, 1000), comLink: l.comLink !== false });
   }
   limpos.sort((a, b) => b.minutes - a.minutes);
   const primeiro = limpos[0] ?? { minutes: 1440, body: "" };
@@ -71,7 +78,45 @@ export function empacotarLembretes(linhas: PassoDeLembrete[]): LembretesEmpacota
     extras: extras.map((e) => e.minutes),
     corpoPrincipal: primeiro.body,
     corposExtras,
+    degrausSemLink: limpos.filter((l) => !l.comLink).map((l) => l.minutes),
   };
+}
+
+/**
+ * Os degraus que saem SEM o link, lidos do banco (#5154).
+ *
+ * A coluna é `integer[] not null default '{}'`; o que não for inteiro na faixa
+ * de lembrete é descartado, e o resultado é "todos levam" em vez de derrubar o
+ * envio. Lista torta numa coluna de configuração não pode calar o WhatsApp de
+ * ninguém — o modo de falha aqui é mandar o link a mais, nunca a menos.
+ */
+export function lerDegrausSemLink(bruto: unknown): number[] {
+  if (!Array.isArray(bruto)) return [];
+  const out = new Set<number>();
+  for (const v of bruto) {
+    if (typeof v !== "number" || !Number.isInteger(v)) continue;
+    if (v < LEMBRETE_MIN_MINUTOS || v > LEMBRETE_MAX_MINUTOS) continue;
+    out.add(v);
+  }
+  return [...out];
+}
+
+/**
+ * A mensagem que cobre estes degraus leva o link?
+ *
+ * Uma mensagem só pode cobrir mais de um degrau (marcação em cima da hora: o
+ * principal e um extra vencem juntos, `degrausPendentes` devolve os dois e o
+ * cron manda UMA mensagem). A regra é a UNIÃO: se qualquer um deles pede o
+ * link, a mensagem leva — senão o degrau que o operador deixou ligado perderia
+ * o link só porque o texto veio do degrau vizinho. Só com todos desligados a
+ * mensagem sai sem link.
+ */
+export function levaOLinkNoLembrete(
+  tipo: { reminder_sem_link_offsets_minutes?: unknown },
+  degraus: number[],
+): boolean {
+  const semLink = new Set(lerDegrausSemLink(tipo.reminder_sem_link_offsets_minutes));
+  return degraus.some((d) => !semLink.has(d));
 }
 
 /** O que o banco devolve → a lista da tela. Sempre tem pelo menos o principal. */
@@ -80,14 +125,25 @@ export function desempacotarLembretes(tipo: {
   reminder_extra_offsets_minutes: number[] | null;
   reminder_body: string | null;
   reminder_bodies: unknown;
+  /** #5154: degraus que saem sem o link. Ausente/ilegível = todos levam. */
+  reminder_sem_link_offsets_minutes?: unknown;
 }): PassoDeLembrete[] {
   const corpos = lerCorposDoLembrete(tipo.reminder_bodies);
+  const semLink = new Set(lerDegrausSemLink(tipo.reminder_sem_link_offsets_minutes));
   const extras = (tipo.reminder_extra_offsets_minutes ?? []).filter(
     (m) => m !== tipo.reminder_minutes_before,
   );
   return [
-    { minutes: tipo.reminder_minutes_before, body: (tipo.reminder_body ?? "").trim() },
-    ...extras.map((m) => ({ minutes: m, body: corpos[String(m)] ?? "" })),
+    {
+      minutes: tipo.reminder_minutes_before,
+      body: (tipo.reminder_body ?? "").trim(),
+      comLink: !semLink.has(tipo.reminder_minutes_before),
+    },
+    ...extras.map((m) => ({
+      minutes: m,
+      body: corpos[String(m)] ?? "",
+      comLink: !semLink.has(m),
+    })),
   ].sort((a, b) => b.minutes - a.minutes);
 }
 
@@ -156,7 +212,7 @@ export function lerPassosDoFormulario(bruto: string | null): PassoDeLembrete[] {
       const minutes = Number((item as { minutes?: unknown }).minutes);
       const body = String((item as { body?: unknown }).body ?? "");
       if (!Number.isFinite(minutes)) return [];
-      return [{ minutes, body }];
+      return [{ minutes, body, comLink: (item as { comLink?: unknown }).comLink !== false }];
     });
   } catch {
     return [];

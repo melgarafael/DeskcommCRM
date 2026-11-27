@@ -43,6 +43,16 @@ export const AUDIT_ACTIONS = [
   "auth.login_failed",
   /** Teto de tentativas barrou antes de chegar ao provedor (issue #64). */
   "auth.login_rate_limited",
+  /**
+   * Bloqueio progressivo por conta (issue #4743) — um evento por DEGRAU, porque
+   * "a conta está travada" não diz o que se deve fazer: 5 min é ruído de quem
+   * errou a senha, 30 min (10 falhas no dia) já é insistência. Um evento quando
+   * o degrau NASCE; a tentativa barrada segue em `auth.login_rate_limited`.
+   */
+  "auth.login_bloqueio_5min",
+  "auth.login_bloqueio_30min",
+  /** A senha foi redefinida pelo e-mail e o castigo caiu (issue #4743). */
+  "auth.login_bloqueio_removido",
   "auth.logout",
   "auth.mfa_enrolled",
   "auth.mfa_success",
@@ -599,6 +609,13 @@ export const AUDIT_ACTIONS = [
   // Só existe para o funil que nunca recebeu negócio: com histórico, a operação
   // vira `pipeline.archived` e a linha continua no banco.
   "pipeline.deleted",
+  // #4802 (item 3) — a escolha sobre os negócios de um funil que vai sair da
+  // lista. São ações próprias, e não um detalhe de `pipeline.archived`: o que se
+  // audita aqui é o destino de N negócios (quantos saíram, para qual funil, para
+  // qual etapa), e isso precisa ser encontrável sem abrir o metadata de um
+  // arquivamento.
+  "pipeline.negocios_transferidos",
+  "pipeline.negocios_removidos",
   "system.update_requested",
   "system.update_finished",
   // IA 360 · wave 2 — o retorno agendado deixou de ser exclusividade do motor e
@@ -918,6 +935,8 @@ export const AUDIT_ACTIONS = [
   "agenda.endereco_salvo",
   "agenda.appointment_rescheduled",
   "agenda.appointment_cancelled",
+  // Lista de responsáveis adicionais da consulta mudou (só audita quando mudou de fato).
+  "agenda.appointment_responsibles_changed",
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
   // de fora chama. Só audita quando alguma tarefa mexeu em dado.
   "relogio.tick_run",
@@ -1758,6 +1777,13 @@ export const AUDIT_ACTIONS = [
   "venda.apagada",
   // #5128 — a escolha de tipos de link do contato por organização.
   "settings.links_de_contato_updated",
+  // Chat no site (Spec 36, F1): a conexão de chat criada, editada e com a chave pública
+  // girada. Metadata leva só o canal e, na edição, os NOMES dos campos alterados.
+  "channel.webchat_created",
+  "channel.webchat_updated",
+  "channel.webchat_key_rotated",
+  // Pausa do chat: emitida só quando o valor MUDA. Metadata leva o canal e o novo valor.
+  "channel.webchat_paused",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -110,7 +110,7 @@ function database(
       return { data: null, error: null };
     };
     const q: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "in", "order", "limit", "gte", "lt", "or", "is", "not"])
+    for (const method of ["select", "eq", "in", "order", "limit", "gt", "gte", "lt", "or", "is", "not", "insert", "update"])
       q[method] = (...args: unknown[]) => {
         calls.push({ table, method, args });
         return q;

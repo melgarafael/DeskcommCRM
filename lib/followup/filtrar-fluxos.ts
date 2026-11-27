@@ -15,9 +15,17 @@
  * O filtro por status entra aqui também, e não no componente, porque a ordem
  * importa: o status recorta, o termo procura dentro do recorte — e os dois
  * juntos são testáveis sem DOM.
+ *
+ * ═══ Por palavra, e não por trecho (#4593, o que o #4693 deixou aberto) ═══
+ *
+ * Cada palavra digitada precisa aparecer no nome OU num dos `textosExtras`, em
+ * qualquer ordem (`casaTodasAsPalavras`): «oficina kelly» acha «Kelly ·
+ * retomada (oficinas mecânicas)». Os textos extras são o que a TELA decide
+ * mostrar como buscável — em Follow-ups, o rótulo do gatilho («Silêncio»,
+ * «Etapa do funil»…), em português e no idioma ativo.
  */
 import type { FollowupFlowStatus } from "@/hooks/followup/useFollowupFlows";
-import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
+import { casaTodasAsPalavras, palavrasDaBusca } from "@/lib/inbox/termo-de-busca";
 
 /** O filtro de status da lista: um dos três estados do fluxo, ou todos. */
 export type FiltroDeStatusDoFluxo = FollowupFlowStatus | "all";
@@ -33,16 +41,25 @@ export interface FluxoBuscavel {
  * ordem recebida.
  *
  * Status `all` com termo vazio (ou só espaços) devolve a lista inteira, na
- * mesma referência.
+ * mesma referência. Sem `textosExtras`, o termo casa só com o nome.
  */
 export function filtrarFluxos<T extends FluxoBuscavel>(
   fluxos: T[],
-  { busca, status }: { busca: string; status: FiltroDeStatusDoFluxo },
+  {
+    busca,
+    status,
+    textosExtras,
+  }: {
+    busca: string;
+    status: FiltroDeStatusDoFluxo;
+    /** Mais textos em que o termo pode casar, além do nome. */
+    textosExtras?: (fluxo: T) => readonly (string | null | undefined)[];
+  },
 ): T[] {
-  const termo = termoSemAcento(busca.trim());
-  if (!termo && status === "all") return fluxos;
+  const palavras = palavrasDaBusca(busca);
+  if (palavras.length === 0 && status === "all") return fluxos;
   return fluxos.filter((fluxo) => {
     if (status !== "all" && fluxo.status !== status) return false;
-    return !termo || termoSemAcento(fluxo.name).includes(termo);
+    return casaTodasAsPalavras(palavras, [fluxo.name, ...(textosExtras?.(fluxo) ?? [])]);
   });
 }

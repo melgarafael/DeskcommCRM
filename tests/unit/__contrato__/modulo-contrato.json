@@ -85,6 +85,7 @@
       "GET /api/v1/ai/cases",
       "GET /api/v1/ai/cases/[id]",
       "GET /api/v1/ai/cases/[id]/chat",
+      "GET /api/v1/ai/credit-health",
       "GET /api/v1/ai/evolution",
       "GET /api/v1/ai/followup-flows",
       "GET /api/v1/ai/followup-flows/[id]",
@@ -344,6 +345,7 @@
       "GET /api/v1/pipelines",
       "GET /api/v1/pipelines/[id]/agent-mapping",
       "GET /api/v1/pipelines/[id]/forecast",
+      "GET /api/v1/pipelines/[id]/negocios",
       "GET /api/v1/pipelines/[id]/stages",
       "GET /api/v1/pipelines/[id]/stages/win-rates",
       "GET /api/v1/pipelines/default",
@@ -351,6 +353,7 @@
       "PATCH /api/v1/pipelines/[id]",
       "PATCH /api/v1/pipelines/[id]/stages/[id]",
       "POST /api/v1/pipelines",
+      "POST /api/v1/pipelines/[id]/negocios",
       "POST /api/v1/pipelines/[id]/stages",
       "POST /api/v1/pipelines/importar",
       "PUT /api/v1/pipelines/[id]/agent-mapping"
@@ -546,7 +549,7 @@
         {
           "nome": "alterarSchema",
           "origem": "@/lib/agenda/tipos-de-agendamento",
-          "hash": "6245f5adcb258277"
+          "hash": "8b29d78104f1e902"
         },
         {
           "nome": "criarComRascunhoSchema",
@@ -1467,6 +1470,16 @@
           "nome": "bodySchema",
           "origem": "local",
           "hash": "341874070d107bdd"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]/negocios": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "5ad9070ac9aad5a9"
         }
       ],
       "resposta": []
