@@ -30,11 +30,17 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Veja quando a IA fica sem saldo** O CRM mostra um aviso no topo quando um provedor registra saldo insuficiente. O atendimento recebe orientação para continuar pelo Inbox quando a conversa automática for afetada. A gerência pode abrir a configuração de provedores para identificar a conta que precisa de atenção.
 
+  Contribuição de @vitorlacerdadigital (#5312).
+
 - **Chat no site: no limite de respostas da IA, o visitante é convidado a deixar o contato** Quando um visitante do chat no site, sem telefone nem e-mail, chega ao limite de respostas da IA (padrão 20, ajustável na aba "Chat no site" em Conexões), ele não fica mais sem resposta: recebe uma frase pedindo telefone ou e-mail, e a conversa passa para a equipe, com aviso na Central. O cartão da passagem diz que o cliente não pediu uma pessoa. Fora do horário de envio do canal, a frase e a passagem saem na abertura. Vale para quem publicou um agente no modo automático; no modo assistido não há rascunho no limite, e sem agente publicado a IA só para, como antes.
+
+  Contribuição de @paulolimajr77 (#5316).
 
 - **A caixa de consentimento do formulário de anúncio da Meta chega ao lead** Quem usa formulário de anúncio da Meta com a busca das respostas ligada passa a receber no lead as caixas do aviso personalizado do formulário, que é onde se costuma pedir a autorização para ligar e mandar mensagem. Cada caixa aparece nos campos do negócio como `custom_disclaimer_` mais o nome da caixa na Meta, com `true` quando a pessoa marcou e `false` quando não marcou. Antes elas se perdiam, porque a Meta não as manda junto das outras respostas. Os campos chegam também às automações, então um envio por webhook leva a resposta da caixa. Formulário sem aviso personalizado continua igual. Contribuição de @edgariamaguti.
 
 - **Módulos conectados: vocabulário de áreas de tarefas e financeiro, ainda sem tela** Prepara o consentimento de módulos conectados para as áreas Tarefas e Financeiro. Nada muda para quem opera a instalação: nenhum módulo conectado as pede hoje, e a área Financeiro só pode ser consentida por quem administra a organização.
+
+  Contribuição de @paulolimajr77 (#5276).
 
 ### Alterado
 
@@ -54,13 +60,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Recorrências além da milésima deixam de ficar sem lançamento no mês** O cron que gera os lançamentos das recorrências passa a ler todos os moldes ativos página por página, em vez de só a primeira resposta do banco. Numa instalação com mais de 1.000 recorrências ativas, um molde devido que caísse depois da milésima linha não gerava o lançamento do mês e a rotina respondia sucesso, como se não houvesse nada a gerar. O campo `moldes` da resposta passa a informar o total realmente lido. A partir de 50 mil moldes ativos a leitura para, e o restante fica declarado fora — o mesmo teto da leitura de métricas do Jev.
 
+  Contribuição de @webtecnica (#5155).
+
 - **Em 320 px o topo do celular para de sobrepor o botão Buscar ao seletor de organização** Em 320 px de largura o topo do celular não tinha mais espaço para a coluna da busca: ela encolhia a 0 px e o botão Buscar (42 px) passava 13 px por cima do seletor de organização e 13 px por cima do sino da Central de avisos. De 360 px para cima a conta fechava.
 
   Agora, abaixo de 360 px, o botão de tema sai do topo (o idioma, a navegação e os avisos ficam — o tema segue a preferência do sistema e a escolha salva continua valendo) e a coluna da busca ganha piso de 44 px, a mesma largura de um alvo de toque. Medido por `getBoundingClientRect` em viewport emulado: em 320 px o seletor de organização termina 9 px antes do botão Buscar, que termina 9 px antes do sino, e a coluna da busca tem 44 px.
 
   De 360 px para cima nada muda: as posições e as larguras do seletor de organização, do botão Buscar, do sino e da coluna da busca são idênticas às de antes, em 360 px e em 375 px. O nome da organização continua no `aria-label` do seletor e o botão de busca continua com nome acessível.
 
+  Contribuição de @webtecnica (#5144).
+
 - **Extensões › leitura dos avisos — o rótulo de cada empresa não muda mais com a ordem** Na tela Extensões, a lista "Leitura dos avisos pelo módulo" numerava as empresas pela posição: a empresa que acabava de ler descia na lista e trocava de número, então não dava para saber se a "Empresa 1" de hoje é a de ontem. Cada empresa passou a ter um rótulo fixo, derivado do identificador dela — o mesmo entre sessões e entre dias —, e a tela continua sem o nome da empresa, que o administrador da instalação não deve ver. A hora do "lido em" passou a sair no fuso da própria empresa, e não no fuso do servidor: quem administra de São Paulo deixa de ver três horas a mais. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#5131).
 
 - **Com a janela da campanha invertida, o Iniciar fica desabilitado ao lado das horas** Na tela de Prospecção, quando a campanha roda só em horário próprio e o operador põe o início depois do fim (por exemplo, começa às 12h e termina às 7h), o botão "Iniciar abordagens com IA" fica desabilitado enquanto as horas não se corrigirem. O aviso que já existia embaixo dos campos — "A janela precisa começar antes de terminar (ex.: 7h às 12h)" — continua aparecendo, agora ao lado do botão travado, e os dois campos de hora ficam marcados como inválidos. Antes, o botão seguia ativo e o erro genérico subia para o topo da página. Contribuição de @webtecnica, a partir da issue #5133.
 
@@ -78,11 +90,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Com "conversas novas criam negócio" desligado, o seletor do funil de entrada para de prometer que o contato entra no funil** No cartão da conexão, o interruptor "Conversas novas criam negócio no funil" e o seletor do funil de entrada são opções diferentes: o interruptor decide SE a conversa nova vira negócio, o seletor decide EM QUAL funil e etapa ela nasce. Com o interruptor desligado nada nasce no funil, mas o seletor continuava dizendo "Contatos novos entram no funil padrão (…)", o que era falso. Agora, com o interruptor desligado, o seletor continua na tela — é ali que o administrador confere e edita a escolha quando religar — mas fica desabilitado e mostra "Sem efeito enquanto a opção acima estiver desligada". Com o interruptor ligado, e nas telas em que ele não existe (Canal Parceiro e Redes Sociais), nada muda. A escolha guardada não é apagada: religar o interruptor devolve o seletor ao funcionamento de antes, com o mesmo funil e a mesma etapa. A partir da issue #5142.
 
+  Contribuição de @webtecnica (#5150).
+
 - **No painel Atividade da conversa, o que um token de API fez aparece como "Integração · <nome do token>"** No Inbox, a seção Atividade do painel da conversa mostrava "Sistema" quando a ação vinha de um token de API (uma integração mexendo no negócio), o mesmo rótulo de quando a plataforma age sozinha. Agora a linha diz "Integração · <nome do token>", ou só "Integração" quando o nome não pode ser lido. Vale para as atividades registradas depois da atualização; as antigas continuam como "Sistema", porque não guardaram qual token agiu.
 
   Contribuição de @yunshu0909, a partir da issue #5160.
 
 - **A tela de atualização tem teste para o estado "não sei dizer como terminou"** O ramo em que o servidor parou de responder no meio da atualização não tinha teste nenhum: trocar o título, o comando manual ou a regra do botão passava sem reprovar nada. Agora o teste de componente da tela cobre o título do estado, o comando `bash hostgator-setup-kit/update.sh` e as duas pontas do botão — ele aparece com versão nova anunciada e não aparece sem ela. Nenhum arquivo de tela foi alterado.
+
+  Contribuição de @webtecnica (#5169).
 
 - **O README em espanhol cita os rótulos que a tela em espanhol mostra** A seção "Actualizar" do `README.es.md` citava os rótulos em português, e não o que o dono vê numa
   instalação em espanhol: **"Nova versão"** virou **"Nueva versión"**, e
@@ -94,11 +110,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   desfecho — `degraded`, `unhealthy`, app mudo, JSON ilegível. Antes o README em espanhol só dizia
   "diagnóstico de todos los servicios", sem dizer o que o código de saída quer dizer.
 
+  Contribuição de @webtecnica (#5168).
+
 - **As docs de atualização contam a janela de manutenção da madrugada** O README prometia que a atualização pela tela "começa em até 5 minutos depois do clique" sem
   mencionar a janela de manutenção, e o `docs/ATUALIZANDO.md` nem citava a tela. Agora os dois
   explicam a `SYSTEM_UPDATE_WINDOW`: com ela configurada, o pedido feito fora da janela espera a
   madrugada, a tela mostra "Atualização agendada para 02h00" e o pedido não se perde — roda
   sozinho quando a janela abrir. A promessa dos 5 minutos ficou restrita ao caso sem janela.
+
+  Contribuição de @webtecnica (#5170).
 
 - **O aviso em vermelho passa a aparecer na agenda, nas comandas, no faturamento e nos relatórios** Onze telas escreviam o vermelho de erro com um nome de token que não existia: `text-danger`, `bg-danger/5`, `border-danger`. O Tailwind 4 gera utilitário a partir das chaves declaradas no tema do `app/globals.css`, e esse nome nunca esteve lá — a cor da mesma família se chama `destructive`. O resultado não era erro de build nem de console: a classe simplesmente não gerava regra nenhuma desde que essas linhas foram escritas, e o texto herdava a cor da página enquanto o fundo ficava transparente.
 
