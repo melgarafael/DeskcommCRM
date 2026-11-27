@@ -116,6 +116,15 @@ export function BulkActionBar({
   );
   const { data: members } = useAssignableMembers(podeAtribuir);
 
+  // "Levar para outro funil" também é ESCRITA em lote: a rota só aceita
+  // `agent`+ (toda ação que não é `assign` usa `agent` em
+  // `app/api/v1/leads/bulk/route.ts`). Para o `viewer` a opção some, como já
+  // acontece em funil arquivado — desabilitar com dica ainda prometeria uma
+  // ação que o servidor recusa com 403.
+  const podeLevarParaOutroFunil = Boolean(
+    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+  );
+
   // Esc to clear selection
   useEffect(() => {
     // Com "levar para outro funil" aberto, o Esc é do diálogo: limpar a
@@ -257,13 +266,17 @@ export function BulkActionBar({
             ))}
             {/* Outro FUNIL fica no mesmo menu: é a mesma pergunta ("para
                 onde vai?"), e quem procura não precisa achar um segundo botão. */}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-testid="lote-outro-funil"
-              onClick={() => setOutroFunilOpen(true)}
-            >
-              {t("Outro funil…")}
-            </DropdownMenuItem>
+            {podeLevarParaOutroFunil && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid="lote-outro-funil"
+                  onClick={() => setOutroFunilOpen(true)}
+                >
+                  {t("Outro funil…")}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

@@ -42,6 +42,7 @@ import { toolIdRemoto } from "../ids";
 import { bancoEmMemoria, type BancoEmMemoria } from "./banco-em-memoria.test-helper";
 import { carregarServidoresDoAgenteNoTurno, type ServidorDoAgenteNoTurno } from "./carregar";
 import { consumirPedido, credencialDoContato, escoposDoPedido, renovarCredencial } from "./credencial";
+import { prazoDoLinkEmMinutos } from "./prazo-do-link";
 import { ErroDeOauth, descobrir, registrarCliente } from "./oauth";
 import { TIMEOUT_DA_CHAMADA_NO_TURNO_MS, TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "../tempos-do-turno";
 import { iniciarAutorizacao, processarRetorno } from "./retorno";
@@ -806,6 +807,116 @@ describe("revogação: rodadas sobrepostas, orçamento, troca de origem e exclus
     expect(auditSpy.mock.calls.map((c) => c[0])).toContainEqual(
       expect.objectContaining({ action: "contact.mcp_acesso_revogado", metadata: expect.objectContaining({ motivo: "exclusao_do_contato" }) }),
     );
+  });
+});
+
+// ─── O prazo para ABRIR o link é do servidor (#5126) ───────────────────────
+
+/**
+ * O que a #5126 mudou: o link de autorização pode ser ABERTO por mais de 10
+ * minutos, e quem decide é o cadastro do servidor (`oauth_metadados.
+ * prazo_do_link_minutos`, faixa 10..1440). O que NÃO mudou: `state` de 256
+ * bits, PKCE S256, `redirect_uri` fixo, uso único, `revogar_apos` e a
+ * conferência de `expira_em` no BANCO (`iniciar` e `callback`).
+ */
+describe("o prazo para abrir o link é do servidor, com padrão de 10 minutos (#5126)", () => {
+  /** O `expira_em` que o pedido realmente gravou — a única prova que vale. */
+  async function prazoGravadoDoProximoPedido(): Promise<Date> {
+    const link = await pedirLink(CONTATO_A, CONVERSA_A);
+    const estado = link.split("/").pop()!;
+    const linha = banco.tabelas.mcp_oauth_pedidos!.find((p) => p.id === estado)!;
+    return new Date(linha.expira_em as string);
+  }
+
+  function minutosAte(expira: Date): number {
+    return (expira.getTime() - Date.now()) / 60_000;
+  }
+
+  /** Grava o prazo no jsonb do cadastro, como a action gravaria. */
+  function configurarPrazo(valor: unknown) {
+    const linha = banco.tabelas.ai_agent_mcp_servers![0]!;
+    linha.oauth_metadados = {
+      ...(linha.oauth_metadados as Record<string, unknown>),
+      prazo_do_link_minutos: valor,
+    };
+  }
+
+  it("servidor SEM o campo: expira_em continua exatamente 10 minutos à frente (regressão)", async () => {
+    expect(
+      (banco.tabelas.ai_agent_mcp_servers![0]!.oauth_metadados as Record<string, unknown>).prazo_do_link_minutos,
+    ).toBeUndefined();
+    const expira = await prazoGravadoDoProximoPedido();
+    expect(expira.getTime()).not.toBeNaN();
+    expect(minutosAte(expira)).toBeGreaterThan(9.9);
+    expect(minutosAte(expira)).toBeLessThanOrEqual(10.1);
+  });
+
+  it("servidor COM 1440: expira_em ≈ agora + 1440 minutos (24 h)", async () => {
+    configurarPrazo(1440);
+    const expira = await prazoGravadoDoProximoPedido();
+    expect(minutosAte(expira)).toBeGreaterThan(1439.5);
+    expect(minutosAte(expira)).toBeLessThanOrEqual(1440.1);
+  });
+
+  it("fora da faixa e lixo: clamp/fallback, nunca NaN nem Invalid Date", async () => {
+    // A régua pura: piso 10, teto 1440, padrão 10 para o que não é número.
+    expect([0, -5, 1, 9].map(prazoDoLinkEmMinutos)).toEqual([10, 10, 10, 10]);
+    expect([1440, 1441, 99999].map(prazoDoLinkEmMinutos)).toEqual([1440, 1440, 1440]);
+    expect([null, undefined, "abc", "", Number.NaN, Number.POSITIVE_INFINITY, true, {}].map(prazoDoLinkEmMinutos)).toEqual([
+      10, 10, 10, 10, 10, 10, 10, 10,
+    ]);
+    expect(prazoDoLinkEmMinutos("720")).toBe(720);
+    expect(prazoDoLinkEmMinutos(720.9)).toBe(720);
+
+    // E no banco: o número gravado e a data do pedido, um a um.
+    for (const [valor, esperado] of [
+      [0, 10],
+      [-5, 10],
+      [99999, 1440],
+      ["abc", 10],
+      [null, 10],
+    ] as const) {
+      configurarPrazo(valor);
+      const expira = await prazoGravadoDoProximoPedido();
+      expect(expira.getTime()).not.toBeNaN();
+      expect(minutosAte(expira)).toBeGreaterThan(esperado - 0.5);
+      expect(minutosAte(expira)).toBeLessThanOrEqual(esperado + 0.1);
+    }
+  });
+
+  it("aberto no 11º minuto com prazo de 1440: a rota de início e o callback ACCEITAM", async () => {
+    // O caso da issue: quem abre no 8º minuto e demora no AS não pode ser
+    // recusado depois de preencher tudo. Com o prazo maior, o pedido continua
+    // válido — a conferência segue sendo a do BANCO (`expira_em`).
+    configurarPrazo(1440);
+    const link = await pedirLink(CONTATO_A, CONVERSA_A);
+    const estado = link.split("/").pop()!;
+    banco.tabelas.mcp_oauth_pedidos!.find((p) => p.id === estado)!.expira_em = new Date(Date.now() + 11 * 60_000).toISOString();
+    expect((await iniciarAutorizacao(banco.cliente as never, estado)).ok).toBe(true);
+    // (a autorização completa já é provada nos outros `describe`; aqui importa
+    // que a janela de abertura de 11 min não é recusada.)
+    expect(banco.tabelas.contato_mcp_credenciais ?? []).toHaveLength(0);
+  });
+
+  it("prazo maior NÃO afrouxa a validade: pedido vencido continua recusado nas duas rotas", async () => {
+    configurarPrazo(1440);
+    const link = await pedirLink(CONTATO_B, CONVERSA_B);
+    const estado = link.split("/").pop()!;
+    banco.tabelas.mcp_oauth_pedidos!.find((p) => p.id === estado)!.expira_em = new Date(Date.now() - 1000).toISOString();
+    expect((await iniciarAutorizacao(banco.cliente as never, estado)).ok).toBe(false);
+    expect(
+      await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state: estado, code: "c", error: null }, rede),
+    ).toBe("pedido_invalido");
+    expect(banco.tabelas.contato_mcp_credenciais ?? []).toHaveLength(0);
+  });
+
+  it("lixo gravado no jsonb não derruba o servidor (o metadado continua legível)", async () => {
+    const { lerLinhaDoServidor } = await import("./registro");
+    configurarPrazo("abc");
+    const servidor = lerLinhaDoServidor(banco.tabelas.ai_agent_mcp_servers![0]!)!;
+    expect(servidor.oauth).not.toBeNull();
+    expect(servidor.oauth?.emissor).toBe(origem);
+    expect(prazoDoLinkEmMinutos(servidor.oauth?.prazo_do_link_minutos)).toBe(10);
   });
 });
 

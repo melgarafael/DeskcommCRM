@@ -710,7 +710,15 @@ describe("a leitura: só a organização, só o par", () => {
 
 describe("o atraso mostrado em /admin/extensoes (9446)", () => {
   const atraso = (inst: string) => rpc("events_lag", [inst]) as Promise<
-    { last_event_id: number | null; last_read_at: string | null; lag: number; contacts_pending: number; oldest_unread_at: string | null }[]
+    {
+      rotulo: string;
+      fuso: string | null;
+      last_event_id: number | null;
+      last_read_at: string | null;
+      lag: number;
+      contacts_pending: number;
+      oldest_unread_at: string | null;
+    }[]
   >;
 
   it("a contagem é por organização e nunca mistura organizações (mesmo módulo nas duas)", async () => {
@@ -733,6 +741,19 @@ describe("o atraso mostrado em /admin/extensoes (9446)", () => {
     expect(deB.last_event_id).toBeNull();
     expect(deB.last_read_at).toBeNull();
     expect(deB.oldest_unread_at).not.toBeNull();
+
+    // O rótulo é do ID, não da posição (9507, #5097): o mesmo hash que a tela espera, e nada mais.
+    const rotuloDe = (id: string) => createHash("md5").update(id).digest("hex").slice(0, 6);
+    expect(linhas.map((l) => l.rotulo).sort()).toEqual([rotuloDe(orgA), rotuloDe(orgB)].sort());
+    for (const l of linhas) expect(l.rotulo).toMatch(/^[0-9a-f]{6}$/);
+
+    // O fuso vem da organização de cada linha — é ele que faz o "lido em" sair na hora de quem opera.
+    await query("update public.organizations set timezone = 'America/Manaus' where id = $1", [orgB]);
+    const comFuso = await atraso(inst);
+    expect(comFuso.find((l) => l.rotulo === rotuloDe(orgA))?.fuso).toBe("America/Sao_Paulo");
+    expect(comFuso.find((l) => l.rotulo === rotuloDe(orgB))?.fuso).toBe("America/Manaus");
+    await query("update public.organizations set timezone = 'America/Sao_Paulo' where id = $1", [orgB]);
+
     // Nada que identifique a organização sai da função.
     expect(JSON.stringify(linhas)).not.toContain(orgA);
     expect(JSON.stringify(linhas)).not.toContain(orgB);

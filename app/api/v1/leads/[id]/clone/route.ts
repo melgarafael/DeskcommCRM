@@ -1,27 +1,16 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * POST /api/v1/leads/[id]/clone — levar o negócio para OUTRO funil.
- *
- * É o caminho que a P-01 manda usar quando o alvo é outro funil: `/move` recusa
- * (422 `pipeline_immutable_use_clone`) e aponta para cá. Antes desta rota o
- * apontamento não existia em lugar nenhum do produto.
- *
- * A troca são DUAS escritas, nesta ordem de propósito:
- *  1. cria o clone no funil destino (via `createLeadHandler` — a MESMA porta da
- *     criação normal: valida etapa↔funil, calcula posição, aplica a regra de dono,
- *     emite `lead.created` e grava audit);
- *  2. encerra a origem via `encerraDemanda` com motivo canônico (P-03).
- *
- * A ordem é "clone primeiro" porque o banco não tem transação entre as duas: se a
- * segunda falhar, existe um negócio a mais no funil destino (visível, corrigível)
- * e a origem continua aberta. Na ordem inversa, uma falha na criação deixaria a
- * origem PERDIDA e sem sucessor — o operador perderia o negócio sem ver para onde
- * ele foi. A rota devolve 500 nesse caso, sem esconder a meia-execução.
+ * POST /api/v1/leads/[id]/clone — levar o negócio para outro funil.
+ * A criação, os vínculos e o fechamento da origem são uma transação.
+ * A rota reutiliza uma cópia aberta do mesmo negócio que já está no destino.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { getLeadHandler } from "@/app/api/v1/leads/_handler";
+import { copiarAnexosDoClone } from "@/lib/leads/anexos-do-clone";
 import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
+import { ehRecusaDaVisibilidadeDoFunil } from "@/lib/leads/recusa-da-visibilidade";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import {
@@ -39,9 +28,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   FUNIL_DE_DESTINO_NAO_ENCONTRADO,
-  ORIGEM_SEM_ETAPA_DE_PERDA,
   escolheEtapaDeDestino,
-  montaPayloadDoClone,
   recusaTrocaDeFunil,
   registroDoDestino,
   type EtapaDoFunil,
@@ -49,13 +36,17 @@ import {
 } from "@/lib/leads/clonar-para-funil";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
-import { encerraDemanda } from "@/lib/leads/encerramento";
+import {
+  preparaEncerramentoDemanda,
+  registraEncerramentoDemanda,
+  type EncerraDemandaInput,
+} from "@/lib/leads/encerramento";
 import {
   motivoDaPerdaDaOrigem,
   recusaDeMotivoForaDoVocabulario,
+  recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { cloneLeadSchema, validateRequest } from "@/lib/schemas";
-import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -177,6 +168,35 @@ export async function GET(
   return ok({ pipelines: destinos }, { requestId });
 }
 
+type Linha = Record<string, unknown>;
+
+interface GravacaoDoClone {
+  clone: Linha;
+  origem: Linha;
+  criou: boolean;
+  fechou: boolean;
+}
+
+// O caminho comum de criação não deve emitir evento nem auditar para quem
+// apenas recebeu um card já existente da transação. Os anexos, sim, são
+// completados nesse caso (ver `completaAnexos` no POST).
+class CloneReutilizado extends Error {
+  constructor(readonly gravacao: GravacaoDoClone) {
+    super("clone_reutilizado");
+  }
+}
+
+function respostaDoClone(gravacao: GravacaoDoClone, requestId: string, anexos = 0) {
+  return ok(
+    {
+      lead: ocultarProvaMetaNaResposta(gravacao.clone),
+      origem: ocultarProvaMetaNaResposta(gravacao.origem),
+      anexos,
+    },
+    { requestId, status: gravacao.criou ? 201 : 200 },
+  );
+}
+
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -208,29 +228,24 @@ export async function POST(
     idioma,
   };
 
+  // A cópia reaproveitada completa os anexos que a primeira gravação não levou
+  // (Storage que falhou, pedido que caiu entre a transação e a cópia). A cópia é
+  // idempotente por anexo de origem, então repeti-la não duplica nada.
+  const completaAnexos = async (gravacao: GravacaoDoClone) =>
+    (await copiarAnexosDoClone(supabase, {
+      organizationId,
+      origemLeadId: leadId,
+      destinoLeadId: String(gravacao.clone.id),
+    })).copiados;
+
   try {
     const input = await validateRequest(cloneLeadSchema, req);
 
-    // Filtro por organização explícito como defesa em profundidade: a RLS já
-    // recorta o client do usuário, e o filtro continua valendo se esta rota um
-    // dia passar a receber um client service-role (é o que o `_handler` faz).
-    const { data: origem, error: selErr } = await supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("id", leadId)
-      .eq("organization_id", handlerCtx.organization_id)
-      .maybeSingle();
-
-    if (selErr) {
-      return fail("internal_error", selErr.message, 500, { requestId });
-    }
-    if (!origem) {
-      return fail("not_found", t("Lead não encontrado."), 404, { requestId });
-    }
+    const origem = await getLeadHandler(supabase, handlerCtx, leadId) as OrigemParaClonar & Linha;
 
     const { data: pipelineDestino, error: pipeErr } = await supabase
       .from("crm_pipelines")
-      .select("id, name")
+      .select("id, name, is_archived")
       .eq("id", input.pipeline_id)
       .eq("organization_id", handlerCtx.organization_id)
       .maybeSingle();
@@ -238,7 +253,7 @@ export async function POST(
     if (pipeErr) {
       return fail("internal_error", pipeErr.message, 500, { requestId });
     }
-    if (!pipelineDestino) {
+    if (!pipelineDestino || pipelineDestino.is_archived) {
       return fail("pipeline_not_found", t(FUNIL_DE_DESTINO_NAO_ENCONTRADO), 404, { requestId });
     }
 
@@ -248,7 +263,7 @@ export async function POST(
     const { data: pipelineOrigem, error: origemPipeErr } = await supabase
       .from("crm_pipelines")
       .select("settings, name")
-      .eq("id", (origem as OrigemParaClonar).pipeline_id)
+      .eq("id", origem.pipeline_id)
       .eq("organization_id", handlerCtx.organization_id)
       .maybeSingle();
 
@@ -259,26 +274,62 @@ export async function POST(
       (pipelineOrigem as { settings?: unknown } | null)?.settings,
     );
 
-    const recusa = recusaTrocaDeFunil(
-      origem as OrigemParaClonar,
-      input.pipeline_id,
-      modoDaOrigem,
-    );
-    if (recusa) {
+    const recusa = recusaTrocaDeFunil(origem, input.pipeline_id, modoDaOrigem);
+    if (recusa?.code === "pipeline_unchanged") {
       return fail(recusa.code, t(recusa.texto), recusa.status, { requestId });
     }
 
-    // ── O MOTIVO DO CHAMADOR SE CONFERE ANTES DA PRIMEIRA ESCRITA ─────────────
-    //
-    // `lost_reason` chega do chamador como string livre (cloneLeadSchema só exige
-    // não-vazia), e quem o recusa é `fn_validate_lost_reason_required` — no
-    // encerramento da ORIGEM, que acontece DEPOIS de `createLeadHandler`. Nessa
-    // ordem, `{"lost_reason": "mudou de funil"}` produzia 500 com o clone já
-    // criado no destino e a origem ainda aberta: o negócio duplicado, e a
-    // resposta dizendo que algo quebrou em vez de dizer o que fazer.
-    //
-    // O vocabulário é o do funil de ORIGEM porque é a linha da origem que fecha,
-    // e o trigger lê `new.pipeline_id` (supabase/baseline.sql).
+    const servidor = createAdminClient();
+    let sessao: Linha | null = null;
+    if (authz.via === "session") {
+      const { data, error } = await supabase.auth.getClaims();
+      if (error || !data?.claims || data.claims.sub !== actor.id) {
+        return fail("unauthenticated", t("Auth required."), 401, { requestId });
+      }
+      const { sub, session_id, aal, role } = data.claims;
+      sessao = { sub, session_id, aal, role };
+    }
+
+    async function gravar(
+      linha: Linha | null,
+      fechamento: Linha | null,
+      atualizadaEm: unknown,
+    ) {
+      const { data, error } = await servidor.rpc("fn_levar_negocio_para_funil", {
+        p_org: organizationId,
+        p_origem: leadId,
+        p_destino: input.pipeline_id,
+        p_linha: linha,
+        p_fechamento: fechamento,
+        p_origem_atualizada_em: atualizadaEm ?? null,
+        p_sessao: sessao,
+      });
+      if (error?.code === "PT404") {
+        throw new ApiError(404, "not_found", undefined, requestId, t("Lead não encontrado."));
+      }
+      if (error?.code === "PT403" || ehRecusaDaVisibilidadeDoFunil(error)) {
+        throw new ApiError(
+          403, "forbidden", undefined, requestId,
+          t("Sem permissão para salvar este negócio: pela visibilidade definida na organização, ele ficaria fora do que você pode ver."),
+        );
+      }
+      if (error?.code === "PT409") {
+        throw new ApiError(409, "state_conflict", undefined, requestId, t("O negócio mudou enquanto era encerrado."));
+      }
+      return { gravacao: data as GravacaoDoClone | null, error };
+    }
+
+    const consulta = await gravar(null, null, null);
+    if (consulta.error) return fail("internal_error", consulta.error.message, 500, { requestId });
+    const existente = consulta.gravacao;
+    if (existente && existente.origem.status !== "open") {
+      return respostaDoClone(existente, requestId, await completaAnexos(existente));
+    }
+    if (!existente && recusa) {
+      return fail(recusa.code, t(recusa.texto), recusa.status, { requestId });
+    }
+
+    // O vocabulário de perda é do funil que a operação encerra.
     const motivoRecusado = recusaDeMotivoForaDoVocabulario({
       motivo: input.lost_reason,
       settingsDoFunil: (pipelineOrigem as { settings?: unknown } | null)?.settings ?? null,
@@ -288,251 +339,157 @@ export async function POST(
       return fail(motivoRecusado.codigo, motivoRecusado.mensagem, 422, { requestId });
     }
 
-    const { data: etapas, error: stagesErr } = await supabase
-      .from("crm_stages")
-      .select("id, pipeline_id, position, is_won, is_lost, is_archived")
-      .eq("organization_id", handlerCtx.organization_id)
-      .eq("pipeline_id", input.pipeline_id)
-      .eq("is_archived", false)
-      .order("position", { ascending: true });
-
-    if (stagesErr) {
-      return fail("internal_error", stagesErr.message, 500, { requestId });
-    }
-
-    const destino = escolheEtapaDeDestino(
-      (etapas ?? []) as EtapaDoFunil[],
-      input.stage_id ?? null,
-    );
-    if (!destino.ok) {
-      return fail(destino.code, t(destino.texto), destino.status, { requestId });
-    }
-
-    // ── A ETAPA DE DESTINO TAMBÉM É UMA ENTRADA ────────────────────────────────
-    //
-    // O clone nasce numa etapa do funil de destino, e entrar nela é o mesmo
-    // gatilho do arrasto e da retomada: o funil que exige um campo para receber
-    // o negócio o exige aqui também. Sem esta pergunta, a troca de funil
-    // aterrissava numa etapa exigente com o campo em branco e a exigência só era
-    // cobrada na PRÓXIMA escrita — o negócio já estava lá.
-    //
-    // A régua é a MESMA função de todos os outros caminhos, e o valor que ela lê
-    // é o que o negócio novo VAI ter: o clone leva os campos personalizados da
-    // origem inteiros. A pergunta vem antes da primeira escrita, como todas as
-    // outras recusas desta rota — recusar depois deixaria o clone no destino e o
-    // 500 escondendo a meia-execução.
-    //
-    // O `settings` perguntado é o do funil de DESTINO: é onde o negócio entra. O
-    // `pipelineOrigem` logo acima é o da origem, e serviria à pergunta errada.
-    //
-    // O ARQUIVO não é cobrado aqui (#2829, fatia 2): este é um caminho de
-    // CRIAÇÃO — o negócio do destino ainda não existe, e o anexo mora em
-    // `crm_lead_attachments.lead_id`, que só pode receber upload depois. Sem
-    // `semAnexosAinda` a pergunta era mais dura que a do escritor logo abaixo
-    // (`createLeadHandler` já a faz com a opção, #3433): trocar de funil para uma
-    // etapa que exige documento respondia 422 para sempre, e o clone nunca
-    // acontecia. A cobrança volta no próximo move, no lote ou no fechamento —
-    // lá `camposComAnexo` é lido do banco.
-    const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id, organizationId);
-    const vereditoDeCampos = validaCamposExigidos({
-      lead: { custom_fields: (origem as OrigemParaClonar).custom_fields ?? {} },
-      settingsDoFunil: settingsDoDestino,
-      destino: { stageId: destino.etapa.id, desfecho: null },
-      motivoDeGanho: null,
-      semAnexosAinda: true,
-    });
-    if (vereditoDeCampos.faltando.length > 0) {
-      const recusaDeCampos = recusaDeCamposObrigatorios(
-        vereditoDeCampos.faltando,
-        idioma,
-      );
-      return fail(recusaDeCampos.codigo, recusaDeCampos.mensagem, 422, {
-        details: { faltando: vereditoDeCampos.faltando },
-        requestId,
-      });
-    }
-
-    // ── A ORIGEM PRECISA TER ONDE FECHAR, E ISSO SE PERGUNTA ANTES ─────────────
-    //
-    // `encerraDemanda` recusa com 422 `pipeline_no_lost_stage` quando o funil de
-    // ORIGEM não tem etapa de perda não arquivada — e ele roda DEPOIS da criação
-    // do clone. Nessa ordem o operador lia uma recusa de pedido ("nada mudou")
-    // com o negócio JÁ duplicado no funil de destino: o pior dos dois mundos,
-    // porque a meia-execução fica invisível.
-    //
-    // O estado é alcançável e o próprio repo o reconhece (lib/pipelines/
-    // pipeline-editing.ts cita o espelho deste caso no `/win`). A pergunta é
-    // barata e não tem corrida que importe: se alguém arquivar a etapa entre esta
-    // consulta e o encerramento, o 422 volta a acontecer — mas aí ele é honesto,
-    // e a ordem "clone primeiro" continua sendo a certa pelo motivo do cabeçalho.
-    // Só a origem ABERTA precisa de onde fechar (issue #1538): a encerrada que
-    // o funil `novo_negocio` deixa clonar como nova tentativa não é reencerrada,
-    // e cobrar etapa de perda dela recusaria uma troca que não escreve nada.
-    const origemJaEncerrada = (origem as OrigemParaClonar).status !== "open";
-    if (!origemJaEncerrada) {
-      const { data: etapaDePerdaDaOrigem, error: perdaErr } = await supabase
+    let etapaDeEntrada: EtapaDoFunil | null = null;
+    if (!existente) {
+      const { data: etapas, error: stagesErr } = await supabase
         .from("crm_stages")
-        .select("id")
+        .select("id, pipeline_id, position, is_won, is_lost, is_archived")
         .eq("organization_id", handlerCtx.organization_id)
-        .eq("pipeline_id", (origem as OrigemParaClonar).pipeline_id)
-        .eq("is_lost", true)
+        .eq("pipeline_id", input.pipeline_id)
         .eq("is_archived", false)
-        .limit(1)
-        .maybeSingle();
+        .order("position", { ascending: true });
 
-      if (perdaErr) {
-        return fail("internal_error", perdaErr.message, 500, { requestId });
+      if (stagesErr) {
+        return fail("internal_error", stagesErr.message, 500, { requestId });
       }
-      if (!etapaDePerdaDaOrigem) {
-        return fail(
-          "pipeline_no_lost_stage",
-          t(ORIGEM_SEM_ETAPA_DE_PERDA),
-          422,
-          { requestId },
+
+      const destino = escolheEtapaDeDestino(
+        (etapas ?? []) as EtapaDoFunil[],
+        input.stage_id ?? null,
+      );
+      if (!destino.ok) {
+        return fail(destino.code, t(destino.texto), destino.status, { requestId });
+      }
+
+      // A etapa de destino valida os campos que serão herdados. Anexos só
+      // existem depois da criação, como em createLeadHandler (#3433).
+      const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id, organizationId);
+      const vereditoDeCampos = validaCamposExigidos({
+        lead: { custom_fields: origem.custom_fields ?? {} },
+        settingsDoFunil: settingsDoDestino,
+        destino: { stageId: destino.etapa.id, desfecho: null },
+        motivoDeGanho: null,
+        semAnexosAinda: true,
+      });
+      if (vereditoDeCampos.faltando.length > 0) {
+        const recusaDeCampos = recusaDeCamposObrigatorios(
+          vereditoDeCampos.faltando,
+          idioma,
         );
+        return fail(recusaDeCampos.codigo, recusaDeCampos.mensagem, 422, {
+          details: { faltando: vereditoDeCampos.faltando },
+          requestId,
+        });
       }
+      etapaDeEntrada = destino.etapa;
     }
 
-    // O card do destino nasce COM os anexos do card de origem (#4544): o
-    // voucher/apólice anexado no funil de Vendas é justamente o que o pós-venda
-    // precisa ler. A cópia é do passo único dos três caminhos de troca de funil,
-    // depois do INSERT do clone — o anexo mora em `crm_lead_attachments.lead_id`,
-    // e o id do card novo só existe aí.
-    //
-    // O VÍNCULO É DO SERVIDOR (migration 9389): o banco recusa `clonado_de` e
-    // `movido_para` vindos da sessão, porque `create_or_move_lead` reconhece a
-    // continuação de um negócio por eles. O INSERT do clone continua pela
-    // SESSÃO — é a policy `crm_leads_insert` que decide se quem pede pode criar
-    // aquele card (no modo "só os meus", o clone cujo dono herdado foi
-    // descartado é recusado ali) — e nasce SEM as duas chaves. O vínculo entra
-    // logo depois, pelo cliente de serviço, num UPDATE filtrado por `id` +
-    // `organization_id`; o `movido_para` da origem, mais abaixo, idem.
-    const servidor = createAdminClient();
-    const sourceMetadataDoClone = montaPayloadDoClone(origem as OrigemParaClonar, destino.etapa).source_metadata;
-    const semVinculo = { ...sourceMetadataDoClone };
-    delete semVinculo.clonado_de;
-    // A origem que já foi levada antes (nova tentativa do `novo_negocio`) traz
-    // o `movido_para` dela, e o clone o herda como sempre herdou — pelo UPDATE.
-    delete semVinculo.movido_para;
-    const { clone, anexos } = await criarCloneNoFunil(
-      supabase,
-      handlerCtx,
-      origem as OrigemParaClonar,
-      destino.etapa,
-      { ajustes: { source_metadata: semVinculo } },
-    );
-
-    // Falha parcial segue a regra do cabeçalho: o clone já existe (visível e
-    // corrigível), a origem fica ABERTA — o encerramento vem depois daqui — e a
-    // rota devolve 500 com o id do clone, sem esconder a meia-execução.
-    const { data: vinculado, error: vinculoErr } = await servidor
-      .from("crm_leads")
-      .update({ source_metadata: sourceMetadataDoClone })
-      .eq("id", String(clone.id))
-      .eq("organization_id", handlerCtx.organization_id)
-      .select("source_metadata")
-      .maybeSingle();
-    if (vinculoErr || !vinculado) {
-      logger.error("[leads/clone] o clone nasceu, mas o vínculo com a origem não foi gravado", {
-        lead_id: leadId,
-        cloned_lead_id: clone.id,
-        organization_id: handlerCtx.organization_id,
-        error: vinculoErr?.message ?? "nenhuma linha atualizada",
-        requestId,
-      });
-      return fail("internal_error", vinculoErr?.message ?? "clone_link_not_written", 500, {
-        details: { cloned_lead_id: clone.id },
-        requestId,
-      });
-    }
-    clone.source_metadata = (vinculado as { source_metadata: unknown }).source_metadata;
-
-    const destination = registroDoDestino(clone);
     const nomeDoFunilDeOrigem = (pipelineOrigem as { name?: string | null } | null)?.name ?? null;
     const nomeDoFunilDeDestino = (pipelineDestino as { name?: string | null }).name ?? null;
+    const origemAtual = existente?.origem ?? origem;
+    const motivo = origemAtual.status === "open"
+      ? motivoDaPerdaDaOrigem(input.lost_reason)
+      : ((origemAtual.lost_reason as string | null) ?? null);
+    const dadosDoFecho: EncerraDemandaInput = {
+      leadId,
+      desfecho: "lost",
+      motivo,
+      razaoNaTimeline: nomeDoFunilDeDestino
+        ? `Levado para o funil ${nomeDoFunilDeDestino}`
+        : "Levado para outro funil",
+    };
+    const preparo = origemAtual.status === "open"
+      ? await preparaEncerramentoDemanda(supabase, handlerCtx, dadosDoFecho)
+      : null;
+    const fechamento = preparo && !preparo.jaEstava ? preparo : null;
 
-    // ── A TROCA NA LINHA DO TEMPO, DOS DOIS LADOS ──────────────────────────────
-    //
-    // `source_metadata` guarda os ponteiros, mas nenhuma tela o lê — a linha do
-    // tempo do dossiê vem de `crm_lead_activities` (hooks/leads/useLeadTimeline.ts).
-    // Sem estas linhas o negócio novo aparecia no destino sem história nenhuma, e
-    // a origem dizia "Perdido — other" para um negócio que não se perdeu.
-    // Os nomes dos funis entram na frase como entram os das etapas em
-    // `stageChangeReason`: é o que quem lê reconhece.
-    const atividadeDoClone = await emitLeadActivity(supabase, {
-      organizationId: handlerCtx.organization_id,
-      leadId: String(destination.lead_id),
-      contactId: (origem as OrigemParaClonar).contact_id ?? null,
-      type: "moved_from_pipeline",
-      sourceModule: "crm",
-      sourceId: leadId,
-      actor: handlerCtx.actor,
-      reason: nomeDoFunilDeOrigem ? `Veio do funil ${nomeDoFunilDeOrigem}` : "Veio de outro funil",
-      payload: {
-        from_pipeline_id: (origem as OrigemParaClonar).pipeline_id,
-        from_lead_id: leadId,
-      },
-    });
-    if (!atividadeDoClone.ok) {
-      // Falha BAIXO, como em `encerraDemanda`: o clone já existe, e prender a
-      // troca à timeline deixaria a operação refém do registro. Contada, nunca
-      // engolida.
-      await registraFalhaDeAtividade(supabase, {
+    let gravacao: GravacaoDoClone;
+    let anexosCopiados = 0;
+    if (etapaDeEntrada) {
+      const escrita: { gravacao?: GravacaoDoClone } = {};
+      try {
+        const { anexos } = await criarCloneNoFunil(supabase, handlerCtx, origem, etapaDeEntrada, {
+          persistir: async (linha) => {
+            const tentar = () => gravar(linha, fechamento?.patch ?? null, origem.updated_at);
+            // A automação e o roteador de intenção gravam a cópia FORA desta
+            // transação. Se um deles gravou entre a busca e o INSERT, o índice
+            // único recusa com 23505 (#5281); a 2ª chamada acha essa cópia sob a
+            // trava da origem e a reaproveita, como a qualquer repetição.
+            let resultado = await tentar();
+            if (resultado.error?.code === "23505") resultado = await tentar();
+            if (resultado.gravacao && !resultado.gravacao.criou) {
+              throw new CloneReutilizado(resultado.gravacao);
+            }
+            escrita.gravacao = resultado.gravacao ?? undefined;
+            return { data: resultado.gravacao?.clone ?? null, error: resultado.error };
+          },
+        });
+        anexosCopiados = anexos.copiados;
+        if (!escrita.gravacao) {
+          throw new ApiError(500, "internal_error", undefined, requestId);
+        }
+        gravacao = escrita.gravacao;
+      } catch (erro) {
+        if (!(erro instanceof CloneReutilizado)) throw erro;
+        gravacao = erro.gravacao;
+      }
+    } else if (fechamento) {
+      const resultado = await gravar(null, fechamento.patch, fechamento.lead.updated_at);
+      if (resultado.error) {
+        const recusaDeMotivo = recusaDeMotivoDaPerdaPeloBanco(resultado.error, idioma);
+        if (recusaDeMotivo) return fail(recusaDeMotivo.codigo, recusaDeMotivo.mensagem, 422, { requestId });
+      }
+      if (!resultado.gravacao || resultado.error) {
+        return fail("internal_error", resultado.error?.message ?? "Falha ao levar o negócio.", 500, { requestId });
+      }
+      gravacao = resultado.gravacao;
+    } else {
+      // O fecho concorrente já terminou desde a primeira leitura.
+      const atual = await gravar(null, null, null);
+      if (atual.error) return fail("internal_error", atual.error.message, 500, { requestId });
+      if (!atual.gravacao) return fail("state_conflict", t("O negócio mudou enquanto era encerrado."), 409, { requestId });
+      return respostaDoClone(atual.gravacao, requestId, await completaAnexos(atual.gravacao));
+    }
+
+    if (!gravacao.criou) anexosCopiados = await completaAnexos(gravacao);
+    if (!gravacao.criou && !gravacao.fechou) return respostaDoClone(gravacao, requestId, anexosCopiados);
+    const destination = registroDoDestino(gravacao.clone);
+
+    if (gravacao.criou) {
+      const atividadeDoClone = await emitLeadActivity(supabase, {
         organizationId: handlerCtx.organization_id,
         leadId: String(destination.lead_id),
-        tipo: "moved_from_pipeline",
-        origem: "app/api/v1/leads/[id]/clone",
-        erro: atividadeDoClone.error,
-        requestId,
-      });
-    }
-
-    // ── A ORIGEM ENCRERRADA NÃO É REENCERRADA (issue #1538) ───────────────────
-    //
-    // Escrever `lost` por cima de `won` — ou por cima de `lost` com OUTRO motivo
-    // — apagaria o desfecho anterior, que é justamente metade do valor desta
-    // operação num funil `novo_negocio`: a primeira perda fica intocada, com o
-    // motivo dela, e o que a origem ganha é o ponteiro `movido_para` (logo
-    // abaixo) mais a linha do tempo do clone, já gravada acima.
-    const motivo = origemJaEncerrada
-      ? ((origem as { lost_reason?: string | null }).lost_reason ?? null)
-      : motivoDaPerdaDaOrigem(input.lost_reason);
-    let origemEncerrada: Record<string, unknown> | null = null;
-    if (!origemJaEncerrada) {
-      const encerrada = await encerraDemanda(supabase, handlerCtx, {
-        leadId,
-        desfecho: "lost",
-        motivo,
-        razaoNaTimeline: nomeDoFunilDeDestino
-          ? `Levado para o funil ${nomeDoFunilDeDestino}`
-          : "Levado para outro funil",
-        payloadNaTimeline: {
-          to_pipeline_id: input.pipeline_id,
-          to_lead_id: destination.lead_id,
+        contactId: origem.contact_id ?? null,
+        type: "moved_from_pipeline",
+        sourceModule: "crm",
+        sourceId: leadId,
+        actor: handlerCtx.actor,
+        reason: nomeDoFunilDeOrigem ? `Veio do funil ${nomeDoFunilDeOrigem}` : "Veio de outro funil",
+        payload: {
+          from_pipeline_id: origem.pipeline_id,
+          from_lead_id: leadId,
         },
       });
-      origemEncerrada = encerrada.lead as Record<string, unknown>;
+      if (!atividadeDoClone.ok) {
+        // Falha BAIXO, como em `encerraDemanda`: o clone já existe, e prender a
+        // troca à timeline deixaria a operação refém do registro. Contada, nunca
+        // engolida.
+        await registraFalhaDeAtividade(supabase, {
+          organizationId: handlerCtx.organization_id,
+          leadId: String(destination.lead_id),
+          tipo: "moved_from_pipeline",
+          origem: "app/api/v1/leads/[id]/clone",
+          erro: atividadeDoClone.error,
+          requestId,
+        });
+      }
     }
 
-    // Onde a origem foi parar. Fica na ORIGEM porque o clone já carrega
-    // `clonado_de`: cada lado guarda o ponteiro para o outro. É o dado para quem
-    // integra pela API; para o operador na tela, a história são as duas linhas
-    // de timeline gravadas acima.
-    const sourceMetadata = {
-      ...(((origem as OrigemParaClonar).source_metadata ?? {}) as Record<string, unknown>),
-      movido_para: destination,
-    };
-
-    const { data: origemFinal, error: updErr } = await servidor
-      .from("crm_leads")
-      .update({ source_metadata: sourceMetadata, updated_at: new Date().toISOString() })
-      .eq("id", leadId)
-      .eq("organization_id", handlerCtx.organization_id)
-      .select("*")
-      .maybeSingle();
-
-    if (updErr) {
-      return fail("internal_error", updErr.message, 500, { requestId });
+    if (gravacao.fechou && fechamento) {
+      await registraEncerramentoDemanda(supabase, handlerCtx, {
+        ...dadosDoFecho,
+        payloadNaTimeline: { to_pipeline_id: input.pipeline_id, to_lead_id: destination.lead_id },
+      }, fechamento, gravacao.origem);
     }
 
     await audit({
@@ -545,27 +502,15 @@ export async function POST(
       requestId,
       metadata: {
         actor_type: "user",
-        from_pipeline_id: (origem as OrigemParaClonar).pipeline_id,
+        from_pipeline_id: origem.pipeline_id,
         to_pipeline_id: input.pipeline_id,
-        to_stage_id: destino.etapa.id,
+        to_stage_id: destination.stage_id,
         cloned_lead_id: destination.lead_id,
         lost_reason: motivo,
       },
     });
 
-    // 201 e não 200: a rota CRIA um recurso, como `POST /api/v1/leads`
-    // (app/api/v1/leads/route.ts). Duas criações irmãs com códigos diferentes
-    // fazem quem integra tratar cada uma de um jeito sem que nada justifique.
-    return ok(
-      {
-        lead: clone,
-        origem: ocultarProvaMetaNaResposta((origemFinal ?? origemEncerrada ?? origem) as Record<string, unknown>),
-        // Quantos anexos o card novo herdou da origem (#4544). Aditivo no
-        // contrato: quem já lia `lead`/`origem` não muda.
-        anexos: anexos.copiados,
-      },
-      { requestId, status: 201 },
-    );
+    return respostaDoClone(gravacao, requestId, anexosCopiados);
   } catch (err) {
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, {

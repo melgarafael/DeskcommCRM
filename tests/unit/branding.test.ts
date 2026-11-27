@@ -981,6 +981,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Requesty (roteador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
   },
+  "api.aimlapi.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da AI/ML API (agregador OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface.",
+  },
   "generativelanguage.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:
@@ -1094,6 +1099,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "CONSOLE",
     motivo:
       "documento do fornecedor: é a política de privacidade da DeepSeek que `fonteDoPais` (lib/ai/pontos/provedores.ts) cita como prova do país de processamento. A tela (`OndeOTextoEProcessado.tsx`) só monta o link com a URL deste catálogo — o produto NUNCA busca o host, quem abre é a pessoa que quer ler a fonte. Endereço do fornecedor, não nosso: trocar pelo domínio do revendedor faria o link não provar nada.",
+  },
+  "aimlapi.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave da AI/ML API (`ondePegarAChave` em lib/ai/pontos/provedores.ts, `/app/keys`). Endereço do fornecedor, não nosso.",
   },
   "app.requesty.ai": {
     categoria: "CONSOLE",
@@ -1408,6 +1418,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
         "o crescimento tem de ser uma decisão escrita aqui — não mais uma linha na lista.",
     ).toEqual([
       "000000000000-xxxxxxxx.apps.googleusercontent.com",
+      // Decisão escrita: painel de chaves da AI/ML API, o mesmo caso da
+      // Requesty (o link "Onde pegar a chave" da tela de Credenciais).
+      "aimlapi.com",
       "aistudio.google.com",
       // Decisão escrita (spec 24, auditoria de site): agregador de bio-links,
       // marca agregador sem fetch — nunca chamado, nunca exibido.

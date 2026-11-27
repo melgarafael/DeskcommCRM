@@ -36,6 +36,7 @@ import {
   ImpersonateBanner,
 } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
+import { SaldoDaIaBanner } from "@/components/app/SaldoDaIaBanner";
 import { FaixaDaCobranca } from "@/components/cobranca/FaixaDaCobranca";
 import { FaixasDeCima } from "@/components/shell/FaixasDeCima";
 import { faixaDaCobranca, type FaixaDaCobranca as Faixa } from "@/lib/cobranca/faixa";
@@ -416,6 +417,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <FaixasDeCima>
           <ImpersonateBanner impersonating={impersonating} />
           <ConexaoCaidaBanner caidas={conexoesCaidas} />
+          <SaldoDaIaBanner />
           {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
         </FaixasDeCima>
         {needsMfaGate ? (

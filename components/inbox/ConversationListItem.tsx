@@ -34,6 +34,7 @@ interface Props {
   conversation: ConversationWithContact;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  ocultarPrevia?: boolean;
   /** Posição 1-based na fila (G5-03). Presente só na visão Fila. */
   queuePosition?: number;
   /**
@@ -176,6 +177,7 @@ export function ConversationListItem({
   conversation,
   isSelected,
   onSelect,
+  ocultarPrevia = false,
   queuePosition,
   mostrarCanal,
   mostrarAtendente,
@@ -195,7 +197,7 @@ export function ConversationListItem({
   const visibleTags = tags.slice(0, LIMITE_DE_TAGS_NA_LISTA);
   const overflow = tags.length - visibleTags.length;
   const hiddenTags = tags.slice(LIMITE_DE_TAGS_NA_LISTA);
-  const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
+  const preview = ocultarPrevia ? "" : conversation.last_message_preview?.trim() || t("Sem mensagens");
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const naFila = queuePosition !== undefined;
   /**

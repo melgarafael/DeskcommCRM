@@ -86,6 +86,7 @@ function banco(acoes: Acao[] = REGRA_PADRAO): SupabaseClient {
       },
       update: () => q,
       order: () => q,
+      limit: () => q,
       in: () => q,
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);

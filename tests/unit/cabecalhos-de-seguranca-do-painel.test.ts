@@ -11,7 +11,8 @@ import nextConfig from "../../next.config";
 describe("cabeçalhos de segurança do painel", () => {
   it("toda resposta traz transporte forçado, CSP de enquadramento e MIME não adivinhado", async () => {
     const grupos = (await nextConfig.headers?.()) ?? [];
-    const doApp = grupos.find((grupo) => grupo.source === "/(.*)");
+    // Exclui `/chat/` (a janela do chat é embutida em site de cliente): ver `chat-cabecalhos.test.ts`.
+    const doApp = grupos.find((grupo) => grupo.source === "/((?!chat/).*)");
     expect(doApp, "o grupo de cabeçalhos da aplicação desapareceu").toBeDefined();
 
     const porNome = new Map((doApp?.headers ?? []).map((h) => [h.key.toLowerCase(), h.value]));

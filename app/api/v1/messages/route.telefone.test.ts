@@ -30,7 +30,7 @@
  *   nenhum dos dois        → 422 `validation_error`, sem efeito nenhum
  */
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/api/auth-dual", () => ({ resolveAuthDual: vi.fn() }));
@@ -47,6 +47,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { PROVIDERS_DE_TELEFONE } from "@/lib/channels/capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdapter } from "@/lib/channels";
 
 import { sendMessageHandler } from "./_handler";
 import { POST } from "./route";
@@ -250,9 +251,9 @@ function bancoDoResolvedor(linhas: {
 let idempotencia = bancoDaIdempotencia();
 let resolvedor = bancoDoResolvedor();
 
-function autenticado(opcoes: { conversaResolvida?: string } = {}) {
+function autenticado(opcoes: { conversaResolvida?: string; sessoes?: Linha[] } = {}) {
   idempotencia = bancoDaIdempotencia();
-  resolvedor = bancoDoResolvedor({}, opcoes.conversaResolvida);
+  resolvedor = bancoDoResolvedor({ channel_sessions: opcoes.sessoes }, opcoes.conversaResolvida);
   mockedAdmin.mockImplementation(() => resolvedor.db as never);
   mockedAuth.mockResolvedValue({
     ok: true,
@@ -290,6 +291,26 @@ beforeEach(() => {
   mockedSend.mockResolvedValue({ id: "m1", status: "sent", conversation_id: CONVERSA } as never);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+it("#5293: telefone sem WhatsApp devolve 422 antes de abrir conversa ou enviar", async () => {
+  autenticado();
+  const consultar = vi.spyOn(getAdapter(PROVIDERS_DE_TELEFONE[0]), "numeroTemConta")
+    .mockResolvedValue(false);
+
+  const res = await POST(pedido(POR_TELEFONE));
+
+  expect(res.status).toBe(422);
+  expect((await res.json()).error).toMatchObject({
+    code: "numero_sem_whatsapp",
+    message: "Este número não tem WhatsApp.",
+  });
+  expect(consultar).toHaveBeenCalled();
+  expect(mockedSend).not.toHaveBeenCalled();
+  expect(resolvedor.rpcs).toHaveLength(0);
+});
 describe("POST /api/v1/messages — só `conversation_id`: o contrato antigo, byte a byte", () => {
   it("envia para a conversa do corpo e NÃO passa pelo resolvedor de telefone", async () => {
     autenticado();
@@ -471,5 +492,207 @@ describe("POST /api/v1/messages — Idempotency-Key na porta por telefone (#1613
 
     expect(segunda.status).toBe(409);
     expect(mockedSend).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── #5028: DE QUAL NÚMERO A MENSAGEM SAI ────────────────────────────────────
+//
+// A porta por telefone escolhia o canal sozinha (a sessão de mensagem mais
+// antiga). Aqui se mede o campo OPCIONAL `channel_session_id`, e a régua dos
+// casos é a da issue:
+//
+//   sem o campo                → idêntico ao de hoje (sessão de sempre)
+//   com o campo, sessão boa    → a mensagem sai pela sessão ESCOLHIDA
+//   com o campo, sessão ruim   → 422 `validation_error` (campo nomeado), sem
+//                                distinguir "não existe aqui" de "é de outra
+//                                organização" nem de "está desconectada"
+//   com `conversation_id`      → o canal já está fixado pela conversa; o campo
+//                                é inerte e o envio é o de sempre
+//
+// O resolvido de verdade continua rodando (`escolherSessaoParaEnvio` lê a
+// tabela pelo banco em memória, que aplica `eq`/`in`/`is` de verdade): o que
+// os testes afirmam é a sessão que chega no `fn_service_begin` (`p_session`),
+// e não que a rota chamou uma função.
+
+const SESSAO_ESCOLHIDA = "33333333-3333-4333-8333-333333333333";
+const SESSAO_PARADA = "66666666-6666-4666-8666-666666666666";
+const SESSAO_DE_FORA = "77777777-7777-4777-8777-777777777777";
+const SESSAO_QUE_NAO_EXISTE = "88888888-8888-4888-8888-888888888888";
+
+/** Uma linha de `channel_sessions`; o default é a sessão sadia da organização. */
+function sessao(id: string, mudanca: Partial<Linha> = {}): Linha {
+  return {
+    id,
+    organization_id: ORG,
+    provider: PROVIDERS_DE_TELEFONE[0],
+    status: "WORKING",
+    metadata: null,
+    archived_at: null,
+    created_at: "2026-06-01T00:00:00Z",
+    ...mudanca,
+  };
+}
+
+/** A sessão por onde a conversa foi aberta — o `p_session` do `fn_service_begin`. */
+function sessaoDaConversa(): unknown {
+  return resolvedor.rpcs.find((r) => r.nome === "fn_service_begin")?.args.p_session;
+}
+
+/** As consultas a `channel_sessions` feitas nesta requisição. */
+const consultasDeSessao = () => resolvedor.filtros.filter((f) => f.tabela === "channel_sessions");
+
+describe("POST /api/v1/messages — #5028 sem `channel_session_id` nada muda", () => {
+  it("escolhe a sessão de sempre e não entrega o campo ao handler", async () => {
+    // Duas sessões sãs na organização: sem o campo, a régua antiga continua
+    // valendo — a MAIS ANTIGA que disca (`created_at` crescente).
+    autenticado({
+      sessoes: [sessao(SESSAO), sessao(SESSAO_ESCOLHIDA, { created_at: "2026-06-02T00:00:00Z" })],
+    });
+
+    const res = await POST(pedido(POR_TELEFONE));
+
+    expect(res.status).toBe(201);
+    expect(sessaoDaConversa()).toBe(SESSAO);
+    expect(mockedSend.mock.calls[0]![2]).not.toHaveProperty("channel_session_id");
+  });
+});
+
+describe("POST /api/v1/messages — #5028 com `channel_session_id`: sai pelo número pedido", () => {
+  it("abre a conversa na sessão ESCOLHIDA, e não na mais antiga da organização", async () => {
+    autenticado({
+      sessoes: [sessao(SESSAO), sessao(SESSAO_ESCOLHIDA, { created_at: "2026-06-02T00:00:00Z" })],
+    });
+
+    const res = await POST(pedido({ ...POR_TELEFONE, channel_session_id: SESSAO_ESCOLHIDA }));
+
+    expect(res.status).toBe(201);
+    // O que muda de verdade: o `p_session` da abertura. Se a rota parasse de
+    // repassar o campo, a conversa nasceria na SESSAO (a mais antiga) e este
+    // teste ficaria vermelho.
+    expect(sessaoDaConversa()).toBe(SESSAO_ESCOLHIDA);
+    // `channel_session_id` é da PORTA: o handler recebe o corpo de sempre.
+    expect(mockedSend.mock.calls[0]![2]).toEqual({
+      conversation_id: conversaDe(CONTATO_DA_CASA),
+      type: "text",
+      body: POR_TELEFONE.body,
+    });
+    // E a sessão foi procurada DA ORGANIZAÇÃO e pelo ID — os dois filtros.
+    expect(consultasDeSessao()).toContainEqual({
+      tabela: "channel_sessions",
+      coluna: "organization_id",
+      valor: ORG,
+    });
+    expect(consultasDeSessao()).toContainEqual({
+      tabela: "channel_sessions",
+      coluna: "id",
+      valor: SESSAO_ESCOLHIDA,
+    });
+  });
+});
+
+describe("POST /api/v1/messages — #5028 sessão que não serve: UM 422 só, sem revelar nada", () => {
+  /** As três recusas da issue, com fixtures diferentes e a MESMA resposta. */
+  const recusas = [
+    {
+      caso: "sessão de outra organização",
+      id: SESSAO_DE_FORA,
+      sessoes: [sessao(SESSAO), sessao(SESSAO_DE_FORA, { organization_id: OUTRA_ORG })],
+    },
+    {
+      caso: "sessão inexistente",
+      id: SESSAO_QUE_NAO_EXISTE,
+      sessoes: [sessao(SESSAO)],
+    },
+    {
+      caso: "sessão desconectada",
+      id: SESSAO_PARADA,
+      sessoes: [sessao(SESSAO), sessao(SESSAO_PARADA, { status: "STOPPED" })],
+    },
+  ];
+
+  it.each(recusas)("$caso → 422 `validation_error` com `campo`, sem abrir conversa", async ({ sessoes, id }) => {
+    autenticado({ sessoes });
+
+    const res = await POST(pedido({ ...POR_TELEFONE, channel_session_id: id }));
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as {
+      error: { code: string; details?: unknown };
+    };
+    expect(corpo.error.code).toBe("validation_error");
+    expect(corpo.error.details).toEqual({ campo: "channel_session_id" });
+    // Recusa ANTES de qualquer efeito: sem conversa aberta, sem contato, sem envio.
+    expect(mockedSend).not.toHaveBeenCalled();
+    expect(resolvedor.rpcs).toHaveLength(0);
+  });
+
+  it("as três recusas são a MESMA resposta, byte a byte", async () => {
+    // A promessa é não dizer se a sessão existe em outra organização. 404
+    // (não encontrada) e 409 (fora do ar) distinguiriam justamente isso; aqui
+    // os três corpos precisam ser indistinguíveis.
+    const respostas: unknown[] = [];
+    for (const recusa of recusas) {
+      autenticado({ sessoes: recusa.sessoes });
+      const res = await POST(pedido({ ...POR_TELEFONE, channel_session_id: recusa.id }));
+      expect(res.status).toBe(422);
+      respostas.push(await res.json());
+    }
+    expect(respostas[1]).toEqual(respostas[0]);
+    expect(respostas[2]).toEqual(respostas[0]);
+  });
+
+  it("a sessão de OUTRA organização EXISTE no banco e ainda assim não é usada", async () => {
+    // A sabotagem que este teste pega: tirar o `eq("organization_id", …)` da
+    // consulta a `channel_sessions`. A linha de fora está na tabela e seria
+    // encontrada — a conversa abriria pelo número de outra empresa.
+    autenticado({
+      sessoes: [sessao(SESSAO), sessao(SESSAO_DE_FORA, { organization_id: OUTRA_ORG })],
+    });
+
+    const res = await POST(pedido({ ...POR_TELEFONE, channel_session_id: SESSAO_DE_FORA }));
+
+    expect(res.status).toBe(422);
+    expect(consultasDeSessao()).toContainEqual({
+      tabela: "channel_sessions",
+      coluna: "organization_id",
+      valor: ORG,
+    });
+    expect(mockedSend).not.toHaveBeenCalled();
+    expect(resolvedor.rpcs).toHaveLength(0);
+  });
+});
+
+describe("POST /api/v1/messages — #5028 `conversation_id` + `channel_session_id`", () => {
+  it("envia pela conversa com o corpo IDÊNTICO ao de quem não mandou o campo", async () => {
+    autenticado({ sessoes: [sessao(SESSAO), sessao(SESSAO_ESCOLHIDA)] });
+
+    const semCampo = await POST(pedido(POR_CONVERSA));
+    const comCampo = await POST(pedido({ ...POR_CONVERSA, channel_session_id: SESSAO_ESCOLHIDA }));
+
+    expect(semCampo.status).toBe(201);
+    expect(comCampo.status).toBe(201);
+    // DECISÃO DESTE PR (a issue não decidiu esta combinação): com
+    // `conversation_id` o canal já está fixado pela conversa, então o campo é
+    // INERTE — a rota não inventa 422 para "os dois juntos". Quem escolhe o
+    // número manda `phone_number`, não `conversation_id`.
+    expect(mockedSend.mock.calls[1]![2]).toEqual(mockedSend.mock.calls[0]![2]);
+    expect(mockedSend.mock.calls[1]![2]).not.toHaveProperty("channel_session_id");
+    expect(await comCampo.json()).toEqual(await semCampo.json());
+    // Nada de porta por telefone: sem RPC de abertura, sem consulta a sessão.
+    expect(resolvedor.rpcs).toHaveLength(0);
+    expect(consultasDeSessao()).toHaveLength(0);
+  });
+
+  it("nem uma sessão de outra organização faz esse caminho recusar: o campo não é consultado", async () => {
+    autenticado({
+      sessoes: [sessao(SESSAO), sessao(SESSAO_DE_FORA, { organization_id: OUTRA_ORG })],
+    });
+
+    const res = await POST(pedido({ ...POR_CONVERSA, channel_session_id: SESSAO_DE_FORA }));
+
+    // Inerte também aqui, e isso não vaza existência nenhuma: nada é lido.
+    expect(res.status).toBe(201);
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(consultasDeSessao()).toHaveLength(0);
   });
 });

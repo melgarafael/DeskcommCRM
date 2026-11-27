@@ -12,6 +12,7 @@ import { FlowArrow, Plus, Sparkle, UploadSimple } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { filtrarFluxos, type FiltroDeStatusDoFluxo } from "@/lib/followup/filtrar-fluxos";
+import { ROTULO_DO_GATILHO, tipoDoGatilhoNaLista } from "@/lib/followup/rotulo-do-gatilho";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
 import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
 import { ExportFollowupFlowButton } from "./ExportFollowupFlowButton";
@@ -66,7 +67,29 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
   // #4593: o casamento do termo e do status é de `lib/followup/filtrar-fluxos.ts`,
   // fora do componente e testável sem DOM. Os modelos continuam conferindo os
   // nomes da lista INTEIRA: um nome escondido pela busca segue ocupado.
-  const filtered = useMemo(() => filtrarFluxos(flows, { busca: query, status }), [flows, query, status]);
+  //
+  // Em Follow-ups o termo casa também com o GATILHO, no rótulo do seletor da
+  // tela de edição — em português e no idioma ativo. Nos fluxos de atendimento
+  // o gatilho não arma nada (é sempre o padrão), e entrar com ele faria
+  // «manual» achar a lista inteira.
+  const filtered = useMemo(
+    () =>
+      filtrarFluxos(flows, {
+        busca: query,
+        status,
+        ...(deAtendimento
+          ? {}
+          : {
+              textosExtras: (flow: FollowupFlowPointerRow) => {
+                const tipo = tipoDoGatilhoNaLista(flow.trigger_kind);
+                // Índice na tabela fechada (e não `t(variavel)`): o guarda de
+                // i18n confere que todo valor dela tem espanhol.
+                return tipo ? [ROTULO_DO_GATILHO[tipo], t(ROTULO_DO_GATILHO[tipo])] : [];
+              },
+            }),
+      }),
+    [flows, query, status, deAtendimento, t],
+  );
   // Cada superfície tem a SUA rota de editor: abrir um fluxo de atendimento não
   // pode jogar o usuário na lista de Follow-ups.
   const baseHref = deAtendimento ? "/app/ai/atendimento" : "/app/ai/followups";
@@ -162,6 +185,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
           onStatusChange={setStatus}
           query={query}
           onQueryChange={setQuery}
+          buscaPeloGatilho={!deAtendimento}
         />
         {canWrite && (
           <div className="flex flex-col gap-2 sm:flex-row">

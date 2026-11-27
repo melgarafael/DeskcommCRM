@@ -111,7 +111,7 @@ describe("Inbox — a prop vem da capability da conversa aberta", () => {
   it("o InboxLayout passa recusaNotaDeVoz(provider da conversa) ao Composer", () => {
     const fonte = readFileSync(join(process.cwd(), "components/inbox/InboxLayout.tsx"), "utf8");
     expect(fonte).toMatch(
-      /recusaNotaDeVoz=\{recusaNotaDeVoz\(selectedConversation\.channel_sessions\?\.provider\)\}/,
+      /recusaNotaDeVoz=\{recusaNotaDeVoz\(selectedConversation\?\.channel_sessions\?\.provider\)\}/,
     );
   });
 });

@@ -663,6 +663,9 @@ function poolElegibilidade(
     forceHuman?: boolean;
     assigneeKind?: string | null;
     orgStatus?: string | null;
+    provider?: string;
+    tetoDoAnonimo?: number;
+    respostasDaIa?: number;
   } = {},
 ) {
   const inboundId = '44444444-4444-4444-8444-444444444444';
@@ -672,6 +675,7 @@ function poolElegibilidade(
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes("sent_via = 'ai'")) return { rows: [{ total: opts.respostasDaIa ?? 0 }] };
     if (sql.includes("direction = 'inbound'")) {
       return { rows: [{ id: opts.ultimaInboundId ?? inboundId }] };
     }
@@ -683,7 +687,11 @@ function poolElegibilidade(
               ai_gate: opts.aiGate ?? null,
               ai_gate_mode: opts.aiGateMode ?? null,
               ai_test_phone_numbers: opts.aiTestPhoneNumbers ?? [],
+              ...(opts.tetoDoAnonimo !== undefined
+                ? { webchat: { teto_anonimo: opts.tetoDoAnonimo } }
+                : {}),
             },
+            provider: opts.provider ?? null,
             force_human: opts.forceHuman ?? false,
             assignee_kind: opts.assigneeKind ?? 'ai',
             bot_silenced_until: null,
@@ -1082,4 +1090,28 @@ it('#3383: a abertura da janela não desmonta a coalescência normal — só o A
   expect(
     logLocal.info.mock.calls.some((c) => String(c[0]).includes('rajada coalescida em job pendente')),
   ).toBe(true);
+});
+
+// F4-A: no teto do visitante anônimo quem avisa o visitante e passa a conversa
+// para a equipe é o TURNO. Se o drain descartasse o evento, o turno nunca
+// nasceria e o visitante ficaria no silêncio.
+it('teto do visitante anônimo atingido: o turno é enfileirado para avisar e passar para a equipe', async () => {
+  const calls: string[] = [];
+  await drainTick(
+    poolElegibilidade(calls, { provider: 'webchat', tetoDoAnonimo: 2, respostasDaIa: 2 }),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes("sent_via = 'ai'")), 'a contagem do teto não rodou').toBe(true);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+it('teto atingido mas conversa já passada para a equipe (force_human): sem turno', async () => {
+  const calls: string[] = [];
+  await drainTick(
+    poolElegibilidade(calls, { provider: 'webchat', tetoDoAnonimo: 2, respostasDaIa: 2, forceHuman: true }),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
 });

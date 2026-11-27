@@ -342,6 +342,36 @@ describe("PATCH /api/v1/agenda/tipos — ligar e desligar depois", () => {
     });
   });
 
+  it("grava quais degraus saem SEM o link (#5154)", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    const db = makeAdmin(linhas);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(
+      req("PATCH", {
+        id: TIPO_DA_ORG,
+        reminder_enabled: true,
+        reminder_minutes_before: 1440,
+        reminder_extra_offsets_minutes: [60],
+        reminder_sem_link_offsets_minutes: [60],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(linhas[0]?.reminder_sem_link_offsets_minutes).toEqual([60]);
+    expect(db.escritas.at(-1)?.campos).toMatchObject({
+      reminder_sem_link_offsets_minutes: [60],
+    });
+
+    // Desmarcar tudo volta ao padrão: lista vazia, todos levam o link.
+    const limpou = await PATCH(
+      req("PATCH", { id: TIPO_DA_ORG, reminder_sem_link_offsets_minutes: [] }),
+    );
+    expect(limpou.status).toBe(200);
+    expect(linhas[0]?.reminder_sem_link_offsets_minutes).toEqual([]);
+  });
+
   it("recusa o 21º extra — teto de segurança, não de produto", async () => {
     authOk();
     const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
@@ -482,6 +512,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           levarDadosDoNegocio: true,
           lembreteAntecedenciaMin: 180,
           lembreteDegrausExtras: [],
+          lembreteDegrausSemLink: [180],
           lembreteMensagem: "Oi {{nome}}, te espero {{dia}} às {{hora}}.",
           lembreteMensagens: {},
           precoPadraoCents: null,
@@ -499,6 +530,7 @@ describe("GET /api/v1/agenda/tipos", () => {
         reminder_minutes_before: number;
         reminder_body: string | null;
         reminder_bodies: Record<string, string>;
+        reminder_sem_link_offsets_minutes: number[];
         levar_dados_do_negocio: boolean;
       }>;
     };
@@ -507,6 +539,7 @@ describe("GET /api/v1/agenda/tipos", () => {
     expect(corpo.data[0]?.reminder_minutes_before).toBe(180);
     expect(corpo.data[0]?.reminder_body).toBe("Oi {{nome}}, te espero {{dia}} às {{hora}}.");
     expect(corpo.data[0]?.reminder_bodies).toEqual({});
+    expect(corpo.data[0]?.reminder_sem_link_offsets_minutes).toEqual([180]);
   });
 });
 

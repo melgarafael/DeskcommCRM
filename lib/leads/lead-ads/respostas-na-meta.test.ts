@@ -64,6 +64,65 @@ describe("buscarRespostasDoLead", () => {
     expect(espiao).toHaveBeenCalledTimes(1);
   });
 
+  it("traz as caixas do aviso personalizado (o consentimento) junto das respostas", async () => {
+    const { fetch } = fetchQueResponde({
+      id: LEADGEN,
+      field_data: [
+        { name: "full_name", values: ["Mary Smith"] },
+        { name: "phone_number", values: ["+1 555 010 0199"] },
+      ],
+      // A forma documentada pela Meta: "1" marcada, "" não marcada.
+      custom_disclaimer_responses: [
+        { checkbox_key: "optional_1", is_checked: "1" },
+        { checkbox_key: "optional_2", is_checked: "" },
+      ],
+    });
+
+    const resultado = await buscarRespostasDoLead({ leadgenId: LEADGEN, token: TOKEN }, { fetchImpl: fetch });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.respostas).toEqual([
+      { campo: "full_name", valor: "Mary Smith" },
+      { campo: "phone_number", valor: "+1 555 010 0199" },
+      { campo: "custom_disclaimer_optional_1", valor: "true" },
+      { campo: "custom_disclaimer_optional_2", valor: "false" },
+    ]);
+  });
+
+  it("formulário sem aviso personalizado continua igual a antes", async () => {
+    const { fetch } = fetchQueResponde({ field_data: [{ name: "nome", values: ["Ana"] }] });
+    const resultado = await buscarRespostasDoLead({ leadgenId: LEADGEN, token: TOKEN }, { fetchImpl: fetch });
+    expect(resultado).toEqual({ ok: true, respostas: [{ campo: "nome", valor: "Ana" }] });
+  });
+
+  it("só caixas, sem nenhuma resposta, continua sendo `sem_respostas`", async () => {
+    const { fetch } = fetchQueResponde({
+      field_data: [],
+      custom_disclaimer_responses: [{ checkbox_key: "optional_1", is_checked: "1" }],
+    });
+    const resultado = await buscarRespostasDoLead({ leadgenId: LEADGEN, token: TOKEN }, { fetchImpl: fetch });
+    expect(resultado.ok).toBe(false);
+    if (resultado.ok) return;
+    expect(resultado.motivo).toBe("sem_respostas");
+  });
+
+  it("a caixa nunca sobrescreve uma pergunta do formulário com o mesmo nome", async () => {
+    const { fetch } = fetchQueResponde({
+      field_data: [
+        { name: "nome", values: ["Ana"] },
+        { name: "custom_disclaimer_optional_1", values: ["resposta digitada"] },
+      ],
+      custom_disclaimer_responses: [{ checkbox_key: "optional_1", is_checked: "1" }],
+    });
+    const resultado = await buscarRespostasDoLead({ leadgenId: LEADGEN, token: TOKEN }, { fetchImpl: fetch });
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.respostas.filter((r) => r.campo === "custom_disclaimer_optional_1")).toEqual([
+      { campo: "custom_disclaimer_optional_1", valor: "resposta digitada" },
+    ]);
+  });
+
   it("manda o token no cabeçalho e NUNCA na URL", async () => {
     const { espiao, fetch } = fetchQueResponde({ field_data: [{ name: "nome", values: ["Ana"] }] });
 
@@ -71,7 +130,7 @@ describe("buscarRespostasDoLead", () => {
 
     const [url, init] = espiao.mock.calls[0]! as unknown as [string, RequestInit];
     // A URL é a base da instalação + o id do lead: nada de `access_token` nela.
-    expect(url).toBe(`${graphBaseUrl()}/${LEADGEN}?fields=field_data`);
+    expect(url).toBe(`${graphBaseUrl()}/${LEADGEN}?fields=field_data,custom_disclaimer_responses`);
     expect(url).not.toContain(TOKEN);
     expect(url).not.toContain("access_token");
     expect((init.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);

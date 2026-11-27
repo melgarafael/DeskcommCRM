@@ -6,6 +6,7 @@ import { currentExecutionAgentOperation, currentExecutionBoundary, currentExecut
 import { claimOfJob } from "@/lib/agent-engine/queue/claim";
 import { googleRpc } from "../google/sync-store";
 import { MOTIVOS_DO_SERVICO } from "./consulta";
+import { traduzErroResponsaveis } from "@/lib/agenda/responsaveis";
 
 /** Origem interna. Não há um campo de ferramenta que permita fornecer esta autorização. */
 export function execucaoDoServico() {
@@ -31,6 +32,8 @@ const reciboSchema = z.object({
   /** Lugar reservado e pessoas esperadas (issue #4029); nulos para serviço sem lugar. */
   service_space_id: z.uuid().nullable().default(null), service_party_size: z.number().int().nullable().default(null),
   meeting_state: z.string(), meeting_url: z.string().nullable(), deduplicated: z.boolean().optional(),
+  /** Equipe adicional lida do banco pela reserva (fn_calendar_service_book); ausente nas linhas sem ela. */
+  responsible_user_ids: z.array(z.string()).optional(),
 });
 
 export function reciboDoServico(raw: unknown) {
@@ -54,7 +57,9 @@ export async function rpcDoServico(db: SupabaseClient, ctx: HandlerCtx, name: st
   try {
     return await googleRpc(db, name, { p_org: ctx.organization_id, ...(includeActor ? { p_actor: { ...ctx.actor, ...(ctx.sourceJobId ? { native_job: ctx.sourceJobId } : {}) } } : {}), ...args });
   } catch (error) {
-    const e = error as { message?: string; code?: string };
+    const e = error as { message?: string; code?: string; details?: string | null };
+    const nomeado = traduzErroResponsaveis(e, ctx.requestId);
+    if (nomeado) throw nomeado;
     const reason = e.message ?? "";
     throw new ApiError(e.code === "42501" ? 403 : e.code === "P0002" ? 404 : e.code === "PT409" || e.code === "40001" ? 409 : 422,
       e.code === "42501" ? "forbidden" : e.code === "P0002" ? "not_found" : "validation_failed", undefined, ctx.requestId,
