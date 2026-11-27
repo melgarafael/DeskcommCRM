@@ -231,6 +231,7 @@ inputSchema: z.object({
   idempotency_key: z.string().min(1).max(200).optional()
 })
 ```
+O modo condicional liga com `safe_close: true` ou com qualquer `expected_*` além de `expected_revision` (que sozinho segue o encerramento de sempre; `idempotency_key` não liga o modo). Nele, `expected_revision` e `expected_last_inbound_message_id` são obrigatórios (sem eles, 422), e a recusa por humano atribuído e por pendência aberta é sempre aplicada.
 Em caso de divergência ou pendência aberta, retorna `409 Conflict` (`error.details.reason`).
 
 #### `crm_get_conversation_history`
