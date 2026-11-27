@@ -168,3 +168,45 @@ export function termoSemAcento(bruto: string): string {
     .replace(/[ßæœøđðłþıħŧĸ]/gi, (letra) => NAO_DECOMPOEM[letra.toLowerCase()] ?? letra)
     .toLowerCase();
 }
+
+/**
+ * As palavras do termo digitado numa busca FEITA NA TELA (listas de Follow-ups
+ * e de Funis, #4593), já sem acento e em minúscula.
+ *
+ * Os separadores são os de `normalizarTermoDeBusca` (espaço, vírgula, ponto e
+ * vírgula): a pessoa que digita «prospeccao, site» quer as mesmas duas palavras
+ * de «prospeccao site». Termo vazio ou só separadores devolve `[]` — não há busca.
+ */
+export function palavrasDaBusca(bruto: string): string[] {
+  return termoSemAcento(bruto)
+    .split(/[\s,;]+/)
+    .filter(Boolean);
+}
+
+/**
+ * Cada palavra aparece em ALGUM dos textos — em qualquer ordem (#4593).
+ *
+ * ─── O defeito que ela conserta ──────────────────────────────────────────────
+ * As listas casavam o termo INTEIRO como um trecho: «prospeccao site» não
+ * achava «Prospecção (Site)», porque entre as duas palavras há um parêntese.
+ * Agora cada palavra é procurada sozinha, e todas precisam aparecer: digitar
+ * mais uma palavra só ESTREITA o resultado, como a pessoa espera.
+ *
+ * ─── Por que os textos não são emendados ─────────────────────────────────────
+ * Cada texto (nome, endereço, etapa, gatilho…) é comparado à parte. Emendados,
+ * o fim de um e o começo do outro inventariam palavras que não estão em lugar
+ * nenhum da tela — o mesmo cuidado da paleta (#4999). Palavras DIFERENTES
+ * podem cair em textos diferentes: «retomada silencio» acha o fluxo cujo nome
+ * tem «retomada» e cujo gatilho é «Silêncio».
+ *
+ * `palavras` vem de `palavrasDaBusca` (já normalizadas); os textos passam aqui
+ * por `termoSemAcento`. Lista de palavras vazia casa com tudo.
+ */
+export function casaTodasAsPalavras(
+  palavras: readonly string[],
+  textos: readonly (string | null | undefined)[],
+): boolean {
+  if (palavras.length === 0) return true;
+  const limpos = textos.filter((texto): texto is string => !!texto).map(termoSemAcento);
+  return palavras.every((palavra) => limpos.some((texto) => texto.includes(palavra)));
+}

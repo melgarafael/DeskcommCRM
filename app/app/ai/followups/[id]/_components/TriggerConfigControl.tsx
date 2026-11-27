@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useUpdateTriggerConfig } from "@/hooks/followup/useFollowupFlow";
+import { ROTULO_DO_GATILHO, type TipoDeGatilhoDaTela } from "@/lib/followup/rotulo-do-gatilho";
 import { etapasPorFunil, nomeDaEtapa, useEtapasDeGatilho } from "@/hooks/followup/useEtapasDeGatilho";
 import {
   DEFAULT_THRESHOLD_MINUTES as DEFAULT_RETORNO_MINUTES,
@@ -65,15 +66,7 @@ import { normalizarTag } from "@/lib/contacts/tag-normalizada";
  * «poucos minutos», não «na hora» — prometer instantâneo seria o controle
  * mentindo sobre a própria função.
  */
-type TriggerKind =
-  | "appointment_no_show"
-  | "manual"
-  | "silence"
-  | "stage_change"
-  | "case_opened"
-  | "webhook"
-  | "inbound_after_silence"
-  | "lead_created";
+type TriggerKind = TipoDeGatilhoDaTela;
 
 interface TriggerFormState {
   kind: TriggerKind;
@@ -134,22 +127,9 @@ const NAO_MOVER = "nao_mover";
  */
 const QUALQUER_FUNIL = "qualquer_funil";
 
-const KIND_LABEL: Record<TriggerKind, string> = {
-  appointment_no_show:"Falta confirmada pela equipe",
-  manual: "Manual",
-  silence: "Silêncio",
-  stage_change: "Etapa do funil",
-  // "Agente pediu ajuda", e não "Pedido de ajuda": numa lista ao lado de
-  // "Manual", "Silêncio" e "Etapa do funil", o rótulo sem sujeito não diz
-  // QUEM pediu. O resumo do botão (`resumoDoGatilho`) e o vocabulário
-  // (`lib/followup/vocabulario.ts`) já falam de "o agente pede ajuda" —
-  // esta era a única das três grafias sem sujeito, e as duas specs que
-  // cercam o gatilho procuram por ela com `exact: true`.
-  case_opened: "Agente pediu ajuda",
-  webhook: "Automação (Webhooks)",
-  inbound_after_silence: "Cliente voltou",
-  lead_created: "Lead criado",
-};
+// Os rótulos moram em `lib/followup/rotulo-do-gatilho.ts` desde que a busca da
+// lista de Follow-ups passou a casar com eles (#4593): uma régua só.
+const KIND_LABEL: Record<TriggerKind, string> = ROTULO_DO_GATILHO;
 
 function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
   // ⚠️ RECONHECER É DIFERENTE DE ACEITAR. Esta função degradava QUALQUER kind

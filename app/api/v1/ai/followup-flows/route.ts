@@ -23,7 +23,10 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const LIST_COLUMNS = "id, name, status, active_version_id, handoff_policy, updated_at";
+// `trigger_kind` (#4593): a busca da lista casa com o gatilho. Sai só o `kind`,
+// não o `trigger_config` inteiro — esta rota também responde a token de API.
+const LIST_COLUMNS =
+  "id, name, status, active_version_id, handoff_policy, updated_at, trigger_kind:trigger_config->>kind";
 
 /**
  * `?surface=atendimento` lista os roteiros de atendimento (a tela deles chega no
