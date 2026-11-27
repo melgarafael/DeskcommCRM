@@ -27,6 +27,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { audit } from "@/lib/audit";
 import { corpoDaLocalizacao } from "@/lib/messaging/localizacao";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
@@ -203,6 +204,13 @@ export async function ingestZernioInbound(
     input.channelSessionId,
   );
   if (existente) {
+    if (
+      await ehEcoDeEnvioInstitucional(admin, input.organizationId, existente.id, msg, {
+        canalSocial: Boolean(input.socialMessage),
+      })
+    ) {
+      return { status: "duplicate", conversationId: existente.id };
+    }
     /** Preenchido quando a pausa da IA falhou — sobe no resultado (#534). */
     let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
     if (input.socialMessage) {
@@ -352,6 +360,14 @@ export async function ingestZernioInbound(
       .eq("organization_id", input.organizationId)
       .eq("id", conversationId);
     if (error) throw new Error("social_conversation_update_failed");
+  }
+
+  if (
+    await ehEcoDeEnvioInstitucional(admin, input.organizationId, conversationId, msg, {
+      canalSocial: Boolean(input.socialMessage),
+    })
+  ) {
+    return { status: "duplicate", conversationId };
   }
 
   const eco = await ecoDeTransmissao(admin, input.organizationId, msg, contactId);
@@ -942,6 +958,71 @@ function ehDeTransmissao(msg: ZernioInboundMessage): boolean {
  */
 function ehRespostaManual(msg: ZernioInboundMessage): boolean {
   return msg.direction === "outbound" && !ehDeTransmissao(msg) && msg.sentVia !== "api";
+}
+
+const JANELA_DO_ECO_INSTITUCIONAL_MS = 5 * 60_000;
+const STATUS_DE_ENVIO_INSTITUCIONAL = ["queued", "sending", "sent"];
+
+/**
+ * Reconhece o eco de uma mensagem institucional enviada pelo próprio CRM
+ * (`sent_via = "system"`, `metadata.dispatch_mode = "institutional"`) antes que
+ * o webhook grave uma segunda linha `external_device` ou carimbe
+ * `last_outbound_at`, `unread_count_for_assignee` e `awaiting_since`.
+ */
+async function ehEcoDeEnvioInstitucional(
+  admin: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  msg: ZernioInboundMessage,
+  opts: { canalSocial: boolean },
+): Promise<boolean> {
+  if (msg.direction !== "outbound" || msg.kind !== "message" || ehDeTransmissao(msg)) {
+    return false;
+  }
+  const desde = new Date(Date.now() - JANELA_DO_ECO_INSTITUCIONAL_MS).toISOString();
+  const { data, error } = await admin
+    .from("messages")
+    .select("id, body, type, external_id, status, metadata, sent_via")
+    .eq("organization_id", organizationId)
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    .eq("sent_via", "system")
+    .in("status", STATUS_DE_ENVIO_INSTITUCIONAL)
+    .gte("updated_at", desde)
+    .limit(20);
+
+  if (error || !Array.isArray(data)) return false;
+
+  const textoDoEco = (msg.text ?? "").trim();
+  const temMidiaOuPino = msg.attachments.length > 0 || msg.location != null;
+
+  for (const linha of data) {
+    const l = linha as {
+      body?: string | null;
+      type?: string | null;
+      external_id?: string | null;
+      metadata?: unknown;
+      sent_via?: string | null;
+    };
+    if (l.sent_via && l.sent_via !== "system") continue;
+    if (!ehMensagemInstitucional(l.metadata)) continue;
+    if (l.external_id != null && l.external_id === msg.externalId) return true;
+    if (l.external_id != null) continue;
+
+    // WhatsApp pelo Zernio marca `sentVia = "api"` para envios pela API; em
+    // redes sociais o parser não recebe `sentVia`.
+    if (!opts.canalSocial && msg.sentVia !== "api") continue;
+
+    if (l.type === "template") return true;
+    if (temMidiaOuPino) {
+      if ((l.type ?? "text") !== "text") return true;
+      continue;
+    }
+    const gravado = (l.body ?? "").trim();
+    if (textoDoEco.length > 0 && gravado === textoDoEco) return true;
+  }
+
+  return false;
 }
 
 /** A campanha e o destinatário do eco, quando ele é de uma transmissão de campanha. */

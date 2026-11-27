@@ -8,6 +8,134 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.128.0] — 2026-11-27
+
+### Adicionado
+
+- **Remarcar com chave de idempotência não remarca duas vezes** A ferramenta MCP `crm_reschedule_appointment` aceita `idempotency_key` (opcional) e respeita o cabeçalho `Idempotency-Key` do MCP. Repetir a remarcação com a mesma chave em até 24 h devolve a mesma resposta sem mudar nada de novo, na agenda local e na agenda do Amigo. A mesma chave com outro horário é recusada com `idempotency_conflict`. Sem chave, nada muda.
+
+- **A meta de vendas pode ser de um funil** Em Configurações › Meta de vendas, "De quem é a meta" passa a oferecer os funis em uso, além da empresa e dos vendedores. A meta do funil conta só os negócios ganhos naquele funil, e o Desempenho mostra o progresso dela com o nome do funil. Funil arquivado não recebe meta nova. Nada muda nas metas já cadastradas.
+
+  Contribuição de @yunshu0909, a partir da issue #4796.
+
+- **"Marcar como ganho" no menu do card pede o motivo do funil antes de fechar o negócio** O item "Marcar como ganho" do menu do card fechava o negócio com um único clique e sem nenhum motivo: o corpo ia vazio para `POST /api/v1/leads/[id]/win`. O servidor já sabia pedir — com `won_reason_required` ligado no funil ele recusa com `required_fields_missing`, e com `won_reasons` cadastrado ele recusa o texto fora da lista com `won_reason_invalid` —, mas a tela só descobria isso depois do clique, e quem tinha lista cadastrada nunca acertava o motivo por este caminho.
+
+  Agora o item abre uma caixa antes de fechar. Funil com lista mostra a LISTA cadastrada, e o valor escolhido vai no corpo como `won_reason`. Funil sem lista mantém o texto livre, que é o contrato do servidor. Com `won_reason_required` desligado, sair sem motivo continua possível ("Fechar sem motivo"); funil sem lista e sem obrigatoriedade continua fechando em um clique, sem caixa nenhuma. A recusa `won_reason_invalid` aparece dentro da própria caixa, ao lado da lista, em vez de virar um toast genérico.
+
+  A janela de campos obrigatórios também passou a mostrar a lista: o campo "Motivo do ganho" que a recusa reporta vira o mesmo seletor dos campos personalizados quando o funil tem `won_reasons`, em vez do input de texto que fazia a pessoa digitar o que o servidor ia recusar. Funil sem lista continua com texto livre.
+
+  Nada muda na régua do servidor: `encerraDemanda` e `campos-exigidos.ts` ficaram intactos, e a obrigatoriedade continua sendo o opt-in `won_reason_required` por funil. Sem migration — `settings.won_reasons` já existia. Relatórios de motivo de ganho e exportação ficam fora desta mudança.
+
+  Referente à issue #5181. Contribuição de @webtecnica.
+
+- **Veja quando a IA fica sem saldo** O CRM mostra um aviso no topo quando um provedor registra saldo insuficiente. O atendimento recebe orientação para continuar pelo Inbox quando a conversa automática for afetada. A gerência pode abrir a configuração de provedores para identificar a conta que precisa de atenção.
+
+  Contribuição de @vitorlacerdadigital (#5312).
+
+- **Chat no site: no limite de respostas da IA, o visitante é convidado a deixar o contato** Quando um visitante do chat no site, sem telefone nem e-mail, chega ao limite de respostas da IA (padrão 20, ajustável na aba "Chat no site" em Conexões), ele não fica mais sem resposta: recebe uma frase pedindo telefone ou e-mail, e a conversa passa para a equipe, com aviso na Central. O cartão da passagem diz que o cliente não pediu uma pessoa. Fora do horário de envio do canal, a frase e a passagem saem na abertura. Vale para quem publicou um agente no modo automático; no modo assistido não há rascunho no limite, e sem agente publicado a IA só para, como antes.
+
+  Contribuição de @paulolimajr77 (#5316).
+
+- **A caixa de consentimento do formulário de anúncio da Meta chega ao lead** Quem usa formulário de anúncio da Meta com a busca das respostas ligada passa a receber no lead as caixas do aviso personalizado do formulário, que é onde se costuma pedir a autorização para ligar e mandar mensagem. Cada caixa aparece nos campos do negócio como `custom_disclaimer_` mais o nome da caixa na Meta, com `true` quando a pessoa marcou e `false` quando não marcou. Antes elas se perdiam, porque a Meta não as manda junto das outras respostas. Os campos chegam também às automações, então um envio por webhook leva a resposta da caixa. Formulário sem aviso personalizado continua igual. Contribuição de @edgariamaguti.
+
+- **Módulos conectados: vocabulário de áreas de tarefas e financeiro, ainda sem tela** Prepara o consentimento de módulos conectados para as áreas Tarefas e Financeiro. Nada muda para quem opera a instalação: nenhum módulo conectado as pede hoje, e a área Financeiro só pode ser consentida por quem administra a organização.
+
+  Contribuição de @paulolimajr77 (#5276).
+
+### Alterado
+
+- **As buscas de Follow-ups e de Funis acham por palavra, em qualquer ordem, e olham o gatilho e as etapas** Em Follow-ups e em Configurações › Funis, cada palavra digitada na busca é procurada sozinha, em qualquer ordem: «prospeccao site» e «site prospeccao» acham o funil «Prospecção (Site)», e cada palavra a mais só estreita o resultado. Em Follow-ups a busca casa também com o gatilho do fluxo («silencio», «etapa do funil», «lead criado»), no português e no idioma da tela; em Funis, com os nomes das etapas ainda ativas. Os fluxos de atendimento ganham a busca por palavra, mas seguem buscados só pelo nome.
+
+  Contribuição de @yunshu0909, a partir da issue #4593.
+
+### Corrigido
+
+- **A limpeza diária passa a apagar as chaves de idempotência vencidas** As chaves de idempotência dos envios pela API e pelas ferramentas do MCP (e o recibo da resposta guardado nelas) nunca eram apagadas, e a tabela só crescia. A limpeza diária agora apaga, em lotes, as que venceram há mais de um dia; as chaves válidas e o recibo da aprovação de pedido LGPD não são tocados. Nada muda para quem usa.
+
+  Contribuição de @yunshu0909, a partir da issue #1613.
+
+- **Retome a conversa aberta quando o Inbox reconectar** Depois de uma queda da conexão, o Inbox confirma o acesso antes de voltar a exibir a conversa. Se a leitura falhar por um instante, tente de novo no mesmo lugar e continue com o rascunho. Quando o acesso à conversa termina, ela e seu histórico saem da tela.
+
+  Contribuição de @yunshu0909, a partir da issue #4508.
+
+- **Recorrências além da milésima deixam de ficar sem lançamento no mês** O cron que gera os lançamentos das recorrências passa a ler todos os moldes ativos página por página, em vez de só a primeira resposta do banco. Numa instalação com mais de 1.000 recorrências ativas, um molde devido que caísse depois da milésima linha não gerava o lançamento do mês e a rotina respondia sucesso, como se não houvesse nada a gerar. O campo `moldes` da resposta passa a informar o total realmente lido. A partir de 50 mil moldes ativos a leitura para, e o restante fica declarado fora — o mesmo teto da leitura de métricas do Jev.
+
+  Contribuição de @webtecnica (#5155).
+
+- **Em 320 px o topo do celular para de sobrepor o botão Buscar ao seletor de organização** Em 320 px de largura o topo do celular não tinha mais espaço para a coluna da busca: ela encolhia a 0 px e o botão Buscar (42 px) passava 13 px por cima do seletor de organização e 13 px por cima do sino da Central de avisos. De 360 px para cima a conta fechava.
+
+  Agora, abaixo de 360 px, o botão de tema sai do topo (o idioma, a navegação e os avisos ficam — o tema segue a preferência do sistema e a escolha salva continua valendo) e a coluna da busca ganha piso de 44 px, a mesma largura de um alvo de toque. Medido por `getBoundingClientRect` em viewport emulado: em 320 px o seletor de organização termina 9 px antes do botão Buscar, que termina 9 px antes do sino, e a coluna da busca tem 44 px.
+
+  De 360 px para cima nada muda: as posições e as larguras do seletor de organização, do botão Buscar, do sino e da coluna da busca são idênticas às de antes, em 360 px e em 375 px. O nome da organização continua no `aria-label` do seletor e o botão de busca continua com nome acessível.
+
+  Contribuição de @webtecnica (#5144).
+
+- **Extensões › leitura dos avisos — o rótulo de cada empresa não muda mais com a ordem** Na tela Extensões, a lista "Leitura dos avisos pelo módulo" numerava as empresas pela posição: a empresa que acabava de ler descia na lista e trocava de número, então não dava para saber se a "Empresa 1" de hoje é a de ontem. Cada empresa passou a ter um rótulo fixo, derivado do identificador dela — o mesmo entre sessões e entre dias —, e a tela continua sem o nome da empresa, que o administrador da instalação não deve ver. A hora do "lido em" passou a sair no fuso da própria empresa, e não no fuso do servidor: quem administra de São Paulo deixa de ver três horas a mais. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#5131).
+
+- **Com a janela da campanha invertida, o Iniciar fica desabilitado ao lado das horas** Na tela de Prospecção, quando a campanha roda só em horário próprio e o operador põe o início depois do fim (por exemplo, começa às 12h e termina às 7h), o botão "Iniciar abordagens com IA" fica desabilitado enquanto as horas não se corrigirem. O aviso que já existia embaixo dos campos — "A janela precisa começar antes de terminar (ex.: 7h às 12h)" — continua aparecendo, agora ao lado do botão travado, e os dois campos de hora ficam marcados como inválidos. Antes, o botão seguia ativo e o erro genérico subia para o topo da página. Contribuição de @webtecnica, a partir da issue #5133.
+
+- **Arquivo da primeira abordagem que nenhuma campanha usa sai do Storage depois de uma semana** O arquivo escolhido para a primeira abordagem subia para o Storage assim que era selecionado na tela. Se a pessoa trocasse de arquivo, desistisse da campanha ou apagasse a campanha, o anterior ficava no bucket para sempre — e, no self-host, esse bucket divide a cota de 1 GB com as mídias do atendimento. Um vídeo de abordagem pesa vários MB, então algumas trocas ocupavam uma fatia que o operador não via de onde vinha.
+
+  Agora a rodada diária de retenção varre a pasta de arquivos da abordagem de cada empresa e remove o que **nenhuma campanha referencia** e já passou de **7 dias** de carência. O que alguma campanha ainda aponta é preservado, por mais velho que seja; o que está dentro da carência é preservado; e nada fora da pasta da abordagem da própria empresa é tocado — mídia de atendimento, respostas rápidas e propostas ficam onde estão. Quando o Storage não informa a idade de um arquivo, ele também é preservado: sem prova de que está velho, não se apaga.
+
+  A remoção aparece no relatório da rodada com a contagem e os bytes, e a trilha de auditoria registra o caminho e o tamanho de cada arquivo removido. Nada muda na tela, no envio nem no formato do arquivo da campanha.
+
+  Contribuição de @webtecnica, a partir da issue #5139.
+
+- **O menu de atendimento sem IA não sai duas vezes quando o cliente manda duas mensagens juntas** Quando o cliente mandava duas mensagens quase ao mesmo tempo numa conversa nova ("oi" e "tudo bem?"), o menu de atendimento sem IA podia sair duas vezes. Agora só uma delas envia o menu; a outra segue o caminho normal da entrada, sem card nem despacho de IA em dobro. Nada muda na configuração.
+
+  Contribuição de @webtecnica, a partir da issue #5137.
+
+- **Com "conversas novas criam negócio" desligado, o seletor do funil de entrada para de prometer que o contato entra no funil** No cartão da conexão, o interruptor "Conversas novas criam negócio no funil" e o seletor do funil de entrada são opções diferentes: o interruptor decide SE a conversa nova vira negócio, o seletor decide EM QUAL funil e etapa ela nasce. Com o interruptor desligado nada nasce no funil, mas o seletor continuava dizendo "Contatos novos entram no funil padrão (…)", o que era falso. Agora, com o interruptor desligado, o seletor continua na tela — é ali que o administrador confere e edita a escolha quando religar — mas fica desabilitado e mostra "Sem efeito enquanto a opção acima estiver desligada". Com o interruptor ligado, e nas telas em que ele não existe (Canal Parceiro e Redes Sociais), nada muda. A escolha guardada não é apagada: religar o interruptor devolve o seletor ao funcionamento de antes, com o mesmo funil e a mesma etapa. A partir da issue #5142.
+
+  Contribuição de @webtecnica (#5150).
+
+- **No painel Atividade da conversa, o que um token de API fez aparece como "Integração · <nome do token>"** No Inbox, a seção Atividade do painel da conversa mostrava "Sistema" quando a ação vinha de um token de API (uma integração mexendo no negócio), o mesmo rótulo de quando a plataforma age sozinha. Agora a linha diz "Integração · <nome do token>", ou só "Integração" quando o nome não pode ser lido. Vale para as atividades registradas depois da atualização; as antigas continuam como "Sistema", porque não guardaram qual token agiu.
+
+  Contribuição de @yunshu0909, a partir da issue #5160.
+
+- **A tela de atualização tem teste para o estado "não sei dizer como terminou"** O ramo em que o servidor parou de responder no meio da atualização não tinha teste nenhum: trocar o título, o comando manual ou a regra do botão passava sem reprovar nada. Agora o teste de componente da tela cobre o título do estado, o comando `bash hostgator-setup-kit/update.sh` e as duas pontas do botão — ele aparece com versão nova anunciada e não aparece sem ela. Nenhum arquivo de tela foi alterado.
+
+  Contribuição de @webtecnica (#5169).
+
+- **O README em espanhol cita os rótulos que a tela em espanhol mostra** A seção "Actualizar" do `README.es.md` citava os rótulos em português, e não o que o dono vê numa
+  instalação em espanhol: **"Nova versão"** virou **"Nueva versión"**, e
+  **"Atualização automática indisponível"** virou **"Actualización automática no disponible"**,
+  exatamente como o `lib/i18n/dicionario.ts` traduz.
+
+  A mesma seção passou a dizer o que o `healthcheck.sh` significa quando alguém o põe no cron: ele
+  sai **0 só** quando a app se declara saudável (status geral `healthy`) e sai 1 em qualquer outro
+  desfecho — `degraded`, `unhealthy`, app mudo, JSON ilegível. Antes o README em espanhol só dizia
+  "diagnóstico de todos los servicios", sem dizer o que o código de saída quer dizer.
+
+  Contribuição de @webtecnica (#5168).
+
+- **As docs de atualização contam a janela de manutenção da madrugada** O README prometia que a atualização pela tela "começa em até 5 minutos depois do clique" sem
+  mencionar a janela de manutenção, e o `docs/ATUALIZANDO.md` nem citava a tela. Agora os dois
+  explicam a `SYSTEM_UPDATE_WINDOW`: com ela configurada, o pedido feito fora da janela espera a
+  madrugada, a tela mostra "Atualização agendada para 02h00" e o pedido não se perde — roda
+  sozinho quando a janela abrir. A promessa dos 5 minutos ficou restrita ao caso sem janela.
+
+  Contribuição de @webtecnica (#5170).
+
+- **O aviso em vermelho passa a aparecer na agenda, nas comandas, no faturamento e nos relatórios** Onze telas escreviam o vermelho de erro com um nome de token que não existia: `text-danger`, `bg-danger/5`, `border-danger`. O Tailwind 4 gera utilitário a partir das chaves declaradas no tema do `app/globals.css`, e esse nome nunca esteve lá — a cor da mesma família se chama `destructive`. O resultado não era erro de build nem de console: a classe simplesmente não gerava regra nenhuma desde que essas linhas foram escritas, e o texto herdava a cor da página enquanto o fundo ficava transparente.
+
+  Agora essas mensagens usam o token que existe e pintam no vermelho de erro do tema (o mesmo de `text-destructive`): erro de carregamento na agenda, nas comandas, no faturamento, nos honorários e nos relatórios de vendas e de rankings; a borda do campo de convidado com endereço inválido; o quadro de aviso da remoção de negócios no kanban; e a mensagem de modelo de atalho recusado na configuração de funis.
+
+  Nada muda para quem já roda a atualização: nenhum token novo, nenhum nome novo de cor, nenhuma migration. O que passa a existir é uma guarda de teste que lê as classes de cor do código e exige que cada uma fale com uma família de token real — é ela que impede o próximo nome inventado de chegar à tela sem cor. (Contribuição de @webtecnica, #5184.)
+
+- **O follow-up com "Cancelar se o lead responder" não cancela mais com a resposta automática da empresa** Quando a empresa abordada tem atendimento automático, a saudação ou o menu que ela devolve na hora não cancela mais o follow-up. Conta como robô a mensagem que se declara automática ("esta é uma mensagem automática", "sou o assistente virtual"), o menu que pede a escolha ("digite o número" com opções numeradas) e a primeira resposta que chega até 60 segundos depois da nossa mensagem de abertura. Nesses casos o follow-up segue esperando, e a trilha da inscrição mostra "O robô respondeu — o fluxo segue esperando". Quem responde em menos de um minuto à abertura tem essa primeira resposta ignorada; a segunda mensagem já cancela o follow-up.
+
+  Contribuição de @Yshuro, a partir da issue #5262 aberta por @fbraintech-stack.
+
+- **Aviso de erro ao aceitar convite usa a cor de erro** Na tela de aceitar convite, o aviso exibido quando há erro (como excesso de tentativas) passa a usar o token de cor de erro (`text-destructive`), igual ao login.
+
+  Contribuição de @Yshuro, a partir da issue #5290.
+
+- **O CRM avisa quando o número não tem WhatsApp** Ao iniciar uma conversa, uma resposta definitiva de que o número não tem WhatsApp passa a mostrar esse motivo antes de abrir a conversa. O envio também recusa esse destino com falha visível e permanente, em vez de deixar a mensagem presa em um tique. Falhas na consulta continuam permitindo o envio; grupos e identidades já resolvidas mantêm seu caminho. Crédito: @LukasWyver.
+
 ## [1.127.0] — 2026-11-27
 
 ### Adicionado
@@ -23,6 +151,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **O prazo para o cliente abrir o link de autorização do servidor MCP é configurável** O cadastro do servidor MCP do agente ganhou o campo **Prazo para abrir o link de autorização (minutos)**, ao lado da retenção: de 10 a 1440 minutos, com 10 como padrão. Quem não mexer no campo fica exatamente como estava — o link vale 10 minutos. Quem aumentar (por exemplo 1440, um dia) resolve os dois casos da issue: quem lê a mensagem horas depois e caía em "Link expirado", e quem abre o link no 8º minuto e era recusado na volta, depois de preencher tudo, porque o prazo antigo já tinha estourado.
 
   Nada mais do fluxo mudou: o `state` continua de uso único e 256 bits, o PKCE S256, o endereço de retorno fixo por servidor e a revogação depois do encerramento da conversa seguem iguais, e pedido vencido continua sendo recusado tanto na abertura quanto no retorno — o prazo maior só aumenta a janela em que o link pode ser aberto. Não há migration: a preferência fica no `oauth_metadados` que já existia no cadastro.
+
+  Contribuição de @webtecnica (#5189).
 
 - **O lembrete de cada degrau pode sair sem o link da reunião** Quem usa Google Meet ou Link de vídeo agora escolhe, em cada lembrete, se ele leva a linha com o link da reunião. Ligado por padrão, o comportamento não muda para quem não mexer; desligado, aquele aviso sai sem o link e sem a frase de que ele chega pela conversa. Contribuição de @yunshu0909, a partir da issue #5154.
 
@@ -88,6 +218,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **As abas de Configurações › Conversões cabem num celular de 375px** Num celular de 375px, a barra de abas de Configurações › Conversões era mais larga que a tela e empurrava o painel para o lado, com a aba "Links rastreáveis" fora da vista. Agora a barra rola sozinha na horizontal, cada aba fica numa linha só, e o painel não rola mais para o lado, em português e em espanhol. A partir da issue #5224.
 
+  Contribuição de @AyhamJo7 (#5240).
+
 - **Levar para outro funil reaproveita a cópia aberta** Confirmar o mesmo negócio em duas abas ou repetir o pedido pela API devolve o mesmo card aberto no funil de destino. A criação, o vínculo entre os cards e o encerramento da origem são gravados juntos. Um card já ganho ou perdido fica no histórico e permite uma nova tentativa quando a regra do funil autoriza.
 
   Contribuição de @yunshu0909, a partir da issue #5229.
@@ -96,6 +228,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   diretamente ao negócio (**Abrir negócio**) em vez de abrir o Radar inteiro. Se outro negócio
   vencer enquanto esse aviso ainda estiver aberto, o aviso passa para o Radar com a contagem
   atualizada.
+
+  Contribuição de @Yshuro (#5243).
 
 - **O botão "Salvar" do cartão Modo de roteamento aparece como "Guardar" em espanhol** Em Equipe, o cartão Modo de roteamento mostrava o botão "Salvar" em português mesmo com a tela em espanhol. Agora ele segue o idioma da tela, como o botão do horário do atendente já fazia.
 
@@ -113,6 +247,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Os responsáveis adicionais seguem a opção de agenda dos colegas** Com "Atendentes podem mexer na agenda dos colegas" desligado, quem está abaixo de gerente já não marcava consulta na agenda de um colega como responsável principal. Agora a mesma regra vale para os responsáveis adicionais, que também ocupam a agenda de quem é incluído: o atendente só inclui a si mesmo, na criação, na edição da lista e na reserva de serviço. Gerente e administrador seguem incluindo qualquer membro, e com a opção ligada (o padrão) nada muda. Tirar adicionais continua permitido.
 
+  A partir do #5280 de @paulolimajr77.
+
 - **Um negócio tem uma só cópia aberta em cada funil de destino** As automações e o encaminhamento do assistente para outro funil não criam mais um segundo card aberto do mesmo negócio no mesmo funil: quando o card já existe, eles usam esse card. O banco passa a recusar a segunda cópia aberta, venha ela de onde vier. Reabrir ou mover um card que viraria a segunda cópia aberta mostra o aviso "Este negócio já tem uma cópia aberta neste funil", em vez de um erro do sistema.
 
   Se a sua instalação já tinha cópias abertas repetidas, a atualização mantém a mais antiga e encerra as outras como perda, com o motivo "levado para outro funil", que não entra nas métricas de perda comercial. O histórico, as tarefas e os vínculos dessas cópias passam para o card que ficou. Nenhum card é apagado, e essa limpeza não dispara automações.
@@ -127,9 +263,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O agente confirma a consulta dizendo quem vai atender** Com a conferência de promessa ligada, a confirmação que citava o nome de quem atende era barrada, e o cliente podia recebê-la sem o nome. Agora a conferência recebe da agenda quem atende aquela reserva. Nome de outro profissional continua barrado.
 
+  Contribuição de @paulolimajr77 (#5321).
+
 - **Contato criado ao abrir conversa por telefone (API, MCP) não aparece mais como "tem WhatsApp" sem ninguém saber** Quem abria uma conversa por telefone pela API (`POST /api/v1/conversations/open-with-contact`, `POST /api/v1/messages`) ou pela ferramenta MCP `crm_start_conversation_and_send`, com um número que ainda não era de nenhum contato, ganhava um contato novo marcado "WhatsApp: sim". Agora ele nasce "não sei", e vira "sim" quando a pessoa escreve pelo WhatsApp, como antes. A rota e a ferramenta aceitam o campo opcional `phone_whatsapp` (`sim`, `nao` ou `nao_sei`) para o contato que criarem; contato que já existe não muda.
 
 - **O "Editar contato" mostra o nome do WhatsApp quando o contato ainda não tem nome no cadastro** Num contato que chegou pelo WhatsApp, a ficha mostrava um nome no topo e o formulário de edição abria só com o telefone, como se não tivesse carregado. Agora o formulário avisa que o cadastro ainda não tem nome e oferece o nome da agenda do celular e o do WhatsApp, com o botão "Usar este nome". Nada é gravado sem o clique.
+
+  Contribuição de @allisonwilliancandido (#5314).
 
 ## [1.126.0] — 2026-11-25
 
@@ -19308,7 +19448,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.127.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.128.0...HEAD
+[1.128.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.127.0...v1.128.0
 [1.127.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.126.0...v1.127.0
 [1.126.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.125.0...v1.126.0
 [1.125.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.124.0...v1.125.0

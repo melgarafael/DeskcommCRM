@@ -73,10 +73,33 @@ vi.mock("@/lib/supabase/admin", () => ({
       };
       return { delete: () => q };
     };
+    // #5139: o dreno dos arquivos da abordagem lê `organizations` paginado
+    // (`.select().order().range()`). VAZIO de propósito: este arquivo mede a
+    // varredura, e sem organizações o dreno não toca o Storage.
+    const listaVazia = () => {
+      const q: Record<string, unknown> = {
+        order: () => q,
+        range: () => q,
+        then: (r: (v: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null, count: 0 }).then(r),
+      };
+      return { select: () => q };
+    };
     return {
       // Poda sem nada a fazer: o que este arquivo mede é a varredura.
       rpc: async () => ({ data: 0, error: null }),
-      from: (t: string) => (t === "conversation_drafts" ? rascunhosVazios() : cascata.from(t)),
+      from: (t: string) =>
+        t === "conversation_drafts"
+          ? rascunhosVazios()
+          : t === "organizations" || t === "prospecting_campaigns"
+            ? listaVazia()
+            : cascata.from(t),
+      storage: {
+        from: () => ({
+          list: async () => ({ data: [], error: null }),
+          remove: async () => ({ data: [], error: null }),
+        }),
+      },
     };
   },
 }));

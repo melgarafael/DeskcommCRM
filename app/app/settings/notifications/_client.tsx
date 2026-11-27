@@ -126,9 +126,9 @@ export function NotificationPrefsClient() {
         <thead className="border-b">
           <tr>
             <th className="px-4 py-3 text-left font-medium">{t("Categoria")}</th>
-            <th className="px-4 py-3 text-center font-medium">Email</th>
-            <th className="px-4 py-3 text-center font-medium">In-app</th>
-            <th className="px-4 py-3 text-center font-medium">Push</th>
+            <th className="px-4 py-3 text-center font-medium">{t("Email")}</th>
+            <th className="px-4 py-3 text-center font-medium">{t("In-app")}</th>
+            <th className="px-4 py-3 text-center font-medium">{t("Push")}</th>
           </tr>
         </thead>
         <tbody>

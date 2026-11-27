@@ -83,6 +83,8 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancorados com `$` de propósito — `/^\/api\/v1\/agenda\/google\// deixaria
   // qualquer sub-path futuro nascer público de carona.
   /^\/api\/v1\/agenda\/google\/callback$/,
+  // Mesma volta, da Microsoft: `state` assinado + cookie de vínculo + nonce.
+  /^\/api\/v1\/agenda\/microsoft\/callback$/,
   // OAuth POR CONTATO de servidor MCP externo (migration 9095). Quem chega é o
   // navegador do CLIENTE FINAL — nunca teve sessão nossa. A autoridade é o
   // `state` de `mcp_oauth_pedidos` (256 bits, uso único, prazo do cadastro do

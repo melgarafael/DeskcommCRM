@@ -43,6 +43,41 @@ async function listen(server: Server): Promise<{ port: number; close: () => Prom
   };
 }
 
+/**
+ * Envia o envelope de um evento `lead.created` com a row de contato dada e
+ * devolve o corpo CRU que o receptor viu — a prova é o que sai no fio.
+ */
+async function envelopeDoContato(contact: Record<string, unknown>): Promise<{
+  corpo: string;
+  data: Record<string, unknown>;
+}> {
+  let corpo = "";
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      corpo = Buffer.concat(chunks).toString("utf8");
+      res.writeHead(200);
+      res.end("ok");
+    });
+  });
+  const { port, close } = await listen(server);
+  try {
+    const ctx = baseCtx();
+    ctx.context = { lead: { id: "lead-1", title: "Fulano" }, contact };
+    const result = await executeCallWebhook(
+      ctx,
+      { url: `http://127.0.0.1:${port}/hook` },
+      { skipUrlCheck: true },
+    );
+    expect(result.status).toBe("success");
+  } finally {
+    await close();
+  }
+  const parsed = JSON.parse(corpo) as { data: Record<string, unknown> };
+  return { corpo, data: parsed.data };
+}
+
 describe("executeCallWebhook", () => {
   let server: Server | undefined;
 
@@ -318,6 +353,124 @@ describe("executeCallWebhook", () => {
     }
 
     await close();
+  });
+
+  // #5152 — a origem do anúncio no envelope: bloco `attribution` CURADO dentro
+  // do `contact`, montado da própria row, sem consulta nova.
+  it("contato com source_metadata completo: contact.attribution curado, só com chaves conhecidas", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-1",
+      name: "Fulano da Silva",
+      source_metadata: {
+        ad_platform: "google_ads",
+        ad_source_id: "gclid-abc123",
+        ad_click_source: "site",
+        ad_id: "ad-9",
+        google_campaign_id: "camp-7",
+        utm_campaign: "verao-2026",
+        fbc: "fb.1.123.456",
+        fbp: "fb.1.789",
+        ad_raw: { payload_cru: "nao-deve-sair" },
+      },
+    });
+
+    expect(data.contact).toEqual({
+      id: "contact-1",
+      name: "Fulano da Silva",
+      attribution: {
+        platform: "google_ads",
+        click_id: "gclid-abc123",
+        click_source: "site",
+        ad_id: "ad-9",
+        campaign_id: "camp-7",
+        campaign_name: "verao-2026",
+      },
+    });
+  });
+
+  it("contato com metadata parcial (só ad_platform): bloco só com a chave presente", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-2",
+      source_metadata: { ad_platform: "meta_ads" },
+    });
+
+    expect(data.contact).toEqual({
+      id: "contact-2",
+      attribution: { platform: "meta_ads" },
+    });
+  });
+
+  it("contato sem origem: o contact sai sem attribution", async () => {
+    for (const contact of [
+      { id: "contact-3", name: "Sem origem" },
+      // metadata sem NENHUMA chave conhecida também não emite o bloco: o
+      // jsonb cru não é atribuição.
+      {
+        id: "contact-4",
+        source_metadata: { fbc: "fb.1.123.456", fbp: "fb.1.789", ad_raw: { x: 1 } },
+      },
+    ]) {
+      const { data } = await envelopeDoContato(contact);
+      expect(data.contact).not.toHaveProperty("attribution");
+    }
+  });
+
+  it("o envelope NUNCA leva source_metadata, fbc/fbp nem o payload cru", async () => {
+    const { corpo } = await envelopeDoContato({
+      id: "contact-5",
+      organization_id: "org-secret-1",
+      source_metadata: {
+        ad_platform: "meta_ads",
+        ad_source_id: "ctwa-123",
+        fbc: "fb.1.123.456",
+        fbp: "fb.1.789",
+        ad_raw: { payload_cru: "nao-deve-sair" },
+      },
+    });
+
+    for (const proibido of [
+      "source_metadata",
+      "organization_id",
+      "org-secret-1",
+      "payload_cru",
+      "nao-deve-sair",
+      "fb.1.123.456",
+      "fb.1.789",
+    ]) {
+      expect(corpo).not.toContain(proibido);
+    }
+  });
+
+  it("google_campaign_id e utm_campaign vencem campaign_id/campaign_name, na ordem documentada", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-6",
+      source_metadata: {
+        ad_platform: "google_ads",
+        campaign_id: "camp-do-formulario",
+        google_campaign_id: "camp-google",
+        campaign_name: "nome-do-formulario",
+        utm_campaign: "verao-2026",
+      },
+    });
+
+    expect(data.contact).toEqual({
+      id: "contact-6",
+      attribution: { platform: "google_ads", campaign_id: "camp-google", campaign_name: "verao-2026" },
+    });
+  });
+
+  it("contato de prospecção: o campaign_id da abordagem interna não vira attribution", async () => {
+    const { data } = await envelopeDoContato({
+      id: "contact-7",
+      source: "prospecting",
+      source_metadata: {
+        campaign_id: "11111111-2222-3333-4444-555555555555",
+        place_id: "place-1",
+        maps_url: "https://maps.example/x",
+      },
+    });
+
+    expect(data.contact).toEqual({ id: "contact-7" });
   });
 
   it("SSRF via redirect: 302 não é seguido, falha com redirect_not_followed, target não recebe hit", async () => {

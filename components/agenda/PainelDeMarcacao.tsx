@@ -1065,7 +1065,7 @@ export function PainelDeMarcacao({
           </div>
         )}
 
-        {googleCoberturaParcial && <p role="status" className="mb-2 text-xs text-warning">{t("Ocupação do Google ainda não verificada neste período.")}</p>}
+        {googleCoberturaParcial && <p role="status" className="mb-2 text-xs text-warning">{t("Ocupação da agenda externa ainda não verificada neste período.")}</p>}
         {fusoSuposto && (
           <p data-testid="fuso-suposto" className="mb-2 text-[11px] leading-4 text-text-subtle">
             {t("Estamos supondo o fuso")} <span className="font-mono">{(fuso ?? "").replace("_", " ")}</span> {t("— ninguém escolheu ainda. O agente oferece horário usando ele.")}

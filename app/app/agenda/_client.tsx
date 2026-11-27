@@ -15,6 +15,7 @@ import * as React from "react";
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
 import { CamadaDatasDosNegocios } from "./_components/CamadaDatasDosNegocios";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
+import { CartaoDaConexaoOutlook } from "./_components/CartaoDaConexaoOutlook";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import { PainelDoDia } from "@/components/agenda/PainelDoDia";
@@ -99,6 +100,7 @@ export function AgendaClient({
   hojeNaOrganizacao,
   usuarioId,
   googleConfigurado,
+  outlook,
   contaConectada,
   enderecoDeRetorno,
   faltaNoGoogle,
@@ -125,6 +127,7 @@ export function AgendaClient({
   /** Id de quem está logado — a única fonte para o rótulo "Você". */
   usuarioId: string;
   googleConfigurado: boolean;
+  outlook?: { configurado: boolean; conta: string | null; precisaReconectar: boolean };
   contaConectada?: string | null;
   enderecoDeRetorno?: string;
   faltaNoGoogle: string[];
@@ -729,6 +732,11 @@ export function AgendaClient({
         contaConectada={contaConectada}
         enderecoDeRetorno={enderecoDeRetorno}
       />
+      {outlook && (
+        <React.Suspense fallback={null}>
+          <CartaoDaConexaoOutlook {...outlook} />
+        </React.Suspense>
+      )}
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
@@ -1132,7 +1140,7 @@ export function AgendaClient({
                   // contorno que o modo de alto contraste do sistema usa.
                   "mt-1 w-full rounded-md border bg-surface p-2 outline-hidden",
                   emailConvidadoInvalido
-                    ? "border-danger focus:border-danger"
+                    ? "border-destructive focus:border-destructive"
                     : "border-border focus:border-border-strong",
                 )}
                 placeholder={t("cliente@empresa.com")}

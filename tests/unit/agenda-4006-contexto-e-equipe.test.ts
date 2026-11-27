@@ -229,6 +229,7 @@ describe("#4006 · o e-mail do convite, resolvido pelo banco", () => {
           {
             user_id: U_SDR,
             organization_id: ORG,
+            provider: "google_calendar",
             account_email: "sdr.calendario@deskcomm.test",
             status: "healthy",
             updated_at: "2026-11-01T00:00:00Z",
@@ -306,6 +307,7 @@ describe("#4006 · quem sai do evento", () => {
           {
             user_id: U_SAIU,
             organization_id: ORG,
+            provider: "google_calendar",
             account_email: "saiu.calendario@deskcomm.test",
             status: "disconnected",
           },

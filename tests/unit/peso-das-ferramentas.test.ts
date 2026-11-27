@@ -156,9 +156,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_save_lead_diagnosis": { tokens: 353, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz QUANDO usar (o que ele concluiu da empresa, só do contato da conversa), que grava DIRETO com o selo e que não serve para dado pessoal nem para copiar a fala do cliente" },
   "crm_send_whatsapp_message": {
-    tokens: 320,
+    tokens: 367,
     motivo:
-      "#5034: media_storage_path e media_filename, para mandar arquivo já enviado ao CRM sem link público (documento de cliente não vai para a internet); a descrição ficou em uma frase, com a rota de upload",
+      "#5034 + #5284 mensagens institucionais: +47 tokens do campo opcional `dispatch_mode` (operational|institutional) para aviso sem efeitos colaterais no atendimento (medido em 367 vs 320)",
   },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
@@ -285,9 +285,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // head sobre a main de 2026-11-26 (`b2b5d4c0d`, que tinha 47945): 47986 = 47945 + 41.
 // +38 do `idempotency_key` em `crm_reschedule_appointment` (DES-1952, #5300). MEDIDO no merge
 // com a main de 2026-11-27 (`f28f722ae5`, que tinha 47986): 48024 = 47986 + 38, não somado à mão.
-// +459 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional (PR 01):
-// 48483 = 48024 + 459, medido no merge com origin/main (ee92db8b9).
-const TETO_TOTAL = 48483;
+// +47 do `dispatch_mode` opcional em `crm_send_whatsapp_message` (#5284, mensagens
+// institucionais). MEDIDO no merge com a main de 2026-11-27 (`127390e21e`, que tinha 48024).
+// +459 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional
+// (#5311, @fcostamil-hub). MEDIDO no merge com a main de 2026-11-27 (`795f5f2379`, que tinha
+// 48071): 48530 = 48071 + 459, não somado à mão.
+const TETO_TOTAL = 48530;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

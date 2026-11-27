@@ -552,6 +552,8 @@ export function descreveEvento(
       };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
+    case "inbound_de_robo_ignorado":
+      return { titulo: "O robô respondeu — o fluxo segue esperando", detalhe: null, ...motor };
     case "reactivity_replied":
       return { titulo: "Encerrado porque o cliente respondeu", detalhe: null, ...cliente };
     case "reactivity_opted_out":

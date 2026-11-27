@@ -34,7 +34,61 @@ Um `POST` com `Content-Type: application/json` e este corpo:
 | `occurred_at` | A hora em que o CRM montou esta entrega (o disparo da automação ou o clique em Reenviar), em ISO-8601 UTC com milissegundos. É o que o campo sempre foi. As retentativas automáticas de um mesmo disparo, segundos depois, repetem o corpo e portanto este valor. Para medir a idade da requisição, prefira o `t` de dentro do `X-Webhook-Signature` (seção 3): ele é a hora do envio de **cada tentativa** e também é coberto pela assinatura. |
 | `happened_at` | A hora em que o **fato** aconteceu (o lead foi criado, a etapa mudou…), em ISO-8601 UTC com milissegundos. É a mesma em todas as tentativas e no Reenviar, e pode ter horas ou dias de idade (uma automação adiada pela janela de envio do WhatsApp, um Reenviar clicado dias depois). Use-o para ordenar os fatos no seu sistema; nunca para recusar requisição velha. |
 | `delivery_id` | O id da entrega — o mesmo valor do cabeçalho `X-Webhook-Delivery`. |
-| `data` | Os dados do evento, com a projeção pública do lead, do contato e do compromisso quando existem. |
+| `data` | Os dados do evento, com a projeção pública do lead, do contato e do compromisso quando existem. O contato pode trazer o bloco `attribution` (seção 1.1). |
+
+### 1.1 A origem do anúncio (`contact.attribution`)
+
+Quando o contato tem origem de anúncio gravada, o `data.contact` traz um bloco
+`attribution` com uma lista **fechada** de chaves. Ele é montado dos metadados
+do próprio contato, na entrega — não existe chamada extra à API para isso:
+
+```json
+{
+  "event": "lead.created",
+  "data": {
+    "contact": {
+      "id": "contact-1",
+      "name": "Fulano da Silva",
+      "attribution": {
+        "platform": "google_ads",
+        "click_id": "GCLID-abc123",
+        "click_source": "site",
+        "ad_id": "ad-9",
+        "campaign_id": "camp-7",
+        "campaign_name": "verao-2026"
+      }
+    }
+  }
+}
+```
+
+| Campo do bloco | De onde vem (metadados do contato) | O que é |
+|---|---|---|
+| `platform` | `ad_platform` | A plataforma do anúncio (`meta_ads`, `google_ads`). |
+| `click_id` | `ad_source_id` | O clique que abriu a conversa: `ctwa_clid` no clique-pro-WhatsApp, `fbclid`/`gclid` no lead que veio por formulário. |
+| `click_source` | `ad_click_source` | Presente quando o clique foi capturado na página (`"site"`). |
+| `ad_id` | `ad_id` (ou `google_ad_id`) | O id do anúncio — a peça, não o clique. |
+| `campaign_id` | `google_campaign_id` (ou `campaign_id`) | O id da campanha, quando a captura o trouxe. |
+| `campaign_name` | `utm_campaign` (ou `campaign_name`) | O texto de campanha que veio no link/captura. |
+
+Regras que o receptor pode contar:
+
+- **Só vem quando o contato tem origem.** Contato sem clique, ou com metadados
+  que não têm nenhuma das chaves acima, sai **sem** `attribution` — o `contact`
+  é exatamente o de antes.
+- **Cada chave só aparece se existir.** Um contato que só tem `ad_platform`
+  recebe `attribution` com `platform` e mais nada; nenhum campo é inventado nem
+  preenchido com `null`.
+- **O jsonb cru nunca sai.** `fbc`, `fbp`, `ad_raw` (o payload inteiro do
+  transporte) e ids internos da organização ficam fora do envelope. O bloco é
+  uma lista fechada de chaves, e chave nova só entra em versão nova do CRM.
+- **Aqui só há ids e o texto da campanha.** O `campaign_name` é o que o link
+  carrega, não o nome oficial. Para os nomes de campanha, conjunto e anúncio —
+  e para o dado bruto do contato — use as duas rotas da API, com um token de
+  Admin › Configurações › Tokens de API (`/app/settings/api-tokens`):
+  - `GET /api/v1/contacts/{id}` — o contato, incluindo `source_metadata`;
+  - `GET /api/v1/contacts/{id}/hierarquia-do-anuncio` — os nomes oficiais de
+    campanha, conjunto e anúncio do contato.
 
 ## 2. Os cabeçalhos
 

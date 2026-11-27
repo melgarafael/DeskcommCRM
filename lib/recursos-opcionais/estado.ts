@@ -11,6 +11,7 @@
  * Nunca lança. Uma fonte que falha vira `null`, e o catálogo a mostra como
  * "Não consegui ler agora" — nunca como "desligado".
  */
+import { microsoftEstaConfigurada } from "@/lib/agenda/microsoft/config";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { googleEstaConfigurado } from "@/lib/agenda/google/config";
@@ -46,6 +47,7 @@ export async function detectarServidor(): Promise<Record<string, boolean | null>
   const pares = await Promise.all([
     detectar("email", emailConfigurado),
     detectar("google_agenda", googleEstaConfigurado),
+    detectar("microsoft_agenda", microsoftEstaConfigurada),
     detectar("meta", async () => {
       const app = await appDaMeta();
       return Boolean(app.appSecret && app.verifyToken);

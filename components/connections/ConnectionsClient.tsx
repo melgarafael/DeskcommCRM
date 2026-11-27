@@ -32,6 +32,7 @@ import { ChannelAcervo } from "./ChannelAcervo";
 import { ChannelHistorico } from "./ChannelHistorico";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { NegocioDaConversa } from "./NegocioDaConversa";
+import { FunilDeEntradaDoCartao } from "./FunilDeEntradaDoNumero";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,6 @@ import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
 import { AgendaDePausa } from "@/components/connections/AgendaDePausa";
 import { RenomearConexao } from "./RenomearConexao";
-import { FunilDeEntradaDoNumero } from "./FunilDeEntradaDoNumero";
 import { DefeitoDoNumero, numeroComDefeito } from "./DefeitoDoNumero";
 
 type Variant = "success" | "warning" | "error" | "neutral";
@@ -695,8 +695,9 @@ export function ConnectionsClient({
                     interruptor acima decide SE a conversa nova vira negócio; o
                     seletor abaixo decide EM QUAL funil/etapa ela nasce quando
                     nasce. Desligar o de cima torna o de baixo inerte — ele
-                    continua guardando a escolha para quando religarem. */}
-                <FunilDeEntradaDoNumero channelId={c.id} />
+                    continua guardando a escolha para quando religarem, mas para
+                    de prometer que o contato entra no funil (#5142). */}
+                <FunilDeEntradaDoCartao channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>

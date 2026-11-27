@@ -220,7 +220,7 @@ describe("PUT /api/v1/extensions/[id]/consentimento", () => {
 
   it("permissão fora do vocabulário de área é recusada antes do banco", async () => {
     for (const areas of [
-      ["area.financeiro.escrita"],
+      ["area.inexistente.escrita"],
       ["navigation.tasks"],
       ["area.contatos.leitura", 7],
       "area.contatos.leitura",

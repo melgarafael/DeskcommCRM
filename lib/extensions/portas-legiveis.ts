@@ -50,6 +50,10 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   "area.configuracao.escrita": "Configuração (escrita)",
   "area.analise.leitura": "Análise (leitura)",
   "area.analise.escrita": "Análise (escrita)",
+  "area.tarefas.leitura": "Tarefas (leitura)",
+  "area.tarefas.escrita": "Tarefas (escrita)",
+  "area.financeiro.leitura": "Financeiro (leitura)",
+  "area.financeiro.escrita": "Financeiro (escrita)",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {
@@ -133,7 +137,9 @@ export type PermissaoDeArea = Extract<ExtensionPermission, `area.${string}`>;
  */
 export function ehAreaSensivel(permissao: PermissaoDeArea): boolean {
   return (
-    permissao.startsWith("area.configuracao.") || permissao.startsWith("area.agentes_ia.")
+    permissao.startsWith("area.configuracao.") ||
+    permissao.startsWith("area.agentes_ia.") ||
+    permissao.startsWith("area.financeiro.")
   );
 }
 
@@ -184,6 +190,14 @@ export function fraseDaPermissaoDeArea(
       return t("Ver relatórios e números de desempenho.");
     case "area.analise.escrita":
       return t("Alterar relatórios e análises.");
+    case "area.tarefas.leitura":
+      return t("Ver as tarefas da equipe.");
+    case "area.tarefas.escrita":
+      return t("Criar e concluir tarefas.");
+    case "area.financeiro.leitura":
+      return t("Ver lançamentos financeiros e comandas.");
+    case "area.financeiro.escrita":
+      return t("Criar e alterar lançamentos financeiros e comandas.");
   }
 }
 

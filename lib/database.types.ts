@@ -54,6 +54,10 @@ export type Database = {
           event_name: string;
           event_occurred_at: string | null;
           google_action_id: string | null;
+          google_api: string | null;
+          google_customer_id: string | null;
+          google_destination_explicit: boolean | null;
+          google_login_customer_id: string | null;
           id: string;
           lead_id: string;
           meta_event_name: string | null;
@@ -78,6 +82,10 @@ export type Database = {
           event_name: string;
           event_occurred_at?: string | null;
           google_action_id?: string | null;
+          google_api?: string | null;
+          google_customer_id?: string | null;
+          google_destination_explicit?: boolean | null;
+          google_login_customer_id?: string | null;
           id?: string;
           lead_id: string;
           meta_event_name?: string | null;
@@ -101,6 +109,10 @@ export type Database = {
           event_name?: string;
           event_occurred_at?: string | null;
           google_action_id?: string | null;
+          google_api?: string | null;
+          google_customer_id?: string | null;
+          google_destination_explicit?: boolean | null;
+          google_login_customer_id?: string | null;
           id?: string;
           lead_id?: string;
           meta_event_name?: string | null;
@@ -9725,6 +9737,8 @@ export type Database = {
           enabled: boolean;
           event_name: string;
           google_action_id: string;
+          google_customer_id: string | null;
+          google_login_customer_id: string | null;
           id: string;
           included_in_conversions: boolean;
           label: string;
@@ -9742,6 +9756,8 @@ export type Database = {
           enabled?: boolean;
           event_name: string;
           google_action_id: string;
+          google_customer_id?: string | null;
+          google_login_customer_id?: string | null;
           id?: string;
           included_in_conversions?: boolean;
           label: string;
@@ -9758,6 +9774,8 @@ export type Database = {
           enabled?: boolean;
           event_name?: string;
           google_action_id?: string;
+          google_customer_id?: string | null;
+          google_login_customer_id?: string | null;
           id?: string;
           included_in_conversions?: boolean;
           label?: string;
@@ -12974,6 +12992,34 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_microsoft_oauth: {
+        Row: {
+          client_id: string | null;
+          client_secret_encrypted: string | null;
+          id: number;
+          tenant: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          id?: number;
+          tenant?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          id?: number;
+          tenant?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       platform_settings: {
         Row: {
           divulgacao_de_pagamento: string | null;
@@ -15650,6 +15696,16 @@ export type Database = {
         Args: { p_contato: string; p_importacao: string; p_org: string };
         Returns: string;
       };
+      fn_microsoft_calendar_save: {
+        Args: {
+          p_calendar: string;
+          p_end: string;
+          p_items: Json;
+          p_org: string;
+          p_start: string;
+        };
+        Returns: number;
+      };
       fn_previa_historico_analise: {
         Args: { p_importacao: string; p_limite: number; p_org: string };
         Returns: Json;
@@ -16381,6 +16437,10 @@ export type Database = {
         Returns: number;
       };
       fn_expurgar_avisos_de_caso_vencidos: {
+        Args: { p_limite?: number; p_retencao_dias?: number };
+        Returns: number;
+      };
+      fn_expurgar_chaves_de_idempotencia_vencidas: {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
       };

@@ -245,12 +245,12 @@ describe("perfil connected: service_origin só vale como origem exata", () => {
   });
 });
 
-describe("perfil connected: o vocabulário de permissões do banco tem as 26", () => {
+describe("perfil connected: o vocabulário de permissões do banco tem as 30", () => {
   const validas = async (lista: unknown[]) =>
     (await rpc("permissoes_validas", [JSON.stringify(lista)])) as boolean;
 
-  it("o TypeScript tem 26 e o banco aceita as 26 de uma vez", async () => {
-    expect(EXTENSION_PERMISSIONS).toHaveLength(26);
+  it("o TypeScript tem 30 e o banco aceita as 30 de uma vez", async () => {
+    expect(EXTENSION_PERMISSIONS).toHaveLength(30);
     expect(await validas([...EXTENSION_PERMISSIONS])).toBe(true);
   });
 
