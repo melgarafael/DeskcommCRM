@@ -31,6 +31,7 @@ import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
+import { autorDaIntegracao, type IntegracaoDaAtividade } from "@/lib/leads/integracao-da-atividade";
 import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
 import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
@@ -151,6 +152,11 @@ interface ActivityRow {
    * e aí a linha volta ao rótulo genérico.
    */
   performed_by_name?: string | null;
+  /**
+   * Quando um TOKEN de API agiu (#5160): o nome da integração, ou `nome: null`
+   * se não deu para ler. `null`/ausente = não foi token, segue o rótulo do ator.
+   */
+  integracao?: IntegracaoDaAtividade;
 }
 
 /**
@@ -1746,8 +1752,13 @@ export function CRMSidePanel({
                     {t(activityLabel(a.type))}
                   </div>
                   {a.reason && <div className="mt-0.5 truncate text-muted-foreground">{t(a.reason)}</div>}
-                  <div className="text-muted-foreground">
-                    {a.performed_by_name ?? t(actorLabel(a.actor_kind))} · {shortDate(a.performed_at, localeDaData)}
+                  {/* `wrap-anywhere`: o nome do token vem do operador (até 100
+                      caracteres, sem espaço às vezes) e não pode empurrar o
+                      painel para os lados (#5160). */}
+                  <div className="text-muted-foreground wrap-anywhere">
+                    {a.performed_by_name ??
+                      (a.integracao ? autorDaIntegracao(a.integracao, t) : t(actorLabel(a.actor_kind)))}{" "}
+                    · {shortDate(a.performed_at, localeDaData)}
                   </div>
                 </li>
               ))}
