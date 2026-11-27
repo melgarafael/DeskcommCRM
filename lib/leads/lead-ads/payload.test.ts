@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { leadComRespostas, lerLeadsDoFormularioMeta, respostasDosAvisos } from "./payload";
+import { lerLeadsDoFormularioMeta, respostasDosAvisos } from "./payload";
 import {
   ESPERADO_DO_EXEMPLO,
   PAYLOAD_DOCUMENTADO_DA_META,
