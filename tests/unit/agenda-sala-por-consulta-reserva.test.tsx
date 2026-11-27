@@ -1,7 +1,7 @@
 /**
  * A sala é escolhida ao reservar e aparece no compromisso.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -25,9 +25,18 @@ vi.mock("next/navigation", () => ({
 const AC = vi.mocked(apiClient);
 const queryClient = new QueryClient();
 
+// O componente abre no dia de HOJE, e a disponibilidade abaixo é de 24/11/2026: sem congelar a data,
+// o teste só passava naquele dia (a main ficou vermelha ao virar o dia 25). Só a `Date` é congelada;
+// os timers seguem reais, porque o teste espera com `setTimeout`.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-24T15:00:00.000Z"));
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 const SALA_A = { id: "s-2", name: "Sala A", sector: "Térreo" };

@@ -22,6 +22,7 @@ import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { copyToClipboard } from "@/lib/clipboard";
 import { codigoParaColar, linkDireto } from "@/lib/channels/webchat/codigo-para-colar";
+import { TETO_ANONIMO_MAXIMO, TETO_ANONIMO_PADRAO } from "@/lib/channels/teto-do-anonimo";
 import { useT } from "@/hooks/i18n/useT";
 
 /**
@@ -63,6 +64,9 @@ interface Config {
   auto_abrir_segundos?: number;
   som?: boolean;
   respostas_rapidas?: string[];
+  /** Teto de respostas da IA para visitante anônimo (`metadata.webchat.teto_anonimo`).
+   * 1 a 200; ausente ou inválido cai no padrão 20. */
+  teto_anonimo?: number;
 }
 
 interface Estado {
@@ -229,6 +233,10 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
       .map((linha) => linha.trim())
       .filter((linha) => linha !== "");
   }
+  const tetoPreenchido = estado.config.teto_anonimo !== undefined && Number.isInteger(estado.config.teto_anonimo);
+  const [tetoAnonimo, setTetoAnonimo] = useState(
+    tetoPreenchido ? String(estado.config.teto_anonimo) : "",
+  );
 
   // Aparência: campo em branco é "não mudar". Só vai o que foi preenchido.
   const corPreenchida = cor.trim() !== "";
@@ -282,6 +290,12 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
     respostasRapidas.trim() !== respostasInicial;
 
   const ajustesValidos = avatarValida && autoAbrirValido && respostasValidas;
+  // Teto do anônimo: inteiro de 1 a 200. Em branco = "não mudar" (vale o salvo, ou 20 se nunca salvo).
+  const tetoBruto = tetoAnonimo.trim();
+  const tetoNumero = /^[0-9]+$/.test(tetoBruto) ? Number(tetoBruto) : null;
+  const tetoValido = tetoBruto === "" || (tetoNumero !== null && tetoNumero >= 1 && tetoNumero <= TETO_ANONIMO_MAXIMO);
+  const tetoAtual = tetoPreenchido ? (estado.config.teto_anonimo ?? null) : null;
+  const tetoMudou = tetoBruto !== "" && tetoValido && tetoNumero !== tetoAtual;
 
   const listaDominios = linhasDeDominio(dominios);
   const dominiosMudaram = listaDominios.join("\n").toLowerCase() !== estado.allowed_origins.join("\n");
@@ -601,7 +615,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             id="canal-chat-respostas-rapidas"
             rows={4}
             value={respostasRapidas}
-            placeholder="Ex.: Sim"
+            placeholder={t("Ex.: Sim")}
             onChange={(e) => setRespostasRapidas(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
@@ -631,6 +645,50 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             }
           >
             {t("Salvar ajustes")}
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h4 className="text-sm font-medium">{t("Teto de respostas da IA para visitante anônimo")}</h4>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Depois desse número a IA para de responder e a conversa fica para a equipe. Quem deixa telefone ou e-mail sai deste limite.",
+          )}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="canal-chat-teto-anonimo">{t("Quantas respostas da IA por conversa")}</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="canal-chat-teto-anonimo"
+              type="number"
+              min={1}
+              max={TETO_ANONIMO_MAXIMO}
+              value={tetoAnonimo}
+              placeholder={String(TETO_ANONIMO_PADRAO)}
+              onChange={(e) => setTetoAnonimo(e.target.value)}
+              className="w-24 font-mono"
+            />
+            <span className="text-xs text-muted-foreground">
+              {t("Deixe em branco para não mudar.")}
+            </span>
+          </div>
+          {!tetoValido && tetoBruto !== "" && (
+            <p role="alert" className="text-xs text-destructive">
+              {t("Use um número inteiro de 1 a 200.")}
+            </p>
+          )}
+        </div>
+        <div>
+          <Button
+            onClick={() =>
+              salvar({ config: { teto_anonimo: tetoNumero } }, () => {
+                setTetoAnonimo(tetoNumero !== null ? String(tetoNumero) : "");
+              })
+            }
+            disabled={ocupado || !tetoMudou || !tetoValido}
+          >
+            {t("Salvar teto")}
           </Button>
         </div>
       </section>

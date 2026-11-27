@@ -92,6 +92,8 @@ const E_VERSAO_DA_GRAPH = [
 
 /** Linhas que NÃO podem reprovar — senão a catraca vira ruído e alguém a desliga. */
 const NAO_E_VERSAO_DA_GRAPH = [
+  'const RAIZ = "https://graph.microsoft.com/v1.0";',
+  "  `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/${passo}`;",
   '<div className="ds-sub">design system · v0.1</div>',
   'const release = "v1.25.0";',
   "const rota = `/api/v1/contacts`;",
@@ -106,6 +108,12 @@ const NAO_E_VERSAO_DA_GRAPH = [
  * linha) está em `tests/unit/helpers/sem-comentarios.ts`, junto da regra.
  */
 
+/**
+ * A "Graph" desta catraca é a da Meta. A Microsoft usa o mesmo formato no
+ * endereço, com versão própria que não sobe junto: só estes dois trechos saem.
+ */
+const ENDERECOS_DA_MICROSOFT = /graph\.microsoft\.com\/v1\.0|\/oauth2\/v2\.0\//g;
+
 /** As linhas de um fonte que escrevem a versão à mão, já sem comentário. */
 function linhasComVersao(fonte: string, arquivo?: string): string[] {
   // Atalho seguro: tirar comentário só troca caractere por espaço, e espaço não
@@ -114,7 +122,7 @@ function linhasComVersao(fonte: string, arquivo?: string): string[] {
   if (!LITERAL_DE_VERSAO.test(fonte)) return [];
   return semComentarios(fonte, arquivo)
     .split("\n")
-    .filter((linha) => LITERAL_DE_VERSAO.test(linha));
+    .filter((linha) => LITERAL_DE_VERSAO.test(linha.replace(ENDERECOS_DA_MICROSOFT, "")));
 }
 
 function varrer(diretorio: string, achados: string[] = []): string[] {

@@ -110,6 +110,7 @@ export {
   InstagramLogo,
   MessengerLogo,
   TelegramLogo,
+  TiktokLogo,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,

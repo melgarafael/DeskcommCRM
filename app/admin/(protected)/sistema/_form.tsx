@@ -380,7 +380,7 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     id: "modulo-reservas-de-lugar",
     rotulo: "Reservas de lugar",
     descricao:
-      "Ligado, cada empresa pode cadastrar na agenda um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
+      "Ligado, cada empresa pode cadastrar na agenda um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados, e reservar em lugar que já existe continua valendo — o serviço com lugar exige lugar na reserva.",
     foraDoMenu: "Não cria porta no menu do CRM: o lugar é cadastrado na configuração do serviço, na Agenda, e escolhido ao reservar.",
   },
   {

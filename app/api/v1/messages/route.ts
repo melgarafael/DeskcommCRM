@@ -6,8 +6,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { ESCOPO_MENSAGENS_INSTITUCIONAIS, tokenTemEscopo } from "@/lib/api/escopos-do-token";
+import { MODO_DE_ENVIO_INSTITUCIONAL } from "@/lib/messaging/modo-de-envio";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { ApiErrorCodes } from "@/lib/api/errors";
+import { FRASES_DE_FALHA } from "@/lib/channels/frases-de-falha";
 import { chaveDaRequisicao, comIdempotencia, type DesfechoIdempotente } from "@/lib/api/idempotency";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
@@ -73,16 +77,35 @@ const PAPEL_MINIMO_EM_NOME_DE = "agent";
  * segurado pelo teto diário pode deixar a conversa do contato aberta, vazia —
  * o mesmo estado que "iniciar conversa" deixa no inbox, e não uma conversa
  * órfã de um contato que não existe.
+ *
+ * ─── DE QUAL NÚMERO (#5028) ────────────────────────────────────────────────
+ *
+ * `channel_session_id` no corpo chega até aqui e é repassado ao helper, que já
+ * sabe a regra (#3483/:107): sessão escolhida é procurada com
+ * `organization_id` E `id`, e precisa estar utilizável. A organização continua
+ * sendo só a da autenticação — o corpo não tem onde trazer outra.
+ *
+ * A recusa MUDA DE NÚMERO quando houve canal escolhido: 422
+ * `validation_error` com `campo: "channel_session_id"`, tanto para "não
+ * encontrada" quanto para "fora do ar". Não é capricho: 404 e 409 distinguem
+ * os dois casos, e a diferença entre eles é justamente o que diz se a sessão
+ * existe em OUTRA organização. Sem canal escolhido, 404/409 seguem como
+ * sempre — o caminho antigo não ganha tradução nova.
  */
 async function conversaDoTelefone(p: {
   organizationId: string;
   telefone: string;
+  /** O canal que quem chamou escolheu (#5028); ausente = a escolha de sempre. */
+  canalEscolhido?: string;
   requestId: string;
   t: (texto: string) => string;
 }): Promise<string> {
   try {
     const aberta = await openSharedContactConversation(createAdminClient(), p.organizationId, {
       phone_number: p.telefone.trim(),
+      // Ausente continua ausente: o helper distingue "escolhida pelo chamador"
+      // de "escolha de sempre" por `Boolean(input.channel_session_id)`.
+      ...(p.canalEscolhido ? { channel_session_id: p.canalEscolhido } : {}),
     });
     return aberta.conversation_id;
   } catch (err) {
@@ -91,6 +114,32 @@ async function conversaDoTelefone(p: {
     // nomeada aqui é o que o conector precisa para distinguir "número ruim"
     // (422, não adianta retentar) de "canal fora do ar" (409, retentar depois).
     const motivo = err instanceof Error ? err.message : "open_failed";
+    // #5028: com canal ESCOLHIDO, 404 e 409 viram o MESMO 422 — a diferença
+    // entre eles revelaria se a sessão existe em outra organização. O detalhe
+    // nomeia o campo, para quem integra corrigir o corpo em vez de adivinhar.
+    if (
+      p.canalEscolhido &&
+      (motivo === "session_not_found" || motivo === "session_unavailable")
+    ) {
+      throw new ApiError(
+        422,
+        "validation_error",
+        { campo: "channel_session_id" },
+        p.requestId,
+        p.t(
+          "Canal informado indisponível: ele precisa existir nesta organização e estar conectado.",
+        ),
+      );
+    }
+    if (motivo === ApiErrorCodes.numero_sem_whatsapp) {
+      throw new ApiError(
+        422,
+        ApiErrorCodes.numero_sem_whatsapp,
+        undefined,
+        p.requestId,
+        p.t(FRASES_DE_FALHA.numero_sem_whatsapp!),
+      );
+    }
     if (motivo === "invalid_phone") {
       throw new ApiError(
         422,
@@ -214,6 +263,36 @@ export async function POST(req: NextRequest): Promise<Response> {
    * passa daqui — e o handler ainda recusa alto se o campo chegar sem este
    * ctx, porque a mesma entrada atravessa o MCP (item B, fora deste PR).
    */
+  const ehInstitucional = entrada.dispatch_mode === MODO_DE_ENVIO_INSTITUCIONAL;
+  if (ehInstitucional) {
+    if (authz.actor.type === "ai_agent") {
+      return fail("forbidden", t("Agentes de IA não podem enviar mensagens institucionais."), 403, {
+        requestId,
+      });
+    }
+    if (authz.via !== "token" || !tokenTemEscopo(authz.scopes, ESCOPO_MENSAGENS_INSTITUCIONAIS)) {
+      return fail("forbidden", t("Envio institucional exige o escopo messages:institutional."), 403, {
+        requestId,
+      });
+    }
+    if (entrada.on_behalf_of_user_id) {
+      return fail(
+        "validation_failed",
+        t("Mensagens institucionais não podem ser enviadas em nome de um atendente."),
+        422,
+        { requestId },
+      );
+    }
+    if (!entrada.conversation_id || Boolean(entrada.phone_number?.trim())) {
+      return fail(
+        "validation_failed",
+        t("Mensagens institucionais exigem conversation_id explícito de uma conversa ativa e não aceitam phone_number."),
+        422,
+        { requestId },
+      );
+    }
+  }
+
   let onBehalf: HandlerCtx["onBehalfOf"];
   if (entrada.on_behalf_of_user_id) {
     // A sessão do navegador não tem escopos — e não precisa: quem digita no
@@ -341,11 +420,20 @@ export async function POST(req: NextRequest): Promise<Response> {
     //
     // Quando vem `conversation_id`, nada disto roda: o caminho antigo continua
     // sendo exatamente o de antes, sem consulta a contato nenhum.
+    //
+    // #5028 — com `conversation_id`, o canal JÁ ESTÁ FIXADO pela conversa (o
+    // par contato+sessão do thread). `channel_session_id` no mesmo corpo não
+    // muda nada nesse caminho, e a rota não inventa recusa para a combinação:
+    // recusar seria decidir pelo mantenedor que "os dois juntos são
+    // ambiguidade", e a issue só decidiu que, sem o campo, nada muda. Diferente
+    // de `conversation_id` + `phone_number`, aqui não há dois DESTINOS — há um
+    // destino e uma preferência de transporte que ele não usa.
     const conversaId =
       entrada.conversation_id ??
       (await conversaDoTelefone({
         organizationId,
         telefone: entrada.phone_number ?? "",
+        canalEscolhido: entrada.channel_session_id,
         requestId,
         t,
       }));
@@ -353,7 +441,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     // O handler recebe o corpo de SEMPRE — `conversation_id` obrigatório, sem
     // `phone_number`. A resolução mora na porta; o handler não sabe (e não
     // precisa saber) que a conversa veio de um telefone.
-    const { phone_number: _telefone, ...camposDoCorpo } = entrada;
+    //
+    // `channel_session_id` também é da PORTA (#5028): quem envia é o handler
+    // pela sessão da CONVERSA, e deixar o campo vazar no corpo que ele recebe
+    // faria o mesmo pedido, na mesma conversa, chegar com uma chave a mais.
+    const {
+      phone_number: _telefone,
+      channel_session_id: _canalEscolhido,
+      ...camposDoCorpo
+    } = entrada;
     const input: SendMessageInput = { ...camposDoCorpo, conversation_id: conversaId };
 
     // Freio anti-ban do número (espaçamento + teto diário), só para token:
@@ -377,6 +473,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         // Só chega aqui com o escopo e o membership já validados acima; o
         // handler recusa se `on_behalf_of_user_id` vier sem este ctx (#1613).
         ...(onBehalf ? { onBehalfOf: onBehalf } : {}),
+        ...(ehInstitucional ? { dispatchMode: MODO_DE_ENVIO_INSTITUCIONAL } : {}),
       },
       input,
     );
@@ -384,15 +481,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     // empresa ligou "a conversa fica com quem atendeu" (settings.routing,
     // desligado por padrão). A regra mora em `assumirConversaAposEnvio`, e é a
     // MESMA que o encaminhamento chama: uma regra, dois caminhos de escrita.
-    await assumirConversaAposEnvio({
-      supabase,
-      organizationId,
-      actor,
-      requestId,
-      via: authz.via,
-      conversationId: message.conversation_id,
-      status: message.status,
-    });
+    if (!ehInstitucional) {
+      await assumirConversaAposEnvio({
+        supabase,
+        organizationId,
+        actor,
+        requestId,
+        via: authz.via,
+        conversationId: message.conversation_id,
+        status: message.status,
+      });
+    }
     if (ritmo) await registrarEnvioPorToken(ritmo, organizationId, segurado, message.status);
     return message;
   };
@@ -426,6 +525,10 @@ export async function POST(req: NextRequest): Promise<Response> {
             // `ambiguous_target`). Do lado de quem já manda `conversation_id`,
             // o corpo validado é byte a byte o de antes — nenhum campo novo,
             // nenhum default novo —, então o hash das chaves em voo não muda.
+            // `channel_session_id` (#5028) entra no hash pela mesma régua:
+            // escolher OUTRO número é outro pedido, e um replay com a mesma
+            // chave e outro canal tem de virar 409 — não um envio pelo canal
+            // errado devolvendo o recibo do anterior.
             corpo: entrada,
             executar: async () => ({ resposta: await enviar(), status: 201 }),
           });

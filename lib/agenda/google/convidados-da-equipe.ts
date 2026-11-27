@@ -70,6 +70,7 @@ export async function emailsDosConvidadosDaEquipe(
       .select("user_id,account_email,status,updated_at")
       .eq("organization_id", org)
       .in("user_id", pedidos)
+      .eq("provider", "google_calendar")
       .eq("status", "healthy")
       .order("updated_at", { ascending: false });
     const porConta = new Map<string, string>();
@@ -134,7 +135,8 @@ export async function emailsDeQuemSaiuDoEvento(
     .from("calendar_connections")
     .select("account_email")
     .eq("organization_id", org)
-    .in("user_id", sairam);
+    .in("user_id", sairam)
+    .eq("provider", "google_calendar");
   if (erroContas) throw new Error("Falha ao conferir quem saiu do evento.");
   const emails = ((contas ?? []) as Array<{ account_email: string | null }>).map((c) => c.account_email);
   const admin = resolveAdmin(db);

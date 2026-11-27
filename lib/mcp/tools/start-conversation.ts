@@ -37,6 +37,7 @@ import { z } from "zod";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
+import { telefoneWhatsappSchema } from "@/lib/schemas/contacts";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,6 +60,9 @@ const inputShape = {
     .optional()
     .describe("Usado para achar um contato existente pelas grafias do número, ou criar um novo se nenhum bater."),
   name: z.string().trim().min(1).max(200).optional().describe("Nome do contato, usado só se um novo cadastro for criado."),
+  phone_whatsapp: telefoneWhatsappSchema
+    .optional()
+    .describe("O número tem WhatsApp? Só para cadastro novo; ausente, nao_sei."),
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
   media_mime: z.string().optional(),
@@ -159,6 +163,7 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
           contact_id: input.contact_id,
           phone_number: input.phone_number,
           name: input.name,
+          phone_whatsapp: input.phone_whatsapp,
         });
 
         const parsed = { ...mensagem, conversation_id: opened.conversation_id };

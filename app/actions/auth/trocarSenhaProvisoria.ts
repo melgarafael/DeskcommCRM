@@ -11,12 +11,19 @@ import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser } from "@/lib/auth/server";
 import { permanentAccessError } from "@/lib/impersonate/support";
 import { organizacoesComSenhaProvisoria } from "@/lib/auth/senha-provisoria";
+import { bloqueioProgressivoDeConta } from "@/lib/auth/rate-limit";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 
 export type TrocaSenhaProvisoriaResult = {
   ok: false;
-  error: "validation_error" | "session_expired" | "not_required" | "same_password" | "update_failed";
+  error:
+    | "validation_error"
+    | "session_expired"
+    | "not_required"
+    | "same_password"
+    | "update_failed"
+    | "rate_limited";
   details?: Record<string, unknown>;
 };
 
@@ -71,6 +78,17 @@ export async function trocarSenhaProvisoria(
   // Já trocou (dois cliques, ou aba velha): não é erro, e não reescreve a
   // senha de novo — a segunda gravação com o mesmo valor falharia no GoTrue.
   if (orgs.length === 0) return { ok: false, error: "not_required" };
+
+  // MESMA RÉGUA DO LOGIN (issue #4743, item 1). A senha só se grava por duas
+  // portas — esta e a recuperação por e-mail —, e a régua vale nas duas. Aqui
+  // ela FECHA a porta: conta sob bloqueio progressivo não troca a senha pelo
+  // caminho do primeiro acesso. A recuperação (`updatePassword`) é a exceção
+  // deliberada, porque é justamente o desbloqueio.
+  const emailDaConta = user.email || null;
+  if (emailDaConta) {
+    const bloqueio = await bloqueioProgressivoDeConta(emailDaConta);
+    if (bloqueio.bloqueado) return { ok: false, error: "rate_limited" };
+  }
 
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");

@@ -337,19 +337,52 @@ O que fica para a F2-B (formatos e ajustes de aparência):
 
 ### F3 — Horário
 
+Status: **F3 entregue** (Tarefas 1 a 3 da fatia; sem migration e sem variável de ambiente nova).
+
 - O chat usa o horário do agente que atende a conexão (`agent-config.ts`). Fora da janela, o turno é
   adiado como já acontece hoje, e a janela do chat mostra o aviso de fora do horário que o agente já
   tem configurado.
-- Sem agente na conexão, a janela mostra "Recebemos sua mensagem", e a conversa espera a equipe.
+- Sem agente na conexão, ou com todos os agentes dela pausados ou arquivados, a janela mostra "Recebemos sua mensagem. Nossa equipe responde por aqui." depois do primeiro envio aceito, uma vez por carga da janela. A conversa espera a equipe.
+- Com a janela fechada e sem aviso configurado no agente, o texto padrão diz a hora da volta, no horário do aparelho do visitante.
+- Se a leitura do horário falhar, o chat segue como aberto e o erro vai ao log. O chat não fica mudo por erro de leitura.
+- Ficou de fora, de propósito: o feriado nacional (`fechado_em_feriado_nacional` precisa do país da organização), o horário próprio do canal (o horário é o do agente) e o formulário de recado fora do horário (a mensagem do visitante já vira conversa e lead pelo pós-entrada).
+- Também fora desta fatia: o aviso automático que o motor manda pelo canal (`enviaAvisoForaDoHorario`). A chegada dele à janela do chat fica para a F4, medida junto do agente.
 
 ### F4 — Agente, passagem e teto do visitante anônimo
 
 - O agente atende o canal pela regra de elegibilidade que já existe, e a passagem para a equipe é a
   de hoje.
-- **Teto do visitante anônimo.** Enquanto o visitante não deixou telefone nem e-mail, a IA responde
-  até um número de vezes por conversa: padrão 20, configurável na tela. Passado o teto, o agente
-  pede o contato e para, e a conversa segue para a equipe. O motivo: cada mensagem anônima pode
-  custar uma chamada à IA, e o teto mensal da organização (`ai_budgets`) vem desligado de fábrica.
+- **Teto do visitante anônimo (entregue na F4, Tarefa 2).** Enquanto o visitante não deixou telefone
+  nem e-mail, a IA responde até um número de vezes por conversa: padrão 20, configurável na aba
+  "Chat no site" em Conexões. Passado o teto, a IA para de responder, o visitante recebe uma frase
+  pedindo telefone ou e-mail, e a conversa passa para a equipe com aviso na Central. O motivo:
+  cada mensagem anônima pode custar uma chamada à IA, e o teto mensal da organização (`ai_budgets`)
+  vem desligado de fábrica. Quem deixa telefone ou e-mail sai deste teto (segue o teto por conversa
+  que já existe, `teto-de-respostas.ts`, que continua valendo para todos). O teto chega ao motor
+  pelos dois caminhos de leitura (pg e supabase), com o mesmo resultado. O código mora em
+  `lib/channels/teto-do-anonimo.ts` (`tetoDoAnonimoDoCanal`) e no gate de elegibilidade
+  (`lib/ai/elegibilidade/gate.ts`, motivo `teto_do_visitante_anonimo`).
+- **Frase e passagem no teto (F4-A).** O drain (`lib/agent-engine/edge/crm/drain.ts`) deixa o
+  veto `teto_do_visitante_anonimo` virar turno, porque é o turno que avisa e passa, e o handler do
+  job deixa esse veto seguir, com o roteador escolhendo o agente sem classificar (sem gasto de
+  modelo); no agente assistido ele para ali, sem rascunho. No turno do agente (`inbound-turn.ts`),
+  a escolta respeita a janela de envio do canal (fora dela o turno é adiado para a abertura, como
+  qualquer resposta); pedido de parar e pedido de uma pessoa vencem o teto (nos dois modos eles
+  seguem as detecções de sempre, com o aviso delas); a frase ao visitante sai antes da passagem, e
+  aviso que falha não impede a passagem. Passagem que falha derruba o turno, sem chamar o modelo, e o job tenta de novo; a nova
+  tentativa só recupera a falha anterior ao `force_human` (a passagem não é uma transação: depois
+  dele, o job termina no veto de handoff). Contato fora do público do agente segue em silêncio, e
+  a restrição comercial não passa na frente da escolta. A passagem grava `origem = 'teto_do_anonimo'` e `motivo_codigo =
+  'teto_do_visitante_anonimo'` (migration 9505). Depois dela, o `force_human` veta a IA antes do
+  teto, então a frase não se repete enquanto a conversa está com a equipe; quem a devolve ao
+  automático, com o visitante ainda anônimo e no limite, volta a receber a frase e a passagem.
+  **Não coberto:** o worker de quem ainda não publicou agente (`workers/ai-response-worker.ts`)
+  continua só parando a IA no teto, sem frase nem passagem: ali o veto acontece antes de existir a
+  fronteira do atendimento que a passagem exige.
+- **Pendente (F4-B):** "pode ser o mesmo contato" e "Continuar no WhatsApp": se o telefone ou
+  e-mail digitado no chat já é de outra ficha, a tela de Duplicados mostra o par para conferir
+  (nunca junta sozinho), e a janela ganha o botão opcional "Continuar no WhatsApp" com o código
+  `dk1`.
 - **Contato deixado no chat.** O telefone e o e-mail que o visitante digita entram na ficha do
   contato do chat. O CRM **nunca** junta fichas sozinho, porque qualquer um pode digitar o telefone
   de outra pessoa. Se o dado bater com outra ficha, a tela de Duplicados mostra o par como motivo
@@ -359,10 +392,16 @@ O que fica para a F2-B (formatos e ajustes de aparência):
 
 ### F5 — Origem e relatório
 
-- A primeira mensagem leva a página, o referrer e as UTMs, e passa por `estamparOrigemDaPagina`,
-  com a mesma guarda de primeiro toque do banco.
-- A Inbox filtra por canal e mostra o selo "Chat no site", e o relatório por canal ganha a linha do
-  canal novo.
+Status: **F5 entregue** (código das tarefas 1 e 2 da fatia; sem migration e sem variável de ambiente nova).
+
+- **Entrou:**
+  - A janela manda, na primeira mensagem, a página (`href`), a origem (`referrer`) e as UTMs, só os campos com valor. A janela corta cada valor em 200 caracteres antes de enviar, e a rota recusa campo que não conhece (422).
+  - A ingestão grava a página em `metadata.webchat_pagina` da primeira mensagem. Com UTM válida, estampa a origem no contato pela mesma função da landing com `wa.me` (`estamparOrigemDaPagina`), com a guarda de primeiro toque do banco. Se a estampa falhar, vira aviso no log e a mensagem entra do mesmo jeito.
+  - Da segunda mensagem em diante o contexto é ignorado.
+  - O selo "Chat no site" na Inbox e o relatório por canal (`fn_channel_metrics`, por conexão) já existiam: a conexão do chat aparece neles sem código novo.
+- **Não entrou:**
+  - Relatório por página de origem. O relatório agrupa por canal; por página fica para quando um pedido for medido.
+  - Não medido: o filtro de canal da Inbox pela conexão do chat, e o rótulo de origem do chat na ficha do contato pela tela.
 
 ## Fora desta spec (de propósito)
 

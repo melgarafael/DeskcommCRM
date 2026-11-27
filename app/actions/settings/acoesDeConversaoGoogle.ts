@@ -18,12 +18,34 @@ import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { VALORES_DE_CATEGORIA } from "@/lib/conversoes/regras-google";
 import {
   criarAcaoDeConversao,
-  lerConexaoGoogleParaApi,
+  lerConexaoNativaParaDestinoGoogle,
   listarAcoesDeConversao,
   type AcaoDeConversao,
   type FalhaDaApiGoogle,
 } from "@/lib/plataformas-de-anuncio/google/api-google-ads";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { idDaContaGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
+
+const idOpcional = z
+  .union([idDaContaGoogle, z.literal("")])
+  .nullish()
+  .transform((v) => v || null);
+const camposDoDestino = {
+  google_customer_id: idOpcional,
+  google_login_customer_id: idOpcional,
+};
+const destinoSchema = z
+  .object(camposDoDestino)
+  .refine((v) => v.google_customer_id !== null || v.google_login_customer_id === null, {
+    message: "A conta gerente só pode acompanhar um destino explícito.",
+  });
+type DestinoInput = z.input<typeof destinoSchema>;
+
+function destinoDaEntrada(v: z.output<typeof destinoSchema>) {
+  return v.google_customer_id
+    ? { customerId: v.google_customer_id, loginCustomerId: v.google_login_customer_id }
+    : undefined;
+}
 
 type ErroDeAcesso =
   "validation_failed" | "unauthenticated" | "forbidden_tenant" | "forbidden_role" | "mfa_required";
@@ -45,23 +67,32 @@ async function autorizar(escrita: boolean) {
   return { ok: true as const, authUser, orgId: activeOrg.orgId };
 }
 
-export async function listarAcoesDeConversaoGoogle(): Promise<
-  ResultadoDaAcaoGoogle<AcaoDeConversao[]>
-> {
+export async function listarAcoesDeConversaoGoogle(
+  destino: DestinoInput = {},
+): Promise<ResultadoDaAcaoGoogle<AcaoDeConversao[]>> {
+  const pedido = destinoSchema.safeParse(destino);
+  if (!pedido.success) return { ok: false, error: "validation_failed" };
   const acesso = await autorizar(false);
   if (!acesso.ok) return acesso;
-  const conexao = await lerConexaoGoogleParaApi(createAdminClient(), acesso.orgId);
+  const conexao = await lerConexaoNativaParaDestinoGoogle(
+    createAdminClient(),
+    acesso.orgId,
+    destinoDaEntrada(pedido.data),
+  );
   if (!conexao.ok) return { ok: false, error: conexao.falha, detalhe: conexao.detalhe };
   const acoes = await listarAcoesDeConversao(conexao.dados);
   if (!acoes.ok) return { ok: false, error: acoes.falha, detalhe: acoes.detalhe };
   return { ok: true, dados: acoes.dados };
 }
 
-const pedidoSchema = z.object({
-  nome: z.string().trim().min(1).max(80),
-  categoria: z.enum(VALORES_DE_CATEGORIA),
-  incluir_em_conversoes: z.boolean(),
-});
+const pedidoSchema = z
+  .object({
+    nome: z.string().trim().min(1).max(80),
+    categoria: z.enum(VALORES_DE_CATEGORIA),
+    incluir_em_conversoes: z.boolean(),
+    ...camposDoDestino,
+  })
+  .refine((v) => v.google_customer_id !== null || v.google_login_customer_id === null);
 
 export async function criarAcaoDeConversaoGoogle(
   input: z.input<typeof pedidoSchema>,
@@ -71,7 +102,11 @@ export async function criarAcaoDeConversaoGoogle(
   const acesso = await autorizar(true);
   if (!acesso.ok) return acesso;
 
-  const conexao = await lerConexaoGoogleParaApi(createAdminClient(), acesso.orgId);
+  const conexao = await lerConexaoNativaParaDestinoGoogle(
+    createAdminClient(),
+    acesso.orgId,
+    destinoDaEntrada(pedido.data),
+  );
   if (!conexao.ok) return { ok: false, error: conexao.falha, detalhe: conexao.detalhe };
   const criada = await criarAcaoDeConversao(conexao.dados, {
     nome: pedido.data.nome,
@@ -92,6 +127,8 @@ export async function criarAcaoDeConversaoGoogle(
     userAgent: hdrs.get("user-agent") ?? undefined,
     metadata: {
       conversion_action_id: criada.dados.id,
+      google_customer_id: conexao.dados.customerId,
+      google_login_customer_id: conexao.dados.loginCustomerId,
       categoria: pedido.data.categoria,
       incluir_em_conversoes: pedido.data.incluir_em_conversoes,
     },

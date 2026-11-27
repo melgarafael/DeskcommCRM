@@ -123,6 +123,8 @@ const QUEM_LE_A_AGENDA: Record<string, string> = {
   "app/api/v1/conversations/_handler.ts": "select da caixa de entrada (tela da equipe)",
   "app/api/v1/contacts/_handler.ts": "select da ficha e da lista (tela da equipe)",
   "app/app/contacts/[id]/_client.tsx": "a ficha mostra o campo, marcado como só da equipe",
+  "components/contacts/EditContactDialog.tsx":
+    "o 'Editar contato' OFERECE o nome da agenda quando o cadastro não tem nome, com o aviso; só um clique de alguém da equipe o copia para o campo, nunca o preenchimento sozinho",
   "lib/lgpd/export-collector.ts":
     "o acesso do TITULAR (LGPD Art. 18 II, data.json): é dado pessoal dele, apagado na anonimização — não é mensagem, é o que ele pediu",
   "app/api/v1/lgpd/requests/[id]/preview/route.ts": "a prévia do export que a equipe confere antes de entregar",

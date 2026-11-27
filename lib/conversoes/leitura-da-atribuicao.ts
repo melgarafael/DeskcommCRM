@@ -154,10 +154,13 @@ export async function motivoDeContaDaEtapaGoogle(
   organizationId: string,
   contaDoClique: string | undefined,
   contaDeDestino: string | undefined,
+  destinoExplicito = false,
 ) {
   const destino = idDaContaGoogle.safeParse(contaDeDestino).data;
   if (!destino) return "credencial_incompleta";
   if (contaDoClique === destino) return null;
+  if (destinoExplicito)
+    return contaDoClique ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente";
 
   // A credencial de conversões já conta como uma conta. Basta uma conta de
   // relatório diferente dela; a PK da tabela é (organization_id, customer_id).
@@ -169,7 +172,19 @@ export async function motivoDeContaDaEtapaGoogle(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error("Não foi possível verificar as contas de relatório do Google Ads.");
-  if (!outraConta) return null;
+  if (!outraConta) {
+    // Destinos cadastrados também contam, inclusive pausados: pausar uma
+    // conta não pode tornar seus cliques elegíveis para a regra global.
+    const { data: outraRegra, error: erroRegra } = await admin
+      .from("google_ads_conversion_rules")
+      .select("google_customer_id")
+      .eq("organization_id", organizationId)
+      .neq("google_customer_id", destino)
+      .limit(1)
+      .maybeSingle();
+    if (erroRegra) throw new Error("Não foi possível verificar os destinos do Google Ads.");
+    if (!outraRegra) return null;
+  }
   return contaDoClique ? "conta_google_do_clique_divergente" : "conta_google_do_clique_ausente";
 }
 

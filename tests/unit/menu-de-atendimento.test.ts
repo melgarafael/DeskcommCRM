@@ -38,7 +38,9 @@ vi.mock("@/lib/leads/encerramento", () => ({
   encerraDemanda: vi.fn(async () => ({ lead: {}, jaEstava: false })),
 }));
 const { garantirLeadDaConversa } = vi.hoisted(() => ({
-  garantirLeadDaConversa: vi.fn(async () => ({ criado: true, leadId: "lead-1" })),
+  garantirLeadDaConversa: vi.fn(
+    async (_db: unknown, _dados: { conversationId?: string }) => ({ criado: true, leadId: "lead-1" }),
+  ),
 }));
 vi.mock("@/lib/leads/nascimento-do-lead", () => ({ garantirLeadDaConversa }));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
@@ -89,6 +91,8 @@ vi.mock("@/lib/ai/handoff/orchestrator", () => ({ triggerHandoff }));
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { aplicarEfeitosPosEntrada, type EntradaDeMensagem } from "@/lib/channels/pos-entrada";
+import { logger } from "@/lib/logger";
+import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import {
   CHAVE_NO_METADATA,
   lerEstadoDoMenu,
@@ -204,7 +208,12 @@ function estadoGravado(registro: Db): EstadoDoMenu | null {
 
 /** O despacho da IA foi pedido nesta mensagem? */
 function despachouIA(registro: Db): boolean {
-  return registro.rpcs.some(
+  return despachosIA(registro).length > 0;
+}
+
+/** QUANTOS despachos da IA saíram — a corrida da #5137 mede a contagem. */
+function despachosIA(registro: Db): Array<{ nome: string; args: unknown }> {
+  return registro.rpcs.filter(
     (r) => r.nome === "emit_event" && (r.args as { p_event_type?: string })?.p_event_type === "ai_agent.dispatch_requested",
   );
 }
@@ -525,5 +534,62 @@ describe("menu de atendimento sem IA na entrada (#4594)", () => {
     await passar(comCarimboDoInbound, { texto: "oi" });
     expect(menusEnviados()).toHaveLength(1);
     expect(estadoGravado(comCarimboDoInbound)?.estado).toBe("aguardando");
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. A CORRIDA: duas entradas AO MESMO TEMPO na mesma conversa (#5137)
+  // -------------------------------------------------------------------------
+
+  it("⭐ duas entradas SIMULTÂNEAS: no máximo UMA decide enviar o menu (#5137)", async () => {
+    // A fatia 1 do menu (PR #4636) decidia em read-modify-write: lia a conversa,
+    // decidia, gravava o estado e só então mandava. Como o `messageId` entra na
+    // chave de idempotência (`menu-de-atendimento:<conversa>:<mensagem>:menu`),
+    // duas mensagens DIFERENTES da mesma conversa tinham chaves diferentes e as
+    // DUAS passavam: medido com `Promise.all` em `aplicarEfeitosPosEntrada`,
+    // "oi" e "tudo bem?" mandavam dois menus. Este caso é o vermelho de antes.
+    const registro = db();
+
+    await Promise.all([
+      passar(registro, { messageId: "msg-1", texto: "oi" }),
+      passar(registro, { messageId: "msg-2", texto: "tudo bem?" }),
+    ]);
+
+    // A contagem é das RESPOSTAS do dublê — o que saiu para o cliente —, não do
+    // log: um teste que contasse log passaria mesmo com o menu indo duas vezes.
+    expect(menusEnviados()).toHaveLength(1);
+    expect(estadoGravado(registro)?.estado).toBe("aguardando");
+
+    // O perdedor NÃO sai do fluxo: cai no caminho normal da entrada, que
+    // despacha a IA. Um despacho, não dois — o vencedor tem a palavra.
+    expect(despachosIA(registro)).toHaveLength(1);
+
+    // O card é da ENTRADA, não do menu: uma chamada por entrada, e as duas
+    // apontam para a MESMA conversa (o mesmo lead no banco). O menu não
+    // acrescenta card nenhum.
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(2);
+    expect(
+      garantirLeadDaConversa.mock.calls.map(
+        ([, dados]) => (dados as { conversationId?: string }).conversationId,
+      ),
+    ).toEqual([CONVERSA, CONVERSA]);
+
+    // E o motivo do perdedor fica no rastro, nomeado.
+    const motivos = vi
+      .mocked(logger)
+      .info.mock.calls.map(([, meta]) => (meta as { motivo?: string } | undefined)?.motivo);
+    expect(motivos).toContain("menu_em_disputa");
+  });
+
+  it("envio do menu FALHOU: a posse é devolvida e a próxima mensagem recebe o menu (#5137)", async () => {
+    const registro = db({ metadata: { outra: "chave" } });
+    vi.mocked(sendMessageHandler).mockResolvedValueOnce({ status: "failed" } as Awaited<ReturnType<typeof sendMessageHandler>>);
+
+    await passar(registro, { messageId: "msg-1", texto: "oi" });
+    expect(estadoGravado(registro)).toBeNull();
+    expect((registro.tabelas.conversations[0] as { metadata?: Record<string, unknown> }).metadata).toEqual({ outra: "chave" });
+
+    await passar(registro, { messageId: "msg-2", texto: "oi de novo" });
+    expect(menusEnviados()).toHaveLength(1);
+    expect(estadoGravado(registro)?.estado).toBe("aguardando");
   });
 });

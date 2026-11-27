@@ -36,6 +36,10 @@
   var ROTULOS = { nome: "Seu nome", telefone: "Seu telefone", email: "Seu e-mail" };
   var TIPOS = { nome: "text", telefone: "tel", email: "email" };
   var AUTOCOMPLETE = { nome: "name", telefone: "tel", email: "email" };
+  var ESTADOS_DO_ATENDIMENTO = ["sem_agente", "aberto", "fechado"];
+  var AVISO_SEM_AGENTE = "Recebemos sua mensagem. Nossa equipe responde por aqui.";
+  var AVISO_FORA_SEM_VOLTA =
+    "Estamos fora do horário de atendimento. Deixe sua mensagem que respondemos assim que voltarmos.";
 
   var ESTILO_VISITANTE = {
     alignSelf: "flex-end",
@@ -86,12 +90,67 @@
     return typeof valor === "string" ? valor.slice(0, LIMITE_CONTEXTO) : "";
   }
 
+  /**
+   * O que vai no corpo da PRIMEIRA mensagem: só os campos com valor. `href` e `referrer` entram
+   * só se forem texto não vazio; `utm` só se tiver alguma chave. Sem nenhum valor, nulo, e o
+   * corpo não leva o campo `contexto`.
+   */
+  function contextoParaEnvio(contexto) {
+    if (!contexto || typeof contexto !== "object") return null;
+    var saida = {};
+    if (typeof contexto.href === "string" && contexto.href !== "") saida.href = contexto.href;
+    if (typeof contexto.referrer === "string" && contexto.referrer !== "") {
+      saida.referrer = contexto.referrer;
+    }
+    if (contexto.utm && typeof contexto.utm === "object" && Object.keys(contexto.utm).length > 0) {
+      saida.utm = contexto.utm;
+    }
+    return Object.keys(saida).length > 0 ? saida : null;
+  }
+
   /** Só aceita a mensagem da página que embute a janela, com tipo `contexto`. */
   function aceitarMensagemDoPai(evento, pai) {
     var referencia = pai || window.parent;
     if (!evento || !referencia || evento.source !== referencia) return false;
     var dados = evento.data;
     return !!dados && typeof dados === "object" && dados.tipo === "contexto";
+  }
+
+  /**
+   * Lê o `atendimento` da resposta de sessão. Fora do formato (estado desconhecido, `abre_em`
+   * que não é data, `aviso` que não é texto não vazio), o campo inteiro é ignorado: nulo.
+   */
+  function lerAtendimento(bruto) {
+    if (!bruto || typeof bruto !== "object") return null;
+    if (ESTADOS_DO_ATENDIMENTO.indexOf(bruto.estado) === -1) return null;
+    var abreEm = bruto.abre_em;
+    if (abreEm !== null && (typeof abreEm !== "string" || isNaN(new Date(abreEm).getTime()))) {
+      return null;
+    }
+    var aviso = bruto.aviso;
+    if (aviso !== null && (typeof aviso !== "string" || aviso.trim() === "")) return null;
+    return { estado: bruto.estado, abreEm: abreEm, aviso: aviso };
+  }
+
+  function doisDigitos(numero) {
+    return numero < 10 ? "0" + numero : String(numero);
+  }
+
+  /** Quando o atendimento volta, no relógio do aparelho. Sem data válida, o texto sem hora. */
+  function textoDaVolta(abreEm) {
+    var data = abreEm ? new Date(abreEm) : null;
+    if (!data || isNaN(data.getTime())) return AVISO_FORA_SEM_VOLTA;
+    return (
+      "Estamos fora do horário de atendimento. Voltamos às " +
+      doisDigitos(data.getHours()) +
+      ":" +
+      doisDigitos(data.getMinutes()) +
+      " de " +
+      doisDigitos(data.getDate()) +
+      "/" +
+      doisDigitos(data.getMonth() + 1) +
+      " (no horário do seu aparelho)."
+    );
   }
 
   /**
@@ -441,6 +500,10 @@
       valoresColeta: null,
       // Nenhum envio deu 2xx nesta carga da janela: um 422 agora é o da primeira mensagem.
       cargaComEnvioOk: false,
+      // Atendimento devolvido pela sessão (ou nulo). Cada aviso de horário sai uma vez por carga.
+      atendimento: null,
+      avisoForaMostrado: false,
+      avisoSemAgenteMostrado: false,
     };
     var configLida = lerConfig(ui.configNo);
     var config = configLida || {};
@@ -706,6 +769,24 @@
         estado.fluxoIniciado = true;
         assinarRespostas();
       }
+      mostrarAvisoDeForaDoHorario();
+    }
+
+    /** Fora do horário: uma linha de atendente por carga, com o aviso do agente ou o texto padrão. */
+    function mostrarAvisoDeForaDoHorario() {
+      var at = estado.atendimento;
+      if (!at || at.estado !== "fechado" || estado.avisoForaMostrado) return;
+      estado.avisoForaMostrado = true;
+      var texto = at.aviso !== null ? at.aviso : textoDaVolta(at.abreEm);
+      adicionarLinha(criarLinha(doc, "atendente", texto, ""));
+    }
+
+    /** Sem agente: depois da primeira mensagem aceita, uma linha de atendente por carga. */
+    function mostrarAvisoSemAgente() {
+      var at = estado.atendimento;
+      if (!at || at.estado !== "sem_agente" || estado.avisoSemAgenteMostrado) return;
+      estado.avisoSemAgenteMostrado = true;
+      adicionarLinha(criarLinha(doc, "atendente", AVISO_SEM_AGENTE, ""));
     }
 
     /** 422 na primeira mensagem: volta à coleta com o que foi digitado, ou ao aviso se não há campos. */
@@ -763,6 +844,8 @@
       if (!estado.primeiraEnviada) {
         corpo.aceite = { versao: config.versaoDoAviso };
         if (estado.contato) corpo.contato = estado.contato;
+        var contexto = contextoParaEnvio(estado.contexto);
+        if (contexto) corpo.contexto = contexto;
       }
 
       pedirJson(ROTA_MENSAGENS, "POST", corpo, estado.token).then(
@@ -774,6 +857,7 @@
             atualizarEstado(m);
             estado.primeiraEnviada = true;
             estado.cargaComEnvioOk = true;
+            mostrarAvisoSemAgente();
             gravarFlagIniciada(armazenamento, chave);
             var novo = r.corpo && r.corpo.data && r.corpo.data.token_novo;
             if (typeof novo === "string" && novo !== "") trocarToken(novo);
@@ -918,6 +1002,7 @@
           var dados = r.corpo && r.corpo.data;
           if (!r.ok || !dados || typeof dados.token !== "string") throw new Error("sessao");
           trocarToken(dados.token);
+          estado.atendimento = lerAtendimento(dados.atendimento);
           estado.tentativas = 0;
           setReconectando(false);
           // Visitante que já teve a primeira mensagem aceita (flag e token) vai direto à conversa.

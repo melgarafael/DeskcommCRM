@@ -72,14 +72,16 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
   // lê o desfecho de `needs`. O teto que denuncia a suíte crescendo vive na perna
   // que a roda.
   "ci.yml::invariants-majors": {
-    minutos: 45,
+    minutos: 60,
     razao:
       "a perna deixou de ser UMA passada: agora é `test:db` + `test:db:update`, e cada uma sobe " +
       "Postgres e aplica o baseline (p90 medido de uma passada: 325s). O 30 era DECLARADO, não " +
       "medido. Em 10/11/2026 ele passou a cortar por relógio: pg15 e pg17 cancelados aos 30 min, " +
       "também na `main`, e o #3590, pronto e provado pela tela, cortado três vezes seguidas. " +
-      "45 com ok do dono (doc de decisão 302). Se voltar a bater no teto, a pergunta é por que a " +
-      "passada cresceu, não subir de novo",
+      "45 com ok do dono (doc de decisão 302). Em 26/11/2026 voltou a cortar: de 25/11 em diante, 60 " +
+      "rodadas, verde de 28 a 44 min e 10 cortes aos 45 (8 no runner da GitHub, 2 na VPS). 60 com ok " +
+      "do dono (doc 421, issue #1149). Se o 60 também apertar, a saída é dividir a perna " +
+      "(`test:db` e `test:db:update` em jobs separados), não subir de novo",
   },
 };
 

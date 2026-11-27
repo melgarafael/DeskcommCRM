@@ -47,6 +47,9 @@ let linhas: Array<Record<string, unknown>> = [];
 /** Vínculos de `user_organizations`: por padrão a pessoa é membro ATIVO. */
 let vinculos: Record<string, unknown>[] = [{ organization_id: "org-1", user_id: "user-1", revoked_at: null }];
 
+/** Os filtros `in()` pedidos à tabela de conexões. */
+let filtros: Array<[string, unknown]> = [];
+
 function admin() {
   return {
     from: (tabela: string) => {
@@ -62,7 +65,10 @@ function admin() {
       }
       const consulta = {
         select: () => consulta,
-        in: () => consulta,
+        in: (coluna: string, valores: unknown) => {
+          filtros.push([coluna, valores]);
+          return consulta;
+        },
         not: () => consulta,
         lte: () => consulta,
         order: () => consulta,
@@ -100,6 +106,7 @@ function respostaHttp(corpo: unknown, status = 200): Response {
 
 beforeEach(() => {
   atualizacoes = [];
+  filtros = [];
   linhas = [];
   vinculos = [{ organization_id: "org-1", user_id: "user-1", revoked_at: null }];
   vi.stubGlobal("fetch", vi.fn());
@@ -110,6 +117,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("renovarAgendasDoGoogle", () => {
+  it("só pede as conexões do Google — a do Outlook seria marcada para reconectar", async () => {
+    const { renovarAgendasDoGoogle } = await carregarWorker();
+    await renovarAgendasDoGoogle(admin(), { agora: AGORA });
+
+    expect(filtros).toContainEqual(["provider", ["google_calendar"]]);
+  });
+
   it("QUEM SAIU DA EMPRESA para de ter a agenda renovada", async () => {
     // O token do Google continua válido depois da revogação — ele não sabe nada de RH.
     // Sem este filtro, a agenda PESSOAL de um ex-funcionário segue sendo lida para dentro

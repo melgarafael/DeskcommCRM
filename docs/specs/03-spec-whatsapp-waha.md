@@ -2072,3 +2072,14 @@ na auditoria administrativa. O polling já existente confirma `WORKING`; erro
 oferece nova tentativa ou QR. Pareamento real exige a confirmação no celular.
 
 Fonte do contrato: https://waha.devlike.pro/docs/how-to/sessions/#get-pairing-code
+
+
+## Recusa de destino sem conta
+
+Antes do envio a um endereço de telefone ainda não resolvido, todas as grafias do número são consultadas pelo canal. Uma resposta positiva resolve o endereço e entra no memo da sessão por 10 minutos. Só respostas negativas explícitas de todas as grafias recusam; exceção, resposta ilegível ou ausência de grafia produz desconhecido e mantém o fallback de envio. Negativos não são memorizados, permitindo nova consulta se o número acabou de criar conta. Destinos de grupo, identidades opacas e canais de divulgação já resolvidos não são consultados.
+
+A recusa definitiva grava messages.status=failed, error_code=numero_sem_whatsapp, error_message="Este número não tem WhatsApp." e metadata.falha_de_envio.natureza=permanente pelo handler existente. O mesmo código e frase aparecem na bolha e na atividade de falha; o ledger/turno preservam a natureza e não repetem automaticamente o mesmo conteúdo recusado. Sem schema novo.
+
+A abertura por open-with-contact pergunta apenas ao adapter capaz da sessão escolhida, com dados da organização autenticada. Histórico recebido naquela conversa/sessão dispensa a consulta preliminar; a proteção de transporte permanece. False recusa com HTTP 422 e código numero_sem_whatsapp antes de criar/reabrir a conversa. Null/erro ou adapter sem capacidade preservam a abertura. O aviso usa o hook de escolha de canal compartilhado, atendendo Inbox/Contatos/funil/cartões sem duplicar regra em telas. O contato cadastral pode existir mesmo sem conta; não é removido pela recusa de conversa. A porta `POST /api/v1/messages` com `phone_number` traduz a mesma recusa para HTTP 422 e `numero_sem_whatsapp` antes de enviar, permitindo ao conector distinguir uma recusa definitiva de uma falha interna.
+
+Destino: núcleo, pois corrige o envio e a abertura comuns. Sem módulo, variável obrigatória ou serviço novo. Living System Checklist: entrada da tela/handler → adapter/check; saída da recusa → toast HTTP 422 ou messages.failed com código legível. Leitura preliminar não inventa auditoria de mutação; o envio mantém registro, atividade e auditoria existentes. Porta = Iniciar conversa no Inbox e demais consumidores da rota. Falha inconclusiva permite seguir; falha definitiva informa o motivo para corrigir o número e nova tentativa faz consulta fresca. IA/humano preservam o ledger de falhas permanentes; mapa numero-sem-whatsapp.architecture.json contém os consumidores reais. Prova em tests/e2e/numero-sem-whatsapp.spec.ts, com banco do baseline e transporte HTTP local simulado, sem mensagens reais.

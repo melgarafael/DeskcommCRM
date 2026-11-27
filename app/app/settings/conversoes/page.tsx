@@ -56,6 +56,7 @@ import {
   googleAdsEstaConfigurado,
 } from "@/lib/plataformas-de-anuncio/google/config";
 import { lerEstadoDaConexaoGoogle } from "@/lib/plataformas-de-anuncio/google/estado-da-conexao";
+import { listarContasDeRelatorio } from "@/lib/plataformas-de-anuncio/google/contas-de-relatorio";
 import { lerEstadoDaCaptura } from "@/lib/plataformas-de-anuncio/landing-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -137,6 +138,7 @@ export default async function ConversoesPage({
     etapas,
     regrasGoogle,
     regrasMeta,
+    contasGoogleSugeridas,
   ] = await Promise.all([
     lerEstadoDaConexao(admin, activeOrg.orgId),
     lerPendencias(admin, activeOrg.orgId),
@@ -163,12 +165,24 @@ export default async function ConversoesPage({
     // Falha na leitura das regras não derruba a tela: o editor some e o resto fica.
     listarRegrasGoogle(admin, activeOrg.orgId).catch(() => null),
     listarRegrasMeta(admin, activeOrg.orgId).catch(() => null),
+    // Só metadados para sugerir nomes/IDs: a autorização de envio é validada separadamente.
+    aba === "configuracao"
+      ? listarContasDeRelatorio(admin, activeOrg.orgId).catch(() => null)
+      : null,
   ]);
   // O nome que a pessoa reconhece para cada evento de etapa, das duas
   // plataformas — o Histórico e as pendências leem daqui.
   const nomePorEtapa = new Map((etapas.data ?? []).map((e) => [e.id, e.name]));
   const rotulosDeEtapa = [
-    ...(regrasGoogle ?? []).map((r) => ({ eventName: r.eventName, label: r.label })),
+    ...new Map(
+      (regrasGoogle ?? []).map((r) => [
+        r.eventName,
+        {
+          eventName: r.eventName,
+          label: nomePorEtapa.get(r.stageId) ?? r.eventName,
+        },
+      ]),
+    ).values(),
     ...(regrasMeta ?? []).map((r) => ({
       eventName: r.eventName,
       label: nomePorEtapa.get(r.stageId) ?? "",
@@ -272,7 +286,7 @@ export default async function ConversoesPage({
         </p>
       </CabecalhoDaSubTela>
 
-      <nav className="flex gap-1 border-b" aria-label={t("Seções de conversões")}>
+      <nav className="flex gap-1 overflow-x-auto border-b" aria-label={t("Seções de conversões")}>
         {(
           [
             ["configuracao", t("Configuração")],
@@ -286,9 +300,10 @@ export default async function ConversoesPage({
             href={chave === "configuracao" ? "?" : `?aba=${chave}`}
             aria-current={aba === chave ? "page" : undefined}
             className={
+              // Sem -mb-px: overflow-x-auto força overflow-y auto, e o -mb-px transbordava 1px na vertical.
               aba === chave
-                ? "-mb-px border-b-2 border-primary px-3 py-2 text-sm font-medium"
-                : "px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                ? "shrink-0 border-b-2 border-primary px-3 py-2 text-sm font-medium whitespace-nowrap"
+                : "shrink-0 px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
             }
           >
             {rotulo}
@@ -424,11 +439,10 @@ export default async function ConversoesPage({
               etapas={etapasAbertas}
               regras={regrasGoogle}
               idioma={idioma}
-              podeCriarAcao={
-                googleAdsEstaConfigurado("google_ads") &&
-                estadoGoogle.temRefreshToken &&
-                Boolean(estadoGoogle.customerId)
-              }
+              contaPadraoId={estadoGoogle.customerId}
+              contaPadraoMcc={estadoGoogle.loginCustomerId}
+              contasSugeridas={contasGoogleSugeridas?.ok ? contasGoogleSugeridas.contas : []}
+              podeCriarAcao={googleAdsEstaConfigurado("google_ads") && estadoGoogle.temRefreshToken}
             />
           )}
 

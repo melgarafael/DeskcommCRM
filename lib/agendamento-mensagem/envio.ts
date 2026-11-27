@@ -9,6 +9,7 @@
  * `messages`, e ela pode estar em `queued` esperando o canal. Quem diz se saiu é
  * o `status` dessa mensagem, lido pela tela através de `message_id`.
  */
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -25,6 +26,19 @@ export interface AgendamentoParaEnvio {
   channel_session_id: string;
   created_by_user_id: string | null;
   body: string;
+  /** Só para série: a ocorrência é identificada pela data prevista, não só pelo agendamento. */
+  recorrencia?: string | null;
+  scheduled_at?: string;
+}
+
+/**
+ * Id determinístico da mensagem de UMA ocorrência de série. O id do agendamento
+ * é o mesmo em todas as ocorrências: reaproveitá-lo faria a 2ª ocorrência achar
+ * a mensagem da 1ª no 23505 do handler e devolvê-la sem enviar nada.
+ */
+export function idDaOcorrencia(agendamentoId: string, previstaPara: string): string {
+  const h = createHash("sha256").update(`${agendamentoId}|${previstaPara}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 export type DesfechoDoEnvio =
@@ -32,18 +46,6 @@ export type DesfechoDoEnvio =
   | { desfecho: "falhou"; motivo: string }
   /** Org suspensa, redigida ou arquivada no meio do envio: nada é gravado; o envio espera. */
   | { desfecho: "org_parada" };
-
-export async function sessaoEstaConectada(admin: SupabaseClient, organizationId: string, sessionId: string): Promise<boolean> {
-  const { data, error } = await admin
-    .from("channel_sessions")
-    .select("status")
-    .eq("id", sessionId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  // Leitura que falhou não pode cancelar o envio como se a desconexão estivesse confirmada.
-  if (error) throw new Error(`session_lookup_failed: ${error.message}`);
-  return data?.status === "WORKING";
-}
 
 /**
  * Quem agendou ainda é da equipe, com papel de atendente ou acima? Conferido na
@@ -69,15 +71,17 @@ export async function autorAindaTemAcesso(admin: SupabaseClient, ag: Agendamento
 export async function encaminharAgendamento(admin: SupabaseClient, ag: AgendamentoParaEnvio): Promise<DesfechoDoEnvio> {
   try {
     const boundary = await beginServiceAtOrigin(admin, ag.organization_id, ag.contact_id, ag.channel_session_id);
-    const chave = `scheduled:${ag.id}`;
+    const serie = Boolean(ag.recorrencia) && ag.recorrencia !== "nenhuma" && Boolean(ag.scheduled_at);
+    const idDaMensagem = serie ? idDaOcorrencia(ag.id, ag.scheduled_at as string) : ag.id;
+    const chave = serie ? `scheduled:${ag.id}:${ag.scheduled_at}` : `scheduled:${ag.id}`;
     const ctx: HandlerCtx = {
       organization_id: ag.organization_id,
       serviceBoundary: boundary,
-      actor: { type: "webhook_source", id: `scheduled:${ag.id}` },
-      // O id da mensagem é o do agendamento: se a rodada cair depois do envio e
+      actor: { type: "webhook_source", id: chave },
+      // O id da mensagem é o da ocorrência: se a rodada cair depois do envio e
       // antes de gravar o desfecho, a próxima reencontra a MESMA linha em vez de
       // mandar de novo (o handler devolve a linha já enviada no 23505).
-      internalMessageId: ag.id,
+      internalMessageId: idDaMensagem,
       requestId: chave,
     };
     const input: SendMessageInput = {

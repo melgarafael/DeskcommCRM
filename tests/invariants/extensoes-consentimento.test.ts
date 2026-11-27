@@ -291,6 +291,17 @@ describe("quem pode consentir", () => {
     expect((await vinculo(orgA, inst))?.consented_areas).toEqual([]);
   });
 
+  it("financeiro é sensível: gerente não consente; admin consente", async () => {
+    const inst = await instalarEAtivar([...DECLARADAS, "area.financeiro.escrita"]);
+
+    const e = await erroDe(consentir(gerente, orgA, inst, ["area.financeiro.escrita"]));
+    expect(e.message).toBe("extension_forbidden");
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([]);
+
+    await consentir(outroAdmin, orgA, inst, ["area.financeiro.escrita"]);
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual(["area.financeiro.escrita"]);
+  });
+
   it("quem é admin só da B não consente na A", async () => {
     const inst = await instalarEAtivar();
     const so_b = "c0ae0000-0000-4000-8000-000000000056";
@@ -445,7 +456,7 @@ describe("o vocabulário do banco é o do TypeScript", () => {
     const inst = await instalarEAtivar();
 
     const e = await erroDe(
-      query("update public.organization_extensions set consented_areas = array['area.financeiro.escrita'] where organization_id = $1 and installation_id = $2", [
+      query("update public.organization_extensions set consented_areas = array['area.inexistente.escrita'] where organization_id = $1 and installation_id = $2", [
         orgA,
         inst,
       ]),

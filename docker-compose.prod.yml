@@ -160,6 +160,32 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      # ── A IDENTIDADE DO BUILD QUE O `up -d` FAZ SOZINHO (#5196) ───────────
+      #
+      # Este bloco não é só o escape do operador: quando o `dc pull` do
+      # `update.sh` falha, o `up -d` o executa e grava o resultado SOB A TAG
+      # OFICIAL da release (`${WORKER_IMAGE}`). Sem os dois campos abaixo, essa
+      # imagem saía com `APP_VERSION=dev` — o default do `Dockerfile.worker` —
+      # e SEM `org.opencontainers.image.revision`, que no fluxo oficial é o CI
+      # que carimba. Como o `.env` guarda `WORKER_PULL_POLICY=missing`, a tag
+      # já existia no disco e o Docker nunca mais puxava a oficial: o
+      # `_runtime.sh` lia `revision: null`, gravava `source_verified: false` e
+      # a confirmação de versão do parque ficava travada para sempre.
+      #
+      # O valor de `APP_VERSION` vem do ambiente: o `update.sh` exporta a
+      # versão alvo antes do `up -d` e o `construir_aqui_e_subir` já exportava
+      # a dele. Sem ninguém exportando, `${APP_VERSION:-dev}` mantém o
+      # comportamento antigo (build à mão, sem versão de release).
+      #
+      # `APP_REVISION` é o commit de onde a imagem foi construída. Vazio é
+      # aceito pelo Compose e o label sai vazio — que é o que o `_runtime.sh`
+      # já trata como não-medido (`^[a-f0-9]{40,64}$` não casa com vazio),
+      # exatamente como hoje. NÃO é para o label mentir: quem não sabe a
+      # revisão não carimba uma.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     # ═══ O PRAZO QUE FALTAVA (#2823) ═══
     #
     # No `docker stop` o Docker manda SIGTERM e espera ESTE prazo; passado ele,
@@ -345,6 +371,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.scheduler
+      # Mesma identidade do `worker` (#5196, o porquê está lá): o `up -d` de
+      # produção constrói este serviço quando o pull falha, e o que ele
+      # constrói fica sob a tag oficial da release. Sem estes dois, a imagem
+      # saía com `APP_VERSION=dev` e sem revisão, e o `_runtime.sh` marcava
+      # `source_verified: false`.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     restart: unless-stopped
     depends_on:
       app:
@@ -521,6 +556,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.voice-agent
+      # Mesma identidade do `worker` (#5196, o porquê está lá). O
+      # `Dockerfile.voice-agent` também aceita `ARG APP_VERSION`; a revisão vai
+      # como label de imagem.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     restart: unless-stopped
     depends_on:
       asterisk:

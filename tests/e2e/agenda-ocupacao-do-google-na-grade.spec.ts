@@ -237,8 +237,8 @@ test.describe("a ocupação do Google na grade da agenda", () => {
       "o título do evento do Google VAZOU para o DOM da tela de trabalho",
     ).not.toContain(TITULO_SIGILOSO);
     const rotulo = (await bloco.getAttribute("aria-label")) ?? "";
-    expect(rotulo, "o rótulo acessível não avisa que a origem é o Google").toMatch(
-      /ocupado na agenda do google/i,
+    expect(rotulo, "o rótulo acessível não avisa que a origem é a agenda externa").toMatch(
+      /ocupado na agenda externa/i,
     );
     expect(rotulo, "o rótulo acessível carrega o título do evento").not.toContain(TITULO_SIGILOSO);
 

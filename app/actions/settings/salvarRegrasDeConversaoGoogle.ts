@@ -22,6 +22,14 @@ import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { eventoDaEtapa, VALORES_DE_CATEGORIA } from "@/lib/conversoes/regras-google";
+import { idDaContaGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
+
+const idOpcional = z
+  .union([idDaContaGoogle, z.literal("")])
+  .nullish()
+  .transform((v) => v || null);
+const chaveDaRegra = (r: { stage_id: string; google_customer_id?: string | null }) =>
+  `${r.stage_id}:${r.google_customer_id ?? "global"}`;
 
 export type SalvarRegrasResult =
   | { ok: true }
@@ -44,19 +52,24 @@ const regraSchema = z
     enabled: z.boolean(),
     label: z.string().trim().max(100),
     google_action_id: z.string().trim().max(32).regex(/^\d*$/, "só dígitos"),
+    google_customer_id: idOpcional,
+    google_login_customer_id: idOpcional,
     category: z.enum(VALORES_DE_CATEGORIA),
     included_in_conversions: z.boolean(),
     channel: z.enum(["todos", "whatsapp", "outros"]),
   })
   .refine((r) => !r.enabled || (r.label.length > 0 && r.google_action_id.length > 0), {
     message: "Regra ligada precisa de nome e de ação de conversão.",
+  })
+  .refine((r) => r.google_customer_id !== null || r.google_login_customer_id === null, {
+    message: "A conta gerente só pode acompanhar um destino explícito.",
   });
 
 const entradaSchema = z
   .array(regraSchema)
   .max(200)
-  .refine((lista) => new Set(lista.map((r) => r.stage_id)).size === lista.length, {
-    message: "Etapa repetida.",
+  .refine((lista) => new Set(lista.map(chaveDaRegra)).size === lista.length, {
+    message: "Destino repetido para a mesma etapa.",
   });
 
 export type RegraDeConversaoInput = z.input<typeof regraSchema>;
@@ -99,34 +112,67 @@ export async function salvarRegrasDeConversaoGoogle(
     if (ligadas.some((id) => !validas.has(id))) return { ok: false, error: "etapa_invalida" };
   }
 
+  // A chave física distingue null (global) de uma conta explícita. Só nesta
+  // combinação precisamos resolver o ID global para impedir dois destinos
+  // efetivamente iguais, sem ler token ou exigir acesso à API do Google.
+  const etapasComGlobal = new Set(
+    regras.filter((r) => r.enabled && r.google_customer_id === null).map((r) => r.stage_id),
+  );
+  const explicitasComGlobal = regras.filter(
+    (r) => r.enabled && r.google_customer_id !== null && etapasComGlobal.has(r.stage_id),
+  );
+  if (explicitasComGlobal.length > 0) {
+    const { data: conexao, error } = await admin
+      .from("ad_platform_connections")
+      .select("google_customer_id")
+      .eq("organization_id", orgId)
+      .eq("platform", "google_ads")
+      .maybeSingle();
+    if (error) return { ok: false, error: "erro_ao_gravar" };
+    const padrao = idDaContaGoogle.safeParse(conexao?.google_customer_id?.replace(/\D/g, "")).data;
+    if (padrao && explicitasComGlobal.some((r) => r.google_customer_id === padrao)) {
+      return {
+        ok: false,
+        error: "validation_failed",
+        details: {
+          message: "A conta padrão e um destino explícito apontam para a mesma conta nesta etapa.",
+        },
+      };
+    }
+  }
+
   const { data: existentes, error: erroLeitura } = await admin
     .from("google_ads_conversion_rules")
-    .select("stage_id, event_name, label, google_action_id")
+    .select("id, stage_id, event_name, label, google_action_id, google_customer_id")
     .eq("organization_id", orgId);
   if (erroLeitura) return { ok: false, error: "erro_ao_gravar" };
   type Existente = {
+    id: string;
     stage_id: string;
     event_name: string;
     label: string;
     google_action_id: string;
+    google_customer_id: string | null;
   };
-  const existentePorEtapa = new Map(
-    ((existentes ?? []) as Existente[]).map((r) => [r.stage_id, r]),
-  );
+  const regrasExistentes = (existentes ?? []) as Existente[];
+  const existentePorDestino = new Map(regrasExistentes.map((r) => [chaveDaRegra(r), r]));
+  const eventoPorEtapa = new Map(regrasExistentes.map((r) => [r.stage_id, r.event_name]));
 
   // Regra desligada que nunca existiu não vira linha: não há nome a preservar.
   const linhas = regras
-    .filter((r) => r.enabled || existentePorEtapa.has(r.stage_id))
+    .filter((r) => r.enabled || existentePorDestino.has(chaveDaRegra(r)))
     .map((r) => {
       // Desligada com campos vazios preserva o que já estava gravado: as
       // colunas são NOT NULL, e todas as linhas do upsert levam as mesmas.
-      const antes = existentePorEtapa.get(r.stage_id);
+      const antes = existentePorDestino.get(chaveDaRegra(r));
       return {
         organization_id: orgId,
         stage_id: r.stage_id,
-        event_name: antes?.event_name ?? eventoDaEtapa(r.stage_id),
+        event_name: eventoPorEtapa.get(r.stage_id) ?? eventoDaEtapa(r.stage_id),
         label: r.label || antes?.label || "Etapa do funil",
         google_action_id: r.google_action_id || antes?.google_action_id || "0",
+        google_customer_id: r.google_customer_id,
+        google_login_customer_id: r.google_login_customer_id,
         category: r.category,
         included_in_conversions: r.included_in_conversions,
         channel: r.channel,
@@ -138,19 +184,19 @@ export async function salvarRegrasDeConversaoGoogle(
   if (linhas.length > 0) {
     const { error } = await admin
       .from("google_ads_conversion_rules")
-      .upsert(linhas, { onConflict: "organization_id,stage_id" });
+      .upsert(linhas, { onConflict: "organization_id,stage_id,google_customer_id" });
     if (error) return { ok: false, error: "erro_ao_gravar", details: error.message };
   }
 
   // O que sumiu da lista é desligado — nunca apagado (ver o cabeçalho).
-  const enviadas = new Set(regras.map((r) => r.stage_id));
-  const sumidas = [...existentePorEtapa.keys()].filter((id) => !enviadas.has(id));
+  const enviadas = new Set(regras.map(chaveDaRegra));
+  const sumidas = regrasExistentes.filter((r) => !enviadas.has(chaveDaRegra(r))).map((r) => r.id);
   if (sumidas.length > 0) {
     const { error } = await admin
       .from("google_ads_conversion_rules")
       .update({ enabled: false, updated_by: authUser.id })
       .eq("organization_id", orgId)
-      .in("stage_id", sumidas);
+      .in("id", sumidas);
     if (error) return { ok: false, error: "erro_ao_gravar", details: error.message };
   }
 

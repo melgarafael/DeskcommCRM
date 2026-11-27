@@ -135,7 +135,7 @@ export function RankingsDeNegociosGanhos({
   if (isLoading) return moldura(<p className="text-sm text-text-muted">{t("Carregando…")}</p>);
 
   if (isError || !relatorio) {
-    return moldura(<p className="text-danger text-sm">{t("Erro ao carregar o relatório.")}</p>);
+    return moldura(<p className="text-destructive text-sm">{t("Erro ao carregar o relatório.")}</p>);
   }
 
   if (relatorio.sem_dados) {

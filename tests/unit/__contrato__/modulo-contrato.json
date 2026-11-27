@@ -9,7 +9,9 @@
     "agentes_ia",
     "catalogo",
     "configuracao",
-    "analise"
+    "analise",
+    "tarefas",
+    "financeiro"
   ],
   "permissoes": [
     "area.agenda.escrita",
@@ -26,15 +28,20 @@
     "area.contatos.leitura",
     "area.conversas.escrita",
     "area.conversas.leitura",
+    "area.financeiro.escrita",
+    "area.financeiro.leitura",
     "area.funis.escrita",
     "area.funis.leitura",
     "area.negocios.escrita",
-    "area.negocios.leitura"
+    "area.negocios.leitura",
+    "area.tarefas.escrita",
+    "area.tarefas.leitura"
   ],
   "rotas": {
     "agenda": [
       "DELETE /api/v1/agenda/agendamentos",
       "DELETE /api/v1/agenda/excecoes",
+      "DELETE /api/v1/agenda/microsoft/desconectar",
       "DELETE /api/v1/agenda/tipos",
       "GET /api/v1/agenda/agendamentos",
       "GET /api/v1/agenda/agendamentos/[id]",
@@ -44,6 +51,9 @@
       "GET /api/v1/agenda/excecoes",
       "GET /api/v1/agenda/horarios-livres",
       "GET /api/v1/agenda/lista-de-espera",
+      "GET /api/v1/agenda/microsoft/calendarios",
+      "GET /api/v1/agenda/microsoft/callback",
+      "GET /api/v1/agenda/microsoft/connect",
       "GET /api/v1/agenda/painel-do-dia",
       "GET /api/v1/agenda/pessoas",
       "GET /api/v1/agenda/servicos",
@@ -52,6 +62,7 @@
       "PATCH /api/v1/agenda/agendamentos",
       "PATCH /api/v1/agenda/configuracao",
       "PATCH /api/v1/agenda/lista-de-espera",
+      "PATCH /api/v1/agenda/microsoft/calendarios",
       "PATCH /api/v1/agenda/tipos",
       "POST /api/v1/agenda/agendamentos",
       "POST /api/v1/agenda/agendamentos/[id]/google/resolver",
@@ -85,6 +96,7 @@
       "GET /api/v1/ai/cases",
       "GET /api/v1/ai/cases/[id]",
       "GET /api/v1/ai/cases/[id]/chat",
+      "GET /api/v1/ai/credit-health",
       "GET /api/v1/ai/evolution",
       "GET /api/v1/ai/followup-flows",
       "GET /api/v1/ai/followup-flows/[id]",
@@ -335,6 +347,7 @@
       "POST /api/v1/messages/[id]/hide",
       "PUT /api/v1/conversations/[id]/sector"
     ],
+    "financeiro": [],
     "funis": [
       "DELETE /api/v1/pipelines/[id]",
       "DELETE /api/v1/pipelines/[id]/stages/[id]",
@@ -410,7 +423,8 @@
       "POST /api/v1/proposals/[id]/decide",
       "POST /api/v1/proposals/[id]/preencher-com-conversa",
       "POST /api/v1/proposals/[id]/revise"
-    ]
+    ],
+    "tarefas": []
   },
   "formatos": {
     "/api/v1/agenda/agendamentos": {
@@ -548,7 +562,7 @@
         {
           "nome": "alterarSchema",
           "origem": "@/lib/agenda/tipos-de-agendamento",
-          "hash": "6245f5adcb258277"
+          "hash": "8b29d78104f1e902"
         },
         {
           "nome": "criarComRascunhoSchema",
