@@ -85453,9 +85453,6 @@ revoke all on function public.fn_appointment_insert_with_responsibles(uuid,jsonb
 grant execute on function public.fn_appointment_insert_with_responsibles(uuid,jsonb,uuid[]) to authenticated,service_role;
 
 
--- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
--- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
--- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
 -- ---- a agenda de serviço não consulta pg_timezone_names por profissional (migration 9500) ----
 create or replace function public.fn_calendar_service_person_available(p_org uuid,p_owner uuid,p_start timestamptz,p_end timestamptz,p_ignore uuid default null,p_type uuid default null)
 returns boolean language plpgsql stable security definer set search_path=public as $$
@@ -85465,6 +85462,11 @@ begin
   select a.schedule into schedule from public.attendant_availability a where a.organization_id=p_org and a.user_id=p_owner and a.is_available;
   if not found or jsonb_typeof(schedule->'windows')<>'array' then return false;end if;
   zone:=coalesce(nullif(schedule->>'timezone',''),'America/Sao_Paulo');
+  -- Nome no formato Área/Local vai direto ao `at time zone` (inválido levanta 22023, capturado abaixo).
+  -- Qualquer outra forma ainda passa pelo catálogo: `-03:00` seria lido como POSIX, com o sinal invertido.
+  if zone !~ '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$' then
+    if not exists(select 1 from pg_timezone_names where name=zone) then return false;end if;
+  end if;
   local_start:=p_start at time zone zone;local_end:=p_end at time zone zone;day_date:=local_start::date;
   if local_end::date<>day_date and local_end::time<>'00:00:00' then return false;end if;
   start_min:=extract(hour from local_start)::int*60+extract(minute from local_start)::int;
@@ -85500,6 +85502,9 @@ end $$;
 revoke all on function public.fn_calendar_service_person_available(uuid,uuid,timestamptz,timestamptz,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_calendar_service_person_available(uuid,uuid,timestamptz,timestamptz,uuid,uuid) to service_role;
 
+-- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
+-- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
+-- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
 -- Põe um arquivo na fila de remoção. Quem chama já provou pela forma do caminho que
 -- ele é desta organização, então a linha que exista com o mesmo caminho passa a ser
 -- dela, pendente: sem isso o ponteiro sairia e o arquivo ficaria.

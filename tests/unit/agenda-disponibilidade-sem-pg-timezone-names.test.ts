@@ -14,10 +14,12 @@
  * passava do statement timeout — `crm_find_free_slots` voltava vazio e o agente
  * respondia "vou confirmar e volto" em vez de oferecer horário.
  *
- * A linha era redundante: com um fuso inválido o `at time zone` levanta 22023
+ * A consulta era desnecessária para o caso comum: com um fuso Área/Local inválido o `at time zone` levanta 22023
  * (`invalid_parameter_value`, classe `data_exception`), e o handler da própria
  * função (`exception when invalid_text_representation or data_exception then
- * return false`) já devolve `false` — o mesmo resultado de antes.
+ * return false`) já devolve `false`. As outras formas continuam passando pelo
+ * catálogo: `-03:00`, que a API aceita, seria lido pelo `at time zone` como
+ * POSIX, com o sinal invertido (UTC+3), e a agenda ofereceria horário errado.
  *
  * ## Por que estático
  *
@@ -46,8 +48,11 @@ function ultimaDefinicao(sql: string): string {
 describe("agenda: conferência de profissional sem pg_timezone_names", () => {
   const corpo = ultimaDefinicao(readFileSync(BASELINE, "utf8"));
 
-  it("a última definição não consulta a visão de fusos do sistema", () => {
-    expect(corpo).not.toMatch(/pg_timezone_names/i);
+  it("só consulta a visão de fusos quando o nome não tem o formato Área/Local", () => {
+    expect(corpo.match(/pg_timezone_names/gi)).toHaveLength(1);
+    expect(corpo).toMatch(
+      /if zone !~ '\^\[A-Za-z_\]\+\(\/\[A-Za-z0-9_\+-\]\+\)\+\$' then\s+if not exists\(select 1 from pg_timezone_names where name=zone\) then return false;end if;/,
+    );
   });
 
   it("fuso inválido segue caindo no handler que devolve false", () => {

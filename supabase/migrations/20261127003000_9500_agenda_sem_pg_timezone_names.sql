@@ -1,4 +1,4 @@
--- manifest: **A agenda de serviço deixa de consultar `pg_timezone_names` a cada conferência de profissional (`fn_calendar_service_person_available`).** A consulta à visão custa ~63 ms e roda uma vez por profissional e por horário: com 7 profissionais, a semana de um serviço passava do statement timeout e o `crm_find_free_slots` do agente voltava vazio ("vou confirmar e volto"). Fuso inválido continua devolvendo `false`: o `at time zone` levanta 22023 (data_exception), que o handler da própria função já captura. Corpo copiado da última definição do baseline; muda só a linha removida.
+-- manifest: **A agenda de serviço deixa de consultar `pg_timezone_names` a cada conferência de profissional (`fn_calendar_service_person_available`).** A consulta à visão custa ~63 ms e roda uma vez por profissional e por horário: com 7 profissionais, a semana de um serviço passava do statement timeout e o `crm_find_free_slots` do agente voltava vazio ("vou confirmar e volto"). Fuso inválido continua devolvendo `false`: o `at time zone` levanta 22023 (data_exception), que o handler da própria função já captura. Corpo copiado da última definição do baseline; muda a conferência do fuso: o catálogo só é consultado quando o nome não tem o formato Área/Local.
 -- Sem tabela temporária, sem BEGIN/COMMIT, sem id de tenant, psql puro, idempotente.
 
 create or replace function public.fn_calendar_service_person_available(p_org uuid,p_owner uuid,p_start timestamptz,p_end timestamptz,p_ignore uuid default null,p_type uuid default null)
@@ -9,6 +9,11 @@ begin
   select a.schedule into schedule from public.attendant_availability a where a.organization_id=p_org and a.user_id=p_owner and a.is_available;
   if not found or jsonb_typeof(schedule->'windows')<>'array' then return false;end if;
   zone:=coalesce(nullif(schedule->>'timezone',''),'America/Sao_Paulo');
+  -- Nome no formato Área/Local vai direto ao `at time zone` (inválido levanta 22023, capturado abaixo).
+  -- Qualquer outra forma ainda passa pelo catálogo: `-03:00` seria lido como POSIX, com o sinal invertido.
+  if zone !~ '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)+$' then
+    if not exists(select 1 from pg_timezone_names where name=zone) then return false;end if;
+  end if;
   local_start:=p_start at time zone zone;local_end:=p_end at time zone zone;day_date:=local_start::date;
   if local_end::date<>day_date and local_end::time<>'00:00:00' then return false;end if;
   start_min:=extract(hour from local_start)::int*60+extract(minute from local_start)::int;
