@@ -19,10 +19,11 @@
  *
  * ─── Três níveis: empresa, funil e vendedor ────────────────────────────────
  * `pipeline_id` nulo e `vendedor_id` nulo é a meta da EMPRESA; `pipeline_id`
- * preenchido é a do funil; `vendedor_id` preenchido é a do vendedor. Este
- * formulário grava empresa e vendedor (o funil é filtro da leitura, não do
- * cadastro). A meta do vendedor não aceita funil junto: duas dimensões na mesma
- * linha tornariam "a meta do vendedor" ambígua, e ninguém pediu isso.
+ * preenchido é a do funil; `vendedor_id` preenchido é a do vendedor. Os três
+ * são gravados aqui (o funil desde a #4796; a leitura e o Desempenho já o
+ * entendiam). A meta do vendedor não aceita funil junto: duas dimensões na mesma
+ * linha tornariam "a meta do vendedor" ambígua (é a constraint
+ * `crm_metas_dono_ou_funil`), e a recusa sai aqui, antes do banco.
  *
  * ─── Quem escreve, e por quê ────────────────────────────────────────────────
  * `manager+`, o mesmo grau de `definirMeetAberto` e da porta da tela
@@ -60,6 +61,7 @@ export type DefinirMetaMensalResult =
       error:
         | "validation_failed"
         | "vendedor_fora_da_equipe"
+        | "funil_invalido"
         | "unauthenticated"
         | "forbidden_tenant"
         | "forbidden_role"
@@ -85,9 +87,18 @@ const entradaSchema = z
     indicador: z.enum(["vendas_ganhas", "valor_vendido"]).default("vendas_ganhas"),
     // Nulo = meta da empresa; preenchido = meta daquele vendedor.
     vendedor_id: z.string().uuid().nullish(),
+    // Preenchido = meta daquele funil (#4796). Nunca junto com vendedor.
+    pipeline_id: z.string().uuid().nullish(),
     alvo: z.number().int().min(1),
   })
   .superRefine((valor, ctx) => {
+    if (valor.vendedor_id && valor.pipeline_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pipeline_id"],
+        message: "A meta é do vendedor ou do funil, não dos dois",
+      });
+    }
     const teto =
       valor.indicador === "valor_vendido" ? TETO_DO_VALOR_EM_CENTAVOS : TETO_DA_QUANTIDADE;
     if (valor.alvo > teto) {
@@ -127,6 +138,7 @@ export async function definirMetaMensal(
   const orgId = activeOrg.orgId;
   const { periodo, indicador, alvo } = parsed.data;
   const vendedorId = parsed.data.vendedor_id ?? null;
+  const pipelineId = parsed.data.pipeline_id ?? null;
   const primeiroDia = `${periodo}-01`;
 
   // O vendedor tem de ser MEMBRO ATIVO da organização: a FK só garante que o id
@@ -148,16 +160,31 @@ export async function definirMetaMensal(
     }
   }
 
-  // A linha do mês, na organização ativa. `pipeline_id is null` é a meta da
-  // EMPRESA — o recorte por funil é fatia seguinte e não é gravado aqui. A
-  // busca é pela MESMA chave do índice único parcial: mês + indicador + dono.
+  // O funil tem de ser DESTA organização e estar em uso: o id vem do
+  // formulário, e a FK só garante que ele existe em algum lugar. Arquivado não
+  // recebe meta nova (some do seletor; a meta antiga dele continua lida).
+  if (pipelineId) {
+    const { data: funil, error: erroFunil } = await supabase
+      .from("crm_pipelines")
+      .select("id")
+      .eq("id", pipelineId)
+      .eq("organization_id", orgId)
+      .eq("is_archived", false)
+      .maybeSingle();
+    if (erroFunil) return { ok: false, error: "erro_ao_gravar", details: erroFunil.message };
+    if (!funil) return { ok: false, error: "funil_invalido" };
+  }
+
+  // A linha do mês, na organização ativa, pela MESMA chave do índice único
+  // parcial que vale para o dono: empresa (funil e vendedor nulos), vendedor ou
+  // funil — mês + indicador + dono.
   let consulta = supabase
     .from("crm_metas")
     .select("id, alvo")
     .eq("organization_id", orgId)
     .eq("periodo", primeiroDia)
-    .eq("indicador", indicador)
-    .is("pipeline_id", null);
+    .eq("indicador", indicador);
+  consulta = pipelineId ? consulta.eq("pipeline_id", pipelineId) : consulta.is("pipeline_id", null);
   consulta = vendedorId
     ? consulta.eq("vendedor_id", vendedorId)
     : consulta.is("vendedor_id", null);
@@ -178,7 +205,7 @@ export async function definirMetaMensal(
       organization_id: orgId,
       periodo: primeiroDia,
       indicador,
-      pipeline_id: null,
+      pipeline_id: pipelineId,
       vendedor_id: vendedorId,
       alvo,
       created_by: authUser.id,
@@ -203,6 +230,7 @@ export async function definirMetaMensal(
       indicador,
       alvo,
       vendedor_id: vendedorId,
+      pipeline_id: pipelineId,
       // O alvo ANTERIOR entra: é a mudança que interessa a quem audita depois —
       // "de 40 para 25" é uma história diferente de "criou 25".
       alvo_anterior: alvoAnterior,

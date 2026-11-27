@@ -5,7 +5,10 @@
  *
  * ─── O que a pessoa escolhe aqui ───────────────────────────────────────────
  * O MÊS, o INDICADOR (quantidade de vendas ganhas ou valor vendido) e de QUEM
- * é a meta (a empresa inteira ou um vendedor). O valor é digitado na moeda da
+ * é a meta (a empresa inteira, um funil ou um vendedor). Funil e vendedor
+ * moram no MESMO seletor de propósito: a meta é de um ou de outro, nunca dos
+ * dois (`crm_metas_dono_ou_funil`), e um seletor só não deixa montar a
+ * combinação que o banco recusaria (#4796). O valor é digitado na moeda da
  * organização e convertido para CENTAVOS ao salvar: é a unidade de
  * `crm_leads.value_cents`, a mesma que a rota soma.
  *
@@ -35,7 +38,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -47,6 +52,7 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 const ERRO_EM_PORTUGUES: Record<string, string> = {
   validation_failed: "Confira os campos: o mês e o alvo precisam estar preenchidos.",
   vendedor_fora_da_equipe: "Essa pessoa não faz mais parte da equipe. Escolha outra pessoa ou a empresa.",
+  funil_invalido: "Esse funil não está mais disponível. Recarregue a página e escolha outro.",
   unauthenticated: "Sua sessão expirou. Entre de novo.",
   forbidden_tenant: "Você não está em nenhuma organização ativa.",
   forbidden_role: "Só quem administra a empresa pode definir a meta.",
@@ -54,6 +60,8 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
 };
 
 const EMPRESA = "__empresa__";
+/** Prefixo do valor do seletor quando o dono da meta é um FUNIL (o vendedor é o id puro). */
+const FUNIL = "funil:";
 
 export type IndicadorDaMeta = "vendas_ganhas" | "valor_vendido";
 
@@ -61,6 +69,8 @@ export type IndicadorDaMeta = "vendas_ganhas" | "valor_vendido";
 export interface MetaGravada {
   indicador: IndicadorDaMeta;
   vendedor_id: string | null;
+  /** Funil da meta (#4796); ausente nas metas de empresa e de vendedor. */
+  pipeline_id?: string | null;
   /** Quantidade em vendas, ou valor em CENTAVOS. */
   alvo: number;
 }
@@ -78,11 +88,14 @@ export function FormularioDaMeta({
   mes,
   metas,
   moeda,
+  funis = [],
 }: {
   mes: string;
   metas: readonly MetaGravada[];
   /** Moeda da organização (ISO-4217): a unidade do alvo em valor, a mesma de `value_cents`. */
   moeda: string;
+  /** Os funis em uso (não arquivados) da organização, que podem ter meta própria. */
+  funis?: ReadonlyArray<{ id: string; name: string }>;
 }) {
   const t = useT();
   const router = useRouter();
@@ -103,7 +116,8 @@ export function FormularioDaMeta({
   }));
   const recusados: ReadonlySet<string> = recusa.lista === equipe.data ? recusa.ids : new Set();
 
-  const vendedorId = vendedor === EMPRESA ? null : vendedor;
+  const pipelineId = vendedor.startsWith(FUNIL) ? vendedor.slice(FUNIL.length) : null;
+  const vendedorId = vendedor === EMPRESA || pipelineId !== null ? null : vendedor;
   const naEquipe = (equipe.data?.data ?? []).filter(
     (membro) => !membro.revoked_at && !recusados.has(membro.user_id),
   );
@@ -120,7 +134,10 @@ export function FormularioDaMeta({
   // aquela combinação — em vez de obrigar a pessoa a lembrar o número antigo.
   useEffect(() => {
     const existente = metas.find(
-      (m) => m.indicador === indicador && (m.vendedor_id ?? null) === vendedorId,
+      (m) =>
+        m.indicador === indicador &&
+        (m.vendedor_id ?? null) === vendedorId &&
+        (m.pipeline_id ?? null) === pipelineId,
     );
     if (!existente) {
       setAlvo("");
@@ -129,7 +146,7 @@ export function FormularioDaMeta({
     setAlvo(
       indicador === "valor_vendido" ? (existente.alvo / 100).toFixed(2) : String(existente.alvo),
     );
-  }, [periodo, indicador, vendedorId, metas]);
+  }, [periodo, indicador, vendedorId, pipelineId, metas]);
 
   const numero = indicador === "valor_vendido" ? Number(alvo.replace(",", ".")) : Number(alvo);
   const alvoEmUnidade = Math.round(numero * (indicador === "valor_vendido" ? 100 : 1));
@@ -159,6 +176,7 @@ export function FormularioDaMeta({
         periodo,
         indicador,
         vendedor_id: vendedorId,
+        pipeline_id: pipelineId,
         alvo: alvoEmUnidade,
       });
       if (resultado.ok) {
@@ -225,6 +243,17 @@ export function FormularioDaMeta({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={EMPRESA}>{t("Empresa (todos)")}</SelectItem>
+              {funis.length > 0 ? (
+                <SelectGroup>
+                  <SelectLabel>{t("Funis")}</SelectLabel>
+                  {funis.map((funil) => (
+                    // O nome do funil é dado do operador: não passa por `t()`.
+                    <SelectItem key={funil.id} value={`${FUNIL}${funil.id}`}>
+                      {`${t("Funil")} · ${funil.name}`}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ) : null}
               {naEquipe.map((membro) => (
                 <SelectItem key={membro.user_id} value={membro.user_id}>
                   {rotuloDoMembro(
@@ -242,7 +271,7 @@ export function FormularioDaMeta({
           ) : null}
           <p className="text-xs text-muted-foreground">
             {t(
-              "A meta do vendedor soma só os negócios que ele fechou como ganho; a da empresa soma os da empresa inteira.",
+              "A meta do vendedor soma só os negócios que ele fechou como ganho; a do funil, só os ganhos daquele funil; a da empresa soma os da empresa inteira.",
             )}
           </p>
         </div>

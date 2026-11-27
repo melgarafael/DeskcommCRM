@@ -21814,17 +21814,20 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Una meta antigua, sin indicador, sigue contando ventas ganadas: elegir valor aquí no cambia las metas ya registradas.",
     },
-  "A meta do vendedor soma só os negócios que ele fechou como ganho; a da empresa soma os da empresa inteira.":
+  "A meta do vendedor soma só os negócios que ele fechou como ganho; a do funil, só os ganhos daquele funil; a da empresa soma os da empresa inteira.":
     {
-      es: "La meta del vendedor suma solo los negocios que él cerró como ganados; la de la empresa suma los de toda la empresa.",
+      es: "La meta del vendedor suma solo los negocios que él cerró como ganados; la del embudo, solo los ganados de ese embudo; la de la empresa suma los de toda la empresa.",
     },
-  "A meta da empresa conta os negócios fechados como ganhos no mês; a do vendedor conta só os dele. Metas por funil e por trimestre ficam para as próximas fatias.":
+  "Esse funil não está mais disponível. Recarregue a página e escolha outro.": {
+    es: "Ese embudo ya no está disponible. Recarga la página y elige otro.",
+  },
+  "A meta da empresa conta os negócios fechados como ganhos no mês; a do funil, só os daquele funil; a do vendedor, só os dele. Metas por trimestre ficam para uma próxima fatia.":
     {
-      es: "La meta de la empresa cuenta los negocios cerrados como ganados en el mes; la del vendedor cuenta solo los de él. Las metas por embudo y por trimestre quedan para las próximas etapas.",
+      es: "La meta de la empresa cuenta los negocios cerrados como ganados en el mes; la del embudo, solo los de ese embudo; la del vendedor, solo los de él. Las metas por trimestre quedan para una próxima etapa.",
     },
-  "Quanto a empresa — ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
+  "Quanto a empresa — ou um funil, ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.":
     {
-      es: "Cuánto quiere vender la empresa — o un vendedor — este mes, en cantidad de ventas o en valor. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
+      es: "Cuánto quiere vender la empresa — o un embudo, o un vendedor — este mes, en cantidad de ventas o en valor. El Desempeño pasa a mostrar cuánto se hizo contra ese número: lo realizado, el porcentaje, cuánto falta y la proyección hasta el final del mes.",
     },
   "No ritmo atual, o mês fecha em": { es: "Al ritmo actual, el mes cierra en" },
   "Leitura parcial: o realizado em valor soma o que foi lido no período.": {
