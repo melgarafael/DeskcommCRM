@@ -431,7 +431,7 @@ export function CamadaDatasDosNegocios({ funis, janela, escolhaInicial, aoEscolh
               {t("A data do período não existe no calendário.")}
             </p>
           ) : erro === "geral" ? (
-            <p data-testid="camada-datas-erro" className="text-xs text-danger">
+            <p data-testid="camada-datas-erro" className="text-xs text-destructive">
               {t("Não foi possível carregar as datas dos negócios.")}
             </p>
           ) : null}

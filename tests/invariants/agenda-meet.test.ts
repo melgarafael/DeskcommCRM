@@ -628,6 +628,15 @@ it("entrega real controlada: fila→gates→ledger→handler→HTTP; replay não
     ).rows[0];
   const bodies: Record<string, unknown>[] = [];
   const receiver = createServer(async (req, res) => {
+    // #5298: consulta de conta não é entrega. Preserve a contagem de um único envio.
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (req.method === "GET" && url.pathname === "/api/contacts/check-exists") {
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({ numberExists: true, chatId: `${url.searchParams.get("phone")}@c.us` }),
+      );
+      return;
+    }
     if (ehVistoAzul(req.url)) {
       res.end("{}");
       return;

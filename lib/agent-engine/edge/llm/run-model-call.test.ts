@@ -216,7 +216,7 @@ describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () =
  * (`cache_creation.ephemeral_{5m,1h}_input_tokens`), e não do knob `cacheTtl`.
  */
 function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5", baseUrlDoPonto?: string) {
-  const inserts: Array<{ params: unknown[] }> = [];
+  const inserts: Array<{ sql: string; params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     // O endereço próprio do ponto, como o painel de provedores grava.
     if (baseUrlDoPonto !== undefined && sql.includes("from ai_purpose_bindings")) {
@@ -240,7 +240,7 @@ function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5", base
       };
     }
     if (sql.includes("insert into llm_calls")) {
-      inserts.push({ params });
+      inserts.push({ sql, params });
       return { rows: [{ id: "call-2" }] };
     }
     return { rows: [] };
@@ -296,7 +296,7 @@ async function rodarPelaAnthropic(passos: Array<{ cincoMin: number; umaHora: num
     { registry: registryDaAnthropic },
   );
   // `cost_cents` é o 12º valor do insert (ver a lista de colunas no seam).
-  return { resultado, custoGravado: inserts[0]?.params[11] };
+  return { resultado, custoGravado: inserts[0]?.params[11], inserts };
 }
 
 describe("o custo gravado lê a divisão da gravação de cache que a Anthropic informa", () => {
@@ -317,6 +317,101 @@ describe("o custo gravado lê a divisão da gravação de cache que a Anthropic 
     const { resultado } = await rodarPelaAnthropic([null]);
     expect(resultado.costCents).toBeCloseTo(400, 6);
   });
+
+  /**
+   * O defeito da #5020: o seam JÁ separa 1 h de 5 min para cobrar, mas só gravava o
+   * total — a auditoria do `cost_cents` pelo banco não conseguia provar a parcela de
+   * 1 h. O teste é o da issue: 3.000 a 1 h + 500 a 5 min.
+   */
+  it("⭐ 3000 a 1 h e 500 a 5 min: grava 3500 no total E 3000 na coluna nova, e a recontagem bate", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: 3_500,
+        outputTokens: 0,
+        inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 3_500 },
+      },
+      response: { id: "cache-1h-test", modelId: "claude-sonnet-5-5" },
+      steps: [
+        {
+          usage: {
+            raw: {
+              cache_creation: { ephemeral_5m_input_tokens: 500, ephemeral_1h_input_tokens: 3_000 },
+            },
+          },
+        },
+      ],
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", "claude-sonnet-5-5");
+    const resultado = await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+
+    expect(inserts).toHaveLength(1);
+    const { sql, params } = inserts[0]!;
+    // A coluna entra no MESMO insert do total; sem ela o banco não guarda a
+    // parcela de 1 h e a auditoria continua sem prova (issue #5020).
+    expect(sql).toContain("cache_write_1h_tokens");
+    // params: input_tokens=7, output=8, cache_read=9, cache_write=10, cost=11;
+    // a coluna nova entra antes de `preview_run_id`, que segue a última.
+    expect(params[10]).toBe(3_500);
+    expect(params[11]).toBeCloseTo(1.325, 9); // 3000×4,00 + 500×2,50, por milhão, em centavos.
+    expect(params[22]).toBe(3_000);
+
+    // A mesma fórmula de duas tarifas, com os dois números que o banco agora guarda.
+    const recontagem = costCents("claude-sonnet-5-5", {
+      inputTokens: 3_500,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 3_500,
+      cacheWrite1hTokens: 3_000,
+    });
+    expect(recontagem).toBeCloseTo(1.325, 9);
+    expect(resultado.costCents).toBeCloseTo(recontagem!, 9);
+  });
+
+  it("sem a divisão, a coluna nova fica NULA — não medido não é 0", async () => {
+    const { inserts } = await rodarPelaAnthropic([null], 1_000);
+    expect(inserts[0]!.params[22]).toBeNull();
+  });
+
+  it("com a divisão explícita em zero, a coluna nova é 0 — aí foi medido", async () => {
+    const { inserts } = await rodarPelaAnthropic([{ cincoMin: 0, umaHora: 0 }], 0);
+    expect(inserts[0]!.params[22]).toBe(0);
+  });
+
+  it("só o campo de 5 min: a parcela de 1 h é 0, e é 0 que vai para a coluna", async () => {
+    // `gravacaoDeUmaHora` trata campo ausente como 0 quando ALGUM passo trouxe
+    // `cache_creation`; o custo usa esse mesmo 0, então a coluna grava 0 (não
+    // nulo). Nulo fica só para quando nenhum passo trouxe a divisão.
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: 500,
+        outputTokens: 0,
+        inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 500 },
+      },
+      response: { id: "cache-so-5m", modelId: "claude-sonnet-5-5" },
+      steps: [{ usage: { raw: { cache_creation: { ephemeral_5m_input_tokens: 500 } } } }],
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", "claude-sonnet-5-5");
+    await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+    expect(inserts[0]!.params[22]).toBe(0);
+  });
 });
 
 describe("Terra grava custo real por passo do seam", () => {
@@ -329,6 +424,71 @@ describe("Terra grava custo real por passo do seam", () => {
     expect(inserts[0]?.params[11]).toBeCloseTo(26);
   });
 });
+
+/**
+ * O degrau do Haiku 5.5 (#5017): acima de 100 mil tokens de entrada NUMA
+ * requisição (contando leitura e escrita de cache), a Anthropic cobra 5× aquela
+ * requisição. Cada passo do laço de ferramentas é uma requisição: o fator vale
+ * por passo, nunca pela soma do turno.
+ */
+describe("o degrau do Haiku 5.5 é cobrado por passo do seam", () => {
+  type Passo = { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
+  async function custoDoTurno(model: string, passos: Passo[]) {
+    const soma = (k: keyof Passo) => passos.reduce((t, p) => t + (p[k] ?? 0), 0);
+    vi.mocked(generateText).mockResolvedValue({
+      text: "ok",
+      usage: {
+        inputTokens: soma("inputTokens"),
+        outputTokens: soma("outputTokens"),
+        inputTokenDetails: { cacheReadTokens: soma("cacheReadTokens"), cacheWriteTokens: soma("cacheWriteTokens") },
+      },
+      steps: passos.map((p) => ({
+        usage: {
+          inputTokens: p.inputTokens,
+          outputTokens: p.outputTokens,
+          inputTokenDetails: { cacheReadTokens: p.cacheReadTokens ?? 0, cacheWriteTokens: p.cacheWriteTokens ?? 0 },
+        },
+      })),
+      response: { id: "degrau-test", modelId: model },
+      responseMessages: [],
+      toolCalls: [],
+      finishReason: "stop",
+    } as never);
+    const { pool, inserts } = poolDaAnthropic("anthropic", model);
+    const resultado = await runModelCall(
+      pool,
+      { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+      { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "oi" }] },
+      { registry: registryDaAnthropic },
+    );
+    expect(inserts[0]?.params[11]).toBeCloseTo(resultado.costCents ?? NaN, 9);
+    return resultado.costCents;
+  }
+
+  // 120 mil de entrada, dos quais só 20 mil sem cache: o degrau conta leitura e escrita.
+  const passoLongo: Passo = { inputTokens: 120_000, outputTokens: 1_000, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 };
+  const passoCurto: Passo = { inputTokens: 30_000, outputTokens: 1_000 };
+
+  it("⭐ passos de 120 mil e 30 mil: 5× só no primeiro", async () => {
+    const longo = costCents("claude-haiku-5-5", { ...passoLongo, cacheReadTokens: 60_000, cacheWriteTokens: 40_000 })!;
+    const curto = costCents("claude-haiku-5-5", { ...passoCurto, cacheReadTokens: 0, cacheWriteTokens: 0 })!;
+    // 1× do passo longo: 20k×0,1 + 60k×0,01 + 40k×0,2 + 1k×0,5 = US$ 0,0111.
+    expect(longo).toBeCloseTo(1.11, 9);
+    expect(curto).toBeCloseTo(0.35, 9);
+    expect(await custoDoTurno("claude-haiku-5-5", [passoLongo, passoCurto])).toBeCloseTo(5 * 1.11 + 0.35, 9);
+  });
+
+  it("três passos de 40 mil (120 mil no turno): 1× nos três", async () => {
+    const passo: Passo = { inputTokens: 40_000, outputTokens: 0 };
+    expect(await custoDoTurno("claude-haiku-5-5", [passo, passo, passo])).toBeCloseTo(3 * 0.4, 9);
+  });
+
+  it("o mesmo turno no Sonnet 5.5 não muda", async () => {
+    // 20k×2 + 60k×0,1 + 40k×4 + 1k×10 = US$ 0,216; 30k×2 + 1k×10 = US$ 0,07.
+    expect(await custoDoTurno("claude-sonnet-5-5", [passoLongo, passoCurto])).toBeCloseTo(21.6 + 7, 9);
+  });
+});
+
 
 it("grava o custo do Luna com um passo longo e um passo curto", async () => {
   const modelo = "gpt-6-luna";

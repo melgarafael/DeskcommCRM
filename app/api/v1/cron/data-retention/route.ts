@@ -92,7 +92,16 @@ import {
   type ClienteDaCascata,
   type ResultadoDaVarredura,
 } from "@/lib/lgpd/cascata";
+import {
+  BUCKET_DOS_ARQUIVOS_DA_ABORDAGEM,
+  type ArquivoDaAbordagemNoBucket,
+  type ClienteDeStorageDaAbordagem,
+  drenarArquivosOrfaosDaAbordagem,
+  type FonteDaProspeccao,
+  type ResultadoDoDrenoDaAbordagem,
+} from "@/lib/prospecting/arquivos-orfaos-da-abordagem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +130,10 @@ export interface ResultadoDaRetencao {
   auditoria_tem_resto: boolean;
   /** Os nonces de OAuth do Google já queimados (migration 0190). */
   nonces_apagados: number;
+  /** As chaves de idempotência vencidas há mais de 1 dia (migration 9506, #1613). */
+  chaves_de_idempotencia_apagadas: number;
+  lotes_chaves_de_idempotencia: number;
+  chaves_de_idempotencia_tem_resto: boolean;
   /** O espelho da agenda conectada — cache com prazo (migration 0187). */
   espelho_apagado: number;
   lotes_espelho: number;
@@ -221,6 +234,19 @@ export interface ResultadoDaRetencao {
   retencao_prospeccao_dias: number;
   retencao_observacoes_do_jev_dias: number;
   retencao_candidatos_do_golden_dias: number;
+  /**
+   * ARQUIVOS ÓRFÃOS DA PRIMEIRA ABORDAGEM removidos do Storage nesta rodada
+   * (#5139). A limpeza é o buraco que `fn_enfileirar_midia_vencida` não
+   * alcança: ela só enxerga LINHAS de banco, e o arquivo que nenhuma campanha
+   * referencia não tem linha. Aqui o bucket é listado direto.
+   *
+   * `removidos` é a contagem; `trilha` é o caminho e os bytes de cada um (os
+   * bytes só aparecem quando o `list` do Storage informa o tamanho). A trilha
+   * entra no metadata do `retention.sweep_run`.
+   */
+  arquivos_orfaos_da_abordagem_removidos: number;
+  arquivos_orfaos_da_abordagem_bytes: number;
+  arquivos_orfaos_da_abordagem_trilha: Array<{ caminho: string; bytes: number | null }>;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
   /**
@@ -243,6 +269,7 @@ export interface PodaDb {
       | "fn_expurgar_auditoria_vencida"
       | "fn_expurgar_espelho_da_agenda"
       | "fn_expurgar_nonces_de_oauth"
+      | "fn_expurgar_chaves_de_idempotencia_vencidas"
       | "fn_expurgar_conversa_do_caso_vencida"
       | "fn_expurgar_passagens_vencidas"
       | "fn_expurgar_avisos_de_caso_vencidos"
@@ -312,6 +339,7 @@ async function drenar(
     | "fn_expurgar_auditoria_vencida"
     | "fn_expurgar_espelho_da_agenda"
     | "fn_expurgar_nonces_de_oauth"
+    | "fn_expurgar_chaves_de_idempotencia_vencidas"
     | "fn_expurgar_conversa_do_caso_vencida"
     | "fn_expurgar_passagens_vencidas"
     | "fn_expurgar_avisos_de_caso_vencidos"
@@ -505,6 +533,13 @@ export async function podarHistorico(
     OUTBOUND_COPIES_RETENTION_DAYS?: string;
     LEAD_CHECKPOINT_RETENTION_DAYS?: string;
   },
+  /**
+   * A limpeza de arquivos órfãos da abordagem (#5139), injetada pelo `handle`
+   * porque depende do client de Storage, não do `PodaDb` das podas de banco.
+   * Ausente nos testes antigos que medem só as podas — o dreno é simplesmente
+   * pulado, como se a instalação não tivesse nenhum arquivo a varrer.
+   */
+  arquivosOrfaosDaAbordagem?: () => Promise<ResultadoDoDrenoDaAbordagem>,
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
     chave: "JOB_QUEUE_RETENTION_DAYS",
@@ -602,6 +637,17 @@ export async function podarHistorico(
   // cresceria para sempre, uma linha por conexão tentada, num produto que se
   // instala e ninguém monitora.
   const nonces = await executarDreno(falhas, "fn_expurgar_nonces_de_oauth", () => drenar(db, "fn_expurgar_nonces_de_oauth", 1), zerado);
+  // As chaves de idempotência vencidas (migration 9506, #1613): ninguém as lê
+  // depois de vencer (`lib/api/idempotency.ts` só aceita `expires_at > now()`),
+  // e sem esta linha a tabela só crescia, com o recibo de cada envio dentro.
+  // Mesma folga de 1 dia dos nonces: a reserva vale 60 s e o recibo 24 h, e a
+  // linha recém-vencida pode ser a de um envio ainda gravando o recibo.
+  const chavesDeIdempotencia = await executarDreno(
+    falhas,
+    "fn_expurgar_chaves_de_idempotencia_vencidas",
+    () => drenar(db, "fn_expurgar_chaves_de_idempotencia_vencidas", 1),
+    zerado,
+  );
   // Quinta poda: a conversa da equipe com a IA sobre um caso (migration 0281).
   // O piso de 90 dias mora no CORPO da função; o número daqui é o que o
   // operador pediu, já elevado, e é ele que aparece no relatório da rodada.
@@ -667,11 +713,42 @@ export async function podarHistorico(
   const copiasDrenadas = await executarDreno(falhas, "fn_expurgar_copias_enviadas_vencidas", () => drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias), zerado);
   const checkpointsDrenados = await executarDreno(falhas, "fn_expurgar_checkpoints_superados", () => drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias), zerado);
 
+  // A DÉCIMA SÉTIMA etapa não é poda de banco: é a limpeza do Storage que a
+  // #5139 pediu. O arquivo da primeira abordagem sobe para `{org}/prospecting/`
+  // assim que é escolhido, e trocar de arquivo/desistir/apagar a campanha deixa
+  // o anterior no bucket para sempre. `fn_enfileirar_midia_vencida` não o vê
+  // porque ela só enxerga linhas de banco — o órfão não tem linha. Mesmo desenho
+  // das irmãs: nome próprio, falha vira linha em `falhas`, a rodada SEGUE.
+  //
+  // Falha POR ORGANIZAÇÃO não aborta as outras: `drenarArquivosOrfaosDaAbordagem`
+  // as coleta em `.falhas`, e elas são promovidas aqui para a trilha da rodada
+  // (a rodada vira 500 — parcial, mas dita). Se `organizacoes()` em si falhar, a
+  // exceção sobe e `executarDreno` nomeia o dreno inteiro.
+  const arquivosOrfaos = await executarDreno(
+    falhas,
+    "prospecting_arquivos_orfaos",
+    arquivosOrfaosDaAbordagem ??
+      (async (): Promise<ResultadoDoDrenoDaAbordagem> => ({
+        organizacoes: 0,
+        removidos: 0,
+        bytes_removidos: 0,
+        caminhos: [],
+        falhas: [],
+      })),
+    { organizacoes: 0, removidos: 0, bytes_removidos: 0, caminhos: [], falhas: [] },
+  );
+  for (const falhaDaOrganizacao of arquivosOrfaos.falhas) {
+    falhas.push(`prospecting_arquivos_orfaos: ${falhaDaOrganizacao}`.slice(0, 300));
+  }
+
   return {
     jobs_apagados: jobs.apagadas,
     auditoria_apagada: linhas.apagadas,
     espelho_apagado: eventos.apagadas,
     nonces_apagados: nonces.apagadas,
+    chaves_de_idempotencia_apagadas: chavesDeIdempotencia.apagadas,
+    lotes_chaves_de_idempotencia: chavesDeIdempotencia.lotes,
+    chaves_de_idempotencia_tem_resto: chavesDeIdempotencia.temResto,
     conversa_do_caso_apagada: conversas.apagadas,
     passagens_apagadas: passagens.apagadas,
     avisos_de_caso_apagados: avisosDeCaso.apagadas,
@@ -726,6 +803,12 @@ export async function podarHistorico(
     lotes_checkpoints: checkpointsDrenados.lotes,
     checkpoints_tem_resto: checkpointsDrenados.temResto,
     retencao_checkpoints_dias: checkpoints.dias,
+    // #5139 — os órfãos da abordagem removidos do Storage, com a trilha
+    // caminho+bytes. Contagem separada do resto: é a única etapa que apaga
+    // OBJETO, não linha de banco.
+    arquivos_orfaos_da_abordagem_removidos: arquivosOrfaos.removidos,
+    arquivos_orfaos_da_abordagem_bytes: arquivosOrfaos.bytes_removidos,
+    arquivos_orfaos_da_abordagem_trilha: arquivosOrfaos.caminhos,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
@@ -774,6 +857,9 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // nonces ao laço e ao retorno e esqueci desta linha. O comentário acima
     // descrevia exatamente o defeito que eu estava criando um parágrafo abaixo.
     resultado.nonces_apagados > 0 ||
+    // As chaves de idempotência (#1613), pela mesma razão: uma rodada que só
+    // podou chaves vencidas apagaria linhas sem deixar trilha.
+    resultado.chaves_de_idempotencia_apagadas > 0 ||
     // A quinta, pela MESMA razão das duas acima: uma rodada que só apagou
     // conversa de caso vencida apagaria linhas e não deixaria registro — e o
     // CLAUDE.md manda auditar QUANDO HÁ EFEITO, nunca parar de auditar.
@@ -823,8 +909,122 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // A linha é metadado (nome de ferramenta, ids, erro truncado) — não é texto
     // de cliente —, mas é a trilha do que o agente FEZ: silêncio aqui seria
     // encolhimento de auditoria, não de telemetria.
-    resultado.tracos_apagados > 0
+    resultado.tracos_apagados > 0 ||
+    // #5139: uma rodada que só removeu arquivo órfão da abordagem apagou OBJETO
+    // do Storage — mutação que precisa de trilha como qualquer DELETE. Sem esta
+    // linha, a limpeza existiria e seria indistinguível de "nada a fazer".
+    resultado.arquivos_orfaos_da_abordagem_removidos > 0
   );
+}
+
+/**
+ * A fonte da limpeza de Storage da #5139, montada sobre o admin client.
+ *
+ * `organizacoes` e `caminhosReferenciados` são as duas leituras de banco; o
+ * resto é o Storage. O `list` pagina em lotes de 100 (o default do storage-js),
+ * como `apagarDadosOperacionaisDaOrg` faz: sem o laço, uma organização com mais
+ * de 100 arquivos de abordagem deixaria órfãos para trás. A paginação usa
+ * `offset` porque aqui LISTAMOS tudo antes de remover — a lista não muda debaixo
+ * do pé.
+ */
+const TAMANHO_DO_LOTE_DE_LISTAGEM = 100;
+/** Teto de páginas por organização (5 000 arquivos). O cron é diário e repete. */
+const MAX_PAGINAS_DE_LISTAGEM = 50;
+
+function fonteDaProspeccaoDoAdmin(
+  admin: ReturnType<typeof createAdminClient>,
+): FonteDaProspeccao {
+  return {
+    async organizacoes() {
+      // `max_rows` do PostgREST corta a resposta em 1.000 linhas SEM erro: uma
+      // instalação com mais organizações perderia as últimas do laço em
+      // silêncio. `lerPaginado` prova o fim pelo `count` da primeira página e
+      // `truncado` (laço esgotado) vira falha nomeada, não passada incompleta.
+      const pagina = await lerPaginado<{ id: string }>((inicio, fim, contar) =>
+        admin
+          .from("organizations")
+          .select("id", { count: contar ? "exact" : undefined })
+          .order("id")
+          .range(inicio, fim),
+      );
+      if (pagina.erro) throw new Error(`organizations: ${pagina.erro}`);
+      if (pagina.truncado) throw new Error("organizations: leitura truncada");
+      return pagina.linhas.map((linha) => linha.id);
+    },
+
+    async caminhosReferenciados(organizationId) {
+      // AQUI o corte do `max_rows` é perigoso: uma organização com mais de
+      // 1.000 campanhas (as arquivadas contam — arquivar não apaga o arquivo)
+      // teria as referências das últimas linhas invisíveis, e o arquivo delas
+      // seria removido como se fosse órfão. A leitura pagina por `id` e, se o
+      // teto de páginas for atingido sem provar o fim, a organização FALHA
+      // (nada é removido por ela) em vez de remover com prova incompleta.
+      const pagina = await lerPaginado<{ config: unknown }>(
+        (inicio, fim, contar) =>
+          admin
+            .from("prospecting_campaigns")
+            .select("config", { count: contar ? "exact" : undefined })
+            .eq("organization_id", organizationId)
+            .order("id")
+            .range(inicio, fim),
+        // Teto alto de propósito: 10 páginas = 10.000 campanhas por organização.
+        // Passou disso, a organização FALHA (nada é removido por ela) — falhar
+        // fechado é o único desfecho aceitável para "referências incompletas".
+        10,
+      );
+      if (pagina.erro) throw new Error(`prospecting_campaigns: ${pagina.erro}`);
+      if (pagina.truncado) {
+        throw new Error("prospecting_campaigns: leitura truncada — referências incompletas");
+      }
+      const caminhos: string[] = [];
+      for (const linha of pagina.linhas) {
+        const config = linha.config as
+          | { midia_da_abordagem?: { storage_path?: unknown } }
+          | null;
+        const caminho = config?.midia_da_abordagem?.storage_path;
+        if (typeof caminho === "string" && caminho.length > 0) caminhos.push(caminho);
+      }
+      return caminhos;
+    },
+
+    storageDaAbordagem(_organizationId) {
+      const bucket = admin.storage.from(BUCKET_DOS_ARQUIVOS_DA_ABORDAGEM);
+      const cliente: ClienteDeStorageDaAbordagem = {
+        async list(prefixo) {
+          const arquivos: ArquivoDaAbordagemNoBucket[] = [];
+          for (let pagina = 0; pagina < MAX_PAGINAS_DE_LISTAGEM; pagina += 1) {
+            const { data, error } = await bucket.list(prefixo, {
+              limit: TAMANHO_DO_LOTE_DE_LISTAGEM,
+              offset: pagina * TAMANHO_DO_LOTE_DE_LISTAGEM,
+            });
+            if (error) return { arquivos, erro: error.message };
+            const lote = data ?? [];
+            for (const f of lote) {
+              // Pasta vem com `id` nulo; o arquivo da abordagem é plano, então
+              // nome com `/` também não é arquivo desta pasta.
+              if (f.id === null || f.name.includes("/")) continue;
+              arquivos.push({
+                caminho: `${prefixo}/${f.name}`,
+                bytes: typeof f.metadata?.size === "number" ? f.metadata.size : null,
+                criadoEm: f.created_at ? new Date(f.created_at) : null,
+                atualizadoEm: f.updated_at ? new Date(f.updated_at) : null,
+              });
+            }
+            if (lote.length < TAMANHO_DO_LOTE_DE_LISTAGEM) break;
+          }
+          return { arquivos, erro: null };
+        },
+        async remove(caminhos) {
+          const { error } = await bucket.remove([...caminhos]);
+          if (error) return { removidos: [], erro: error.message };
+          // O `remove` do Storage é uma chamada só; sem erro, os caminhos
+          // pedidos (que acabaram de ser listados) saíram.
+          return { removidos: [...caminhos], erro: null };
+        },
+      };
+      return cliente;
+    },
+  };
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -888,7 +1088,7 @@ async function handle(req: NextRequest): Promise<Response> {
       PACING_LEDGER_RETENTION_DAYS: env.PACING_LEDGER_RETENTION_DAYS,
       OUTBOUND_COPIES_RETENTION_DAYS: env.OUTBOUND_COPIES_RETENTION_DAYS,
       LEAD_CHECKPOINT_RETENTION_DAYS: env.LEAD_CHECKPOINT_RETENTION_DAYS,
-    });
+    }, () => drenarArquivosOrfaosDaAbordagem(fonteDaProspeccaoDoAdmin(admin)));
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[data-retention] poda falhou", { error: detail, requestId });

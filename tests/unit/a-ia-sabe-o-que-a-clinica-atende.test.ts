@@ -83,6 +83,7 @@ function tipo(over: Partial<TipoDeAtendimento> = {}): TipoDeAtendimento {
     levarDadosDoNegocio: false,
     lembreteAntecedenciaMin: 1440,
     lembreteDegrausExtras: [],
+    lembreteDegrausSemLink: [],
     lembreteMensagem: null,
     lembreteMensagens: {},
     precoPadraoCents: null,

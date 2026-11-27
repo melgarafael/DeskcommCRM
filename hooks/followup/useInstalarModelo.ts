@@ -36,6 +36,8 @@ export function useInstalarModelo() {
       qc.setQueryData<FollowupFlowPointerRow[]>(followupFlowsListQueryKey, (prev) =>
         prev ? [criado, ...prev] : [criado],
       );
+      // A linha devolvida não traz `trigger_kind`: reler devolve o gatilho à busca (#4593).
+      void qc.invalidateQueries({ queryKey: followupFlowsListQueryKey });
     },
   });
 }

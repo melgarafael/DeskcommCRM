@@ -380,8 +380,8 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     id: "modulo-reservas-de-lugar",
     rotulo: "Reservas de lugar",
     descricao:
-      "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
-    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.",
+      "Ligado, cada empresa pode cadastrar na agenda um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados, e reservar em lugar que já existe continua valendo — o serviço com lugar exige lugar na reserva.",
+    foraDoMenu: "Não cria porta no menu do CRM: o lugar é cadastrado na configuração do serviço, na Agenda, e escolhido ao reservar.",
   },
   {
     modulo: "link_de_pagamento",
@@ -399,6 +399,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.",
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
     painelEm: "/app/connections",
+  },
+  {
+    modulo: "canal_webchat",
+    id: "modulo-canal-webchat",
+    rotulo: "Chat no site",
+    descricao:
+      "Ligado, cada empresa ganha o chat para colocar na página do próprio site, e as conversas que começam nele chegam ao Inbox. Desligado, o chat não recebe conversas novas; as que já chegaram ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a configuração do chat ainda não tem tela.",
   },
   {
     modulo: "campanha_por_email",

@@ -62,8 +62,12 @@ const CORPO_DO_AVISO =
  * HTTP porque o status não distingue: a Anthropic devolve 400 (o mesmo de um
  * pedido malformado) e a OpenAI devolve 429 (o mesmo de um limite de ritmo, que
  * passa sozinho e JÁ tem a espera curta da fila).
+ *
+ * A faixa de saldo do topo do app (`lib/ai/saude-do-saldo.ts`) lê esta mesma
+ * lista e passa `padrao.source` ao `~*` do Postgres: escreva só regex que vale
+ * igual nos dois (ex.: nada de `\b`, que no Postgres é backspace e não fronteira).
  */
-const FRASES_DE_SEM_SALDO: ReadonlyArray<{ padrao: RegExp; provedor: 'anthropic' | 'openai' }> = [
+export const FRASES_DE_SEM_SALDO: ReadonlyArray<{ padrao: RegExp; provedor: 'anthropic' | 'openai' }> = [
   { padrao: /credit balance is too low/i, provedor: 'anthropic' },
   // "You have no credits remaining. Add credits to continue using the API…" —
   // a frase que a OpenAI devolveu numa VPS em set/2026 (5–10/09 e 21/09). Sem

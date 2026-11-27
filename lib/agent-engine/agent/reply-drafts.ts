@@ -36,6 +36,7 @@ export async function generateReplyDraft(
     channelId: string;
     boundary?: ServiceBoundary;
     agent?: PublishedAgentConfig;
+    followupJobId?: string;
   },
 ) {
   const agent =
@@ -118,9 +119,18 @@ export async function generateReplyDraft(
       // Com veto/truncamento/teto, a proposta não basta: o motivo só aparece em `failed`.
       const temOferta = temOfertaAoAtendente(body, result.proposals, result.impediments[0]?.code);
       const { rows: finished } = await pool.query(
-        `update ai_reply_drafts set status=case when not fn_reply_context_current($1,id) then 'stale' when $4::boolean then 'pending' else 'failed' end,
- original_body=$5,edited_body=$5,proposals=$6,trace=$7,error_code=$8,updated_at=now()
- where organization_id=$1 and id=$2 and generation_token=$3 and status='generating' returning *`,
+        `with finalizado as (
+           update ai_reply_drafts
+           set status=case when not fn_reply_context_current($1,id) then 'stale' when $4::boolean then 'pending' else 'failed' end,
+               original_body=$5,edited_body=$5,proposals=$6,trace=$7,error_code=$8,updated_at=now()
+           where organization_id=$1 and id=$2 and generation_token=$3 and status='generating'
+           returning *
+         )
+         select finalizado.*, case
+           when $9::uuid is not null and status = 'pending' and btrim(original_body) <> '' then
+             public.fn_followup_registrar_envio($1,$9,'followup_draft_generated',id::text,jsonb_build_object('draft_id', id))
+         end as historico_do_followup
+         from finalizado`,
         [
           input.organizationId,
           draft.id,
@@ -130,6 +140,7 @@ export async function generateReplyDraft(
           JSON.stringify(result.proposals),
           JSON.stringify(result.candidates.flatMap((c) => c.trace)),
           result.impediments[0]?.code ?? null,
+          input.followupJobId ?? null,
         ],
       );
       return replyDraftSchema.parse(finished[0] ?? draft);

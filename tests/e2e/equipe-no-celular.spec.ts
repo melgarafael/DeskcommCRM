@@ -40,6 +40,7 @@ import * as path from "node:path";
 
 import { test, type Locator, type Page } from "./helpers/test";
 
+import { trocarIdiomaPelaTela } from "./helpers/idioma";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 import { admin, creds, expect, insere, type Creds } from "./qa-l12-comum";
 
@@ -60,7 +61,7 @@ test.use({ viewport: { width: LARGURA, height: 844 }, hasTouch: true, isMobile: 
 async function medir(alvo: Locator) {
   return alvo.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    return { left: r.left, right: r.right, width: r.width, height: r.height };
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
   });
 }
 
@@ -85,6 +86,70 @@ async function esperarAlvoNaTela(alvo: Locator, nome: string) {
   expect(r.width, `${nome}: largura`).toBeGreaterThanOrEqual(PISO_DE_TOQUE);
   expect(r.left, `${nome}: passa da borda esquerda`).toBeGreaterThanOrEqual(0);
   expect(r.right, `${nome}: passa da borda direita`).toBeLessThanOrEqual(LARGURA);
+}
+
+async function verificarHorarioA375px(page: Page, editar: Locator, idioma: "pt-BR" | "es") {
+  await page.setViewportSize({ width: 375, height: 844 });
+  await expect(page.locator("html")).toHaveAttribute("lang", idioma);
+  await editar.tap();
+  const dialogo = page.getByRole("dialog");
+  await expect(dialogo).toBeVisible();
+  try {
+    const janelas = dialogo.getByTestId("janela");
+    const quantidade = await janelas.count();
+    // No código anterior, o botão em espanhol ainda mostra o texto em português.
+    await dialogo.getByRole("button", { name: /^(Adicionar janela|Agregar ventana)$/ }).tap();
+    await expect(janelas).toHaveCount(quantidade + 1);
+    const janela = janelas.last();
+    await page.evaluate(() => document.fonts.ready);
+    const rolagem = await dialogo.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect.soft(rolagem, `${idioma}: o diálogo rola para o lado`).toBe(0);
+
+    const caixa = await medir(dialogo);
+    const dia = janela.getByRole("combobox");
+    const horarios = janela.locator('input[type="time"]');
+    const lixeira = janela.getByRole("button");
+    await expect(horarios).toHaveCount(2);
+    for (const campo of [dia, horarios.first(), horarios.last(), lixeira]) {
+      const nome = await campo.getAttribute("aria-label");
+      const posicao = await medir(campo);
+      expect.soft(posicao.left, `${idioma}: ${nome} passa da borda esquerda`).toBeGreaterThanOrEqual(caixa.left);
+      expect.soft(posicao.right, `${idioma}: ${nome} passa da borda direita`).toBeLessThanOrEqual(caixa.right);
+    }
+    expect.soft((await medir(horarios.first())).top, `${idioma}: horários abaixo do dia`).toBeGreaterThanOrEqual(
+      (await medir(dia)).bottom,
+    );
+    expect.soft((await medir(lixeira)).width, `${idioma}: largura do alvo de remoção`).toBeGreaterThanOrEqual(PISO_DE_TOQUE);
+
+    const acoes = idioma === "es" ? ["Agregar ventana", "Guardar"] : ["Adicionar janela", "Salvar"];
+    for (const nome of acoes) {
+      await expect.soft(dialogo.getByRole("button", { name: nome, exact: true }), idioma).toBeVisible({ timeout: 1_000 });
+    }
+  } finally {
+    await dialogo.getByRole("button", { name: "Cancelar", exact: true }).tap();
+    await expect(dialogo).toBeHidden();
+  }
+}
+
+// #5203: no computador a lixeira tem 36 px, e os campos de hora não podem espremê-la.
+async function verificarLixeiraA1280px(page: Page, editar: Locator) {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await editar.click();
+  const dialogo = page.getByRole("dialog");
+  await expect(dialogo).toBeVisible();
+  try {
+    const janelas = dialogo.getByTestId("janela");
+    const quantidade = await janelas.count();
+    await dialogo.getByRole("button", { name: "Adicionar janela", exact: true }).click();
+    await expect(janelas).toHaveCount(quantidade + 1);
+    const lixeira = await medir(janelas.last().getByRole("button"));
+    expect.soft(lixeira.width, "1280px: a lixeira é espremida pelos campos de hora").toBeGreaterThanOrEqual(
+      lixeira.height,
+    );
+  } finally {
+    await dialogo.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(dialogo).toBeHidden();
+  }
 }
 
 test.describe("cuidar da equipe pelo celular", () => {
@@ -217,6 +282,20 @@ test.describe("cuidar da equipe pelo celular", () => {
     await page.screenshot({ path: path.join(EVIDENCIA, "03-editor-de-horario.png") });
     await dialogo.getByRole("button", { name: "Cancelar" }).tap();
     await expect(dialogo).toBeHidden();
+
+    // #5014: o seletor de idioma fica ao alcance no desktop. O diálogo é
+    // aberto e medido no celular, com a mesma sessão e sem publicar janelas.
+    await verificarHorarioA375px(page, editar, "pt-BR");
+    await verificarLixeiraA1280px(page, editar);
+    try {
+      await trocarIdiomaPelaTela(page, "es");
+      await page.getByRole("tab", { name: "Atención", exact: true }).click();
+      await verificarHorarioA375px(page, editar, "es");
+    } finally {
+      await page.setViewportSize({ width: 1280, height: 844 });
+      await trocarIdiomaPelaTela(page, "pt-BR");
+      await page.setViewportSize({ width: LARGURA, height: 844 });
+    }
 
     // ── 4. Pedidos de LGPD ─────────────────────────────────────────────────
     await page.goto("/app/lgpd/requests");

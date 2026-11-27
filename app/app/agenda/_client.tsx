@@ -1132,7 +1132,7 @@ export function AgendaClient({
                   // contorno que o modo de alto contraste do sistema usa.
                   "mt-1 w-full rounded-md border bg-surface p-2 outline-hidden",
                   emailConvidadoInvalido
-                    ? "border-danger focus:border-danger"
+                    ? "border-destructive focus:border-destructive"
                     : "border-border focus:border-border-strong",
                 )}
                 placeholder={t("cliente@empresa.com")}

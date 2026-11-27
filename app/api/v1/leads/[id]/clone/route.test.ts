@@ -3,35 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
-import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
-// O clone e o `movido_para` são gravados pelo cliente de SERVIÇO (migration
-// 9389): ele fala com o MESMO banco falso, para os testes lerem o que as duas
-// escritas deixaram. `db` é lido na chamada, não na fábrica do mock.
+// Os testes de rota controlam a resposta da transação; as policies, bloqueios
+// e o rollback são exercitados em clone-no-funil-sem-duplicata.test.ts.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    rpc: async () => ({ error: null }),
-    from: (tabela: string) => {
-      const consulta = (db.client as unknown as { from: (t: string) => Record<string, (linha: Row) => unknown> }).from(
-        tabela,
-      );
-      for (const metodo of ["insert", "update"]) {
-        const original = consulta[metodo]!;
-        consulta[metodo] = (linha: Row) => {
-          escritasDoServidor.push(`${tabela}:${metodo}`);
-          if (falhaNoVinculo && tabela === "crm_leads" && metodo === "update") {
-            const recusa = { data: null, error: { message: "falha simulada no vínculo" } };
-            const cadeia = { eq: () => cadeia, select: () => cadeia, maybeSingle: async () => recusa };
-            return cadeia;
-          }
-          return original(linha);
-        };
-      }
-      return consulta;
+    rpc: async (fn: string, args: Row) => fn === "fn_levar_negocio_para_funil"
+      ? gravaClone(args)
+      : { error: null },
+    from: (tabela: string) => db.from(tabela),
+    storage: {
+      from: () => ({
+        copy: async (de: string) => (storageRecusa.has(de) ? { error: { message: "storage fora" } } : { error: null }),
+      }),
     },
   }),
 }));
@@ -166,7 +154,14 @@ function fakeDb(seed: Record<string, Row[]>) {
     return builder;
   }
 
-  return { client: { from } as never, tables };
+  return {
+    client: {
+      from,
+      auth: { getClaims: async () => ({ data: { claims: { sub: USER_ID, aal: "aal1", role: "authenticated" } }, error: null }) },
+    } as never,
+    from,
+    tables,
+  };
 }
 
 function seed() {
@@ -213,14 +208,64 @@ function seed() {
 }
 
 let db: ReturnType<typeof fakeDb>;
-/** O que o cliente de serviço escreveu (tabela:método), e se o UPDATE do vínculo falha. */
-let escritasDoServidor: string[] = [];
-let falhaNoVinculo = false;
+let recusaNaGravacao: { message: string; code?: string } | null;
+/** Um escritor de fora da transação grava a cópia antes do INSERT desta (#5281). */
+let corridaNaGravacao: (() => void) | null;
+let sessaoDoInsert: unknown;
+let storageRecusa = new Set<string>();
+
+async function gravaClone(args: Row) {
+  const leads = db.tables.crm_leads!;
+  const origem = leads.find((lead) => lead.id === args.p_origem)!;
+  let clone = leads.find((lead) => lead.pipeline_id === args.p_destino && lead.status === "open"
+    && ((lead.source_metadata as Row | undefined)?.clonado_de as Row | undefined)?.lead_id === origem.id);
+  const linha = args.p_linha as Row | null;
+  const fechamento = args.p_fechamento as Row | null;
+
+  if (!clone && !linha) return { data: null, error: null };
+  if (linha || fechamento) {
+    sessaoDoInsert = args.p_sessao;
+    if (recusaNaGravacao) return { data: null, error: recusaNaGravacao };
+  }
+  if (!clone && linha && corridaNaGravacao) {
+    corridaNaGravacao();
+    corridaNaGravacao = null;
+    return {
+      data: null,
+      error: { code: "23505", message: 'duplicate key value violates unique constraint "crm_leads_clone_aberto_no_funil_uidx"' },
+    };
+  }
+  const criou = !clone && Boolean(linha);
+  const fechou = origem.status === "open" && Boolean(fechamento);
+  if (criou) {
+    clone = {
+      ...linha,
+      id: `novo-${leads.length + 1}`,
+      source_metadata: {
+        ...(linha?.source_metadata as Row),
+        clonado_de: { lead_id: origem.id, pipeline_id: origem.pipeline_id },
+      },
+    };
+    leads.push(clone);
+  }
+  if (fechou) {
+    await db.from("crm_leads").update(fechamento!).eq("id", origem.id);
+  }
+  if ((criou || fechou) && clone) {
+    origem.source_metadata = {
+      ...(origem.source_metadata as Row),
+      movido_para: { lead_id: clone.id, pipeline_id: clone.pipeline_id, stage_id: clone.stage_id },
+    };
+  }
+  return { data: { clone, origem, criou, fechou }, error: null };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  escritasDoServidor = [];
-  falhaNoVinculo = false;
+  recusaNaGravacao = null;
+  corridaNaGravacao = null;
+  sessaoDoInsert = undefined;
+  storageRecusa = new Set<string>();
   db = fakeDb(seed());
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
@@ -368,105 +413,95 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     expect((origem.source_metadata as Row).canal).toBe("whatsapp");
   });
 
-  /**
-   * Sessão = o banco falso com um espião nas escritas de `crm_leads`. `recusaInsert`
-   * faz o INSERT responder como a policy `crm_leads_insert` responde quando recusa.
-   */
-  function sessaoEspiada(recusaInsert = false) {
-    const sessao = db.client as unknown as {
-      from: (t: string) => Record<string, (linha: Row) => unknown>;
-    };
-    const inseridos: Row[] = [];
-    const comVinculo: string[] = [];
-    vi.mocked(createClient).mockResolvedValue({
-      from: (tabela: string) => {
-        const consulta = sessao.from(tabela);
-        if (tabela !== "crm_leads") return consulta;
-        for (const metodo of ["insert", "update"]) {
-          const original = consulta[metodo]!;
-          consulta[metodo] = (linha: Row) => {
-            const meta = (linha?.source_metadata ?? {}) as Row;
-            for (const chave of ["clonado_de", "movido_para"]) {
-              if (chave in meta) comVinculo.push(`${metodo}:${chave}`);
-            }
-            if (metodo === "insert") {
-              inseridos.push(linha);
-              if (recusaInsert) {
-                const recusa = {
-                  data: null,
-                  error: { code: "42501", message: 'new row violates row-level security policy for table "crm_leads"' },
-                };
-                const cadeia = { select: () => cadeia, single: async () => recusa, maybeSingle: async () => recusa };
-                return cadeia;
-              }
-            }
-            return original(linha);
-          };
-        }
-        return consulta;
-      },
-    } as never);
-    return { inseridos, comVinculo };
-  }
-
-  it("o INSERT do clone vai pela SESSÃO, sem o vínculo; `clonado_de` e `movido_para` entram pelo serviço (migration 9389)", async () => {
-    const espiao = sessaoEspiada();
+  it("devolve a mesma cópia da primeira transferência, mesmo com a origem já fechada", async () => {
     const { POST } = await import("./route");
 
+    const primeira = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const segunda = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const criado = await primeira.json();
+    const reutilizado = await segunda.json();
+
+    expect(primeira.status).toBe(201);
+    expect(segunda.status).toBe(200);
+    expect(reutilizado.data.lead.id).toBe(criado.data.lead.id);
+    expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+  });
+
+  it("a cópia gravada fora da transação no meio do caminho é reaproveitada, não vira 500 (#5281)", async () => {
+    corridaNaGravacao = () => {
+      db.tables.crm_leads!.push({
+        id: "copia-da-automacao", organization_id: ORG_ID, pipeline_id: P2, stage_id: S2_A,
+        status: "open", title: "Cópia da automação",
+        source_metadata: { clonado_de: { lead_id: LEAD_ID, pipeline_id: P1 } },
+      });
+    };
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.lead.id).toBe("copia-da-automacao");
+    expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+    expect(db.tables.crm_leads?.find((lead) => lead.id === LEAD_ID)?.status).toBe("lost");
+  });
+
+  it("a cópia reaproveitada completa os anexos que a primeira transferência não levou", async () => {
+    const caminho = (id: string) => `${ORG_ID}/leads/${LEAD_ID}/voucher/${id}.pdf`;
+    const anexo = (id: string) => ({
+      id, organization_id: ORG_ID, lead_id: LEAD_ID, field_key: "voucher", file_name: `${id}.pdf`,
+      file_size: 10, mime_type: "application/pdf", storage_path: caminho(id), created_by: USER_ID,
+    });
+    db.tables.crm_lead_attachments = [anexo("anexo-a"), anexo("anexo-b")];
+    storageRecusa.add(caminho("anexo-b"));
+    const { POST } = await import("./route");
+
+    const primeira = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    storageRecusa.clear();
+    const segunda = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const criado = await primeira.json();
+    const reutilizado = await segunda.json();
+
+    expect(criado.data.anexos).toBe(1);
+    expect(segunda.status).toBe(200);
+    expect(reutilizado.data.anexos).toBe(1);
+    const noClone = (db.tables.crm_lead_attachments ?? []).filter((linha) => linha.lead_id === criado.data.lead.id);
+    expect(noClone.map((linha) => linha.clonado_do_attachment_id).sort()).toEqual(["anexo-a", "anexo-b"]);
+  });
+
+  it("entrega o contexto de sessão verificado ao escritor e devolve ambos os vínculos", async () => {
+    const { POST } = await import("./route");
     const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
     const body = await response.json();
 
     expect(response.status).toBe(201);
-    // A policy `crm_leads_insert` continua decidindo a criação: o INSERT é da sessão.
-    expect(espiao.inseridos).toHaveLength(1);
-    expect(espiao.comVinculo).toEqual([]);
-    expect(escritasDoServidor.filter((e) => e === "crm_leads:insert")).toEqual([]);
-    expect(escritasDoServidor.filter((e) => e === "crm_leads:update")).toHaveLength(2);
-
-    const clone = (db.tables.crm_leads ?? []).find((row) => row.id === body.data.lead.id) as Row;
-    expect((clone.source_metadata as Row).clonado_de).toMatchObject({ lead_id: LEAD_ID, pipeline_id: P1 });
-    expect((clone.source_metadata as Row).canal).toBe("whatsapp");
-    expect((body.data.lead.source_metadata as Row).clonado_de).toMatchObject({ lead_id: LEAD_ID });
-    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
-    expect((origem.source_metadata as Row).movido_para).toMatchObject({ lead_id: clone.id });
+    expect(sessaoDoInsert).toMatchObject({ sub: USER_ID, role: "authenticated", aal: "aal1" });
+    expect(body.data.lead.source_metadata).toMatchObject({
+      canal: "whatsapp", clonado_de: { lead_id: LEAD_ID, pipeline_id: P1 },
+    });
+    expect(body.data.origem.source_metadata.movido_para).toMatchObject({ lead_id: body.data.lead.id });
   });
 
-  it("a policy recusa o INSERT do clone (ex.: modo 'só os meus' e dono descartado): 403, nada é escrito pelo serviço e a origem segue aberta", async () => {
-    const espiao = sessaoEspiada(true);
+  it("a recusa da policy é 403 e a origem segue aberta", async () => {
+    recusaNaGravacao = { code: "42501", message: 'new row violates row-level security policy for table "crm_leads"' };
     const { POST } = await import("./route");
-
     const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
-    const body = await response.json();
 
-    expect(espiao.inseridos).toHaveLength(1);
     expect(response.status).toBe(403);
-    expect(body.error.code).toBe("forbidden");
-    expect(escritasDoServidor).toEqual([]);
+    expect((await response.json()).error.code).toBe("forbidden");
     expect(db.tables.crm_leads).toHaveLength(1);
-    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
-    expect(origem.status).toBe("open");
-    expect(origem.source_metadata).toEqual({ canal: "whatsapp" });
+    expect(db.tables.crm_leads?.[0]).toMatchObject({ status: "open", source_metadata: { canal: "whatsapp" } });
   });
 
-  it("o UPDATE do vínculo falha: 500 com o id do clone, registro no log, e a origem NÃO é encerrada", async () => {
-    falhaNoVinculo = true;
-    const erro = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+  it("informa a falha da transação sem apontar um clone que não foi criado", async () => {
+    recusaNaGravacao = { message: "falha simulada no vínculo" };
     const { POST } = await import("./route");
-
     const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
-    const body = await response.json();
 
     expect(response.status).toBe(500);
-    const clone = (db.tables.crm_leads ?? []).find((row) => row.id !== LEAD_ID) as Row;
-    expect(body.error.details).toEqual({ cloned_lead_id: clone.id });
-    expect(erro).toHaveBeenCalledWith(
-      expect.stringContaining("vínculo"),
-      expect.objectContaining({ lead_id: LEAD_ID, cloned_lead_id: clone.id }),
-    );
-    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
-    expect(origem.status).toBe("open");
-    expect(origem.source_metadata).toEqual({ canal: "whatsapp" });
-    erro.mockRestore();
+    expect((await response.json()).error.details).toBeUndefined();
+    expect(db.tables.crm_leads).toHaveLength(1);
+    expect(db.tables.crm_leads?.[0]).toMatchObject({ status: "open", source_metadata: { canal: "whatsapp" } });
   });
 
   it("cada lado conta a troca na LINHA DO TEMPO — e a origem não diz 'Perdido — other'", async () => {

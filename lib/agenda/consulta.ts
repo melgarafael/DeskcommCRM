@@ -1,6 +1,6 @@
 import { googleRpc } from "./google/sync-store";
 import { consultarServico, lerServico, type DisponibilidadeDoServico } from "./servicos/consulta";
-import { lerCorposDoLembrete } from "./lembretes";
+import { lerCorposDoLembrete, lerDegrausSemLink } from "./lembretes";
 import { RECUSA_DE_TIPO_EXTERNO } from "./autoridade";
 import { agendaAuthority, AMIGO_CONTEXT_REQUIRED, providerContext } from "@/lib/amigo/agenda";
 /**
@@ -513,7 +513,7 @@ export interface ParametrosDaOcupacao {
 /**
  * O QUE OCUPA a agenda de um dono numa janela — a coleta, num lugar só.
  *
- * Agendamentos do CRM e eventos do Google Agenda SELECIONADOS, classificados por
+ * Agendamentos do CRM (como dono OU como responsável adicional, #3067) e eventos do Google Agenda SELECIONADOS, classificados por
  * `ocupadosDoDono` (que decide status que libera, evento transparente, conexão
  * caída). Nada de jornada, exceção de data, buffer ou aviso mínimo: isso é regra
  * da GRADE, e mora em `horariosLivres`.
@@ -542,8 +542,25 @@ export async function coletaOQueOcupa(
     .gt("ends_at", params.de.toISOString());
   if (params.ignorarAgendamentoId) agendamentos = agendamentos.neq("id", params.ignorarAgendamentoId);
 
-  const [{ data: agendaRaw, error: erroAg }, { data: externosRaw, error: erroExt }] = await Promise.all([
+  // #3067: quem é responsável ADICIONAL também está ocupado. Consulta à parte, pela
+  // tabela de ligação com o compromisso embutido — a mesma janela e o mesmo
+  // compromisso ignorado da consulta do dono.
+  let comoAdicional = supabase
+    .from("calendar_appointment_responsibles")
+    .select("calendar_appointments!inner(starts_at, ends_at, status)")
+    .eq("organization_id", organizationId)
+    .eq("user_id", params.donoId)
+    .lt("calendar_appointments.starts_at", params.ate.toISOString())
+    .gt("calendar_appointments.ends_at", params.de.toISOString());
+  if (params.ignorarAgendamentoId) comoAdicional = comoAdicional.neq("appointment_id", params.ignorarAgendamentoId);
+
+  const [
+    { data: agendaRaw, error: erroAg },
+    { data: adicionalRaw, error: erroAdicional },
+    { data: externosRaw, error: erroExt },
+  ] = await Promise.all([
     agendamentos,
+    comoAdicional,
     // `calendar_external_events` NÃO tem `user_id`: o dono vem por
     // `connection_id → calendar_connections.user_id`, e a situação da conexão
     // decide se o horário sai com aviso de defasagem.
@@ -560,13 +577,21 @@ export async function coletaOQueOcupa(
     }),
   ]);
 
-  const erro = erroAg ?? erroExt;
+  // Falha em qualquer uma das três leituras recusa: sem saber o que ocupa, nada é livre.
+  const erro = erroAg ?? erroAdicional ?? erroExt;
   if (erro) return { ok: false, erro: erro.message };
+
+  // O embed de uma FK chega como objeto; `flatMap` aceita também a forma de lista.
+  const deAdicional = (
+    (adicionalRaw ?? []) as unknown as {
+      calendar_appointments: LinhaDeAgendamento | LinhaDeAgendamento[] | null;
+    }[]
+  ).flatMap((linha) => linha.calendar_appointments ?? []);
 
   return {
     ok: true,
     ...ocupadosDoDono(
-      (agendaRaw ?? []) as LinhaDeAgendamento[],
+      [...((agendaRaw ?? []) as LinhaDeAgendamento[]), ...deAdicional],
       ((externosRaw ?? []) as LinhaDaOcupacaoDoGoogle[]).map(
         (linha) =>
           ({
@@ -643,7 +668,7 @@ export interface AgendamentoListado {
    * explica por que ele aparece na agenda de quem não é o dono.
    */
   convidadosDaEquipe?: string[];
-  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number };
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number; lugar: string | null };
 }
 
 export interface ParametrosDaLista {
@@ -962,7 +987,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
+      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids, service_space_id, calendar_resources!calendar_appointments_service_space_fk(name)",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1138,6 +1163,12 @@ export async function listaAgendamentos(
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
           pessoas: Number(l.service_party_size ?? 1),
+          lugar: (() => {
+            const cr = l.calendar_resources;
+            if (!cr) return null;
+            const arr = Array.isArray(cr) ? cr : [cr];
+            return arr[0]?.name ?? null;
+          })(),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
             : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;
@@ -1162,14 +1193,14 @@ export async function idDoTipoPorSlug(
   supabase: SupabaseClient,
   organizationId: string,
   slug: string,
-): Promise<{ id: string; nome: string } | null> {
+): Promise<{ id: string; nome: string; servicoLigado?: boolean } | null> {
   const { data } = await supabase
     .from("calendar_event_types")
-    .select("id, name")
+    .select("id, name, service_enabled")
     .eq("organization_id", organizationId)
     .eq("slug", slug)
     .maybeSingle();
-  return data ? { id: String(data.id), nome: String(data.name) } : null;
+  return data ? { id: String(data.id), nome: String(data.name), servicoLigado: data.service_enabled === true } : null;
 }
 
 
@@ -1245,6 +1276,8 @@ export interface TipoDeAtendimento {
   lembreteMensagem: string | null;
   /** Texto de cada extra, chave = minutos antes. Vazio = nenhum extra tem texto próprio. */
   lembreteMensagens: Record<string, string>;
+  /** #5154: degraus (minutos) cujo lembrete sai SEM a linha do link. Vazio = todos levam. */
+  lembreteDegrausSemLink: number[];
   /** Preço padrão em centavos, ou null quando o negócio digita na hora. */
   precoPadraoCents: number | null;
   servico?: { booking_mode: string; capacity: number | null; revision: number; publication_mode: string };
@@ -1265,7 +1298,7 @@ export type ResultadoDosTipos =
  * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
  */
 export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
-  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, reminder_sem_link_offsets_minutes, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode, external_provider, external_id, external_connection_id";
 
 /**
  * Os tipos de atendimento da organização.
@@ -1346,6 +1379,7 @@ export async function listaTiposDeAtendimento(
         ? null
         : String(t.reminder_body),
       lembreteMensagens: lerCorposDoLembrete(t.reminder_bodies),
+      lembreteDegrausSemLink: lerDegrausSemLink(t.reminder_sem_link_offsets_minutes),
       precoPadraoCents:
         t.default_price_cents === null || t.default_price_cents === undefined
           ? null

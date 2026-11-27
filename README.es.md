@@ -151,7 +151,7 @@ y dile *"instálame el DeskcommCRM"*. Lee el [`CLAUDE.md`](hostgator-setup-kit/C
 
 ### Desde la pantalla (recomendado)
 
-Cuando existe versión nueva, el pie del menú lateral enciende **"Nova versão"** — solo para el
+Cuando existe versión nueva, el pie del menú lateral enciende **"Nueva versión"** — solo para el
 dueño del servidor, porque avisarle a quien no puede actualizar es ruido. Haz clic y llegas a
 **Configuración → Actualización**, que muestra qué cambia, **hace backup de la base sola** y
 acompaña cada fase (backup → código → base → en línea) hasta terminar. Nada de SSH.
@@ -161,8 +161,9 @@ vuelta en el `.env` — sin eso, el siguiente reinicio traería la app rota de n
 
 > Por debajo: la app solo registra el pedido; quien ejecuta es el agente que `install.sh` dejó
 > en tu VPS, en un cron que revisa **cada 5 minutos** — así que la actualización empieza dentro
-> de los 5 minutos del clic. Si ese agente está caído, la pantalla avisa **"Atualização
-> automática indisponível"** y muestra el comando de abajo — nunca finge que funcionó.
+> de los 5 minutos del clic. Si ese agente está caído, la pantalla avisa
+> **"Actualización automática no disponible"** y muestra el comando de abajo — nunca finge
+> que funcionó.
 
 ### Desde la terminal
 
@@ -192,7 +193,10 @@ estaba ocupada, declarar `SUPABASE_DB_ADMIN_URL` cuando fue permiso).
 
 **¿Salió mal?** Guarda el mensaje y pide ayuda. El `restore.sh` **no** vuelve el backup sobre la
 base de datos en uso: solo restaura en una base de datos vacía (ver [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md)).
-**¿Solo quieres diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`.
+**¿Solo quieres diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`. Sale **0 solo**
+cuando la app se declara sana (estado general `healthy`) — por eso sirve de alarma para
+cron/monitor. Cualquier otro desenlace (`degraded`, `unhealthy`, app que no responde, JSON
+ilegible) sale 1, después de imprimir el diagnóstico entero.
 
 > ⚠️ **En una instalación vieja que todavía no tiene el agente de la pantalla**, ejecuta
 > `update.sh` **dos veces**: la primera es todavía el script viejo (que baja el nuevo); la
@@ -208,7 +212,7 @@ base de datos en uso: solo restaura en una base de datos vacía (ver [`hostgator
 | `restore.sh` | Restaura un backup |
 | `reset-password.sh` | Redefine la contraseña de un usuario |
 | `reset-mfa.sh` | Quita el MFA de quien perdió el celular |
-| `healthcheck.sh` | Diagnóstico de todos los servicios de una vez |
+| `healthcheck.sh` | Diagnóstico de todos los servicios de una vez — sale 1 cuando la app no está sana |
 
 > **El backup importa:** el plan gratis de Supabase **no hace backup solo**. Vale la pena
 > agendar `backup.sh` diariamente en el cron. `update.sh` ya hace uno antes de cada
@@ -272,7 +276,7 @@ Toda pantalla tiene puerta en la navegación — el CI reprueba una pantalla que
 | **WhatsApp** | WAHA Plus (motor NOWEB) + Meta Cloud API | QR para empezar rápido; canal oficial para escalar |
 | **Colas** | Tabla `event_log` + workers (cron) | Un trigger de base nunca hace HTTP |
 | **Rate limit** | Upstash Redis (sliding window) | Serverless, el free tier alcanza |
-| **IA** | Vercel AI SDK v7 — OpenRouter, Requesty, Anthropic, OpenAI y Google | El instalador pregunta cuál; se cambia después desde la pantalla |
+| **IA** | Vercel AI SDK v7 — OpenRouter, Requesty, AI/ML API, Anthropic, OpenAI y Google | El instalador pregunta cuál; se cambia después desde la pantalla |
 | **Validación** | Zod | Input externo, env, payloads |
 | **Observabilidad** | Sentry (scrub en error, transacción, span y breadcrumb) | Telemetría opt-in en la instalación |
 | **Hosting** | Cualquier VPS con Docker (HostGator/SP en la alianza) | App + WhatsApp + workers en tu propia máquina |

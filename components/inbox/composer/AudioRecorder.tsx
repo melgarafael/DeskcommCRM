@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 
 import { Button } from "@/components/ui/button";
@@ -28,10 +28,11 @@ function pickMime(): string | undefined {
 interface Props {
   conversationId: string;
   disabled?: boolean;
+  suspenso?: boolean;
 }
 
 /** Gravação de voz estilo WhatsApp: mic → timer + cancelar/enviar → PTT. */
-export function AudioRecorder({ conversationId, disabled }: Props) {
+export function AudioRecorder({ conversationId, disabled, suspenso = false }: Props) {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -41,14 +42,22 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
   const discardRef = useRef(false);
   const startingRef = useRef(false);
   const captureGeneration = useRef(0);
+  const suspensoRef = useRef(suspenso);
   const upload = useUploadMedia();
   const send = useSendMessage();
 
+  useLayoutEffect(() => {
+    suspensoRef.current = suspenso;
+    const recorder = recorderRef.current;
+    if (suspenso && recorder?.state === "recording") recorder.pause();
+    if (!suspenso && recorder?.state === "paused") recorder.resume();
+  }, [suspenso]);
+
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || suspenso) return;
     const t = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
-  }, [recording]);
+  }, [recording, suspenso]);
 
   const cleanupStream = () => {
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
@@ -60,19 +69,20 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
     () => () => {
       captureGeneration.current += 1;
       discardRef.current = true;
-      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
       cleanupStream();
     },
-    [],
+    [conversationId],
   );
 
   async function start() {
-    if (startingRef.current || recording) return;
+    if (startingRef.current || recording || suspensoRef.current) return;
     startingRef.current = true;
     const generation = captureGeneration.current;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (generation !== captureGeneration.current) {
+      if (generation !== captureGeneration.current || suspensoRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -88,7 +98,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         cleanupStream();
         setRecording(false);
         setElapsed(0);
-        if (discardRef.current || chunksRef.current.length === 0) return;
+        if (discardRef.current || suspensoRef.current || chunksRef.current.length === 0) return;
         const type = rec.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type });
         void upload
@@ -100,7 +110,9 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
             // iPhone em opus, o único formato de nota de voz dos canais oficiais.
             notaDeVoz: true,
           })
-          .then((uploaded) =>
+          .then((uploaded) => {
+            // O clique já confirmou o envio para a conversa capturada acima.
+            // A API volta a autorizar essa escrita mesmo depois de navegar.
             send.mutate(
               {
                 conversation_id: conversationId,
@@ -110,8 +122,8 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
                 media_size_bytes: uploaded.media_size_bytes,
               },
               {},
-            ),
-          )
+            );
+          })
           .catch(() => {
             // toast já disparado pelo onError de useUploadMedia
           });
@@ -178,6 +190,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         className="shrink-0"
         aria-label={t("Enviar áudio")}
         onClick={stopIfRecording}
+        disabled={suspenso}
       >
         <PaperPlaneTilt size={16} weight="fill" aria-hidden />
       </Button>

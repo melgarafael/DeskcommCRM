@@ -22,6 +22,9 @@ export function CriarAcaoNoGoogle({
   nome,
   categoria,
   incluirEmConversoes,
+  googleCustomerId,
+  googleLoginCustomerId,
+  motivoDesabilitado,
   onCriada,
 }: {
   idioma: Idioma;
@@ -29,6 +32,10 @@ export function CriarAcaoNoGoogle({
   nome: string;
   categoria: CategoriaDeConversao;
   incluirEmConversoes: boolean;
+  /** Omitido/null usa a conta padrão da conexão de envio. */
+  googleCustomerId?: string | null;
+  googleLoginCustomerId?: string | null;
+  motivoDesabilitado?: string;
   onCriada: (id: string, nomeFinal: string) => void;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
@@ -44,6 +51,12 @@ export function CriarAcaoNoGoogle({
         nome,
         categoria,
         incluir_em_conversoes: incluirEmConversoes,
+        ...(googleCustomerId
+          ? {
+              google_customer_id: googleCustomerId,
+              google_login_customer_id: googleLoginCustomerId || null,
+            }
+          : {}),
       });
       if (r.ok) {
         onCriada(r.dados.id, r.dados.nome);
@@ -63,9 +76,10 @@ export function CriarAcaoNoGoogle({
       title={
         habilitado
           ? t("Cria a ação de conversão na sua conta do Google Ads")
-          : t(
+          : (motivoDesabilitado ??
+            t(
               "Criar direto no Google exige o developer token do Google Ads nesta instalação e a conta reconectada. Enquanto isso, cole o ID da ação.",
-            )
+            ))
       }
     >
       {isPending ? t("Criando...") : t("Criar no Google")}
