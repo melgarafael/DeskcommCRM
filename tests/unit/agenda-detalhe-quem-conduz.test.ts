@@ -1,50 +1,109 @@
 /**
- * #3067 fatia E1 — "Quem conduz" na rota do detalhe do compromisso.
+ * #3067 — "Quem conduz" na rota do detalhe do compromisso: o GET devolve o
+ * principal, os adicionais e `equipe_travada` (sessão coletiva), lendo o tipo
+ * SEMPRE dentro da organização da sessão.
  *
- * A rota do detalhe já devolvia `principal_user_id` e `responsaveis`; esta
- * fatia acrescenta `equipe_travada` para sessões coletivas, com uma consulta
- * separada a `calendar_event_types` que filtra organização E id do tipo.
- *
- * Render da página não alcança isto (providers, hooks, rede). O que não pode
- * se perder cabe numa leitura do arquivo: o select inclui `event_type_id`,
- * a resposta devolve `equipe_travada`, e a consulta do tipo filtra a
- * organização da sessão.
+ * Banco, sessão e Google são dublês: nada aqui prova RLS.
  */
-import { readFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { describe, expect, it } from "vitest";
+import { GET } from "@/app/api/v1/agenda/agendamentos/[id]/route";
 
-/**
- * As colunas que a rota do detalhe deve ler para decidir `equipe_travada`:
- * `event_type_id` (para saber qual tipo consultar) e
- * `calendar_appointment_responsibles(user_id)` (para `responsaveis`).
- */
-const rota = readFileSync("app/api/v1/agenda/agendamentos/[id]/route.ts", "utf8");
+const ORG = "11111111-1111-4111-8111-111111111111";
+const ID = "22222222-2222-4222-8222-222222222222";
+
+const estado = vi.hoisted(() => ({
+  compromisso: {} as Record<string, unknown>,
+  tipo: null as Record<string, unknown> | null,
+  erroDoTipo: null as { message: string } | null,
+  consultas: [] as Array<{ tabela: string; filtros: Record<string, unknown> }>,
+}));
+
+function banco() {
+  return {
+    from(tabela: string) {
+      const consulta = { tabela, filtros: {} as Record<string, unknown> };
+      estado.consultas.push(consulta);
+      const resposta = () => {
+        if (tabela === "calendar_appointments") return { data: estado.compromisso, error: null };
+        if (tabela === "calendar_event_types") return { data: estado.tipo, error: estado.erroDoTipo };
+        return { data: null, error: null };
+      };
+      const q: Record<string, unknown> = {
+        maybeSingle: async () => resposta(),
+        then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok),
+      };
+      for (const m of ["select", "not", "gte", "order", "limit", "in"]) q[m] = () => q;
+      q.eq = (coluna: string, valor: unknown) => {
+        consulta.filtros[coluna] = valor;
+        return q;
+      };
+      return q;
+    },
+  };
+}
+
+vi.mock("@/lib/auth/require-role", () => ({
+  requireRole: async () => ({ ok: true, org: { orgId: ORG }, user: { id: "u1" } }),
+}));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => banco() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => banco() }));
+vi.mock("@/lib/agenda/google/sync-store", () => ({ googleRpc: async () => false }));
+
+async function pedir() {
+  const r = await GET(new Request("http://localhost"), { params: Promise.resolve({ id: ID }) });
+  return { status: r.status, corpo: await r.json() };
+}
+
+const consultasDoTipo = () => estado.consultas.filter((c) => c.tabela === "calendar_event_types");
+
+beforeEach(() => {
+  estado.consultas.length = 0;
+  estado.erroDoTipo = null;
+  estado.tipo = { service_enabled: true, booking_mode: "group" };
+  estado.compromisso = {
+    id: ID,
+    owner_user_id: "dono",
+    calendar_appointment_responsibles: [{ user_id: "ana" }],
+    service_occurrence_id: "ocorrencia",
+    event_type_id: "tipo",
+    revision: 1,
+    revision_started_at: "2026-09-16T12:00:00.000Z",
+    contact_id: null,
+    google_local_revision: "0",
+    google_synced_local_revision: "0",
+  };
+});
 
 describe("detalhe do compromisso — quem conduz (#3067)", () => {
-  it("a resposta devolve principal_user_id e responsaveis", () => {
-    expect(rota).toContain("principal_user_id: _ownerUserId");
-    expect(rota).toContain("responsaveis: (equipe ?? []).map((r) => r.user_id)");
-    // `equipe_travada` viaja ao lado de `principal_user_id`.
-    expect(rota).toContain("equipe_travada, responsaveis:");
+  it("devolve o principal e os adicionais", async () => {
+    const { status, corpo } = await pedir();
+    expect(status).toBe(200);
+    expect(corpo.data.principal_user_id).toBe("dono");
+    expect(corpo.data.responsaveis).toEqual(["ana"]);
   });
 
-  it("sem ocorrência de serviço: equipe_travada é false e nenhuma consulta ao tipo", () => {
-    // Sem `service_occurrence_id` a rota não consulta `calendar_event_types`
-    // para decidir a equipe travada; o bloco só entra quando há ocorrência.
-    expect(rota).toMatch(/if \(data\.service_occurrence_id && data\.event_type_id\)/);
+  it("sessão coletiva trava a equipe, lendo o tipo dentro da organização", async () => {
+    const { corpo } = await pedir();
+    expect(corpo.data.equipe_travada).toBe(true);
+    expect(consultasDoTipo()[0]?.filtros).toEqual({ id: "tipo", organization_id: ORG });
   });
 
-  it("com ocorrência e tipo: consulta separada a calendar_event_types, filtrando organização e id", () => {
-    expect(rota).toContain('from("calendar_event_types")');
-    expect(rota).toContain('select("service_enabled, booking_mode")');
-    expect(rota).toContain(".eq(\"id\", data.event_type_id)");
-    expect(rota).toContain(".eq(\"organization_id\", org)");
-    expect(rota).toContain(".maybeSingle()");
+  it("serviço individual não trava", async () => {
+    estado.tipo = { service_enabled: true, booking_mode: "individual" };
+    expect((await pedir()).corpo.data.equipe_travada).toBe(false);
   });
 
-  it("equipe_travada é true só para sessão coletiva (service_enabled e booking_mode não individual)", () => {
-    expect(rota).toContain("tipo?.service_enabled && tipo.booking_mode !== \"individual\"");
-    expect(rota).toContain("let equipe_travada = false;");
+  it("sem ocorrência não trava nem consulta o tipo", async () => {
+    estado.compromisso = { ...estado.compromisso, service_occurrence_id: null };
+    expect((await pedir()).corpo.data.equipe_travada).toBe(false);
+    expect(consultasDoTipo()).toHaveLength(0);
+  });
+
+  it("falha ao ler o tipo vira erro, sem vazar a mensagem do banco", async () => {
+    estado.erroDoTipo = { message: "relation x does not exist" };
+    const { status, corpo } = await pedir();
+    expect(status).toBe(500);
+    expect(JSON.stringify(corpo)).not.toContain("relation x");
   });
 });

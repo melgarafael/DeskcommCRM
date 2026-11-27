@@ -78,7 +78,7 @@ const rejeitarComResponsavelIndisponivel = vi.hoisted(() => ({ value: false }));
 vi.mock("@/hooks/agenda/useMarcarAgendamento", () => {
   const mutateAsync = vi.fn(async (novo: Record<string, unknown>) => {
     corposDoPost.push(novo);
-    if (rejeitarComResponsavelIndisponivel.value && novo.responsible_user_ids?.includes("p2")) {
+    if (rejeitarComResponsavelIndisponivel.value && (novo.responsible_user_ids as string[] | undefined)?.includes("p2")) {
       throw new ApiError(409, "responsavel_indisponivel", { user_id: "p2" }, "req-1");
     }
     return { data: { id: "novo-1" } };
@@ -136,7 +136,6 @@ vi.mock("@/components/feedback/ApiErrorToast", () => ({
   showApiError: vi.fn(),
 }));
 
-import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { ApiError } from "@/lib/api/types";
 
 const TIPO_INDIVIDUAL = {
@@ -188,7 +187,7 @@ function montar(tipo: typeof TIPO_INDIVIDUAL) {
 
 beforeEach(() => {
   corposDoPost.length = 0;
-  vi.mocked(showApiError).mockClear();
+  rejeitarComResponsavelIndisponivel.value = false;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-16T12:00:00.000Z"));
 });
@@ -241,7 +240,8 @@ describe("Quem conduz ao marcar (#3067)", () => {
     expect(screen.queryByTestId("quem-conduz-aviso")).not.toBeInTheDocument();
   });
 
-  it("o servidor recusa com responsavel_indisponível → showApiError é chamado com o erro", async () => {
+  it("recusa do servidor por pessoa ocupada → a tela diz o NOME dela", async () => {
+    rejeitarComResponsavelIndisponivel.value = true;
     montar(TIPO_INDIVIDUAL);
     fireEvent.click(screen.getByTestId("novo-agendamento"));
     fireEvent.change(screen.getByTestId("quem-conduz-adicionar"), {
@@ -251,17 +251,6 @@ describe("Quem conduz ao marcar (#3067)", () => {
     fireEvent.click(screen.getByTestId("horario-10:00"));
     fireEvent.click(screen.getByTestId("confirmar-marcacao"));
 
-    await waitFor(() => expect(corposDoPost).toHaveLength(1));
-    expect(corposDoPost[0]).toMatchObject({ responsible_user_ids: ["p2"] });
-
-    const erro = new ApiError(409, "responsavel_indisponivel", { user_id: "p2" }, "req-1");
-    showApiError(erro);
-    expect(vi.mocked(showApiError)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(showApiError)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: "responsavel_indisponivel",
-        details: { user_id: "p2" },
-      }),
-    );
+    expect(await screen.findByText(/Bruno está ocupado neste horário/)).toBeInTheDocument();
   });
 });

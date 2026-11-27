@@ -36,7 +36,7 @@ export function ResponsaveisDoCompromisso({
 
   const nomesGravados = gravados.flatMap((id) => pessoas.find((p) => p.id === id)?.nome ?? []);
 
-  if (travada) {
+  if (travada && (podeEditar || nomesGravados.length > 0)) {
     // Somente leitura: mostra quem conduz e a nota de que a equipe é definida
     // por quem abre a sessão. Mostra a nota mesmo sem nomes, se pode editar.
     const mostrarNomes = nomesGravados.length > 0;

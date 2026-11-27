@@ -43,7 +43,8 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       .eq("id", data.event_type_id)
       .eq("organization_id", org)
       .maybeSingle();
-    if (erroTipo) return fail("internal_error", erroTipo.message, 500, { requestId });
+    if (erroTipo)
+      return fail("internal_error", "Não foi possível carregar o compromisso.", 500, { requestId });
     equipe_travada = Boolean(tipo?.service_enabled && tipo.booking_mode !== "individual");
   }
   // Só depois de provar a entidade pela sessão. Recibo privado não é listável.
