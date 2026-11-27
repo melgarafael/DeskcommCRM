@@ -113,6 +113,12 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
    * guardar os três desfechos (`#off` durável / `#on` devolve / mensagem normal
    * pausa durável). O que a guarda protege continua o mesmo: TODA ação sobre o
    * automático somente acontece se `!ehEco`.
+   *
+   * Janela de 2000 → 2400 (#5179): a chamada da pausa passou a ser condicional —
+   * antes dela, `pularPausaDaProspeccaoSemResposta` decide se a fala do celular
+   * em conversa de campanha, ainda sem resposta do lead, dispensa a pausa. O que
+   * a asserção afirma não mudou: a pausa continua DENTRO da guarda de eco, nunca
+   * ao lado dela.
    */
   it("a ação sobre o automático acontece DENTRO da guarda de eco, nunca ao lado dela", () => {
     const i = FONTE_INGEST.indexOf("async function handleOutboundFromUserPhone(");
@@ -128,7 +134,7 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,900}?devolverAtendimentoAoAgente\(/);
     // A pausa da mensagem comum também, e o interruptor do agente (que decide
     // se a pausa é durável) é lido DENTRO da guarda — nunca para o eco.
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2000}?pausarIaPorAtendimentoManual\(/);
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2400}?pausarIaPorAtendimentoManual\(/);
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,400}?agenteAceitaComandoDeCelular\(/);
   });
 });

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -397,6 +398,13 @@ export function ProspectingClient() {
   // a cada save (sem effect e sem sobrescrever o que está digitado no refetch).
   const [formRev, setFormRev] = useState(0);
   const personalizacaoInicial = data?.personalizacao ?? null;
+  // #5179: o interruptor da pausa da IA é da ORGANIZAÇÃO (mesma fatia
+  // `settings.prospeccao`), e o valor da tela vem do servidor até alguém mexer
+  // nele. `null` = ainda não mexido, então mostra o gravado.
+  const [naoPausarAntesDaResposta, setNaoPausarAntesDaResposta] = useState<boolean | null>(null);
+  const pausaAntesDaRespostaLigada =
+    naoPausarAntesDaResposta ??
+    personalizacaoInicial?.nao_pausar_antes_da_primeira_resposta === true;
   // Edição do ritmo de uma campanha PAUSADA; vale para uma campanha por vez.
   const [ritmo, setRitmo] = useState<{
     campaignId: string;
@@ -1165,6 +1173,73 @@ export function ProspectingClient() {
             </Button>
           </form>
           </details>
+        </Card>
+      )}
+      {/*
+        #5179 — A PAUSA DA IA NA PROSPECÇÃO, ligada por organização.
+        Mesma fatia (`settings.prospeccao`) e mesmo PATCH do card da voz: o
+        pedido é a mensagem do vendedor pelo celular não calar a IA ANTES de o
+        lead responder. A tela diz o limite em uma frase (depois da resposta a
+        pausa continua) para o interruptor não prometer mais do que faz. O
+        formulário manda o restante da fatia como está no servidor: a rota grava
+        `prospeccao` inteira, e um save daqui não pode apagar a voz.
+      */}
+      {data && (
+        <Card className="p-5">
+          <h2 className="text-lg font-semibold">{t("Pausa da IA na prospecção")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              "Vale só na conversa que nasceu de uma campanha e só até o lead responder pela primeira vez. Depois da primeira resposta, cada mensagem que você mandar pelo celular pausa a IA como sempre.",
+            )}
+          </p>
+          <form
+            className="mt-4 space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              setNotice(null);
+              try {
+                const p = personalizacaoInicial ?? {};
+                await apiClient.patch("/api/v1/settings/prospeccao", {
+                  vendedor_nome: p.vendedor_nome,
+                  vendedor_apresentacao: p.vendedor_apresentacao,
+                  vendedor_diferencial: p.vendedor_diferencial,
+                  vocabulario: p.vocabulario ?? {},
+                  nao_pausar_antes_da_primeira_resposta: pausaAntesDaRespostaLigada,
+                });
+                await query.refetch();
+                setNaoPausarAntesDaResposta(null);
+                setNotice(t("Pausa da IA atualizada."));
+              } catch (err) {
+                setError(err instanceof Error ? err.message : t("Não foi possível concluir a operação."));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <Switch
+                id="prospecting-nao-pausar-antes-da-resposta"
+                checked={pausaAntesDaRespostaLigada}
+                onCheckedChange={setNaoPausarAntesDaResposta}
+                disabled={busy}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="prospecting-nao-pausar-antes-da-resposta">
+                  {t("Não pausar a IA antes da primeira resposta do lead")}
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    "Ligada, a mensagem que você manda do celular numa conversa de campanha não desliga a IA enquanto o lead não respondeu — a abordagem não fica sem resposta automática. Desligada (padrão), a IA pausa por 60 minutos a cada mensagem sua, como sempre.",
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button disabled={busy} type="submit">
+              {t("Salvar pausa da IA")}
+            </Button>
+          </form>
         </Card>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
