@@ -44,20 +44,31 @@ export const ROTULO_DO_GATILHO: Record<TipoDeGatilhoDaTela, string> = {
  * a tela não sabe ler.
  */
 export function rotuloDoGatilho(kind: string | null | undefined): string | null {
+  const tipo = tipoDaTela(kind);
+  return tipo ? ROTULO_DO_GATILHO[tipo] : null;
+}
+
+function tipoDaTela(kind: string | null | undefined): TipoDeGatilhoDaTela | null {
   if (!kind || !Object.hasOwn(ROTULO_DO_GATILHO, kind)) return null;
-  return ROTULO_DO_GATILHO[kind as TipoDeGatilhoDaTela];
+  return kind as TipoDeGatilhoDaTela;
 }
 
 /**
- * O rótulo que a BUSCA da lista de Follow-ups usa para o `trigger_kind` da linha
- * (#4593), na mesma leitura do editor:
+ * O tipo de gatilho que a BUSCA da lista de Follow-ups usa para o `trigger_kind`
+ * da linha (#4593), na mesma leitura do editor:
  *
  * - `null` — a configuração não tem `kind`; o editor mostra «Manual».
  * - ausente (`undefined`) — a linha veio de uma escrita e a lista ainda não foi
  *   relida: não se sabe o gatilho, e chutar «Manual» rotularia errado uma cópia.
  * - tipo desconhecido — sem rótulo (o editor diz «indisponível»).
  */
+export function tipoDoGatilhoNaLista(kind: string | null | undefined): TipoDeGatilhoDaTela | null {
+  if (kind === null) return "manual";
+  return tipoDaTela(kind);
+}
+
+/** O rótulo (chave do dicionário) de `tipoDoGatilhoNaLista`. */
 export function rotuloDoGatilhoNaLista(kind: string | null | undefined): string | null {
-  if (kind === null) return ROTULO_DO_GATILHO.manual;
-  return rotuloDoGatilho(kind);
+  const tipo = tipoDoGatilhoNaLista(kind);
+  return tipo ? ROTULO_DO_GATILHO[tipo] : null;
 }

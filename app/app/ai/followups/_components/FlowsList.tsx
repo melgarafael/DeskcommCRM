@@ -12,7 +12,7 @@ import { FlowArrow, Plus, Sparkle, UploadSimple } from "@/lib/ui/icons";
 import { useFollowupFlows, type FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { filtrarFluxos, type FiltroDeStatusDoFluxo } from "@/lib/followup/filtrar-fluxos";
-import { rotuloDoGatilhoNaLista } from "@/lib/followup/rotulo-do-gatilho";
+import { ROTULO_DO_GATILHO, tipoDoGatilhoNaLista } from "@/lib/followup/rotulo-do-gatilho";
 import { DeleteFollowupFlowButton } from "./DeleteFollowupFlowButton";
 import { DuplicateFollowupFlowButton } from "./DuplicateFollowupFlowButton";
 import { ExportFollowupFlowButton } from "./ExportFollowupFlowButton";
@@ -81,8 +81,10 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
           ? {}
           : {
               textosExtras: (flow: FollowupFlowPointerRow) => {
-                const rotulo = rotuloDoGatilhoNaLista(flow.trigger_kind);
-                return rotulo ? [rotulo, t(rotulo)] : [];
+                const tipo = tipoDoGatilhoNaLista(flow.trigger_kind);
+                // Índice na tabela fechada (e não `t(variavel)`): o guarda de
+                // i18n confere que todo valor dela tem espanhol.
+                return tipo ? [ROTULO_DO_GATILHO[tipo], t(ROTULO_DO_GATILHO[tipo])] : [];
               },
             }),
       }),
