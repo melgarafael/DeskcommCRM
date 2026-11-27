@@ -263,6 +263,7 @@ export const DICIONARIO: Traducoes = {
   "Confira os campos: algum valor não foi aceito.": { es: "Revisa los campos: algún valor no fue aceptado." },
   "Confirmar remoção": { es: "Confirmar eliminación" },
   "Contas de outros sistemas que este cliente autorizou o agente a acessar pela conversa.": { es: "Cuentas de otros sistemas a las que este cliente autorizó al agente a acceder por la conversación." },
+  "De 10 a 1440. O padrão é 10: passado esse tempo, o link vence e o cliente precisa pedir outro.": { es: "De 10 a 1440. El valor predeterminado es 10: pasado ese tiempo, el enlace vence y el cliente necesita pedir otro." },
   "Endereço de retorno para cadastrar no servidor de autorização": { es: "Dirección de retorno para registrar en el servidor de autorización" },
   "Clique em Testar conexão para ver o endereço de retorno deste servidor.": { es: "Haz clic en Probar conexión para ver la dirección de retorno de este servidor." },
   "Endereço do servidor (Streamable HTTP)": { es: "Dirección del servidor (Streamable HTTP)" },
@@ -296,6 +297,7 @@ export const DICIONARIO: Traducoes = {
   "O servidor recusou o pedido.": { es: "El servidor rechazó la solicitud." },
   "OAuth — cada cliente autoriza com o login dele": { es: "OAuth — cada cliente autoriza con su propio inicio de sesión" },
   "Permitir ações (escrita) durante a conversa": { es: "Permitir acciones (escritura) durante la conversación" },
+  "Prazo para abrir o link de autorização (minutos)": { es: "Plazo para abrir el enlace de autorización (minutos)" },
   "Registro automático do cliente": { es: "Registro automático del cliente" },
   "Revogando…": { es: "Revocando…" },
   "Revogação de acesso": { es: "Revocación de acceso" },
@@ -9906,6 +9908,7 @@ export const DICIONARIO: Traducoes = {
   "Este follow-up ainda não deu nenhum passo.": {
     es: "Este seguimiento todavía no dio ningún paso.",
   },
+  "Mostrando os eventos mais recentes deste follow-up.": { es: "Mostrando los eventos más recientes de este seguimiento." },
   "Mostrando os primeiros passos — este follow-up tem histórico maior que o desta tela.": {
     es: "Se muestran los primeros pasos. Este seguimiento tiene más historial del que cabe en esta pantalla.",
   },
@@ -11333,6 +11336,13 @@ export const DICIONARIO: Traducoes = {
     es: "El envío de este paso se descartó porque la inscripción está pausada",
   },
   "sai num envio novo quando a inscrição for retomada": { es: "sale en un envío nuevo cuando se reanude la inscripción" },
+  "Tarefa de envio enfileirada": { es: "Tarea de envío en cola" },
+  "Mensagem gerada": { es: "Mensaje generado" },
+  "Rascunho de mensagem gerado para aprovação": { es: "Borrador de mensaje generado para aprobación" },
+  "Mensagem aguardando o canal": { es: "Mensaje en espera del canal" },
+  "Falha ao enviar a mensagem": { es: "Error al enviar el mensaje" },
+  "Apenas parte da mensagem foi enviada": { es: "Solo se envió una parte del mensaje" },
+  "Solicitou o envio da mensagem": { es: "Solicitó el envío del mensaje" },
   "Mensagem enviada": { es: "Mensaje enviado" },
   "Segurou o fluxo por causa de um retorno agendado": {
     es: "Frenó el flujo por un regreso programado",
@@ -13019,6 +13029,10 @@ export const DICIONARIO: Traducoes = {
   "Unidade": { es: "Unidad" },
   "minutos": { es: "minutos" },
   "Mensagem deste lembrete": { es: "Mensaje de este recordatorio" },
+  "Incluir o link da reunião neste lembrete": { es: "Incluir el enlace de la reunión en este recordatorio" },
+  "Desligado, este aviso sai sem a linha do link e sem a frase de que ele chega pela conversa.": {
+    es: "Desactivado, este aviso sale sin la línea del enlace y sin la frase de que llega por la conversación.",
+  },
   "Adicionar lembrete": { es: "Agregar recordatorio" },
   "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.": {
     es: "Deja el mensaje en blanco para el texto predeterminado. Variables: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
@@ -14037,6 +14051,11 @@ export const DICIONARIO: Traducoes = {
   // Criar/renomear agente com nome que a organização já usa (#3952). `409
   // agent_name_taken`; a mesma frase é a do campo de nome na tela.
   "Já existe um agente com esse nome.": { es: "Ya existe un agente con este nombre." },
+  // Mover/reabrir um card quando o mesmo negócio já tem cópia aberta no funil
+  // (#5281). `409 copia_aberta_no_funil`.
+  "Este negócio já tem uma cópia aberta neste funil. Continue o atendimento por ela.": {
+    es: "Este negocio ya tiene una copia abierta en este embudo. Continúa la atención por ella.",
+  },
   "O rascunho foi salvo; o nome do agente não mudou.": { es: "El borrador se guardó; el nombre del agente no cambió." },
   "Já existe um contato com este CPF.": { es: "Ya existe un contacto con este CPF." },
   "Já existe um contato com este e-mail.": { es: "Ya existe un contacto con este correo electrónico." },
@@ -17488,6 +17507,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Para pedir que a IA esclareça algo com o cliente, envie:": {
     es: "Para pedirle a la IA que aclare algo con el cliente, envía:",
+  },
+  "Ou cite esta mensagem e escreva só a resposta; para perguntar ao cliente, comece com ?.": {
+    es: "O cite este mensaje y escriba solo la respuesta; para preguntar al cliente, empiece con ?.",
   },
   "Responder casos por este WhatsApp": { es: "Responder casos por este WhatsApp" },
   "Permite usar RESPONDER ou PERGUNTAR no número que recebe os avisos. Desligado por padrão.": {
@@ -23044,6 +23066,7 @@ export const DICIONARIO: Traducoes = {
   "Use um número inteiro de 0 a 120 segundos.": { es: "Usa un número entero de 0 a 120 segundos." },
   "Tocar som ao chegar resposta": { es: "Reproducir sonido al llegar una respuesta" },
   "Respostas rápidas do chat": { es: "Respuestas rápidas del chat" },
+  "Ex.: Sim": { es: "Ej.: Sí" },
   "Uma resposta rápida por linha, até 5, de 1 a 80 caracteres.": { es: "Una respuesta rápida por línea, hasta 5, de 1 a 80 caracteres." },
   "Use até 5 respostas rápidas, de 1 a 80 caracteres cada.": { es: "Usa hasta 5 respuestas rápidas, de 1 a 80 caracteres cada una." },
   "Salvar ajustes": { es: "Guardar ajustes" },
@@ -23574,6 +23597,14 @@ export const DICIONARIO: Traducoes = {
   "A configuração da empresa está em um formato inesperado.": {
     es: "La configuración de la empresa está en un formato inesperado.",
   },
+  "Teto de respostas da IA para visitante anônimo": { es: "Límite de respuestas de la IA para visitante anónimo" },
+  "Quantas respostas da IA por conversa": { es: "¿Cuántas respuestas de la IA por conversación?" },
+  "Depois desse número a IA para de responder e a conversa fica para a equipe. Quem deixa telefone ou e-mail sai deste limite.": {
+    es: "Después de ese número la IA deja de responder y la conversación pasa al equipo. Quien deja teléfono o e-mail sale de este límite.",
+  },
+  "Salvar teto": { es: "Guardar límite" },
+  "Use um número inteiro de 1 a 200.": { es: "Usa un número entero entre 1 y 200." },
+  "Deixe em branco para não mudar.": { es: "Déjalo en blanco para no cambiarlo." },
 };
 
 /**

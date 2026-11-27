@@ -99,8 +99,8 @@ describe("updateModuloDaInstalacao", () => {
 });
 
 describe("módulo que ainda não liga (MODULOS_AINDA_NAO_LIGAVEIS)", () => {
-  it("ligar o chat no site é recusado e nada é gravado nem auditado", async () => {
-    expect(await updateModuloDaInstalacao({ modulo: "canal_webchat", ligado: true })).toEqual({
+  it("ligar módulo que ainda não liga é recusado e nada é gravado nem auditado", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "campanha_por_email", ligado: true })).toEqual({
       ok: false,
       error: "modulo_ainda_nao_disponivel",
     });
@@ -108,12 +108,21 @@ describe("módulo que ainda não liga (MODULOS_AINDA_NAO_LIGAVEIS)", () => {
     expect(acoes()).toEqual([]);
   });
 
-  it("desligar o chat no site continua permitido", async () => {
-    expect(await updateModuloDaInstalacao({ modulo: "canal_webchat", ligado: false })).toEqual({ ok: true });
+  it("desligar módulo que ainda não liga continua permitido", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "campanha_por_email", ligado: false })).toEqual({ ok: true });
     expect(deps.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ chave: "MODULO_CANAL_WEBCHAT", valor: "desligado" }),
+      expect.objectContaining({ chave: "MODULO_CAMPANHA_POR_EMAIL", valor: "desligado" }),
       expect.anything(),
     );
+  });
+
+  it("ligar o chat no site agora é permitido (saiu de MODULOS_AINDA_NAO_LIGAVEIS)", async () => {
+    expect(await updateModuloDaInstalacao({ modulo: "canal_webchat", ligado: true })).toEqual({ ok: true });
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chave: "MODULO_CANAL_WEBCHAT", valor: "ligado" }),
+      expect.anything(),
+    );
+    expect(acoes()).toEqual(["platform.modulo_updated"]);
   });
 });
 

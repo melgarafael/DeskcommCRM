@@ -43,6 +43,16 @@ export const AUDIT_ACTIONS = [
   "auth.login_failed",
   /** Teto de tentativas barrou antes de chegar ao provedor (issue #64). */
   "auth.login_rate_limited",
+  /**
+   * Bloqueio progressivo por conta (issue #4743) — um evento por DEGRAU, porque
+   * "a conta está travada" não diz o que se deve fazer: 5 min é ruído de quem
+   * errou a senha, 30 min (10 falhas no dia) já é insistência. Um evento quando
+   * o degrau NASCE; a tentativa barrada segue em `auth.login_rate_limited`.
+   */
+  "auth.login_bloqueio_5min",
+  "auth.login_bloqueio_30min",
+  /** A senha foi redefinida pelo e-mail e o castigo caiu (issue #4743). */
+  "auth.login_bloqueio_removido",
   "auth.logout",
   "auth.mfa_enrolled",
   "auth.mfa_success",
@@ -925,6 +935,8 @@ export const AUDIT_ACTIONS = [
   "agenda.endereco_salvo",
   "agenda.appointment_rescheduled",
   "agenda.appointment_cancelled",
+  // Lista de responsáveis adicionais da consulta mudou (só audita quando mudou de fato).
+  "agenda.appointment_responsibles_changed",
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
   // de fora chama. Só audita quando alguma tarefa mexeu em dado.
   "relogio.tick_run",

@@ -24,6 +24,8 @@ export type ProtecaoAgenda = {
   appointment_id: string | null;
   reavaliar_em: string | null;
 };
+const INTERVALO_REAVALIACAO_AGENDADO_MS = 60 * 60_000;
+
 export function protecaoDaAgenda(
   compromissos: CompromissoProtetor[],
   settings: unknown,
@@ -41,14 +43,17 @@ export function protecaoDaAgenda(
       vencido ??= a;
       continue;
     }
+    // Releia a agenda antes de uma consulta distante para perceber cancelamentos e remarcações.
+    const reavaliarEm =
+      agoraMs < inicio
+        ? Math.min(inicio, agoraMs + INTERVALO_REAVALIACAO_AGENDADO_MS)
+        : Math.min(horizonte, Math.max(agoraMs + 60_000, fim));
     return {
       adiar: true,
       motivo:
         agoraMs < inicio ? "agendado" : agoraMs < fim ? "em_atendimento" : "presenca_pendente",
       appointment_id: a.id,
-      reavaliar_em: new Date(
-        Math.min(horizonte, Math.max(agoraMs + 60_000, agoraMs < inicio ? inicio : fim)),
-      ).toISOString(),
+      reavaliar_em: new Date(reavaliarEm).toISOString(),
     };
   }
   return {

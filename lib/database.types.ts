@@ -3416,6 +3416,43 @@ export type Database = {
           },
         ];
       };
+      calendar_appointment_responsibles: {
+        Row: {
+          appointment_id: string;
+          created_at: string;
+          organization_id: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          appointment_id: string;
+          created_at?: string;
+          organization_id: string;
+          user_id: string;
+        };
+        Update: {
+          appointment_id?: string;
+          created_at?: string;
+          organization_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointment_responsibles_appointment_fk";
+            columns: ["organization_id", "appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "calendar_appointments";
+            referencedColumns: ["organization_id", "id"];
+          },
+          {
+            foreignKeyName: "calendar_appointment_responsibles_member_fk";
+            columns: ["organization_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "user_organizations";
+            referencedColumns: ["organization_id", "user_id"];
+          },
+        ];
+      };
       calendar_availability_exceptions: {
         Row: {
           created_at: string;
@@ -3660,6 +3697,7 @@ export type Database = {
           reminder_channel_session_id: string | null;
           reminder_enabled: boolean;
           reminder_extra_offsets_minutes: number[];
+          reminder_sem_link_offsets_minutes: number[];
           reminder_meta_template_id: string | null;
           reminder_minutes_before: number;
           reminder_template_name: string | null;
@@ -3703,6 +3741,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
@@ -3745,6 +3784,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_sem_link_offsets_minutes?: number[];
           reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
@@ -9212,6 +9252,55 @@ export type Database = {
           },
         ];
       };
+      followup_delivery_events: {
+        Row: {
+          created_at: string;
+          enrollment_id: string;
+          event_type: string;
+          id: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          enrollment_id: string;
+          event_type: string;
+          id?: string;
+          idempotency_key: string;
+          node_id: string;
+          organization_id: string;
+          payload: NonNullable<Json>;
+        };
+        Update: {
+          created_at?: string;
+          enrollment_id?: string;
+          event_type?: string;
+          id?: string;
+          idempotency_key?: string;
+          node_id?: string;
+          organization_id?: string;
+          payload?: NonNullable<Json>;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "followup_delivery_events_enrollment_id_fkey";
+            columns: ["enrollment_id"];
+            isOneToOne: false;
+            referencedRelation: "followup_enrollments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "followup_delivery_events_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       followup_enrollment_events: {
         Row: {
           created_at: string;
@@ -10861,6 +10950,7 @@ export type Database = {
         Row: {
           agent_id: string | null;
           cache_read_tokens: number;
+          cache_write_1h_tokens: number | null;
           cache_write_tokens: number;
           chars_ferramentas: number | null;
           chars_mensagens: number | null;
@@ -10894,6 +10984,7 @@ export type Database = {
         Insert: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -10926,6 +11017,7 @@ export type Database = {
         Update: {
           agent_id?: string | null;
           cache_read_tokens?: number;
+          cache_write_1h_tokens?: number | null;
           cache_write_tokens?: number;
           chars_ferramentas?: number | null;
           chars_mensagens?: number | null;
@@ -15722,6 +15814,10 @@ export type Database = {
         Args: { p_id: string; p_node?: string; p_org: string };
         Returns: boolean;
       };
+      fn_appointment_insert_with_responsibles: {
+        Args: { p_f: Json; p_org: string; p_responsibles: string[] };
+        Returns: Json;
+      };
       fn_appointment_recover: { Args: { p_event: string; p_org: string }; Returns: Json };
       fn_appointment_record_attendance: {
         Args: {
@@ -15732,6 +15828,10 @@ export type Database = {
           p_revision: number;
         };
         Returns: Json;
+      };
+      fn_appointment_responsible_ids: {
+        Args: { p_id: string; p_org: string };
+        Returns: string[];
       };
       fn_arquivos_da_organizacao: {
         Args: { p_apos_bucket?: string; p_apos_nome?: string; p_limite?: number; p_org: string };
@@ -16550,6 +16650,18 @@ export type Database = {
         };
         Returns: Json;
       };
+      fn_levar_negocio_para_funil: {
+        Args: {
+          p_destino: string
+          p_fechamento: Json
+          p_linha: Json
+          p_org: string
+          p_origem: string
+          p_origem_atualizada_em: string
+          p_sessao: Json
+        }
+        Returns: Json
+      }
       fn_lgpd_anonymize_contact: {
         Args: { p_contact_id: string; p_organization_id: string };
         Returns: Json;
