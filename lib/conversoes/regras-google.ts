@@ -82,6 +82,8 @@ export interface RegraDeConversaoGoogle {
   eventName: string;
   label: string;
   googleActionId: string;
+  googleCustomerId?: string | null;
+  googleLoginCustomerId?: string | null;
   category: CategoriaDeConversao;
   includedInConversions: boolean;
   channel: CanalDeEntrada;
@@ -95,6 +97,8 @@ interface LinhaDaRegra {
   event_name: string;
   label: string;
   google_action_id: string;
+  google_customer_id: string | null;
+  google_login_customer_id: string | null;
   category: string;
   included_in_conversions: boolean;
   channel: string;
@@ -103,7 +107,7 @@ interface LinhaDaRegra {
 }
 
 const COLUNAS =
-  "id, stage_id, event_name, label, google_action_id, category, included_in_conversions, channel, enabled, configured_at";
+  "id, stage_id, event_name, label, google_action_id, google_customer_id, google_login_customer_id, category, included_in_conversions, channel, enabled, configured_at";
 
 function paraRegra(l: LinhaDaRegra): RegraDeConversaoGoogle {
   return {
@@ -112,6 +116,8 @@ function paraRegra(l: LinhaDaRegra): RegraDeConversaoGoogle {
     eventName: l.event_name,
     label: l.label,
     googleActionId: l.google_action_id,
+    googleCustomerId: l.google_customer_id ?? null,
+    googleLoginCustomerId: l.google_login_customer_id ?? null,
     category: (VALORES_DE_CATEGORIA as readonly string[]).includes(l.category)
       ? (l.category as CategoriaDeConversao)
       : "DEFAULT",
@@ -137,20 +143,32 @@ export async function listarRegrasGoogle(
   return ((data ?? []) as LinhaDaRegra[]).map(paraRegra);
 }
 
-/** A regra da etapa, ou null. Lança em falha de leitura (o consumidor reagenda). */
-export async function lerRegraDaEtapa(
+/** As regras da etapa: o consumidor escolhe uma pelo clique, sem fanout. */
+export async function lerRegrasDaEtapa(
   admin: SupabaseClient,
   organizationId: string,
   stageId: string,
-): Promise<RegraDeConversaoGoogle | null> {
+): Promise<RegraDeConversaoGoogle[]> {
   const { data, error } = await admin
     .from("google_ads_conversion_rules")
     .select(COLUNAS)
     .eq("organization_id", organizationId)
-    .eq("stage_id", stageId)
-    .maybeSingle();
+    .eq("stage_id", stageId);
   if (error) throw new Error("Não foi possível ler a regra de conversão da etapa.");
-  return data ? paraRegra(data as LinhaDaRegra) : null;
+  return ((data ?? []) as LinhaDaRegra[]).map(paraRegra);
+}
+
+/** A igualdade explícita vence; a regra global é apenas a alternativa legada. */
+export function selecionarRegraGoogle(
+  regras: RegraDeConversaoGoogle[],
+  contaDoClique: string | undefined,
+): RegraDeConversaoGoogle | null {
+  const ligadas = regras.filter((regra) => regra.enabled);
+  return (
+    ligadas.find((regra) => regra.googleCustomerId === contaDoClique) ??
+    ligadas.find((regra) => regra.googleCustomerId == null) ??
+    null
+  );
 }
 
 /**

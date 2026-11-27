@@ -834,7 +834,7 @@ describe("o banco instalado pelo baseline inteiro — sem reaplicar o bloco da 0
       // linha do CALENDÁRIO, não do espelho: no espelho ela só apaga, e cada item
       // é repassado ao `fn_google_calendar`, que grava `title` nulo. Só o
       // `service_role` a executa — por isso ela não aparece em `alcancaveis`.
-      // `fn_microsoft_calendar_save` (9499, #1754) apaga e insere no espelho sem
+      // `fn_microsoft_calendar_save` (9511, #1754) apaga e insere no espelho sem
       // a coluna `title`; o `select k.*` dela é da linha do CALENDÁRIO. Também só
       // o `service_role` a executa.
       "citam=função fn_google_calendar(uuid,uuid,text,jsonb),função fn_google_calendar_page_batch(uuid,uuid,jsonb),função fn_microsoft_calendar_save(uuid,uuid,jsonb,timestamp with time zone,timestamp with time zone)",

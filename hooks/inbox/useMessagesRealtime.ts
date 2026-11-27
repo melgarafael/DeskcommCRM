@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { apiClient } from "@/lib/api/client";
+import { HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
   aplicarEventoNoFio,
@@ -13,9 +14,18 @@ import {
 } from "@/lib/inbox/mensagem-do-realtime";
 import type { Message } from "@/lib/types/messaging";
 
-interface MessagesResponse {
+export interface MessagesResponse {
   data: Message[];
   meta?: { cursor?: string | null; has_more?: boolean };
+}
+
+export function lerPaginaDeMensagens(id: string, cursor: string | undefined, signal: AbortSignal, orgId?: string) {
+  const qs = new URLSearchParams({ limit: "50" });
+  if (cursor) qs.set("cursor", cursor);
+  return apiClient.get<MessagesResponse>(`/api/v1/conversations/${id}/messages?${qs}`, {
+    signal,
+    headers: orgId ? { [HEADER_ORG_DA_ABA]: orgId } : undefined,
+  });
 }
 
 export function useMessagesRealtime(
@@ -31,6 +41,7 @@ export function useMessagesRealtime(
    * funcionando; só não faz essas duas coisas.
    */
   autor: AutorDoFio | null = null,
+  orgId?: string,
 ) {
   const qc = useQueryClient();
   const queryKey = useMemo(() => ["messages", conversationId] as const, [conversationId]);
@@ -39,19 +50,12 @@ export function useMessagesRealtime(
     queryKey,
     enabled: !!conversationId,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
-      if (!conversationId) {
-        return { data: [], meta: { has_more: false, cursor: null } } as MessagesResponse;
-      }
-      const qs = new URLSearchParams();
-      if (pageParam) qs.set("cursor", pageParam);
-      qs.set("limit", "50");
+    queryFn: async ({ pageParam, signal }) => {
+      if (!conversationId) return { data: [], meta: { has_more: false, cursor: null } };
       try {
-        return await apiClient.get<MessagesResponse>(
-          `/api/v1/conversations/${conversationId}/messages?${qs.toString()}`,
-        );
+        return await lerPaginaDeMensagens(conversationId, pageParam, signal, orgId);
       } catch (err) {
-        showApiError(err);
+        if (!signal.aborted) showApiError(err);
         throw err;
       }
     },

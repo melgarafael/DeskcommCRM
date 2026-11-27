@@ -174,6 +174,9 @@ export function useUpdateTriggerConfig(id: string) {
       qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
         prev ? { ...prev, ...updated } : prev,
       );
+      // A busca da lista casa com o gatilho (#4593): sem reler, o fluxo seguiria
+      // achado pelo gatilho antigo ao voltar para Follow-ups.
+      qc.invalidateQueries({ queryKey: ["followup", "flows", "list"] });
       toast.success(t("Gatilho atualizado."));
     },
     onError: (err) => showApiError(err),

@@ -54,7 +54,7 @@ export default async function ConnectionsPage() {
         }
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
         bot={roboLigado ? { label: ROTULO_DO_ROBO } : null}
-        chat={chatLigado ? { label: "Chat no site" } : null}
+        chat={chatLigado ? { label: traduzir("Chat no site", idioma) } : null}
       />
     </div>
   );

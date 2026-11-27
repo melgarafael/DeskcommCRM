@@ -21,7 +21,10 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  *     o canal NÃO é chamado, o modelo recebe `pessoa_assumiu_a_conversa`, e o
  *     turno termina sem erro (a fila não re-tenta);
  *   - silêncio permanente gravado no meio do turno: idem;
- *   - "IA com o dono" ligado: o dono não veta, a mensagem sai.
+ *   - "IA com o dono" ligado: o dono não veta, a mensagem sai;
+ *   - #5259: o PRÓPRIO turno transfere (`fn_conversation_assign` com o job dele):
+ *     o aviso de transferência sai. Uma pessoa que troca o dono depois, ou que
+ *     escreve na conversa, continua vetando.
  *
  * Harness igual a `falha-permanente-de-envio-no-turno.test.ts`.
  */
@@ -47,6 +50,7 @@ const SESSION = "eeeeeeee-5157-4000-8000-000000000003";
 const CONV = "eeeeeeee-5157-4000-8000-000000000004";
 const MSG = "eeeeeeee-5157-4000-8000-000000000005";
 const PESSOA = "eeeeeeee-5157-4000-8000-000000000007";
+const OUTRA_PESSOA = "eeeeeeee-5157-4000-8000-000000000008";
 
 type Modules = {
   createInboundTurnHandler: typeof InboundTurn.createInboundTurnHandler;
@@ -182,6 +186,22 @@ const pessoaAssume = async () => {
     [ORG, CONV, PESSOA],
   );
 };
+/** O job do turno em execução — o mesmo que o runtime injeta como `sourceJobId`. */
+const jobEmExecucao = async (): Promise<string> => {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id from job_queue where organization_id = $1 and status = 'running'`,
+    [ORG],
+  );
+  expect(rows).toHaveLength(1);
+  return rows[0]!.id;
+};
+/** O que `crm_assign_conversation` faz no turno: a RPC real, com o job de origem. */
+const oTurnoTransfere = async () => {
+  await pool.query(
+    `select public.fn_conversation_assign($1, $2, $3, 'transfer', null, false, $4)`,
+    [ORG, CONV, PESSOA, await jobEmExecucao()],
+  );
+};
 const silencioPermanente = async () => {
   await pool.query(
     `update conversations set bot_silenced_until = 'infinity' where organization_id = $1 and id = $2`,
@@ -202,9 +222,20 @@ beforeAll(async () => {
     [PESSOA],
   );
   await pool.query(
+    `insert into auth.users (id, email) values ($1, 'outra-pessoa-assume-no-turno@invariant.test') on conflict (id) do nothing`,
+    [OUTRA_PESSOA],
+  );
+  await pool.query(
     `insert into organizations (id, slug, legal_name, display_name)
      values ($1,'pessoa-assume-no-turno','Pessoa Assume','Pessoa Assume') on conflict (id) do nothing`,
     [ORG],
+  );
+  // `fn_conversation_assign` só atribui a membro ativo (agent+) da organização.
+  await pool.query(
+    `insert into user_organizations (user_id, organization_id, role, accepted_at)
+     values ($1, $3, 'agent', now()), ($2, $3, 'agent', now())
+     on conflict (user_id, organization_id) do nothing`,
+    [PESSOA, OUTRA_PESSOA, ORG],
   );
   await pool.query(
     `insert into contacts (id, organization_id, name, phone_number)
@@ -284,5 +315,64 @@ describe("turno completo — uma pessoa assume entre a resposta do modelo e o en
 
     expect(erro).toBeNull();
     expect(chamadasAoCanal).toHaveLength(1);
+  });
+});
+
+describe("#5259 — o próprio turno transfere a conversa e avisa o cliente", () => {
+  it("⭐ o agente atribui no turno: o aviso de transferência chega ao canal", async () => {
+    const erro = await rodaTurno(montaHandler(modeloQueResponde("transfere", oTurnoTransfere)));
+
+    expect(erro).toBeNull();
+    expect(JSON.stringify(resultadosVistos)).not.toMatch(/pessoa_assumiu_a_conversa/);
+    expect(chamadasAoCanal, "o aviso de transferência do próprio turno foi barrado").toHaveLength(1);
+  });
+
+  it("o agente atribui e uma PESSOA troca o dono depois: nada sai", async () => {
+    const erro = await rodaTurno(
+      montaHandler(
+        modeloQueResponde("transfere-e-pessoa-troca", async () => {
+          await oTurnoTransfere();
+          // Outro ator: sem job de origem, como a tela e o rodízio atribuem.
+          await pool.query(`select public.fn_conversation_assign($1, $2, $3, 'transfer', null, false)`, [
+            ORG,
+            CONV,
+            OUTRA_PESSOA,
+          ]);
+        }),
+      ),
+    );
+
+    expect(chamadasAoCanal, "a IA falou por cima de quem assumiu").toHaveLength(0);
+    expect(JSON.stringify(resultadosVistos)).toMatch(/pessoa_assumiu_a_conversa/);
+    // A atribuição da pessoa (sem job de origem) revoga o turno vivo pelo
+    // `trg_interromper_turnos_ao_assumir` (#3926): o complete perde o lease e
+    // o job fica `failed`, sem nova tentativa — a fila não re-roda o turno.
+    expect(erro?.message ?? "").toMatch(/perdido no complete/);
+    const { rows } = await pool.query<{ status: string; last_error: string | null }>(
+      `select status, last_error from job_queue
+        where organization_id = $1 and kind = 'inbound_turn'
+        order by created_at desc limit 1`,
+      [ORG],
+    );
+    expect(rows[0]).toMatchObject({ status: "failed", last_error: "conversation_command_taken" });
+  });
+
+  it("o agente atribui e o atendente já escreveu ao cliente: nada sai", async () => {
+    const erro = await rodaTurno(
+      montaHandler(
+        modeloQueResponde("transfere-e-pessoa-escreve", async () => {
+          await oTurnoTransfere();
+          await pool.query(
+            `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
+               type, direction, status, body, sent_via, sent_by_user_id, sent_at)
+             values ($1,$2,$3,$4,'text','outbound','sent','Oi, aqui é a atendente','crm',$5, now())`,
+            [ORG, CONV, SESSION, CONTACT, PESSOA],
+          );
+        }),
+      ),
+    );
+
+    expect(erro).toBeNull();
+    expect(chamadasAoCanal, "a IA falou por cima da atendente").toHaveLength(0);
   });
 });

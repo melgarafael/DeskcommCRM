@@ -2148,7 +2148,11 @@
   "Descrição interna do agent": "Internal description of the agent",
   "Agent ativo": "Active agent",
   "read-only — gerenciado pelo backend": "read-only — managed by the backend",
+  "Temperatura (0–2)": "Temperature (0–2)",
+  "Máximo de tokens (64–4096)": "Max tokens (64–4096)",
   "Janela de contexto (msgs, 1–50)": "Context window (msgs, 1–50)",
+  "Trechos buscados (1–20)": "Top K (1–20)",
+  "Limiar de semelhança (0–1)": "Similarity threshold (0–1)",
   "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine).": "Top K = how many excerpts to fetch. Similarity threshold = minimum relevance (cosine).",
   "Chaves de acesso à IA": "AI access keys",
   "A conta de inteligência artificial é sua: você contrata direto com {provedores} e cola a chave aqui. A chave fica guardada criptografada e nunca mais aparece na tela depois de salva — nem para você. O Jev (TypeSafe) não conversa com o cliente: a chave dele serve só para decisões rápidas.": "The AI account is yours: you sign up directly with {provedores} and paste the key here. The key is stored encrypted and never appears on screen again after it's saved — not even for you. Jev (TypeSafe) doesn't talk to the customer: its key is only used for quick decisions.",
@@ -8269,6 +8273,7 @@
   "O cliente pediu para falar com uma pessoa": "The client asked to speak with a person",
   "O cliente parece ter pedido para não receber mais mensagens": "The client appears to have asked to stop receiving messages",
   "O limite de gasto com IA foi atingido — o cliente não pediu uma pessoa": "The AI spending limit was reached — the client didn't ask for a person",
+  "A IA chegou ao limite de respostas para visitante sem contato — o cliente não pediu uma pessoa": "The AI reached the reply limit for a visitor without contact details — the client didn't ask for a person",
   "O cliente demonstrou irritação na conversa": "The client showed irritation in the conversation",
   "(percebido pelo Jev)": "(detected by Jev)",
   "O assistente não teve confiança suficiente para responder": "The assistant wasn't confident enough to respond",
@@ -10107,5 +10112,12 @@
   "Agenda do Outlook": "Outlook calendar",
   "Aplicativo da Microsoft: cliente e segredo para a agenda": "Microsoft app: client and secret for the calendar",
   "Cada pessoa conecta a própria agenda do Outlook, e o horário ocupado lá não é oferecido aqui.": "Each person connects their own Outlook calendar, and busy times there aren't offered here.",
-  "Cadastre o aplicativo da Microsoft na tela Agenda do Outlook.": "Register the Microsoft app on the Outlook calendar screen."
+  "Cadastre o aplicativo da Microsoft na tela Agenda do Outlook.": "Register the Microsoft app on the Outlook calendar screen.",
+  "Saldo insuficiente para o atendimento automático": "Insufficient balance for automatic replies",
+  "Saldo insuficiente em uma etapa da IA": "Insufficient balance in an AI step",
+  "Enquanto isso, responda pelo Inbox.": "Meanwhile, reply from the Inbox.",
+  "Recarregue o saldo na conta do provedor.": "Top up the balance in the provider account.",
+  "Avise quem administra o CRM.": "Let your CRM admin know.",
+  "Ver provedores de IA": "View AI providers",
+  "Não foi possível consultar o saldo da IA.": "Could not check the AI balance."
 }

@@ -54,6 +54,10 @@ export type Database = {
           event_name: string;
           event_occurred_at: string | null;
           google_action_id: string | null;
+          google_api: string | null;
+          google_customer_id: string | null;
+          google_destination_explicit: boolean | null;
+          google_login_customer_id: string | null;
           id: string;
           lead_id: string;
           meta_event_name: string | null;
@@ -78,6 +82,10 @@ export type Database = {
           event_name: string;
           event_occurred_at?: string | null;
           google_action_id?: string | null;
+          google_api?: string | null;
+          google_customer_id?: string | null;
+          google_destination_explicit?: boolean | null;
+          google_login_customer_id?: string | null;
           id?: string;
           lead_id: string;
           meta_event_name?: string | null;
@@ -101,6 +109,10 @@ export type Database = {
           event_name?: string;
           event_occurred_at?: string | null;
           google_action_id?: string | null;
+          google_api?: string | null;
+          google_customer_id?: string | null;
+          google_destination_explicit?: boolean | null;
+          google_login_customer_id?: string | null;
           id?: string;
           lead_id?: string;
           meta_event_name?: string | null;
@@ -9725,6 +9737,8 @@ export type Database = {
           enabled: boolean;
           event_name: string;
           google_action_id: string;
+          google_customer_id: string | null;
+          google_login_customer_id: string | null;
           id: string;
           included_in_conversions: boolean;
           label: string;
@@ -9742,6 +9756,8 @@ export type Database = {
           enabled?: boolean;
           event_name: string;
           google_action_id: string;
+          google_customer_id?: string | null;
+          google_login_customer_id?: string | null;
           id?: string;
           included_in_conversions?: boolean;
           label: string;
@@ -9758,6 +9774,8 @@ export type Database = {
           enabled?: boolean;
           event_name?: string;
           google_action_id?: string;
+          google_customer_id?: string | null;
+          google_login_customer_id?: string | null;
           id?: string;
           included_in_conversions?: boolean;
           label?: string;
@@ -16419,6 +16437,10 @@ export type Database = {
         Returns: number;
       };
       fn_expurgar_avisos_de_caso_vencidos: {
+        Args: { p_limite?: number; p_retencao_dias?: number };
+        Returns: number;
+      };
+      fn_expurgar_chaves_de_idempotencia_vencidas: {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
       };

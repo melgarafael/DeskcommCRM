@@ -288,7 +288,7 @@ pela tela fica para o CI do PR ao mantenedor.
 | J74.7 | Girar a chave | Páginas com o código antigo recebem "chat indisponível" ao abrir conversa nova; quem já está conversando segue até a sessão expirar |
 | J74.8 | Pausar o chat | PATCH `config.pausado: true` pela rota de administração; as três rotas públicas (`/sessao`, `/mensagens`, `/eventos`) dão o mesmo 404; a janela mostra "chat indisponível" |
 | J74.9 | Retomar o chat | PATCH `config.pausado: false` volta a funcionar: sessão, mensagens e eventos respondem normalmente |
-| J74.10 | Visitante anônimo atinge o teto de respostas da IA | O visitante manda mensagens até o teto configurado na aba (padrão 20); passado o teto, a IA para de responder e a conversa fica na Inbox para a equipe; quem deixa e-mail sai do teto — escrito e NÃO executado ainda: o e2e só roda em PR para a main; a prova pela tela fica para o CI do PR ao mantenedor. |
+| J74.10 | Visitante anônimo atinge o teto de respostas da IA | O visitante manda mensagens até o teto configurado na aba (padrão 20); passado o teto, a IA para de responder, o visitante recebe uma frase pedindo telefone ou e-mail, e a conversa fica na Inbox para a equipe com aviso na Central; quem deixa e-mail sai do teto — escrito e NÃO executado ainda: o e2e só roda em PR para a main; a prova pela tela fica para o CI do PR ao mantenedor. |
 | J74.11 | Horário do atendimento e conexão sem agente | Fora do horário do agente da conexão, a conversa mostra o aviso do agente ou o texto padrão com a hora da volta. Sem agente publicado, depois da primeira mensagem aceita aparece "Recebemos sua mensagem. Nossa equipe responde por aqui." O chat segue funcionando nos dois casos. Roteiro: `docs/testing/chat-no-site.md`, caso C9 |
 | J74.12 | Origem da página | Visitante chega por uma página com `utm_source=instagram` e `utm_campaign=natal` e manda a primeira mensagem: a ficha do contato mostra essa origem. Uma segunda mensagem, de outra página, não troca a origem. Roteiro: `docs/testing/chat-no-site.md`, caso C10 |
 
@@ -4819,3 +4819,8 @@ Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 8 do CI.
 - Conferir também a largura da página no Inbox e na lista de funis.
 - Evidências a partir da raiz do repositório: `evidence/sidebar-scroll-lock/desktop-perfil.png`, `evidence/sidebar-scroll-lock/celular-navegacao.png` e `evidence/sidebar-scroll-lock/medidas-desktop.json`.
 - Resultado: PASS (2 testes, Chromium; 17,6 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.
+
+
+### [P1] Número sem WhatsApp ao iniciar conversa
+
+`tests/e2e/numero-sem-whatsapp.spec.ts`: Inbox → Iniciar conversa → telefone sintético → recusa legível antes de criar conversa. Em conversa legada, envio fica failed com motivo visível e natureza permanente; consulta inconclusiva continua permitindo envio. Supabase real do baseline e servidor HTTP simulado local, sem consulta de números nem envio no WhatsApp real. Evidências em evidence/numero-sem-whatsapp/.

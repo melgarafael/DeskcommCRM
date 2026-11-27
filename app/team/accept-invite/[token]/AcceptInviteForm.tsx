@@ -9,7 +9,7 @@ export function AcceptInviteForm({ token, label, failureLabel, rateLimitedLabel,
   return (
     <form action={submit} className="mt-4 space-y-3">
       {result && !result.ok && (
-        <p role="alert">
+        <p role="alert" className="text-sm text-destructive">
           {result.error === "limite_do_plano"
             ? planLimitLabel
             : result.error === "rate_limited"

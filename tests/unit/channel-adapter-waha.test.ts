@@ -242,9 +242,9 @@ describe('adapter WAHA', () => {
     it('negativo não entra no memo', async () => {
       const fetchMock = stubWaha({ id: { _serialized: 'ABC123' } }, () => ({ numberExists: false }));
 
-      await enviar('5532984793302@c.us');
+      await expect(enviar('5532984793302@c.us')).rejects.toMatchObject({ codigo: 'numero_sem_whatsapp' });
       const depoisDoPrimeiro = checks(fetchMock);
-      await enviar('5532984793302@c.us');
+      await expect(enviar('5532984793302@c.us')).rejects.toMatchObject({ codigo: 'numero_sem_whatsapp' });
 
       expect(checks(fetchMock)).toBe(depoisDoPrimeiro * 2);
     });
@@ -384,5 +384,30 @@ describe('adapter WAHA — alterar mensagem enviada', () => {
       organizationId: ORG, sessionRef: 's', recipient: null, externalId: 'ABC',
     })).rejects.toThrow('recipient_unavailable');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('recusa definitiva de número sem conta', () => {
+  it.each(['text', 'image', 'contact'] as const)('não envia %s nem executa beforeSend quando nenhuma grafia existe', async (kind) => {
+    const fetchMock = stubWaha({}, () => ({ numberExists: false }));
+    const beforeSend = vi.fn();
+    await expect(getAdapter('waha').send({ organizationId: ORG, sessionRef: 's', to: '5532984793302@c.us', kind,
+      body: 'oi', ...(kind === 'image' ? { media: { url: 'https://example.test/foto.png', mime: 'image/png' } } : {}),
+      ...(kind === 'contact' ? { contact: { fullName: 'Pessoa', phoneNumber: '+5531999998888', whatsappId: '5531999998888', vcard: 'BEGIN:VCARD\nEND:VCARD' } } : {}), beforeSend,
+    })).rejects.toMatchObject({ codigo: 'numero_sem_whatsapp', natureza: 'permanente', message: 'Este número não tem WhatsApp.' });
+    expect(beforeSend).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes('/api/contacts/check-exists'))).toBe(true);
+  });
+  it.each(['12025550123', '553132345678'])('consulta e recusa também número de uma só grafia (%s)', async (phone) => {
+    const fetchMock = stubWaha({}, () => ({ numberExists: false }));
+    await expect(getAdapter('waha').send({ organizationId: ORG, sessionRef: 's', to: phone+'@c.us', kind: 'text', body: 'oi' }))
+      .rejects.toMatchObject({ codigo: 'numero_sem_whatsapp' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it.each(['123@g.us', '123@lid', '123@newsletter'])('não consulta endereço já resolvido %s', async (to) => {
+    const fetchMock = stubWaha({ id: 'enviada' });
+    await getAdapter('waha').send({ organizationId: ORG, sessionRef: 's', to, kind: 'text', body: 'oi' });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('check-exists'))).toBe(false);
   });
 });

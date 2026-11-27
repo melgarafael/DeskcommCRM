@@ -24,6 +24,12 @@ import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { lerIdentidadeDaMeta } from "./meta/identidade";
 import type { CredencialDeConversao, PlataformaDeAnuncio } from "./types";
 
+/** Identidade externa do destino; a autorização continua sendo a única conexão nativa. */
+export interface DestinoGoogle {
+  customerId: string;
+  loginCustomerId: string | null;
+}
+
 /**
  * Por que cada ausência tem um nome próprio: elas pedem coisas diferentes de
  * quem lê a tela. "Nunca conectou" é um convite a conectar; "desligou" é
@@ -51,7 +57,7 @@ export async function lerCredencial(
    * da própria regra (0436) e não precisa dela. Sem esta opção, a organização
    * que só configurou etapas teria todo envio recusado como incompleto.
    */
-  opcoes: { exigirAcaoDeVenda?: boolean } = {},
+  opcoes: { exigirAcaoDeVenda?: boolean; destinoGoogle?: DestinoGoogle } = {},
 ): Promise<LeituraDeCredencial> {
   const exigirAcaoDeVenda = opcoes.exigirAcaoDeVenda ?? true;
   const { data, error } = await admin
@@ -97,9 +103,15 @@ export async function lerCredencial(
   // mesmo par de colunas é o que produziria a "correção" errada no dia em que
   // uma terceira plataforma chegasse com uma forma diferente das duas.
   if (plataforma === "google_ads") {
+    const customerId =
+      (opcoes.destinoGoogle?.customerId ?? linha.google_customer_id)?.replace(/\D/g, "") ?? null;
+    const loginBruto = opcoes.destinoGoogle
+      ? opcoes.destinoGoogle.loginCustomerId
+      : linha.google_login_customer_id;
+    const loginCustomerId = loginBruto?.replace(/\D/g, "") || null;
     if (
       !linha.google_refresh_token_encrypted ||
-      !linha.google_customer_id ||
+      !customerId ||
       (exigirAcaoDeVenda && !linha.google_conversion_action_id)
     ) {
       return { ok: false, motivo: "credencial_incompleta" };
@@ -110,7 +122,7 @@ export async function lerCredencial(
     return {
       ok: true,
       credencial: {
-        datasetId: linha.google_customer_id,
+        datasetId: customerId,
         // Vazio de propósito: o access token do Google expira em ~1h e é
         // derivado a cada envio pelo PRÓPRIO transporte, a partir do refresh
         // token em `google` — ver o cabeçalho de `CredencialDeConversao`.
@@ -119,8 +131,8 @@ export async function lerCredencial(
         google: {
           api: linha.google_api ?? "google_ads",
           refreshToken,
-          customerId: linha.google_customer_id,
-          loginCustomerId: linha.google_login_customer_id,
+          customerId,
+          loginCustomerId,
           conversionActionId: linha.google_conversion_action_id ?? "",
           modoDeValorDaVenda: linha.google_purchase_value_mode ?? "obrigatorio",
           enviarTelefone: linha.google_send_hashed_phone === true,

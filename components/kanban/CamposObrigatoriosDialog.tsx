@@ -56,6 +56,14 @@ interface CamposObrigatoriosDialogProps {
   onConfirmar: (valores: { customFields: Record<string, unknown>; wonReason?: string }) => void;
   /** Enquanto o reenvio não responde, o botão fica travado. */
   isPending?: boolean;
+  /**
+   * `settings.won_reasons` do funil (issue #5181). O faltante `won_reason` sai
+   * da régua do servidor só com chave e rótulo — a lista do funil não é assunto
+   * dela —, então é quem abre a janela que a entrega. Presente e não vazia, o
+   * campo vira o MESMO seletor dos campos personalizados, em vez do input de
+   * texto livre que fazia a pessoa digitar o que o servidor ia recusar.
+   */
+  wonReasons?: string[];
 }
 
 /** `won_reason` NÃO é campo do funil: sai como parâmetro próprio do move. */
@@ -86,6 +94,7 @@ export function CamposObrigatoriosDialog({
   recusa,
   onConfirmar,
   isPending = false,
+  wonReasons,
 }: CamposObrigatoriosDialogProps) {
   const t = useT();
   // O campo de moeda na moeda da organização, não em real fixo.
@@ -168,6 +177,19 @@ export function CamposObrigatoriosDialog({
           {campos.map((campo) => {
             const nome = campo.chave === "won_reason" ? t("Motivo do ganho") : campo.rotulo;
             const rotuloCampo = `${nome}${campo.tipo === "boolean" ? "" : " *"}`;
+            /*
+              #5181: a régua do servidor reporta o `won_reason` só com chave e
+              rótulo (a lista é do funil, não dela), então a lista entra AQUI —
+              o campo passa a cair no mesmo seletor dos campos personalizados
+              e a janela para de pedir em texto livre o que o servidor recusa
+              por vocabulário. Funil sem lista continua com o input de texto.
+            */
+            const opcoes =
+              campo.opcoes && campo.opcoes.length > 0
+                ? campo.opcoes
+                : campo.chave === CHAVE_DO_MOTIVO_DE_GANHO && wonReasons && wonReasons.length > 0
+                  ? wonReasons.map((motivo) => ({ value: motivo, label: motivo }))
+                  : undefined;
             if (campo.tipo === "boolean") {
               return (
                 <div key={campo.chave} className="flex items-center gap-2">
@@ -204,9 +226,11 @@ export function CamposObrigatoriosDialog({
               );
             }
             if (
-              (campo.tipo === "select" || campo.tipo === "searchable_select") &&
-              campo.opcoes &&
-              campo.opcoes.length > 0
+              opcoes &&
+              opcoes.length > 0 &&
+              (campo.tipo === "select" ||
+                campo.tipo === "searchable_select" ||
+                campo.chave === CHAVE_DO_MOTIVO_DE_GANHO)
             ) {
               return (
                 <div key={campo.chave} className="space-y-1">
@@ -219,7 +243,7 @@ export function CamposObrigatoriosDialog({
                       <SelectValue placeholder={t("Selecione…")} />
                     </SelectTrigger>
                     <SelectContent>
-                      {campo.opcoes.map((opcao) => (
+                      {opcoes.map((opcao) => (
                         <SelectItem key={opcao.value} value={opcao.value}>
                           {opcao.label}
                         </SelectItem>

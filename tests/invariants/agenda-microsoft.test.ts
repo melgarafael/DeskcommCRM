@@ -1,5 +1,5 @@
 /**
- * AGENDA DO OUTLOOK (#1754, migration 9499) — medida no Postgres.
+ * AGENDA DO OUTLOOK (#1754, migration 9511) — medida no Postgres.
  *
  * 1. A credencial da instalação não é servida ao navegador.
  * 2. Só o service_role grava o espelho de ocupação.
