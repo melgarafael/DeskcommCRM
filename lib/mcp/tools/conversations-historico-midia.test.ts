@@ -110,6 +110,25 @@ describe("resolverMidiasDoHistorico", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 
+  it("mídia cujo download falhou de vez sai failed, sem tocar no storage", async () => {
+    const r = await resolverMidiasDoHistorico([
+      msg({
+        id: "falhou",
+        media_url: "https://gateway.exemplo/pdf",
+        metadata: { media_status: "failed" },
+      }),
+      msg({
+        id: "falhou_sem_url",
+        metadata: { media_status: "failed" },
+      }),
+      msg({ id: "texto", body: "oi", metadata: {} }),
+    ]);
+    expect(r.get("falhou")).toEqual({ status: "failed", signedUrl: null });
+    expect(r.get("falhou_sem_url")).toEqual({ status: "failed", signedUrl: null });
+    expect(r.has("texto")).toBe(false);
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
   it("sem link: guardada vira ready sem assinar nada", async () => {
     const r = await resolverMidiasDoHistorico([msg({ id: "audio", media_storage_path: "p/a" })], {
       comLink: false,
@@ -196,6 +215,32 @@ describe("crm_get_conversation_history", () => {
       media_signed_url: null,
     });
     expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("devolve media_status failed e media_signed_url null quando a mídia falhou de vez", async () => {
+    mockedList.mockResolvedValue({
+      messages: [
+        msg({
+          id: "m_failed",
+          type: "document",
+          media_url: "https://gateway.exemplo/doc.pdf",
+          metadata: { media_status: "failed" },
+        }),
+      ],
+      cursor: null,
+      has_more: false,
+    } as any);
+    const out = (await crmGetConversationHistory.handler(
+      { conversation_id: CONVERSATION_ID, limit: 20 } as never,
+      ctx,
+    )) as {
+      messages: Record<string, unknown>[];
+    };
+    expect(out.messages[0]).toMatchObject({
+      id: "m_failed",
+      media_status: "failed",
+      media_signed_url: null,
+    });
   });
 });
 

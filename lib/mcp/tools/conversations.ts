@@ -321,9 +321,10 @@ export type MediaDoHistorico = {
    * `ready`: arquivo guardado; `pending`: a mensagem tem mídia mas o worker
    * ainda não a guardou (ou o link falhou) — quem consome tenta de novo depois;
    * `expired`: apagada pela retenção (o mesmo marcador que faz a rota de mídia
-   * responder 410); ausente no mapa = mensagem sem mídia.
+   * responder 410); `failed`: download falhou definitivamente no worker;
+   * ausente no mapa = mensagem sem mídia.
    */
-  status: "ready" | "pending" | "expired";
+  status: "ready" | "pending" | "expired" | "failed";
   signedUrl: string | null;
 };
 
@@ -338,6 +339,10 @@ type MensagemComMidia = {
 const expirou = (m: MensagemComMidia) =>
   !m.media_storage_path && !m.media_url && m.metadata?.media_status === "expired";
 
+/** Mídia cujo download no worker falhou definitivamente (última tentativa): sem arquivo guardado e com marcador de falha. */
+const falhou = (m: MensagemComMidia) =>
+  !m.media_storage_path && m.metadata?.media_status === "failed";
+
 /**
  * Para cada mensagem do histórico que carrega mídia, diz o estado e, com
  * `comLink`, gera o link temporário do arquivo guardado. Nunca lança: falha ao
@@ -349,12 +354,15 @@ export async function resolverMidiasDoHistorico(
   { comLink = true }: { comLink?: boolean } = {},
 ): Promise<Map<string, MediaDoHistorico>> {
   const out = new Map<string, MediaDoHistorico>();
-  const comMidia = messages.filter((m) => m.media_storage_path || m.media_url || expirou(m));
+  const comMidia = messages.filter(
+    (m) => m.media_storage_path || m.media_url || expirou(m) || falhou(m),
+  );
   if (comMidia.length === 0) return out;
 
   const aAssinar: Array<{ id: string; caminho: string }> = [];
   for (const m of comMidia) {
     if (expirou(m)) out.set(m.id, { status: "expired", signedUrl: null });
+    else if (falhou(m)) out.set(m.id, { status: "failed", signedUrl: null });
     else if (!m.media_storage_path) out.set(m.id, { status: "pending", signedUrl: null });
     else if (!comLink) out.set(m.id, { status: "ready", signedUrl: null });
     else aAssinar.push({ id: m.id, caminho: m.media_storage_path });
