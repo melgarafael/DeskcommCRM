@@ -85503,7 +85503,7 @@ revoke all on function public.fn_calendar_service_person_available(uuid,uuid,tim
 grant execute on function public.fn_calendar_service_person_available(uuid,uuid,timestamptz,timestamptz,uuid,uuid) to service_role;
 
 
--- ---- a retenção poda as chaves de idempotência vencidas (migration 9504, #1613) ----
+-- ---- a retenção poda as chaves de idempotência vencidas (migration 9506, #1613) ----
 -- A rotina de retenção não apagava NENHUMA linha de `idempotency_keys` (#1613,
 -- item B): o #4850 fez o `expires_at` valer na leitura e deixou a limpeza para
 -- depois — "a tabela só cresce". Cada envio com chave (REST e as ferramentas de

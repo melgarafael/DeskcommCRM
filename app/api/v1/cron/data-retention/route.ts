@@ -121,7 +121,7 @@ export interface ResultadoDaRetencao {
   auditoria_tem_resto: boolean;
   /** Os nonces de OAuth do Google já queimados (migration 0190). */
   nonces_apagados: number;
-  /** As chaves de idempotência vencidas há mais de 1 dia (migration 9504, #1613). */
+  /** As chaves de idempotência vencidas há mais de 1 dia (migration 9506, #1613). */
   chaves_de_idempotencia_apagadas: number;
   lotes_chaves_de_idempotencia: number;
   chaves_de_idempotencia_tem_resto: boolean;
@@ -608,7 +608,7 @@ export async function podarHistorico(
   // cresceria para sempre, uma linha por conexão tentada, num produto que se
   // instala e ninguém monitora.
   const nonces = await executarDreno(falhas, "fn_expurgar_nonces_de_oauth", () => drenar(db, "fn_expurgar_nonces_de_oauth", 1), zerado);
-  // As chaves de idempotência vencidas (migration 9504, #1613): ninguém as lê
+  // As chaves de idempotência vencidas (migration 9506, #1613): ninguém as lê
   // depois de vencer (`lib/api/idempotency.ts` só aceita `expires_at > now()`),
   // e sem esta linha a tabela só crescia, com o recibo de cada envio dentro.
   // Mesma folga de 1 dia dos nonces: a reserva vale 60 s e o recibo 24 h, e a

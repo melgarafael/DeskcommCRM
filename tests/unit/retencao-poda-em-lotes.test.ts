@@ -376,7 +376,7 @@ describe("podarHistorico — o laço de lotes", () => {
     const r = await podarHistorico(db, {});
 
     // 19 drenos: 17 pelo rpc (o 15º é o aviso de agendamento, 0753; o 16º é o
-    // traço do turno, 0778; o 17º as chaves de idempotência, 9504) + a mídia +
+    // traço do turno, 0778; o 17º as chaves de idempotência, 9506) + a mídia +
     // a décima poda (o DELETE do admin).
     expect(r.falhas).toHaveLength(19);
     expect(r.falhas.some((f) => f.includes("conversation_drafts"))).toBe(true);
@@ -557,7 +557,7 @@ describe("houveEfeito — as duas direções", () => {
     espelho_apagado: 0,
     // Quarta poda (migration 0190): os nonces de OAuth do Google já queimados.
     nonces_apagados: 0,
-    // As chaves de idempotência vencidas (migration 9504, #1613).
+    // As chaves de idempotência vencidas (migration 9506, #1613).
     chaves_de_idempotencia_apagadas: 0,
     lotes_chaves_de_idempotencia: 0,
     chaves_de_idempotencia_tem_resto: false,
