@@ -141,6 +141,7 @@ export interface ConversationsFilters {
 }
 
 interface ListResponse {
+  consultaIniciadaEm?: number;
   data: ConversationWithContact[];
   meta?: { cursor?: string | null; has_more?: boolean };
 }
@@ -237,9 +238,9 @@ export function useConversationsRealtime(
         // O `apiClient` já sabia cancelar (`RequestOpts.signal`, e o `catch`
         // dele propaga abort do chamador sem repetir) — o que faltava era a
         // lista entregar o dela.
-        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, {
-          signal,
-        });
+        const consultaIniciadaEm = performance.now();
+        const resposta = await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, { signal });
+        return { ...resposta, consultaIniciadaEm };
       } catch (err) {
         // Aborto de quem chamou não é falha da API: não há motivo a mostrar, e
         // o `showApiError` transformaria um cancelamento em toast de erro.

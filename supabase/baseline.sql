@@ -30484,13 +30484,13 @@ create table if not exists public.passagens_de_atendimento (
   -- "que parte do sistema decidiu isto?".
   origem           text not null check (origem in (
                      'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
-                     'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
+                     'teto_de_gasto','teto_do_anonimo','caso_escalado','sentimento','legado_pedido',
                      'legado_juridico','legado_etapa','legado_confianca','legado_teto',
                      'mcp_externo','runtime_nativo')),
   -- POR QUE saiu do automático. É o que vira FRASE na tela — o código nunca
   -- aparece para uma pessoa (`lib/escalacao/passagem.ts` → `FRASE_DO_MOTIVO`).
   motivo_codigo    text not null check (motivo_codigo in (
-                     'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
+                     'requested_human','suspected_optout','orcamento_de_ia','teto_do_visitante_anonimo','low_sentiment',
                      'low_confidence','critical_stage','legal_mention','refund_mention',
                      'caso_escalado','verificacao_manual','restricao_comercial')),
 
@@ -30574,7 +30574,7 @@ alter table public.passagens_de_atendimento
   add constraint passagens_de_atendimento_origem_check
   check (origem in (
     'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
-    'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
+    'teto_de_gasto','teto_do_anonimo','caso_escalado','sentimento','legado_pedido',
     'legado_juridico','legado_etapa','legado_confianca','legado_teto',
     'mcp_externo','runtime_nativo'));
 
@@ -30583,7 +30583,7 @@ alter table public.passagens_de_atendimento
 alter table public.passagens_de_atendimento
   add constraint passagens_de_atendimento_motivo_codigo_check
   check (motivo_codigo in (
-    'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
+    'requested_human','suspected_optout','orcamento_de_ia','teto_do_visitante_anonimo','low_sentiment',
     'low_confidence','critical_stage','legal_mention','refund_mention',
     'caso_escalado','verificacao_manual','restricao_comercial'));
 
@@ -89620,6 +89620,13 @@ notify pgrst, 'reload schema';
 -- reconstruir a constraint num segundo bloco é o que
 -- `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
 -- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO` em `lib/escalacao/passagem.ts`.
+
+-- ---- motivo `teto_do_visitante_anonimo` e origem `teto_do_anonimo` na passagem (migration 9505) ----
+-- Mesmo desenho do `restricao_comercial` abaixo: os valores entraram nos blocos ÚNICOS de
+-- `passagens_de_atendimento_motivo_codigo_check` e `passagens_de_atendimento_origem_check`
+-- e nos CHECKs inline do `create table`, e não aqui — reconstruir a constraint num segundo
+-- bloco é o que `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
+-- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO`/`ORIGENS_DA_PASSAGEM` em `lib/escalacao/passagem.ts`.
 
 -- ---- motivo `restricao_comercial` na passagem (migration 9363) ----
 -- Mesmo desenho do `verificacao_manual` acima: o valor entrou no bloco ÚNICO de

@@ -15,15 +15,17 @@ interface Props {
   onStatusChange: (s: FiltroDeStatusDoFluxo) => void;
   query: string;
   onQueryChange: (q: string) => void;
+  /** A busca também casa com o gatilho (Follow-ups; não nos fluxos de atendimento, #4593). */
+  buscaPeloGatilho?: boolean;
 }
 
 /** Busca e filtro por status da lista de fluxos — o mesmo jeito da lista de Agentes (#4593). */
-export function FlowsListFilters({ status, onStatusChange, query, onQueryChange }: Props) {
+export function FlowsListFilters({ status, onStatusChange, query, onQueryChange, buscaPeloGatilho = false }: Props) {
   const t = useT();
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Input
-        placeholder={t("Buscar por nome…")}
+        placeholder={buscaPeloGatilho ? t("Buscar por nome ou gatilho…") : t("Buscar por nome…")}
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         className="w-full sm:w-64"
