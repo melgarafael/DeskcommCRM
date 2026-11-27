@@ -40,7 +40,7 @@ export const ERRO_RESPONSAVEIS = {
   responsible_unavailable: {
     status: 409,
     code: "responsavel_indisponivel",
-    message: "Responsável adicional já tem compromisso neste horário.",
+    message: "Responsável adicional não está disponível neste horário.",
   },
   service_team_conflict: {
     status: 409,

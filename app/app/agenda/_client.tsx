@@ -1451,7 +1451,7 @@ export function AgendaClient({
                       throw erroComNomeDoResponsavel(
                         err,
                         pessoas,
-                        t("{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
+                        t("{nome} não está disponível neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
                       );
                     });
                 }}

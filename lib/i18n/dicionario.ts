@@ -15332,7 +15332,7 @@ export const DICIONARIO: Traducoes = {
   "Quem conduz fica com este horário ocupado.": { es: "Quien conduce queda ocupado en este horario." },
   "Retirar {nome}": { es: "Quitar a {nome}" },
   "{n} de {teto}": { es: "{n} de {teto}" },
-  "{nome} está ocupado neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.": { es: "{nome} está ocupado en este horario. Elija otro horario o quite a esa persona de Quién conduce." },
+  "{nome} não está disponível neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz.": { es: "{nome} no está disponible en este horario. Elija otro horario o quite a esa persona de Quién conduce." },
   "A equipe desta sessão coletiva é definida por quem abre a sessão.": { es: "El equipo de esta sesión grupal lo define quien abre la sesión." },
   "Sessão coletiva: quem abre a sessão define a equipe; quem entra depois fica com a mesma.": { es: "Sesión grupal: quien abre la sesión define el equipo; quien entra después queda con el mismo." },
   "Com a equipe:": { es: "Con el equipo:" },

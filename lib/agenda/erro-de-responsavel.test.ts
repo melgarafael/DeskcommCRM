@@ -10,7 +10,7 @@ describe("erroComNomeDoResponsavel (#3067)", () => {
     const r = erroComNomeDoResponsavel(
       errBase,
       [{ id: "x-1", nome: "Ana" }],
-      "{nome} está ocupado neste horário.",
+      "{nome} não está disponível neste horário.",
     );
     expect(r).toBeInstanceOf(ApiError);
     const api = r as ApiError;

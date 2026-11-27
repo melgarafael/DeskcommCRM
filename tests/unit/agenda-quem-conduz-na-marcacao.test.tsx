@@ -251,6 +251,6 @@ describe("Quem conduz ao marcar (#3067)", () => {
     fireEvent.click(screen.getByTestId("horario-10:00"));
     fireEvent.click(screen.getByTestId("confirmar-marcacao"));
 
-    expect(await screen.findByText(/Bruno está ocupado neste horário/)).toBeInTheDocument();
+    expect(await screen.findByText(/Bruno não está disponível neste horário/)).toBeInTheDocument();
   });
 });
