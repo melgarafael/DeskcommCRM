@@ -1752,7 +1752,10 @@ export function CRMSidePanel({
                     {t(activityLabel(a.type))}
                   </div>
                   {a.reason && <div className="mt-0.5 truncate text-muted-foreground">{t(a.reason)}</div>}
-                  <div className="text-muted-foreground">
+                  {/* `wrap-anywhere`: o nome do token vem do operador (até 100
+                      caracteres, sem espaço às vezes) e não pode empurrar o
+                      painel para os lados (#5160). */}
+                  <div className="text-muted-foreground wrap-anywhere">
                     {a.performed_by_name ??
                       (a.integracao ? autorDaIntegracao(a.integracao, t) : t(actorLabel(a.actor_kind)))}{" "}
                     · {shortDate(a.performed_at, localeDaData)}
