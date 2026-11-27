@@ -220,7 +220,14 @@ async function comProfissionais(
  * Confere o recibo atual antes da revisão (inclusive replay de idempotência).
  * A leitura usa service role: filtra organização/contato E o tipo relacionado.
  * Mudança de estado (`row.status === recibo.status` exigido), horário ou revisão
- * descarta o recibo inteiro; nunca regrava.
+ * descarta; nunca regrava.
+ *
+ * `confirmed`: tudo-ou-nada ENTRE ELES — se um falha, nenhum confirmado vale.
+ * `cancelled`: cada um é conferido sozinho; o que falhar (linha ausente, schema,
+ * escopo, status, revisão, horário) sai da lista sem derrubar os demais, e um
+ * confirmado que falha não derruba cancelado válido. Erro da consulta lança
+ * `booking_evidence_lookup_failed`. Ordem da evidência = ordem dos recibos
+ * recebidos. Profissionais são resolvidos uma única vez, no final.
  */
 export async function conferirRecibosDeAgendamento(
   db: SupabaseClient,
@@ -242,11 +249,11 @@ export async function conferirRecibosDeAgendamento(
       recibos.map((r) => r.id),
     );
   if (error) throw new Error("booking_evidence_lookup_failed");
-  if (!data || data.length !== recibos.length) return [];
-  const reservas: ReservaConferida[] = [];
-  for (const recibo of recibos) {
-    const parsed = linhaSchema.safeParse(data.find((r) => r.id === recibo.id));
-    if (!parsed.success) return [];
+  if (!data) return [];
+
+  const conferirUm = (recibo: ReciboDeAgendamento): ReservaConferida | null => {
+    const parsed = linhaSchema.safeParse(data.find((r) => (r as { id?: unknown }).id === recibo.id));
+    if (!parsed.success) return null;
     const row = parsed.data;
     if (
       !comprovaReserva(row, escopo) ||
@@ -255,10 +262,41 @@ export async function conferirRecibosDeAgendamento(
       !mesmoInstante(row.starts_at, recibo.starts_at) ||
       !mesmoInstante(row.ends_at, recibo.ends_at)
     )
-      return [];
-    reservas.push(projetarEvidencia(row));
+      return null;
+    return projetarEvidencia(row);
+  };
+
+  // confirmed: tudo-ou-nada entre eles.
+  const confirmados = new Map<string, ReservaConferida>();
+  let confirmadosOk = true;
+  for (const recibo of recibos) {
+    if (recibo.status !== "confirmed") continue;
+    const conferida = conferirUm(recibo);
+    if (!conferida) {
+      confirmadosOk = false;
+      continue;
+    }
+    confirmados.set(recibo.id, conferida);
   }
-  // Só no final, depois que TODAS as linhas passaram nas conferências.
+
+  // cancelled: cada um sozinho.
+  const cancelados = new Map<string, ReservaConferida>();
+  for (const recibo of recibos) {
+    if (recibo.status !== "cancelled") continue;
+    const conferida = conferirUm(recibo);
+    if (conferida) cancelados.set(recibo.id, conferida);
+  }
+
+  // Ordem da evidência = ordem dos recibos recebidos.
+  const reservas: ReservaConferida[] = [];
+  for (const recibo of recibos) {
+    const conferida =
+      recibo.status === "confirmed"
+        ? (confirmadosOk ? confirmados.get(recibo.id) : undefined)
+        : cancelados.get(recibo.id);
+    if (conferida) reservas.push(conferida);
+  }
+  // Só no final, depois que as linhas passaram nas conferências.
   return comProfissionais(db, escopo, reservas);
 }
 

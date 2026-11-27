@@ -89,8 +89,9 @@ export interface EfeitoDasEscrituras {
    */
   registrarRecibosDeAgendamento(geracao: number, resultado: unknown): void;
   /**
-   * Cancelados + atuais, sem `id` repetido (para um mesmo id vence o de maior `revision`),
-   * no máximo `MAXIMO_DE_RESERVAS_NA_REVISAO`, devolvendo cópias.
+   * `confirmed` primeiro, depois `cancelled` do mais recente para o mais antigo;
+   * sem `id` repetido (para um mesmo id vence o de maior `revision`), no máximo
+   * `MAXIMO_DE_RESERVAS_NA_REVISAO` após deduplicar, devolvendo cópias.
    */
   recibosDeAgendamento(): ReciboDeAgendamento[];
   geracaoDeAgendamento(): number;
@@ -136,7 +137,11 @@ export function criarEfeitoDasEscrituras(): EfeitoDasEscrituras {
         const atual = porId.get(r.id);
         if (!atual || r.revision > atual.revision) porId.set(r.id, r);
       }
-      return [...porId.values()].slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).map((r) => ({ ...r }));
+      const todos = [...porId.values()];
+      // confirmed primeiro; cancelled do mais recente para o mais antigo; corte em 20 após dedup.
+      const confirmados = todos.filter((r) => r.status === "confirmed");
+      const cancelados = todos.filter((r) => r.status === "cancelled").reverse();
+      return [...confirmados, ...cancelados].slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).map((r) => ({ ...r }));
     },
     geracaoDeAgendamento(): number {
       return geracaoDaAgenda;

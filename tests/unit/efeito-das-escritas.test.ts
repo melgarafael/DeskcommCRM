@@ -140,6 +140,28 @@ describe("recibos de cancelamento acumulam no turno", () => {
     expect(efeitos.recibosDeAgendamento().some((r) => r.status === "confirmed")).toBe(false);
   });
 
+  it("o teto de 20 nunca corta o confirmado: 20 cancelamentos + 1 marcação → a marcação está na lista, e o cancelamento mais antigo sai", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const idCancel = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    for (let i = 0; i < MAXIMO_DE_RESERVAS_NA_REVISAO; i++) {
+      const g = efeitos.iniciarAgendamento();
+      efeitos.registrarRecibosDeAgendamento(g, { cancelado: true, compromisso: cancelado(idCancel(i), i + 1) });
+    }
+    const gMark = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(gMark, { marcado: true, compromisso: confirmado });
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista).toHaveLength(MAXIMO_DE_RESERVAS_NA_REVISAO);
+    // confirmed primeiro
+    expect(lista[0]!.status).toBe("confirmed");
+    expect(lista[0]!.id).toBe(confirmado.id);
+    // cancelados do mais recente para o mais antigo
+    const cancelados = lista.filter((r) => r.status === "cancelled");
+    expect(cancelados[0]!.id).toBe(idCancel(MAXIMO_DE_RESERVAS_NA_REVISAO - 1));
+    // o cancelamento mais antigo é o que sai
+    expect(lista.some((r) => r.id === idCancel(0))).toBe(false);
+    expect(cancelados.some((r) => r.id === idCancel(1))).toBe(true);
+  });
+
   it("no máximo MAXIMO_DE_RESERVAS_NA_REVISAO, devolvendo cópias", () => {
     const efeitos = criarEfeitoDasEscrituras();
     for (let i = 0; i < MAXIMO_DE_RESERVAS_NA_REVISAO + 5; i++) {
