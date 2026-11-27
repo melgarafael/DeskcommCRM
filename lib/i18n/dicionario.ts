@@ -10014,6 +10014,8 @@ export const DICIONARIO: Traducoes = {
   "Mostrando as conversas que já estavam na tela. Nada foi perdido.": {
     es: "Mostrando las conversaciones que ya estaban en pantalla. No se perdió nada.",
   },
+  "Verificando o acesso à conversa…": { es: "Verificando el acceso a la conversación…" },
+  "Não foi possível recuperar a conversa agora.": { es: "No se pudo recuperar la conversación en este momento." },
   "Tentar novamente": { es: "Intentar de nuevo" },
   "Analisar perfis e oportunidades": { es: "Analizar perfiles y oportunidades" },
   "Analisando clientes: {feitos} de {total}": {
