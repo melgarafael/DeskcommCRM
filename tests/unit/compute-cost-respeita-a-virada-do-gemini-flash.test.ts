@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const ANTES_DA_VIRADA = new Date("2026-12-31T23:59:59.999Z");
 const VIRADA_2027 = new Date("2027-01-01T00:00:00.000Z");
 
-const FLASH = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"] as const;
+const FLASH = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"] as const;
 
 const AI_PRICING = [
   ...FLASH.map((model) => ({
@@ -26,8 +26,7 @@ const AI_PRICING = [
     embedding_cents_per_million_tokens: null,
   })),
   // Tarifa fixa, sem virada: é o controle de que quem não está em PROMOCOES
-  // continua lendo a linha do banco. (O 3.5 Flash fazia esse papel até 18/11/2026;
-  // ele roteia ao 3.6 Flash e entrou na mesma virada de 2027.)
+  // continua lendo a linha do banco.
   {
     model: "gemini-3.5-flash-lite",
     prompt_cents_per_million_tokens: 30,
@@ -44,6 +43,7 @@ const AI_PRICING = [
 ];
 
 const AI_MODELS = FLASH.map((model_id) => ({
+  provider: "google",
   model_id,
   input_price_per_million_cents: 150,
   output_price_per_million_cents: 750,
@@ -53,17 +53,20 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       if (table === "ai_models") {
-        return {
-          select: () => ({
-            in: (_col: string, ids: string[]) => ({
-              is: () => ({
-                limit: async () => ({
-                  data: AI_MODELS.filter((row) => ids.includes(row.model_id)),
-                  error: null,
-                }),
+        const consulta = {
+          in: (_col: string, ids: string[]) => ({
+            is: () => ({
+              limit: async () => ({
+                data: AI_MODELS.filter((row) => ids.includes(row.model_id)),
+                error: null,
               }),
             }),
           }),
+          then: (resolve: (v: unknown) => unknown) =>
+            Promise.resolve({ data: AI_MODELS, error: null }).then(resolve),
+        };
+        return {
+          select: () => consulta,
         };
       }
       return {
@@ -76,6 +79,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { _resetPricingCacheForTests, computeCost } from "@/lib/ai/cost";
+import { _resetRuntimeCostCacheForTests, computeCostCents } from "@/lib/ai/runtime/cost";
 
 async function centavos(
   model: string,
@@ -147,5 +151,88 @@ describe("computeCost — Gemini 3.6/3.7/3.8 Flash respeita a virada do costCent
   it("um modelo sem essa virada continua na linha de ai_pricing", async () => {
     expect(await centavos("gemini-3.5-flash-lite", { promptTokens: 1_000_000 }, ANTES_DA_VIRADA)).toBeCloseTo(30, 6);
     expect(await centavos("gemini-3.5-flash-lite", { completionTokens: 1_000_000 }, VIRADA_2027)).toBeCloseTo(250, 6);
+  });
+});
+
+describe("computeCostCents — Gemini Flash no runtime nativo (#5171)", () => {
+  beforeEach(() => {
+    _resetRuntimeCostCacheForTests();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(FLASH)(
+    "%s cobra 75/375 no último ms da promo (450 com 1M+1M), com ai_models já em 150/750",
+    async (model) => {
+      const custo = await computeCostCents({
+        provider: "google",
+        model,
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        em: ANTES_DA_VIRADA,
+      });
+      expect(custo).toBeCloseTo(450, 6);
+    },
+  );
+
+  it.each(FLASH)(
+    "%s cobra 150/750 a partir de 2027-01-01T00:00:00.000Z (900 com 1M+1M)",
+    async (model) => {
+      const custo = await computeCostCents({
+        provider: "google",
+        model,
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        em: VIRADA_2027,
+      });
+      expect(custo).toBeCloseTo(900, 6);
+    },
+  );
+
+  it("sem instante, o relógio de agora é o mesmo corte (caminho do runtime do agente)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(ANTES_DA_VIRADA);
+    expect(
+      await computeCostCents({
+        provider: "google",
+        model: "gemini-3.8-flash",
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+      }),
+    ).toBeCloseTo(450, 6);
+    vi.setSystemTime(VIRADA_2027);
+    _resetRuntimeCostCacheForTests();
+    expect(
+      await computeCostCents({
+        provider: "google",
+        model: "gemini-3.8-flash",
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+      }),
+    ).toBeCloseTo(900, 6);
+  });
+
+  it("as duas rotas de custo (computeCost e computeCostCents) concordam no Gemini Flash", async () => {
+    for (const model of FLASH) {
+      for (const em of [ANTES_DA_VIRADA, VIRADA_2027]) {
+        const legado = await computeCost({
+          model,
+          promptTokens: 1_000_000,
+          completionTokens: 1_000_000,
+          em,
+        });
+        const runtime = await computeCostCents({
+          provider: "google",
+          model,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          em,
+        });
+        expect(runtime, `${model} em ${em.toISOString()}`).toBeCloseTo(legado as number, 6);
+      }
+    }
   });
 });

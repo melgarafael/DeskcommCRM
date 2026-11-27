@@ -13,7 +13,7 @@ import {
 import { PaperPlaneTilt } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
-import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
+import { AttachmentPreviewDialog, type AttachmentPreviewHandle } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
@@ -65,8 +65,21 @@ import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import type { Message } from "@/lib/types/messaging";
 import { MensagensAgendadasBotao } from "./MensagensAgendadas";
 
+export interface RascunhoDoComposer {
+  texto: string;
+  arquivos: File[];
+  legenda: string | null;
+  modo: "reply" | "note";
+  modoDosArquivos: "reply" | "note";
+  mencoes: MencaoEscolhida[];
+  cursor: number;
+  sugestaoUsada: boolean;
+}
+
 export interface ComposerHandle {
   focus: () => void;
+  estaEditando?: () => boolean;
+  guardarRascunho?: () => RascunhoDoComposer;
 }
 
 /**
@@ -107,9 +120,12 @@ interface Props {
   /** Liga as mensagens agendadas: botão ao lado do Enviar, ou item do "+" abaixo de `sm` (a conversa tem contato e número). */
   agendamentoLigado?: boolean;
   initialDraft?: string;
+  rascunhoGuardado?: RascunhoDoComposer | null;
   initialMode?: "reply" | "note";
   onDraftChange?: (text: string, mode: "reply" | "note") => void;
   active?: boolean;
+  /** Mantém o rascunho local enquanto a Inbox confirma a autorização. */
+  suspenso?: boolean;
   disabled?: boolean;
   /** Set true when contact is blocked / anonymized — explanation shown. */
   blockedReason?: string | null;
@@ -194,8 +210,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     conversationId,
     agendamentoLigado = false,
     initialDraft = "",
+    rascunhoGuardado,
     initialMode = "reply",
     active = true,
+    suspenso = false,
     onDraftChange,
     disabled,
     blockedReason,
@@ -214,10 +232,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   ref,
 ) {
   const t = useT();
-  const [text, setText] = useState(initialDraft);
+  const [text, setText] = useState(rascunhoGuardado?.texto ?? initialDraft);
+  const previewRef = useRef<AttachmentPreviewHandle | null>(null);
+  const enviandoAnexos = useRef(false);
   // O aviso some no primeiro ENVIO: depois do clique o rascunho foi usado, e
   // deixar a faixa prometendo texto que já saiu seria mentira de tela.
-  const [rascunhoUsado, setRascunhoUsado] = useState(false);
+  const [rascunhoUsado, setRascunhoUsado] = useState(rascunhoGuardado?.sugestaoUsada ?? false);
   /**
    * A FILA de anexos (#2526): o "+" escolhe uma, a resposta rápida traz as
    * várias que o operador carregou no template. Uma lista e não um arquivo é o
@@ -227,7 +247,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * do recurso passa pelo `applyTemplate`, e imagem e áudio entram aqui — com
    * prévia e retry — em vez de um caminho próprio que perdia a imagem.
    */
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>(rascunhoGuardado?.arquivos ?? []);
   /**
    * O ARRASTE DE ARQUIVO POR CIMA DO COMPOSITOR (#3708) — o realce, e o
    * CONTADOR que o sustenta.
@@ -253,7 +273,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * pode estar nos dois lugares (campo E legenda), senão a mensagem sairia
    * duplicada.
    */
-  const [legendaInicial, setLegendaInicial] = useState<string | null>(null);
+  const [legendaInicial, setLegendaInicial] = useState<string | null>(rascunhoGuardado?.legenda ?? null);
   /**
    * O modo em que o arquivo foi ESCOLHIDO, congelado na escolha — e não o modo
    * em que o diálogo está aberto agora.
@@ -264,11 +284,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * que a F3 da #1863 existe para não ter — e um dropdown de dois botões não
    * pode ser a única coisa entre um print interno e o celular da pessoa.
    */
-  const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
+  const [pendingEm, setPendingEm] = useState<"reply" | "note">(rascunhoGuardado?.modoDosArquivos ?? "reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [agendaAberta, setAgendaAberta] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
-  const [mode, setMode] = useState<"reply" | "note">(initialMode);
+  const [mode, setMode] = useState<"reply" | "note">(rascunhoGuardado?.modo ?? initialMode);
+  useEffect(() => {
+    if (!suspenso) return;
+    setContactPickerOpen(false);
+    setAgendaAberta(false);
+  }, [suspenso]);
   /**
    * Menção de atendente (#2372) — e o motivo de ser quatro estados.
    *
@@ -288,8 +313,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * `mencaoDispensada` (Esc) e `mencaoIndice` (setas) são o mesmo desenho do
    * slash-menu de sempre, para os dois menus não disputarem a mesma tecla.
    */
-  const [caret, setCaret] = useState(initialDraft.length);
-  const [mencoes, setMencoes] = useState<MencaoEscolhida[]>([]);
+  const [caret, setCaret] = useState(rascunhoGuardado?.cursor ?? initialDraft.length);
+  const [mencoes, setMencoes] = useState<MencaoEscolhida[]>(rascunhoGuardado?.mencoes ?? []);
   const [mencaoDispensada, setMencaoDispensada] = useState(false);
   const [mencaoIndice, setMencaoIndice] = useState(0);
   /**
@@ -371,6 +396,17 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
+    estaEditando: () => taRef.current === document.activeElement,
+    guardarRascunho: () => ({
+      texto: text,
+      arquivos: enviandoAnexos.current ? [] : pendingFiles,
+      legenda: enviandoAnexos.current ? null : previewRef.current?.lerLegenda() ?? legendaInicial,
+      modo: mode,
+      modoDosArquivos: pendingEm,
+      mencoes,
+      cursor: caret,
+      sugestaoUsada: rascunhoUsado,
+    }),
   }));
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
@@ -378,7 +414,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // `aguardandoAssumir` (#3012) entra AQUI, no mesmo lugar: um termo a mais na
   // trava de sempre, nunca um desabilitar paralelo que pudesse divergir dela.
   const isDisabled =
-    disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
+    suspenso || disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
   // A janela só alcança o que SAI. Em modo nota o composer segue liberado: a
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
@@ -814,75 +850,48 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   /**
-   * A FILA de anexos (#2526) — e ela é um laço, não um tiro.
-   *
-   * Cada arquivo sobe pelo `useUploadMedia` e sai pelo `useSendMessage` /
-   * `useCreateNote` de sempre; só o PRIMEIRO anexo que ACEITA legenda leva o
-   * texto — o mesmo contrato de "texto + mídia numa mensagem" que o envio de
-   * mídia já pratica. Não é sempre o índice 0 (#3151): numa fila [áudio,
-   * imagem] o texto iria com o áudio e o canal o descartaria em silêncio.
-   * A recursão entra pelo `onSuccess`, então uma falha INTERROMPE a fila e o
-   * diálogo fica aberto para o retry — como já ficava no caminho de um arquivo.
+   * Depois da confirmação, a fila pertence à conversa e ao modo capturados
+   * neste clique. Cada item que sai deixa a prévia, inclusive se o próximo
+   * falhar. As rotas validam o acesso no momento de cada envio.
    */
-  function enviarAnexos(caption: string, indice = 0): void {
-    const arquivo = pendingFiles[indice];
-    if (!arquivo) {
-      setPendingFiles([]);
-      setLegendaInicial(null);
-      return;
-    }
+  async function enviarAnexos(caption: string): Promise<void> {
+    if (suspenso || enviandoAnexos.current) return;
+    enviandoAnexos.current = true;
     const destino: DestinoDoUpload = pendingEm === "note" ? "nota" : "mensagem";
-    // `-1` (fila só de áudio) não casa com índice nenhum: a legenda não sai com
-    // anexo algum, em vez de sair com um áudio que a descarta.
+    // Só o primeiro anexo que aceita legenda leva o texto da mensagem (#3151).
     const indiceLegenda = indiceDaLegenda(pendingFiles);
-    const legenda =
-      destino === "nota" ? caption : indice === indiceLegenda ? caption || undefined : undefined;
-    void upload
-      .mutateAsync({ conversationId, file: arquivo, destino })
-      .then((uploaded) => {
-        // Cada arquivo que SAIU deixa a fila: se o próximo falhar, o retry do
-        // diálogo recomeça do que falhou, sem reenviar o que já foi nem repetir
-        // o texto (#2526, critério "falha no envio da mídia não causa duplicação
-        // do texto"). A legenda fica na fila até sair com o anexo que a leva.
-        const proximo = () => {
-          setPendingFiles((fila) => fila.slice(1));
-          setLegendaInicial(destino === "mensagem" && indice < indiceLegenda ? caption : null);
-          enviarAnexos(caption, indice + 1);
-        };
+    try {
+      for (const [indice, arquivo] of pendingFiles.entries()) {
+        const uploaded = await upload.mutateAsync({ conversationId, file: arquivo, destino });
         if (destino === "nota") {
-          createNote.mutate(
-            {
-              conversation_id: conversationId,
-              body: legenda ?? "",
-              anexo: {
-                storage_path: uploaded.storage_path,
-                media_mime: uploaded.media_mime,
-                media_size_bytes: uploaded.media_size_bytes,
-              },
+          await createNote.mutateAsync({
+            conversation_id: conversationId,
+            body: caption,
+            anexo: {
+              storage_path: uploaded.storage_path,
+              media_mime: uploaded.media_mime,
+              media_size_bytes: uploaded.media_size_bytes,
             },
-            { onSuccess: proximo },
-          );
-          return;
-        }
-        send.mutate(
-          {
+          });
+        } else {
+          await send.mutateAsync({
             conversation_id: conversationId,
             type: uploaded.kind,
-            body: legenda,
+            body: indice === indiceLegenda ? caption || undefined : undefined,
             media_storage_path: uploaded.storage_path,
-            // O nome que a pessoa escolheu (#4457): o path no bucket é
-            // `out-<uuid>`, e é este campo que vira o `filename` do documento
-            // no WhatsApp e o rótulo do balão.
             media_filename: uploaded.media_filename ?? undefined,
             media_mime: uploaded.media_mime,
             media_size_bytes: uploaded.media_size_bytes,
-          },
-          { onSuccess: proximo },
-        );
-      })
-      .catch(() => {
-        // toast já disparado pelo onError de useUploadMedia; diálogo fica aberto p/ retry
-      });
+          });
+        }
+        setPendingFiles((fila) => fila.slice(1));
+        setLegendaInicial(destino === "mensagem" && indice < indiceLegenda ? caption : null);
+      }
+    } catch {
+      // A mutação que falhou mostra o erro e a prévia conserva o que faltou.
+    } finally {
+      enviandoAnexos.current = false;
+    }
   }
 
   /**
@@ -1034,7 +1043,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     }
   }
 
-  if (blockedReason) {
+  const mostrarEnviar = Boolean(text.trim()) || mode === "note" || recusaNotaDeVoz;
+  if (blockedReason && !suspenso) {
     return (
       <div className="border-t border-border bg-muted/40 px-4 py-3 text-center text-xs text-muted-foreground">
         {blockedReason}
@@ -1046,6 +1056,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     <>
       <div
         data-testid="composer"
+        hidden={suspenso}
+        inert={suspenso}
         onDragEnter={onDragEnter}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -1055,6 +1067,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {!suspenso && <>
         {/* O REALCE DO ARRASTE (#3708) — a única coisa que o operador vê antes
             de soltar o arquivo. Sem ele, o gesto não tem confirmação nenhuma:
             solta, a prévia abre, mas ninguém sabia que aquele espaço aceitava
@@ -1253,11 +1266,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             usuarioId={usuarioId}
           />
         )}
+        </>}
         {/* `@container`: o botão de mensagens agendadas decide pela largura
             DESTA linha, não da janela. A 1280px com o painel do contato aberto
             a coluna é tão estreita quanto no celular, e um breakpoint de tela
             não enxerga isso. */}
         <div className="@container flex items-end gap-2">
+          {!suspenso && <>
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira
@@ -1388,7 +1403,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onAbertoChange={setAgendaAberta}
             />
           ) : null}
-          {text.trim() || mode === "note" || recusaNotaDeVoz ? (
+          {mostrarEnviar && (
             <Button
               type="button"
               size="icon"
@@ -1399,12 +1414,16 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             >
               <PaperPlaneTilt size={16} weight="fill" aria-hidden />
             </Button>
-          ) : (
-            active && <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} />
+          )}
+          </>}
+          {active && !mostrarEnviar && (
+            <AudioRecorder conversationId={conversationId} disabled={respostaBarrada} suspenso={suspenso} />
           )}
         </div>
       </div>
       <AttachmentPreviewDialog
+        ref={previewRef}
+        suspenso={suspenso}
         files={pendingFiles}
         legendaInicial={legendaInicial}
         notaInterna={pendingEm === "note"}
@@ -1452,11 +1471,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           //
           // O tratamento de erro continua o de sempre: falha de upload mostra o
           // toast do próprio hook e o diálogo fica aberto, nos dois casos.
-          enviarAnexos(caption);
+          void enviarAnexos(caption);
         }}
       />
       <ContactPickerDialog
-        open={contactPickerOpen}
+        open={!suspenso && contactPickerOpen}
         onOpenChange={setContactPickerOpen}
         excludeContactId={currentContactId}
         sending={send.isPending}

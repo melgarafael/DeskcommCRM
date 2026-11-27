@@ -437,6 +437,29 @@ describe("POST — as respostas que não vieram no aviso", () => {
     expect(String(linhaDoContato.phone_number)).toBe("+5511988887777");
   });
 
+  it("busca LIGADA: a caixa de consentimento do formulário chega aos campos do negócio", async () => {
+    banco();
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\x00ff22";
+    h.busca.mockResolvedValueOnce({
+      ok: true,
+      respostas: [
+        { campo: "full_name", valor: "Mary Smith" },
+        { campo: "phone_number", valor: "+15550100199" },
+        { campo: "custom_disclaimer_optional_1", valor: "true" },
+      ],
+    });
+
+    const resposta = await entregar(entregaDoLeadAds({ comRespostas: false }));
+    expect(resposta.ok).toBe(true);
+
+    // É por `custom_fields` que a automação de webhook manda o lead para fora:
+    // a caixa precisa estar ali, e não só na resposta da busca.
+    expect(h.criarLead).toHaveBeenCalledTimes(1);
+    const [, , campos] = h.criarLead.mock.calls[0]! as [unknown, unknown, Record<string, unknown>];
+    expect(campos.custom_fields).toMatchObject({ custom_disclaimer_optional_1: "true" });
+  });
+
   it("busca LIGADA e a plataforma NÃO responde: ignorado `sem_respostas_na_meta`, sem dado inventado", async () => {
     const falso = banco();
     estado.fonteDaUrl.meta_lead_retrieval = true;

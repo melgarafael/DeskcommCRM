@@ -50,6 +50,7 @@ import { canalDesativado } from "@/lib/channels/desativado";
 import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
+import { CHAVE_DO_NOME_DA_INTEGRACAO } from "@/lib/messaging/nome-da-integracao";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import {
   CHAVE_DO_NOME_NA_METADATA,
@@ -86,7 +87,11 @@ import { canalMarcaLidasPorMensagem } from "@/lib/channels/capabilities";
 import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
-import { CHAVE_DA_FALHA_DE_ENVIO, registroDaFalhaDeEnvio } from "@/lib/channels/falha-de-envio";
+import {
+  CHAVE_DA_FALHA_DE_ENVIO,
+  registroDaFalhaDeEnvio,
+  codigoDaFalhaDeEnvio,
+} from "@/lib/channels/falha-de-envio";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
 import { nomeDoAgenteDeIA } from "@/lib/messaging/nome-do-agente-de-ia";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -299,6 +304,38 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
   return undefined;
 }
 
+/**
+ * O NOME da integração que mandou, lido da LINHA do token (#5160).
+ *
+ * O `Actor` de um token carrega `id`/`api_token_id`, mas não o nome; a linha de
+ * `messages` precisa dele GRAVADO, porque o balão não faz join
+ * (`components/inbox/MessageBubble.tsx`). Quem lê é o client de service role
+ * que a rota entrega ao handler — a mesma fonte que valida o Bearer —, e o
+ * filtro por `organization_id` é o mesmo das outras leituras do arquivo.
+ *
+ * `null` quando não há nome (token antigo sem nome, linha revogada, leitura
+ * falhou): o balão cai para "Integração". Falha de leitura NÃO derruba o envio
+ * — o nome é rótulo de tela, e a coluna `sent_via` continua sendo a verdade
+ * sobre a autoria.
+ */
+async function nomeDoTokenDeApi(
+  supabase: SB,
+  organizationId: string,
+  tokenId: string | undefined,
+): Promise<string | null> {
+  if (!tokenId) return null;
+  const { data } = await supabase
+    .from("api_tokens")
+    .select("name")
+    .eq("id", tokenId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  const nome = (data as { name?: unknown } | null)?.name;
+  if (typeof nome !== "string") return null;
+  const limpo = nome.trim();
+  return limpo || null;
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -346,12 +383,19 @@ export interface ListMessagesResult {
   has_more: boolean;
 }
 
-export async function listMessagesHandler(
-  supabase: SB,
-  ctx: HandlerCtx,
-  conversationId: string,
-  q: ListMessagesQuery,
-): Promise<ListMessagesResult> {
+function conversaNaoEncontrada(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    404,
+    "not_found",
+    undefined,
+    ctx.requestId,
+    traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
+async function conferirConversaDoHistorico(
+  supabase: SB, ctx: HandlerCtx, conversationId: string, confirmarConversa: boolean,
+) {
   // Pessoal não é alcançável pelo histórico de QUEM NÃO É DONO (spec 21, etapa
   // 7): a conversa sumiu da lista e o link direto dá 404, então o histórico
   // recusa junto — defesa em profundidade, com o mesmo 404 mudo para não
@@ -363,22 +407,31 @@ export async function listMessagesHandler(
   //
   // Duas consultas planas (sem embed, sem `maybeSingle`): o dublê do invariante
   // de paginação traduz a cadeia em SQL literal e só modela esses métodos.
-  const { data: donas } = await supabase
+  const { data: donas, error: erroDaConversa } = await supabase
     .from("conversations")
     .select("contact_id")
     .eq("id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .limit(1);
+  if (confirmarConversa && erroDaConversa) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDaConversa.message);
+  }
+  if (confirmarConversa && !donas?.length) {
+    throw conversaNaoEncontrada(ctx);
+  }
   const contatoId = ((donas ?? []) as Array<{ contact_id?: string | null }>)[0]?.contact_id ?? null;
   let contatoDaConversa: { is_personal?: boolean; personal_owner_user_id?: string | null } | null =
     null;
   if (contatoId) {
-    const { data: contato } = await supabase
+    const { data: contato, error: erroDoContato } = await supabase
       .from("contacts")
       .select("is_personal, personal_owner_user_id")
       .eq("id", contatoId)
       .eq("organization_id", ctx.organization_id)
       .limit(1);
+    if (confirmarConversa && erroDoContato) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroDoContato.message);
+    }
     contatoDaConversa =
       ((contato ?? []) as Array<{
         is_personal?: boolean;
@@ -386,14 +439,18 @@ export async function listMessagesHandler(
       }>)[0] ?? null;
   }
   if (!podeVerPessoal(ctx.actor, contatoDaConversa)) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+    throw conversaNaoEncontrada(ctx);
   }
+}
+
+export async function listMessagesHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  conversationId: string,
+  q: ListMessagesQuery,
+  { confirmarConversa = false }: { confirmarConversa?: boolean } = {},
+): Promise<ListMessagesResult> {
+  await conferirConversaDoHistorico(supabase, ctx, conversationId, confirmarConversa);
 
   // A CONSULTA VAI DO MAIS NOVO PARA O MAIS VELHO — de propósito.
   //
@@ -458,6 +515,11 @@ export async function listMessagesHandler(
   }
 
   const rows = (data ?? []) as unknown as Message[];
+  // A RLS pode fechar o histórico depois da primeira leitura do pai. Uma
+  // página vazia só confirma acesso se a conversa continua legível.
+  if (confirmarConversa && rows.length === 0) {
+    await conferirConversaDoHistorico(supabase, ctx, conversationId, true);
+  }
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
 
@@ -606,13 +668,7 @@ export async function sendMessageHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr.message);
   }
   if (!conv) {
-    throw new ApiError(
-      404,
-      "not_found",
-      undefined,
-      ctx.requestId,
-      traduzir("Conversa não encontrada.", ctx.idioma ?? "pt-BR"),
-    );
+    throw conversaNaoEncontrada(ctx);
   }
 
   type Joined = {
@@ -869,6 +925,16 @@ export async function sendMessageHandler(
   // (`automation`/`system`) ficam de fora, como o relato pede. Humano ganha o
   // nome do atendente com iniciais em maiúsculo; a IA, o nome configurável.
   const origemDoEmissor = origemDaMensagem(ctx.actor);
+  // O NOME da integração entra na LINHA (#5160): o balão não faz join, e sem
+  // ele o dono lê "Sistema" sem saber qual token falou. Lido da linha do
+  // token (`api_tokens.name`), nunca de `input.metadata`. Módulo conectado NÃO
+  // ganha nome aqui: a identidade dele é o `slug` (`publisher/name`), que não é
+  // o nome da linha do token, e o rótulo genérico "Integração" já diz o que o
+  // `sent_via='system'` garante.
+  const nomeDaIntegracao =
+    origemDoEmissor === "system" && ctx.actor.type === "api_token"
+      ? await nomeDoTokenDeApi(supabase, ctx.organization_id, apiTokenIdDoActor(ctx.actor))
+      : null;
   // O id do agente NÃO é o `id` do ator em todo caminho (#3373). O motor do
   // turno põe o agente no `id` (`lib/agent-engine/edge/crm/send-message.ts`),
   // mas a Prospecção põe o CANDIDATO no `id` e o agente em `agent_id`
@@ -1108,7 +1174,13 @@ export async function sendMessageHandler(
   // mostra o que o cliente recebeu, e não faz join (`lib/messaging/botoes-do-modelo.ts`).
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
-  const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  const {
+    [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente,
+    // O nome da integração é do SERVIDOR (#5160): um valor forjado no corpo não
+    // pode sobreviver numa linha sem nome resolvido e virar assinatura na tela.
+    [CHAVE_DO_NOME_DA_INTEGRACAO]: _nomeDaIntegracaoDoCliente,
+    ...metadataDeEntrada
+  } = input.metadata ?? {};
   // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
   // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
   // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
@@ -1173,6 +1245,10 @@ export async function sendMessageHandler(
       ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
+      // O NOME da integração (#5160), lido da linha do token. Depois de
+      // `input.metadata` de propósito, como `ai_actor_name`: o cliente da API
+      // não escolhe como a própria chamada aparece na conversa.
+      ...(nomeDaIntegracao ? { [CHAVE_DO_NOME_DA_INTEGRACAO]: nomeDaIntegracao } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
       // Os dois nomes viajam GRAVADOS porque o balão não faz join: "Fulano ·
       // via {token}" é desenhado da própria linha. Vêm DEPOIS de
@@ -1693,9 +1769,10 @@ export async function sendMessageHandler(
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
       // canal — a URL assinada é montada antes de qualquer coisa tocar o adapter.
-      const code = msg.startsWith("storage_sign_failed")
-        ? "storage_sign_failed"
-        : adapter.codes.sendFailed;
+      const code = codigoDaFalhaDeEnvio(
+        err,
+        msg.startsWith("storage_sign_failed") ? "storage_sign_failed" : adapter.codes.sendFailed,
+      );
 
       // Falta de CREDENCIAL não é falha desta mensagem: é canal ainda não
       // conectado, e o desfecho certo é `queued` — a mesma coisa que o ramo de

@@ -68,9 +68,19 @@ function sessaoComVisibilidade(opts: { casos?: string[]; visiveis: string[] }) {
 
   function cadeia(linhas: unknown[]) {
     const c: Record<string, unknown> = {};
+    let faixa: [number, number] | null = null;
     for (const metodo of ["select", "eq", "in", "order", "limit"]) c[metodo] = () => c;
+    // A leitura do universo dos casos é paginada: a página depois da última
+    // tem de vir vazia, como o PostgREST devolve.
+    c.range = (inicio: number, fim: number) => {
+      faixa = [inicio, fim];
+      return c;
+    };
     c.then = (aceita: (v: unknown) => unknown) =>
-      Promise.resolve({ data: linhas, error: null }).then(aceita);
+      Promise.resolve({
+        data: faixa ? linhas.slice(faixa[0], faixa[1] + 1) : linhas,
+        error: null,
+      }).then(aceita);
     return c;
   }
 
@@ -145,6 +155,8 @@ describe("GET /api/v1/ai/cases", () => {
         return chain;
       },
       order: () => chain,
+      // A lista recortada vai em lotes, cada um com o seu teto (#5255).
+      limit: () => chain,
       then: (onF: (v: unknown) => unknown) =>
         Promise.resolve({ data: linhas(), error: null }).then(onF),
     };

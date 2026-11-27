@@ -25,7 +25,9 @@ Sim. O portão (`lib/auth/modulo-autorizado.ts`) só roda quando o ator é `modu
 
 **`MODULE_JWT_PRIVATE_KEY`, opcional, sem ação ao atualizar.** Entrou em `.env.example` e em `lib/env.ts`
 com padrão vazio (`grep -n "MODULE_JWT_PRIVATE_KEY" .env.example lib/env.ts`). Sem ela, o módulo continua
-chamando a API com o token; só não há JWT de contexto de pessoa. Nenhum valor de chave aparece neste documento.
+chamando a API com o token, mas fica como `viewer` — lê o que um visitante lê; rotas que cobram `agent`
+respondem 403 `forbidden_role`. A chave só acrescenta a identificação da pessoa, com teto `manager`.
+Nenhum valor de chave aparece neste documento.
 
 ## Migrations (tripla)
 

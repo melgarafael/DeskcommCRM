@@ -157,6 +157,55 @@ describe("montarLembrete", () => {
     });
     expect(comMolde).toBe(semMolde);
   });
+
+  it("frase padrão cita o lugar quando houver", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala B",
+    });
+    expect(texto).toContain("Lugar: Sala B");
+  });
+
+  it("frase padrão não cita o lugar quando não houver", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+    });
+    expect(texto).not.toContain("Lugar:");
+  });
+
+  it("frase padrão cita \"Lugar: Sala A\" com calendar_resources como objeto", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala A",
+    });
+    expect(texto).toContain("Lugar: Sala A");
+  });
+
+  it("molde com {{lugar}} substitui a variável no corpo personalizado", () => {
+    const texto = montarLembrete({
+      nomeDoContato: "Ana",
+      titulo: "Retirada",
+      quando,
+      timezone: "America/Sao_Paulo",
+      local: null,
+      lugar: "Sala A",
+      molde: "Oi {{primeiro_nome}}! Seu {{tipo}} é {{dia}} às {{hora}} no {{lugar}}.",
+    });
+    expect(texto).toContain("no Sala A");
+    expect(texto).toContain("Sala A");
+  });
 });
 
 describe("montarLembrete — o link da reunião (Google Meet)", () => {
@@ -200,6 +249,71 @@ describe("montarLembrete — o link da reunião (Google Meet)", () => {
   });
 });
 
+describe("montarLembrete — a opção de cada degrau não levar o link (#5154)", () => {
+  const quando = new Date("2026-11-10T17:00:00Z"); // 14:00 em São Paulo
+  const MEET = "https://meet.google.com/abc-defg-hij";
+  const base = {
+    nomeDoContato: "Maria",
+    titulo: "Reunião comercial",
+    quando,
+    timezone: "America/Sao_Paulo",
+    local: null,
+  };
+
+  it("desligado na frase padrão: a mensagem sai, a linha do link não", () => {
+    const texto = montarLembrete({
+      ...base,
+      linkDaReuniao: { estado: "pronto", url: MEET },
+      incluirLink: false,
+    });
+    expect(texto).toContain("Reunião comercial");
+    expect(texto).toContain("14:00");
+    expect(texto).not.toContain("Link da reunião");
+    expect(texto).not.toContain(MEET);
+  });
+
+  it("desligado com molde que não usa {{link}}: não acrescenta a linha", () => {
+    const texto = montarLembrete({
+      ...base,
+      molde: "Oi {{primeiro_nome}}! Até {{hora}}.",
+      linkDaReuniao: { estado: "pronto", url: MEET },
+      incluirLink: false,
+    });
+    expect(texto).toBe("Oi Maria! Até 14:00.");
+  });
+
+  it("desligado com o link ainda a caminho: não promete que ele chega pela conversa", () => {
+    const texto = montarLembrete({
+      ...base,
+      linkDaReuniao: { estado: "pendente", url: null },
+      incluirLink: false,
+    });
+    expect(texto).not.toContain("chega por aqui");
+    expect(texto).toContain("Reunião comercial");
+  });
+
+  it("desligado, mas o molde ESCREVEU {{link}}: o texto de quem escreveu manda", () => {
+    const texto = montarLembrete({
+      ...base,
+      molde: "Entre por aqui: {{link}}",
+      linkDaReuniao: { estado: "pronto", url: MEET },
+      incluirLink: false,
+    });
+    expect(texto).toBe(`Entre por aqui: ${MEET}`);
+    expect(texto.match(/https:\/\//g)).toHaveLength(1);
+  });
+
+  it("ligado continua sendo o de hoje — quem não mexeu não vê diferença", () => {
+    const texto = montarLembrete({
+      ...base,
+      molde: "Oi {{primeiro_nome}}! Até {{hora}}.",
+      linkDaReuniao: { estado: "pronto", url: MEET },
+      incluirLink: true,
+    });
+    expect(texto).toBe(`Oi Maria! Até 14:00.\nLink da reunião: ${MEET}`);
+  });
+});
+
 describe("isolamento entre organizações (estrutural)", () => {
   const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
 
@@ -228,6 +342,12 @@ describe("isolamento entre organizações (estrutural)", () => {
     expect(fonte).toContain("const org = linha.organization_id");
     // controle: se alguém trocar por leitura de query string, isto reprova.
     expect(fonte).not.toContain("searchParams.get(\"organization_id\")");
+  });
+
+  it("a opção por degrau chega ao envio — sem a coluna e a conta, o interruptor seria decorativo", () => {
+    expect(fonte).toMatch(/reminder_sem_link_offsets_minutes/);
+    expect(fonte).toMatch(/levaOLinkNoLembrete/);
+    expect(fonte).toMatch(/incluirLink/);
   });
 });
 

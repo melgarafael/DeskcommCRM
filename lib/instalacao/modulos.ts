@@ -51,7 +51,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email`, `revisao_por_km`, `agencias` e `catalogo_por_feed` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `canal_webchat`, `campanha_por_email`, `revisao_por_km`, `agencias` e `catalogo_por_feed` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera`, `cadencias`, `ouvidoria`, `amigo` e `catalogo_servicos` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -94,6 +94,7 @@ export const MODULOS_OPCIONAIS = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "canal_bot",
+  "canal_webchat",
   "campanha_por_email",
   "revisao_por_km",
   // #4594 (fatia 1): o menu de boas-vindas com opções numeradas. Assume a
@@ -138,6 +139,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "canal_bot",
+  "canal_webchat",
   "campanha_por_email",
   "revisao_por_km",
   "menu_de_atendimento",
@@ -180,6 +182,7 @@ export const MODULOS_POR_EMPRESA = [
   "mcp_por_agente",
   "cold_call",
   "catalogo_por_feed",
+  "canal_webchat",
 ] as const satisfies readonly (typeof MODULOS_OPCIONAIS_POR_FLAG)[number][];
 export type ModuloPorEmpresa = (typeof MODULOS_POR_EMPRESA)[number];
 
@@ -254,6 +257,10 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // fornecedor a mais. Desligado, a aba de Conexões some e conectar responde
   // 404; um robô já conectado segue atendendo até a empresa desconectá-lo.
   canal_bot: "MODULO_CANAL_BOT",
+  // Chat no site: o widget que a empresa cola na própria página e cujas conversas
+  // chegam ao Inbox. Nasce desligado de fábrica. Quem consulta a chave é
+  // `chatNoSiteLigado` (lib/channels/webchat/modulo.ts).
+  canal_webchat: "MODULO_CANAL_WEBCHAT",
   // Doc 305 (A): a campanha por e-mail do #4289 chegou em partes. Esta guarda o
   // assunto, o corpo e o público; o envio, o descadastro em um clique e a lista
   // de quem pediu para não receber ainda não existem, e por isso o módulo está em

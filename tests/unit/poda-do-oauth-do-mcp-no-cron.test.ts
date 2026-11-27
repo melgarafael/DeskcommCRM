@@ -29,6 +29,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       lt: () => vazio,
       select: () => vazio,
       order: () => vazio,
+      range: () => vazio,
       limit: () => vazio,
       then: (r: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(r),
     };
@@ -39,7 +40,16 @@ vi.mock("@/lib/supabase/admin", () => ({
         if (nome === "fn_enfileirar_midia_vencida") return { data: { vencidas: 0, orfas: 0, expurgadas: 0 }, error: null };
         return { data: 0, error: null };
       },
-      from: () => ({ delete: () => vazio }),
+      from: () => ({ delete: () => vazio, select: () => vazio }),
+      // #5139: o dreno dos arquivos da abordagem lê `organizations` pelo
+      // `select` de `vazio` (resposta VAZIA) e, sem organizações, não toca o
+      // Storage. `.range()` entra em `vazio` para a leitura paginada passar.
+      storage: {
+        from: () => ({
+          list: async () => ({ data: [], error: null }),
+          remove: async () => ({ data: [], error: null }),
+        }),
+      },
     };
   },
 }));

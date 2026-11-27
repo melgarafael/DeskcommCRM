@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
@@ -16,6 +16,7 @@ import { NoteCard } from "./NoteCard";
 import { PassagemCard } from "./PassagemCard";
 import { useThreadAutoScroll } from "@/hooks/inbox/useThreadAutoScroll";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
+import type { AncoraDaConversa } from "@/hooks/inbox/useRecuperacaoDaConversa";
 import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
 import { usePassagensDaConversa } from "@/hooks/inbox/usePassagensDaConversa";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -30,6 +31,9 @@ import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
+  ancoraDaRecuperacao?: AncoraDaConversa | null;
+  onRestaurarAncora?: () => void;
+  onFalhaDaLeitura?: (err: unknown) => void;
   searchTerm?: string;
   provider?: string | null;
   /** Escolher uma mensagem para responder. Sobe até o composer. */
@@ -106,6 +110,9 @@ const PAGINAS_ATE_A_CITADA = 10;
 
 export function ChatThread({
   conversationId,
+  ancoraDaRecuperacao,
+  onRestaurarAncora,
+  onFalhaDaLeitura,
   provider,
   onResponder,
   onEncaminhar,
@@ -123,11 +130,14 @@ export function ChatThread({
     () => (currentUser ? { id: currentUser.id, nome: currentUser.full_name } : null),
     [currentUser],
   );
-  const q = useMessagesRealtime(conversationId, autorDoFio);
+  const activeOrg = useActiveOrg();
+  const q = useMessagesRealtime(conversationId, autorDoFio, activeOrg?.orgId);
+  useEffect(() => {
+    if (q.error) onFalhaDaLeitura?.(q.error);
+  }, [q.error, onFalhaDaLeitura]);
   const notes = useConversationNotes(conversationId);
   const passagens = usePassagensDaConversa(conversationId);
   const claim = useClaimConversation();
-  const activeOrg = useActiveOrg();
   const deleteNote = useDeleteNote(conversationId ?? "");
   const { editar, apagar, ocultar, restaurar, reenviar, reagir } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
@@ -211,7 +221,19 @@ export function ChatThread({
     pages: q.data?.pages.length ?? 0,
     searching: !!termo,
   }, soNaCaixa);
-  const { scrollerRef, contentRef, bottomRef } = scroll;
+  const { scrollerRef, contentRef, bottomRef, onWheel } = scroll;
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!ancoraDaRecuperacao || !scroller) return;
+    const mensagem = Array.from(scroller.querySelectorAll<HTMLElement>("[data-message-id]"))
+      .find((elemento) => elemento.dataset.messageId === ancoraDaRecuperacao.id);
+    if (mensagem) {
+      scroller.scrollTop += mensagem.getBoundingClientRect().top
+        - scroller.getBoundingClientRect().top - ancoraDaRecuperacao.deslocamento;
+      onWheel();
+    }
+    onRestaurarAncora?.();
+  }, [ancoraDaRecuperacao, onRestaurarAncora, scrollerRef, onWheel]);
 
   /**
    * #4575 — IR ATÉ A MENSAGEM CITADA.
@@ -371,6 +393,7 @@ export function ChatThread({
         </div>
       )}
       <div ref={scrollerRef} role="region" aria-label={t("Mensagens da conversa")} tabIndex={0}
+        data-paginas-do-historico={q.data?.pages.length ?? 0}
         onScroll={scroll.onScroll} onWheel={scroll.onWheel} onTouchMove={scroll.onTouchMove}
         onPointerDown={scroll.onPointerDown} onKeyDown={scroll.onKeyDown}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain py-2">

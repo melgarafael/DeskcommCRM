@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { ApiErrorCodes } from "@/lib/api/errors";
+import { FRASES_DE_FALHA } from "@/lib/channels/frases-de-falha";
 import { chaveDaRequisicao, comIdempotencia, type DesfechoIdempotente } from "@/lib/api/idempotency";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
@@ -91,6 +93,15 @@ async function conversaDoTelefone(p: {
     // nomeada aqui é o que o conector precisa para distinguir "número ruim"
     // (422, não adianta retentar) de "canal fora do ar" (409, retentar depois).
     const motivo = err instanceof Error ? err.message : "open_failed";
+    if (motivo === ApiErrorCodes.numero_sem_whatsapp) {
+      throw new ApiError(
+        422,
+        ApiErrorCodes.numero_sem_whatsapp,
+        undefined,
+        p.requestId,
+        p.t(FRASES_DE_FALHA.numero_sem_whatsapp!),
+      );
+    }
     if (motivo === "invalid_phone") {
       throw new ApiError(
         422,

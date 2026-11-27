@@ -133,7 +133,8 @@ Todo objeto é **estrito**: chave desconhecida é recusada (é o que pega erro d
 
 Todos aceitam `cancel_on_reply` (`true`/`false`): `true` encerra a inscrição na primeira resposta do
 contato em vez de seguir o fluxo. Ausente vale `false`, salvo em `appointment_no_show`, onde ausente
-vale `true`: a sequência de falta sempre para quando o paciente responde.
+vale `true`: a sequência de falta sempre para quando o paciente responde. Resposta automática da empresa
+do outro lado não conta como resposta: a regra está em `inboundEhDeRobo`, em `lib/followup/reactivity.ts`.
 
 Um roteiro de atendimento (`surface: "atendimento"`) só publica com gatilho `manual`: ele começa por
 palavra-gatilho (`settings.gatilhos`) ou pelo roteador.

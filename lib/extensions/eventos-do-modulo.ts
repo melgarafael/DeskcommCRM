@@ -203,13 +203,29 @@ export async function lerEventosDoModulo(
 
 // ── O atraso do módulo, para `/admin/extensoes` (F5 T3) ─────────────────────
 //
-// Só números e datas: a função do banco conta POR ORGANIZAÇÃO (eventos da mesma organização do cursor, com
-// `id` maior que `last_event_id`; `module_disabled` só do par) e NÃO devolve qual organização é. Nada aqui
-// identifica empresa: a tela do dono do servidor mostra o estado de cada vínculo, não o nome do cliente.
+// Números, datas e duas âncoras de apresentação: a função do banco conta POR ORGANIZAÇÃO (eventos da
+// mesma organização do cursor, com `id` maior que `last_event_id`; `module_disabled` só do par) e NÃO
+// devolve qual organização é. Nada aqui identifica empresa: a tela do dono do servidor mostra o estado
+// de cada vínculo, não o nome do cliente.
+//
+// As duas âncoras existem porque a lista é ordenada por atraso (`lag desc`, `last_read_at nulls first`)
+// e a posição NÃO serve de nome (#5097): `rotulo` são os 6 primeiros caracteres do md5 do id (calculado
+// no banco, para o id não sair de lá) e `fuso` é o `organizations.timezone` daquela empresa, sem o qual
+// o "lido em" sai no fuso do processo — UTC na instalação padrão, três horas à frente de São Paulo.
 
 export const JANELA_DO_ATRASO_MS = 24 * 60 * 60 * 1000;
 
+/** O que aparece no lugar do rótulo quando o banco não devolve um (versão anterior da função). */
+export const ROTULO_DESCONHECIDO = "—";
+
 export interface AtrasoPorVinculo {
+  /**
+   * Rótulo curto e ESTÁVEL desta organização (6 hex do md5 do id), o único nome que a tela pode
+   * mostrar. Estável entre sessões e entre dias porque o id não muda; a posição na lista, sim.
+   */
+  rotulo: string;
+  /** `organizations.timezone`; `null` se o banco não devolveu. Quem formata resolve o padrão. */
+  fuso: string | null;
   /** Último evento lido; `null` se este vínculo nunca leu. */
   ultimoCursor: number | null;
   /** Quando leu pela última vez; `null` se nunca leu. */
@@ -233,6 +249,20 @@ function dataOuNula(v: unknown): string | null {
   return typeof v === "string" && Number.isFinite(Date.parse(v)) ? v : null;
 }
 
+/**
+ * O rótulo do banco, quando ele é o que se espera (6 hex do md5). Qualquer outra coisa — vazio, texto
+ * longo, número — vira `ROTULO_DESCONHECIDO`: a tela nunca inventa número, e nunca imprime texto que
+ * possa ter vindo por engano.
+ */
+function rotuloCurto(v: unknown): string {
+  return typeof v === "string" && /^[0-9a-f]{6}$/.test(v.trim()) ? v.trim() : ROTULO_DESCONHECIDO;
+}
+
+/** `organizations.timezone` é texto livre — quem formata valida (ver `fusoUtilizavel`). */
+function fusoOuNulo(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+}
+
 /** Regra do selo "atrasado" (pura, para o teste fixar o relógio). */
 export function estaAtrasado(
   v: { atraso: number; lidoEm: string | null; maisAntigoEm: string | null },
@@ -252,6 +282,8 @@ export function interpretarAtraso(bruto: unknown, agoraMs: number): AtrasoPorVin
     const r = item as Record<string, unknown>;
     const lidoEm = dataOuNula(r.last_read_at);
     const base = {
+      rotulo: rotuloCurto(r.rotulo),
+      fuso: fusoOuNulo(r.fuso),
       ultimoCursor: lidoEm === null ? null : inteiro(r.last_event_id),
       lidoEm,
       atraso: inteiro(r.lag),

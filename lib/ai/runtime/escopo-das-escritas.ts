@@ -75,8 +75,8 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_amigo_attendance_reschedule: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
   crm_amigo_attendance_status: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", attendance_id: "consulta_amigo" },
   // ---- agenda ----
-  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
-  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
+  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", space_id: "configuracao" },
+  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", space_id: "configuracao" },
   crm_reschedule_appointment: { appointment_id: "compromisso" },
   crm_cancel_appointment: { appointment_id: "compromisso" },
   crm_confirm_appointment: { appointment_id: "compromisso" },

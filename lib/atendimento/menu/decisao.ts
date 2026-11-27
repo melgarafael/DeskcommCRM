@@ -41,6 +41,12 @@
  * os quatro caminhos exigidos pela issue — fila, arquivo, opção inválida e flag
  * desligada — testáveis sem dublê de transporte, e o que garante que "opção
  * inválida" não vire laço: o passo é sempre para a FRENTE (repetir → humano).
+ *
+ * `enviar_menu` quer dizer "esta mensagem PEDE o menu", e não "o menu sai": quem
+ * manda é quem TOMA A POSSE dele no banco, numa escrita condicional, para que
+ * duas entradas simultâneas da mesma conversa não mandem duas listas (#5137).
+ * A decisão continua pura; o desempate é da porta (`tomaPosse` em
+ * `portasDoMenu`).
  */
 import { opcaoPeloNumero, type MenuSemIa, type OpcaoDoMenu } from "./modelo";
 

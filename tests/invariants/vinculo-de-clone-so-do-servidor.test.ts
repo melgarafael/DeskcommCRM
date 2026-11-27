@@ -58,6 +58,12 @@ function metadados(id: string): Record<string, unknown> {
 }
 
 const VINCULO = `{"lead_id":"${ORIGEM_ALHEIA}","pipeline_id":"${GOV_PIPELINE}"}`;
+// Cada card que o SERVIDOR liga nos casos (c) e (e) aponta para uma origem
+// própria: os três estão abertos no mesmo funil, e o índice único da 9496
+// (#5281) recusa duas cópias abertas da mesma origem no mesmo funil.
+const ORIGEM_DO_C = "93890000-0000-4000-8000-0000000000fc";
+const ORIGEM_DO_E = "93890000-0000-4000-8000-0000000000fe";
+const vinculoPara = (origem: string) => `{"lead_id":"${origem}","pipeline_id":"${GOV_PIPELINE}"}`;
 
 beforeAll(() => {
   seedGov();
@@ -129,11 +135,11 @@ describe("chaves de clone reservadas ao servidor (9389)", () => {
   it("(c) o servidor grava `clonado_de` e `movido_para` — service_role e o dono das funções do sistema", () => {
     expect(
       comoServidor(
-        `update public.crm_leads set source_metadata = source_metadata || '{"clonado_de":${VINCULO}}'::jsonb
+        `update public.crm_leads set source_metadata = source_metadata || '{"clonado_de":${vinculoPara(ORIGEM_DO_C)}}'::jsonb
           where id = '${CARD_DO_AGENTE}' and organization_id = '${GOV_ORG}'`,
       ),
     ).toBeNull();
-    expect((metadados(CARD_DO_AGENTE).clonado_de as { lead_id: string }).lead_id).toBe(ORIGEM_ALHEIA);
+    expect((metadados(CARD_DO_AGENTE).clonado_de as { lead_id: string }).lead_id).toBe(ORIGEM_DO_C);
 
     // `postgres` é quem é o `current_user` dentro das funções `security definer`
     // (a cascata de LGPD zera `source_metadata` inteiro por esse caminho).
@@ -171,11 +177,11 @@ describe("chaves de clone reservadas ao servidor (9389)", () => {
       // …e o vínculo, gravado em seguida pelo servidor, passa no card que a policy aceitou.
       expect(
         comoServidor(
-          `update public.crm_leads set source_metadata = source_metadata || '{"clonado_de":${VINCULO}}'::jsonb
+          `update public.crm_leads set source_metadata = source_metadata || '{"clonado_de":${vinculoPara(ORIGEM_DO_E)}}'::jsonb
             where id = '${DO_AGENTE}' and organization_id = '${GOV_ORG}'`,
         ),
       ).toBeNull();
-      expect((metadados(DO_AGENTE).clonado_de as { lead_id: string }).lead_id).toBe(ORIGEM_ALHEIA);
+      expect((metadados(DO_AGENTE).clonado_de as { lead_id: string }).lead_id).toBe(ORIGEM_DO_E);
     } finally {
       sql(`update public.organizations set settings = settings - 'visibility_mode' where id = '${GOV_ORG}';`);
     }

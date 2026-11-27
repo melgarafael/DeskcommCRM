@@ -103,7 +103,7 @@ class FakeQuery implements PromiseLike<Res> {
   private orders: Array<{ col: string; asc: boolean }> = [];
   private limitN?: number;
 
-  constructor(private table: string) {}
+  constructor(private table: string, private ler: (consulta: string, tabela: string) => string = sql) {}
 
   select(cols: string): this {
     this.cols = cols;
@@ -142,7 +142,7 @@ class FakeQuery implements PromiseLike<Res> {
 
   private async execute(): Promise<Res> {
     try {
-      const out = sql(`select coalesce(json_agg(t), '[]') from (${this.toSql()}) t;`);
+      const out = this.ler(`select coalesce(json_agg(t), '[]') from (${this.toSql()}) t;`, this.table);
       return { data: JSON.parse(out), error: null };
     } catch (err) {
       return { data: null, error: { message: (err as Error).message } };
@@ -176,6 +176,9 @@ const CONV = "aaaabbbb-4444-4000-8000-000000000001";
 const CONV_CURTA = "aaaabbbb-4444-4000-8000-0000000000ff";
 const USER = "aaaabbbb-5555-4000-8000-000000000001";
 const CURTA_TOTAL = 3;
+const DONO = "aaaabbbb-5555-4000-8000-000000000002";
+const CONTATO_VAZIO = "aaaabbbb-2222-4000-8000-0000000000fe";
+const CONV_VAZIA = "aaaabbbb-4444-4000-8000-0000000000fe";
 
 const TOTAL = 64;
 const LIMIT = 50;
@@ -469,5 +472,65 @@ describe("listMessagesHandler — mensagens no mesmo segundo", () => {
     const antigo = Buffer.from(JSON.stringify({ sent_at: decod.sent_at, id: decod.id }), "utf8").toString("base64url");
     const p2 = await listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT, cursor: antigo });
     expect(p2.messages).toHaveLength(TOTAL - LIMIT);
+  });
+});
+
+
+describe("histórico da Inbox com RLS", () => {
+  const opcoes = { confirmarConversa: true };
+
+  beforeAll(() => {
+    sql(`
+      insert into auth.users (id, email) values
+        ('${USER}', 'leitura-4508@invariant.test'), ('${DONO}', 'dono-4508@invariant.test')
+        on conflict (id) do nothing;
+      update public.organizations set settings = '{"visibility_mode":"own"}' where id = '${ORG}';
+      insert into public.user_organizations (user_id, organization_id, role, accepted_at) values
+        ('${USER}', '${ORG}', 'agent', now()), ('${DONO}', '${ORG}', 'agent', now())
+        on conflict do nothing;
+      update public.conversations set assigned_to_user_id = '${DONO}' where id = '${CONV}';
+      insert into public.conversation_participants
+        (organization_id, conversation_id, user_id, invited_by, joined_at)
+        values ('${ORG}', '${CONV}', '${USER}', '${DONO}', now())
+        on conflict (conversation_id, user_id) do update set left_at = null;
+      insert into public.contacts (id, organization_id, name) values
+        ('${CONTATO_VAZIO}', '${ORG}', 'Cliente sem mensagens') on conflict (id) do nothing;
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id)
+        values ('${CONV_VAZIA}', '${ORG}', '${CONTATO_VAZIO}', '${SESSION}', 'open', '${USER}')
+        on conflict (id) do nothing;
+    `);
+  });
+
+  const lerSobRls = (consulta: string) => sql(`set role authenticated;
+    set request.jwt.claims = '{"sub":"${USER}"}'; ${consulta}`).replace(/^SET\nSET\n/, "");
+  const comoSessao = (ler: (consulta: string, tabela: string) => string = lerSobRls) => ({
+    from: (tabela: string) => new FakeQuery(tabela, ler),
+  }) as unknown as SupabaseClient;
+
+  it("retorna histórico vazio quando o pai é visível", async () => {
+    expect(await listMessagesHandler(comoSessao(), ctx, CONV_VAZIA, { limit: LIMIT }, opcoes))
+      .toEqual({ messages: [], cursor: null, has_more: false });
+  });
+
+  it("mantém 500 quando o pai não pôde ser consultado", async () => {
+    const indisponivel = comoSessao(() => { throw new Error("Consulta temporariamente indisponível"); });
+    await expect(listMessagesHandler(indisponivel, ctx, CONV_VAZIA, { limit: LIMIT }, opcoes))
+      .rejects.toMatchObject({ status: 500, code: "internal_error" });
+  });
+
+  it("detecta a revogação depois de ler o pai e antes de ler as mensagens", async () => {
+    const antes = await listMessagesHandler(comoSessao(), ctx, CONV, { limit: LIMIT }, opcoes);
+    expect(antes.messages).toHaveLength(LIMIT);
+    const aposSaida = (consulta: string, tabela?: string) => {
+      if (tabela === "messages") {
+        sql(`update public.conversation_participants set left_at = now()
+          where conversation_id = '${CONV}' and user_id = '${USER}'`);
+      }
+      return lerSobRls(consulta);
+    };
+    await expect(listMessagesHandler(comoSessao(aposSaida), ctx, CONV, { limit: LIMIT }, opcoes))
+      .rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(listMessagesHandler(comoSessao(), ctx, CONV, { limit: LIMIT }, opcoes))
+      .rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 });

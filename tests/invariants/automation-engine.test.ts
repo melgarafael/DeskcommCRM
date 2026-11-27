@@ -125,9 +125,14 @@ class FakeQuery implements PromiseLike<QResult> {
   }
 
   private where(): string {
-    return this.filters.length
-      ? ` where ${this.filters.map((f) => `${f.col} = ${sqlLiteral(f.val)}`).join(" and ")}`
-      : "";
+    if (!this.filters.length) return "";
+    const clauses = this.filters.map(({ col, val }) => {
+      const coluna = col === "actions_result->0->detail->>reason"
+        ? "actions_result->0->'detail'->>'reason'"
+        : col;
+      return `${coluna} = ${sqlLiteral(val)}`;
+    });
+    return ` where ${clauses.join(" and ")}`;
   }
 
   private toSql(): string {

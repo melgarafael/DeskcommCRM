@@ -22,7 +22,7 @@ import { channelBrand } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
 
-const CANAIS = ["whatsapp", "instagram", "messenger", "telegram"] as const;
+const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "tiktok", "webchat"] as const;
 
 /** Lê o bloco cujo seletor está SOZINHO na linha — `includes` pegaria variantes. */
 function blocoDe(seletor: string): Map<string, string> {
@@ -65,7 +65,7 @@ describe("marcaDoCanal", () => {
   it("rede nova no futuro cai no fallback sem exigir mudança em quem chama", () => {
     // O mapa é fechado; o que o aviso recebe é uma string qualquer vinda do
     // banco. Nenhuma delas pode lançar.
-    for (const nome of ["tiktok", "", "WHATSAPP", "__proto__", "constructor"]) {
+    for (const nome of ["pinterest", "", "WHATSAPP", "__proto__", "constructor"]) {
       expect(() => marcaDoCanal(nome)).not.toThrow();
       expect(marcaDoCanal(nome).Icone).toBeNull();
     }
@@ -77,7 +77,19 @@ describe("marcaDoCanal", () => {
     expect(channelBrand({ provider: "zernio_social", social_platform: "telegram" })).toBe(
       "telegram",
     );
-    expect(channelBrand({ provider: "zernio_social", social_platform: "tiktok" })).toBe("unknown");
+    // Rede do catálogo que ainda não tem marca cai no neutro, sem lançar.
+    expect(channelBrand({ provider: "zernio_social", social_platform: "pinterest" })).toBe(
+      "unknown",
+    );
+  });
+
+  it("o TikTok tem marca própria (A21): logo, nome e o token de cor dele", () => {
+    const marca = marcaDoCanal("tiktok");
+    expect(marca.id).toBe("tiktok");
+    expect(marca.rotulo).toBe("TikTok");
+    expect(marca.Icone).not.toBeNull();
+    expect(marca.cor).toBe("var(--color-canal-tiktok)");
+    expect(channelBrand({ provider: "zernio_social", social_platform: "tiktok" })).toBe("tiktok");
   });
 });
 

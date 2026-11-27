@@ -126,8 +126,8 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 
 Algumas hospedagens entregam a VPS com um **Traefik** já ocupando as portas 80/443 — é ele
 que dá HTTPS automático ao que o painel instala. O Caddy do kit quer as mesmas portas e não
-sobe. O instalador **detecta isso sozinho** e grava `REVERSE_PROXY=traefik` no `.env`; a
-partir daí os scripts do kit incluem o override que desliga o Caddy e publica o app pelo
+sobe. O `install.sh` (banco no Supabase Cloud) **detecta isso sozinho** e grava
+`REVERSE_PROXY=traefik` no `.env`; a partir daí os scripts do kit incluem o override que desliga o Caddy e publica o app pelo
 Traefik da hospedagem. Rodando compose na mão nessas instalações, use os dois arquivos:
 
 ```bash
@@ -146,7 +146,21 @@ proxy errado deixa o site no ar sem responder, o instalador mostra o que encontr
 confirmação. Em `bash install.sh --yes` não há a quem perguntar: ele para e pede que você
 declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue sem perguntar.
 
-Atrás do proxy do Coolify (ou outro Traefik em rede Docker própria): veja [docs/saas/coolify.md](../docs/saas/coolify.md) — a porta do banco (API_GW_HTTP_PORT) e a rede do proxy (TRAEFIK_NETWORK) vão no comando.
+**No single-server (`install-single-server.sh`, banco na mesma VPS) a detecção não roda.**
+Ele grava `REVERSE_PROXY=caddy` no `.env` a menos que a variável venha no ambiente, e então
+chama o `install.sh --yes` com a escolha já feita. Sem declarar nada, o Caddy do kit sobe e
+briga pelas portas 80/443 com o Traefik da hospedagem. Declare no próprio comando, antes de
+rodar — escrever só no `.env` não basta, porque o single-server o regrava:
+
+- `REVERSE_PROXY=traefik`: quem publica o site é o Traefik da hospedagem;
+- `TRAEFIK_NETWORK=<rede do proxy>`: com Traefik em rede Docker própria (Coolify, Dokploy),
+  é a rede onde ele alcança as APIs do banco. Confira o nome com `docker network ls`. Com
+  Traefik em `--network host` (Hostinger), deixe de fora.
+
+O exemplo completo, com a porta do banco (`API_GW_HTTP_PORT`) e os nomes das portas do proxy,
+está em [docs/saas/coolify.md](../docs/saas/coolify.md#passo-5--instalar-o-crm-e-o-banco).
+O single-server recusa `REVERSE_PROXY=cloudflared`: as APIs do Supabase dependem do Caddy, e
+o Cloudflare Tunnel só serve com o banco no Supabase Cloud.
 
 ## Scripts do kit
 
@@ -158,6 +172,7 @@ Atrás do proxy do Coolify (ou outro Traefik em rede Docker própria): veja [doc
 | `restore.sh` | Restaura um backup |
 | `reset-password.sh` | Redefine senha de um usuário |
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
+| `change-email.sh` | Troca o e-mail de login de um usuário (o dono que nasceu como `admin@<domínio>`) |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 | `preflight-upgrade.sh` | Sonda uma release numérica de um kit novo antes de usar o updater antigo |
 
@@ -230,6 +245,39 @@ O que continua sendo do **operador**, e o kit não faz por conta própria:
 > transação única não há rollback: em falha fatal do `psql`, confira o estado do banco antes
 > de repetir. (Gerar o dump com `--clean --if-exists` mudaria o formato dele — decisão do
 > mantenedor, issue #2120.)
+
+## Trocar o e-mail de login do dono
+
+No single-server o instalador cria o dono como `admin@<seu-domínio>` — um endereço que ele
+mesmo inventa, e que quase nunca é uma caixa de verdade. Enquanto o login for esse
+endereço, "esqueci minha senha" e os avisos por e-mail não chegam a ninguém. Para trocar,
+no terminal da VPS, na raiz do repositório:
+
+```bash
+bash hostgator-setup-kit/change-email.sh admin@seudominio.com.br dono@empresa.com.br
+```
+
+- O primeiro argumento é o e-mail de login de **hoje**, o segundo é o endereço de verdade.
+  O script procura a conta pelo endereço atual (se não achar, para sem alterar nada) e
+  chama a API admin do Supabase com `email_confirm: true`. Só diz "login trocado" com
+  resposta 2xx: erro do Supabase (endereço já usado por outra pessoa, por exemplo) sai
+  como erro e **nada** é alterado.
+- `email_confirm: true` é o que faz a troca valer na hora. Sem ele o Supabase mandaria a
+  confirmação para o endereço novo e, numa instalação sem SMTP (o estado de um primeiro
+  deploy), a troca ficaria pendente para sempre.
+- **A senha não muda**: o dono continua entrando com a mesma senha, no endereço novo. Se a
+  senha também se perdeu, `bash hostgator-setup-kit/reset-password.sh <novo>`.
+- **O endereço antigo deixa de valer como login.** A caixa dele não recebe mais
+  recuperação de senha nem os avisos que o CRM manda para o endereço do login — os avisos
+  por e-mail passam a ir para o endereço novo. Convites já enviados para o endereço antigo
+  continuam amarrados a ele (o convite é para quem controla aquela caixa).
+- Se `.runtime/admin-credentials` e o `OWNER_EMAIL` do `.env` guardavam o endereço antigo,
+  o script atualiza os dois — é deles que a tela final da instalação e o suporte leem o
+  login.
+
+Serve para qualquer usuário da instalação, não só o dono. Não precisa de SMTP: quem
+confirma a troca é você, com a `SUPABASE_SERVICE_ROLE_KEY` do `.env`, pelo terminal do
+servidor.
 
 ## Publicar outro serviço no mesmo VPS (issue #2724)
 

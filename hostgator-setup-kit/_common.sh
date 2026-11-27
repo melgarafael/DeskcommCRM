@@ -1046,6 +1046,23 @@ restaurar_servicos() {
   diagnostico_de_atualizacao "$rc_da_execucao"
 }
 
+# ── A revisão que um build feito AQUI pode carimbar (#5196) ──────────────────
+# O commit do disco, e só quando a árvore É exatamente ele. Os Dockerfiles do
+# worker, do scheduler e da voz copiam a pasta inteira (`COPY . .`): um remendo
+# feito à mão, ou um arquivo novo deixado aqui, entra na imagem e não está no
+# commit — carimbar a revisão oficial nessa imagem a faria passar por
+# verificada na tela de versão. Árvore suja sai VAZIA, e a imagem segue "não
+# verificada", como antes do #5196. Git que não responde (sem `.git`, dono
+# diferente) também sai vazio: carimbar um palpite seria pior que não carimbar.
+# As marcas do próprio kit (`.update-de-onde-vim`, `.update.lock`, os `.log`)
+# moram no `.gitignore`, que o `git status` respeita.
+revisao_da_arvore_limpa() {  # revisao_da_arvore_limpa <pasta> → sha ou nada
+  local sujo
+  sujo="$(git -C "$1" status --porcelain --untracked-files=normal 2>/dev/null)" || return 0
+  [ -z "$sujo" ] || return 0
+  git -C "$1" rev-parse HEAD 2>/dev/null || true
+}
+
 # ── Imagem pronta que não serve para esta VPS: constrói a versão aqui ────────
 # Uma VPS cuja arquitetura não é a das imagens publicadas (Oracle Ampere, por
 # exemplo) recebe "no matching manifest for linux/arm64/v8" ao puxá-las. O
@@ -3210,6 +3227,46 @@ owner_id_by_email() {
   printf '%s' "$resp" \
     | grep -o "\"id\":\"[0-9a-f-]\{36\}\",\"aud\":\"[^\"]*\",\"role\":\"[^\"]*\",\"email\":\"${esc}\"" \
     | head -1 | sed 's/^"id":"//;s/".*//' || return 0
+}
+
+# ── Troca do e-mail de LOGIN: o caminho e o corpo (issue #5073) ──────────────
+# O e-mail de login mora em `auth.users` (GoTrue) e é o identificador da conta.
+# Numa instalação single-server o instalador cria o dono como `admin@<domínio>`,
+# que quase nunca é uma caixa de verdade: "esqueci minha senha" e os avisos por
+# e-mail não chegam a ninguém. `change-email.sh` conserta isso pela admin API,
+# no molde do `reset-password.sh`.
+#
+# Estas duas peças são PURAS (montam string, não tocam a rede) para que a prova
+# do payload rode sem VPS nem GoTrue: `test-validators.sh` confere as duas, e o
+# PR da #5073 mediu o corpo REAL com um servidor HTTP de mentira.
+#
+# `email_confirm: true` não é enfeite: sem ele o GoTrue manda a confirmação
+# para o endereço NOVO e a troca fica PENDENTE até alguém clicar no link — numa
+# instalação sem SMTP (o estado de um primeiro deploy) esse e-mail nunca sai, e
+# o dono termina com um login que não existe em lugar nenhum. É o mesmo
+# `email_confirm: true` com que o instalador cria o dono (install.sh).
+#
+# O `%/` come a barra final do NEXT_PUBLIC_SUPABASE_URL (quem edita o .env à mão
+# deixa uma) para não nascer `//auth/v1`, que o proxy pode tratar como outro
+# caminho.
+url_admin_user() { printf '%s/auth/v1/admin/users/%s' "${NEXT_PUBLIC_SUPABASE_URL%/}" "${1:?uid}"; }
+
+# O corpo é montado com `printf` e não com `jq`: o consumidor já validou o
+# endereço antes (só [A-Za-z0-9._%+-]@[A-Za-z0-9.-]), então não há aspa nem
+# barra invertida para escapar — e o kit não fica dependendo do `jq` num script
+# de emergência.
+#
+# A guarda devolve 1 (e não chama `die`): isto roda em substituição de comando,
+# e um `exit 1` ali mataria só o subshell — o `curl` seguiria com o corpo vazio.
+# Quem chama trata o status na atribuição: `corpo="$(…)" || die`.
+corpo_troca_de_email() {
+  case "${1:-}" in
+    *\"*|*\\*|"")
+      printf 'endereço impróprio para o corpo JSON: %s\n' "${1:-<vazio>}" >&2
+      return 1
+      ;;
+  esac
+  printf '{"email":"%s","email_confirm":true}' "$1"
 }
 
 # Ativa (idempotente) o cron que dispara o drain de eventos a cada minuto. SEM
