@@ -158,7 +158,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_send_whatsapp_message": {
     tokens: 367,
     motivo:
-      "#5034 + PR 02 mensagens institucionais: +47 tokens do campo opcional `dispatch_mode` (operational|institutional) para aviso sem efeitos colaterais no atendimento (medido em 367 vs 320)",
+      "#5034 + #5284 mensagens institucionais: +47 tokens do campo opcional `dispatch_mode` (operational|institutional) para aviso sem efeitos colaterais no atendimento (medido em 367 vs 320)",
   },
   // #4129 — capacidade de WIRE que envia o material da empresa como documento.
   // O peso é quase todo a descrição: é ela que ensina o integrador que o

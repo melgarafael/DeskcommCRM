@@ -74,7 +74,7 @@ describe("UI de mensagens institucionais (PR 02)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Crear token" }));
     expect(screen.getByRole("button", { name: /messages:institutional/ })).toBeInTheDocument();
     expect(
-      screen.getByText(/Enviar avisos institucionales sin alterar la fila, SLA ni silenciar la IA/),
+      screen.getByText(/Enviar avisos institucionales sin alterar la cola, el SLA ni silenciar la IA/),
     ).toBeInTheDocument();
   });
 

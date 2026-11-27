@@ -9097,7 +9097,7 @@ export const DICIONARIO: Traducoes = {
     es: "La integración puede enviar en nombre de un asesor",
   },
   "Enviar avisos institucionais sem alterar a fila, SLA ou silenciar a IA": {
-    es: "Enviar avisos institucionales sin alterar la fila, SLA ni silenciar la IA",
+    es: "Enviar avisos institucionales sin alterar la cola, el SLA ni silenciar la IA",
   },
   "Aviso institucional": { es: "Aviso institucional" },
   "Agentes de IA não podem enviar mensagens institucionais.": {
