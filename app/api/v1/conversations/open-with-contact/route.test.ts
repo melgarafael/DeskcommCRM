@@ -204,3 +204,14 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     expect(rpcs).toHaveLength(0);
   });
 });
+
+
+it("número sem conta volta como 422 com motivo legível, sem assumir conversa", async () => {
+  const { cliente, rpcs } = clienteFake({ data: null, error: null });
+  mResolve.mockResolvedValue(authzDeSessao(cliente));
+  mAbrir.mockRejectedValue(new Error("numero_sem_whatsapp"));
+  const response = await POST(requisicao());
+  expect(response.status).toBe(422);
+  expect(await response.json()).toMatchObject({ error: { code: "numero_sem_whatsapp", message: "Este número não tem WhatsApp." } });
+  expect(rpcs).toHaveLength(0);
+});

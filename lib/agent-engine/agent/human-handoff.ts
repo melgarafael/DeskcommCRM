@@ -215,6 +215,20 @@ export function ehMenuDeOpcoesNumeradas(mensagem: string): boolean {
 }
 
 /**
+ * Menu que PEDE a escolha: instrução explícita ("digite o número") E duas opções
+ * numeradas. É o sinal de menu que o follow-up usa (doc 422): as duas metades
+ * sozinhas são frase de cliente — "1. preço / 2. prazo" numera dúvidas, e "me
+ * manda o menu de opções" cita a instrução sem montar opção nenhuma.
+ */
+export function ehMenuQuePedeEscolha(mensagem: string): boolean {
+  if (mensagem.trim() === '') return false;
+  const normalizada = normalize(mensagem);
+  if (!INSTRUCOES_DE_MENU.some((re) => re.test(normalizada))) return false;
+  const opcoes = normalizada.match(OPCAO_NUMERADA);
+  return opcoes !== null && new Set(opcoes.map((o) => o.replace(/\D/gu, ''))).size >= 2;
+}
+
+/**
  * O pedido casado é UMA OPÇÃO do menu? (marca 1, a que a guarda usa)
  *
  * Ser menu não basta: uma pessoa que numera as próprias dúvidas ("1. o preço /

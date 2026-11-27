@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { ApiErrorCodes } from "@/lib/api/errors";
+import { FRASES_DE_FALHA } from "@/lib/channels/frases-de-falha";
 import { chaveDaRequisicao, comIdempotencia, type DesfechoIdempotente } from "@/lib/api/idempotency";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
@@ -125,6 +127,15 @@ async function conversaDoTelefone(p: {
         p.t(
           "Canal informado indisponível: ele precisa existir nesta organização e estar conectado.",
         ),
+      );
+    }
+    if (motivo === ApiErrorCodes.numero_sem_whatsapp) {
+      throw new ApiError(
+        422,
+        ApiErrorCodes.numero_sem_whatsapp,
+        undefined,
+        p.requestId,
+        p.t(FRASES_DE_FALHA.numero_sem_whatsapp!),
       );
     }
     if (motivo === "invalid_phone") {

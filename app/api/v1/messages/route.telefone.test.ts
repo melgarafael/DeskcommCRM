@@ -30,7 +30,7 @@
  *   nenhum dos dois        → 422 `validation_error`, sem efeito nenhum
  */
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/api/auth-dual", () => ({ resolveAuthDual: vi.fn() }));
@@ -47,6 +47,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { PROVIDERS_DE_TELEFONE } from "@/lib/channels/capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAdapter } from "@/lib/channels";
 
 import { sendMessageHandler } from "./_handler";
 import { POST } from "./route";
@@ -290,6 +291,26 @@ beforeEach(() => {
   mockedSend.mockResolvedValue({ id: "m1", status: "sent", conversation_id: CONVERSA } as never);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+it("#5293: telefone sem WhatsApp devolve 422 antes de abrir conversa ou enviar", async () => {
+  autenticado();
+  const consultar = vi.spyOn(getAdapter(PROVIDERS_DE_TELEFONE[0]), "numeroTemConta")
+    .mockResolvedValue(false);
+
+  const res = await POST(pedido(POR_TELEFONE));
+
+  expect(res.status).toBe(422);
+  expect((await res.json()).error).toMatchObject({
+    code: "numero_sem_whatsapp",
+    message: "Este número não tem WhatsApp.",
+  });
+  expect(consultar).toHaveBeenCalled();
+  expect(mockedSend).not.toHaveBeenCalled();
+  expect(resolvedor.rpcs).toHaveLength(0);
+});
 describe("POST /api/v1/messages — só `conversation_id`: o contrato antigo, byte a byte", () => {
   it("envia para a conversa do corpo e NÃO passa pelo resolvedor de telefone", async () => {
     autenticado();
