@@ -23491,6 +23491,8 @@ export const DICIONARIO: Traducoes = {
   // Funil de entrada por número (migration 9430).
   "Contatos novos entram no funil": { es: "Los contactos nuevos entran en el embudo" },
   "Contatos novos entram no funil padrão": { es: "Los contactos nuevos entran en el embudo predeterminado" },
+  // #5142: interruptor "conversas novas criam negócio" desligado.
+  "Sem efeito enquanto a opção acima estiver desligada": { es: "Sin efecto mientras la opción de arriba esté desactivada" },
   "Funil de entrada atualizado.": { es: "Embudo de entrada actualizado." },
   "Não foi possível salvar o funil de entrada.": { es: "No fue posible guardar el embudo de entrada." },
   "Funil de entrada deste número": { es: "Embudo de entrada de este número" },
