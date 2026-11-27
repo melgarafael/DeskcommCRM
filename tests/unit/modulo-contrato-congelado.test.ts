@@ -12,7 +12,7 @@
  * decide, regenera o instantâneo e diz no PR; só sobe a versão se ficou incompatível.
  *
  * O que este teste congela, tudo DERIVADO DE ARQUIVOS (sem banco, sem rodar rota):
- *   1. o conjunto de áreas (`EXTENSION_AREAS`) e as 18 permissões `area.<área>.<leitura|escrita>`;
+ *   1. o conjunto de áreas (`EXTENSION_AREAS`) e as 22 permissões `area.<área>.<leitura|escrita>`;
  *   2. por área, a lista ordenada de pares `MÉTODO /api/v1/modelo` que `areaDaPorta` libera, varrendo
  *      `app/api/v1/**\/route.ts` (método = função `GET|POST|...` exportada pela rota);
  *   3. por rota liberada, os schemas Zod que ela passa a `.parse/.safeParse` (nome, origem e hash do

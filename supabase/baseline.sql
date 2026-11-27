@@ -70403,7 +70403,7 @@ notify pgrst, 'reload schema';
 
 -- ---- modulo conectado: consentimento por área (migration 9442) ----
 -- Espelho idempotente da 9442 (racional completo no arquivo da migration): `organization_extensions.consented_areas`
--- (com CHECK nas 18 permissões `area.*`) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9441 e ANTES
+-- (com CHECK nas 22 permissões `area.*`; tarefas e financeiro entraram na migration 9508) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9441 e ANTES
 -- da VARREDURA anon.
 
 alter table public.organization_extensions
@@ -70466,7 +70466,7 @@ begin
   if exists (select 1 from unnest(p_areas) a where a <> all (v_declaradas)) then
     raise exception using errcode='PT409',message='extension_area_not_declared';
   end if;
-  -- Decisão 5 da spec 33: configuração e agentes de IA só por quem administra a organização.
+  -- Decisão 5 da spec 33: configuração, agentes de IA e financeiro só por quem administra a organização.
   if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia|financeiro)\.') then
     select u.role into v_role from public.user_organizations u
       where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;
