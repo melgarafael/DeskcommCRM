@@ -21,13 +21,13 @@ const uploadMock = vi.fn(async ({ file }: { file: File }) => {
   if (h.chamadas === h.falharNaChamada) throw new Error("upload_failed");
   return { storage_path: `org/conv/out-${file.name}`, media_mime: "image/jpeg", media_size_bytes: 3, kind: "image" as const };
 });
-const sendMock = vi.fn((_v: unknown, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.());
+const sendMock = vi.fn<(payload: { body?: string }) => Promise<void>>().mockResolvedValue(undefined);
 
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
   // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
@@ -70,7 +70,7 @@ async function escolherTemplate() {
 }
 
 const enviar = () => fireEvent.click(screen.getByRole("button", { name: /^enviar$/i }));
-const corpos = () => sendMock.mock.calls.map(([v]) => (v as { body?: string }).body);
+const corpos = () => sendMock.mock.calls.map(([payload]) => payload.body);
 const arquivos = () => uploadMock.mock.calls.map(([v]) => v.file.name);
 
 beforeEach(() => {

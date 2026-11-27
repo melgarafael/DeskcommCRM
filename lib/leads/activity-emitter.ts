@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor } from "@/lib/api/handlers/types";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
+import { CHAVE_DO_TOKEN_DA_ATIVIDADE, tokenDoAtor } from "@/lib/leads/integracao-da-atividade";
 
 /** Os cinco atores que `crm_lead_activities.actor_kind` aceita (migration 0071). */
 export type ActivityActorKind = "user" | "ai" | "system" | "rule" | "contact";
@@ -68,6 +69,12 @@ export interface LeadActivityRow {
   reason: string;
   evidence: ActivityEvidence | null;
   payload: Record<string, unknown>;
+  /**
+   * Só na linha de um TOKEN de API: qual token agiu (#5160). Os outros atores
+   * não levam a chave — a linha deles não muda, e os escritores por `pg` que
+   * listam as colunas seguem iguais.
+   */
+  metadata?: { [CHAVE_DO_TOKEN_DA_ATIVIDADE]: string };
 }
 
 /**
@@ -91,6 +98,7 @@ export function buildLeadActivityRow(input: EmitLeadActivityInput): LeadActivity
   // actor_agent_id: não afirma a autoria da IA sem prova, mas não apaga que o
   // agente estava envolvido. Mesma regra do backfill da 0071.
   const actorKind: ActivityActorKind = kind === "ai" && !temLastro ? "system" : kind;
+  const tokenDaLinha = tokenDoAtor(input.actor);
 
   return {
     organization_id: input.organizationId,
@@ -105,6 +113,9 @@ export function buildLeadActivityRow(input: EmitLeadActivityInput): LeadActivity
     reason: input.reason,
     evidence: temLastro ? (input.evidence ?? null) : null,
     payload: input.payload ?? {},
+    // Sem isto a linha do token é indistinguível da plataforma agindo sozinha,
+    // e o painel "Atividade" diz "Sistema" (#5160).
+    ...(tokenDaLinha ? { metadata: { [CHAVE_DO_TOKEN_DA_ATIVIDADE]: tokenDaLinha } } : {}),
   };
 }
 

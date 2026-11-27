@@ -188,3 +188,13 @@ it("o retorno mostra a resposta sanitizada e os comandos do ciclo, preservando o
   expect(texto).toContain(`PERGUNTAR ${BASE.caseId} ATUALIZACAO ${eventId}`);
   expect(montarAvisoDeCaso({ ...BASE, respostaWhatsappHabilitada: false, atualizacao: { eventId, ask: "Pergunta", info: "Resposta" } })).not.toContain("RESPONDER");
 });
+
+it("só ensina a citar o aviso quando a conexão lê a citação (#5257)", () => {
+  // Nas conexões cuja ingestão ainda não repassa a citação, a resposta citada
+  // seria ignorada sem confirmação: ensinar o gesto ali é deixar a equipe falando sozinha.
+  const linha = "Ou cite esta mensagem e escreva só a resposta";
+  expect(montarAvisoDeCaso({ ...BASE, citacaoHabilitada: true })).toContain(linha);
+  expect(montarAvisoDeCaso({ ...BASE, citacaoHabilitada: false })).not.toContain(linha);
+  expect(montarAvisoDeCaso({ ...BASE })).not.toContain(linha);
+  expect(montarAvisoDeCaso({ ...BASE, respostaWhatsappHabilitada: false, citacaoHabilitada: true })).not.toContain(linha);
+});

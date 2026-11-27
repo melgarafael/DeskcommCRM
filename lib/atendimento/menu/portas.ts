@@ -34,10 +34,31 @@ import type { MensagemDoMenu, PortasDoMenu } from "./atender";
 /** A autoria do que o menu escreve: uma regra do produto, não a IA nem gente. */
 const ATOR_DO_MENU = { type: "webhook_source", id: "menu-de-atendimento" } as const;
 
+/**
+ * O módulo de envio, resolvido UMA vez.
+ *
+ * `responde` e `enviaArquivo` são portas de uma mensagem cada, e mensagem chega
+ * em rajada: sem o memo, cada envio pagava uma resolução de módulo. E o memo é
+ * mais que custo — a MESMA promessa é o que garante que dois envios simultâneos
+ * enxergam o mesmo módulo, e não duas resoluções independentes.
+ *
+ * A promessa é a que fica guardada (não o módulo): dois chamadores concorrentes
+ * esperam a mesma carga em vez de dispararem uma cada. Uma falha limpa o memo —
+ * o próximo envio tenta de novo em vez de herdar um erro para sempre.
+ */
+let envioPromessa: Promise<typeof import("@/app/api/v1/messages/_handler")> | null = null;
+function moduloDeEnvio(): Promise<typeof import("@/app/api/v1/messages/_handler")> {
+  envioPromessa ??= import("@/app/api/v1/messages/_handler").catch((erro: unknown) => {
+    envioPromessa = null;
+    throw erro;
+  });
+  return envioPromessa;
+}
+
 export function portasDoMenu(admin: SupabaseClient, entrada: MensagemDoMenu): PortasDoMenu {
   return {
     async responde({ texto, chave }) {
-      const { sendMessageHandler } = await import("@/app/api/v1/messages/_handler");
+      const { sendMessageHandler } = await moduloDeEnvio();
       const mensagem = await sendMessageHandler(
         admin,
         {
@@ -58,10 +79,60 @@ export function portasDoMenu(admin: SupabaseClient, entrada: MensagemDoMenu): Po
       return (mensagem as unknown as { status?: string | null } | null)?.status !== "failed";
     },
 
+    async liberaPosse({ metadata }) {
+      // Só o dono da posse chega aqui (o perdedor nunca envia, logo nunca
+      // libera), então a escrita não precisa de condição: ela devolve a
+      // conversa ao `metadata` de antes, sem a chave do menu.
+      try {
+        const { error } = await admin
+          .from("conversations")
+          .update({ metadata })
+          .eq("organization_id", entrada.organizationId)
+          .eq("id", entrada.conversationId);
+        return !error;
+      } catch {
+        return false;
+      }
+    },
+
+    async tomaPosse({ metadata }) {
+      // ── A TRAVA DA CORRIDA (#5137), e por que ela mora AQUI ──────────────
+      //
+      // Um UPDATE com o filtro no próprio jsonb: o PostgREST traduz o
+      // `.is("metadata->menu_de_atendimento", null)` para
+      // `"metadata"->'menu_de_atendimento' IS NULL` e o banco avalia o WHERE e
+      // grava na MESMA instrução, sob o lock da linha. Quem chega depois
+      // encontra a chave gravada e o UPDATE não casa — zero linhas, sem erro.
+      //
+      // O `.select("id")` é o que transforma "quantas linhas" em resposta: sem
+      // ele o PostgREST devolve `data: null` nos dois desfechos e não haveria
+      // como saber se ESTE chamador ganhou a posse. Uma linha = ganhou.
+      //
+      // Não é RPC nem migration de propósito: o estado mora em
+      // `conversations.metadata`, e a condição sobre uma chave ausente de jsonb
+      // é exatamente o que o filtro do PostgREST sabe fazer. Uma função SQL a
+      // mais seria um segundo caminho para a mesma linha.
+      try {
+        const { data, error } = await admin
+          .from("conversations")
+          .update({ metadata })
+          .eq("organization_id", entrada.organizationId)
+          .eq("id", entrada.conversationId)
+          .is("metadata->menu_de_atendimento", null)
+          .select("id");
+        if (error) return { ok: false, motivo: "erro_de_escrita" };
+        return Array.isArray(data) && data.length > 0
+          ? { ok: true }
+          : { ok: false, motivo: "menu_em_disputa" };
+      } catch {
+        return { ok: false, motivo: "erro_de_escrita" };
+      }
+    },
+
     async enviaArquivo({ mediaUrl, legenda, chave }) {
       const classificada = classificarMidiaComLegenda(mediaUrl);
       if (!classificada.ok) return false;
-      const { sendMessageHandler } = await import("@/app/api/v1/messages/_handler");
+      const { sendMessageHandler } = await moduloDeEnvio();
       const mensagem = await sendMessageHandler(
         admin,
         {

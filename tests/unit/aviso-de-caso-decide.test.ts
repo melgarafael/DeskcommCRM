@@ -34,6 +34,7 @@ import {
   type AvisoDeps,
 } from "@/lib/escalacao/aviso-ao-suporte";
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { ingestaoLeCitacaoDoAviso } from "@/lib/channels/capabilities";
 
 const AGORA = new Date("2026-09-18T02:30:00.000Z"); // 23h30 em São Paulo: fora da janela
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -655,6 +656,21 @@ describe("aviso ao suporte — RESPONDER/PERGUNTAR só para o número da empresa
     expect(r.status).toBe("ok");
     expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
     expect(estado.enviados[0]?.body).toContain(`RESPONDER ${CASO}`);
+  });
+
+  it("só ensina a citar o aviso quando a ingestão da conexão lê a citação (#5257)", async () => {
+    const linha = "Ou cite esta mensagem";
+    for (const [leCitacao, ensina] of [[true, true], [false, false], [undefined, false]] as const) {
+      const { deps, estado } = comResposta("fixo");
+      estado.canal = { ...estado.canal, leCitacao };
+      await aplicaAvisoDeCaso(deps, evento());
+      expect(estado.enviados[0]?.body.includes(linha), `leCitacao=${String(leCitacao)}`).toBe(ensina);
+    }
+    // A régua da conexão: hoje só a ingestão por QR repassa a citação.
+    expect(ingestaoLeCitacaoDoAviso("waha")).toBe(true);
+    expect(ingestaoLeCitacaoDoAviso("meta_cloud")).toBe(false);
+    expect(ingestaoLeCitacaoDoAviso("zernio")).toBe(false);
+    expect(ingestaoLeCitacaoDoAviso(null)).toBe(false);
   });
 
   describe("no aviso da resposta do cliente (migration 9240)", () => {

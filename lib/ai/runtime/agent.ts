@@ -30,8 +30,10 @@ import { generateText, stepCountIs, streamText, type LanguageModel, type StopCon
 // Fonte única do endpoint — a mesma constante que o registry de produção usa.
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
 import {
+  AIMLAPI_ENDPOINT,
   cabecalhosDeAtribuicaoOpenRouter,
   DEEPSEEK_ENDPOINT,
+  fetchDoProvedor,
   OPENAI_CODEX_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
@@ -230,6 +232,13 @@ export function buildModel(
     // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
     case "requesty":
       return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
+    // AI/ML API: o mesmo transporte contido do registry (chave só para `api.aimlapi.com`).
+    case "aimlapi":
+      return createOpenAI({
+        apiKey,
+        baseURL: AIMLAPI_ENDPOINT,
+        fetch: fetchDoProvedor(AIMLAPI_ENDPOINT),
+      }).chat(modelId);
     // Provedor personalizado (#1642): o endereço vem da credencial, junto da
     // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a
     // OpenAI com a chave de um gateway privado diria que o produto não

@@ -20,6 +20,7 @@
  */
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
 import {
+  AIMLAPI_ENDPOINT,
   cabecalhosDeAtribuicaoOpenRouter,
   DEEPSEEK_ENDPOINT,
   OPENROUTER_ENDPOINT,
@@ -40,6 +41,8 @@ interface Requisicao {
   url: string;
   headers: Record<string, string>;
   body: unknown;
+  /** Só quem pede: os outros provedores seguem com o comportamento padrão do `fetch`. */
+  redirect?: RequestRedirect;
 }
 
 /**
@@ -124,6 +127,16 @@ export function montarRequisicaoDeProva(
         // qualquer — o custo de 16 tokens é irrelevante e o risco, nenhum.
         body: { model: modelo, max_tokens: 16, messages: msg },
       };
+    case "aimlapi":
+      // OpenAI-compatível, endpoint fixo. `max_tokens: 16` pelo mesmo motivo da
+      // Requesty: modelos da OpenAI atrás do agregador recusam valor menor.
+      // `redirect: "error"`: a chave não segue redirect para outro host.
+      return {
+        url: `${AIMLAPI_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 16, messages: msg },
+        redirect: "error",
+      };
     case "google":
       return {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -192,6 +205,7 @@ export async function provarSaldo(
       headers: req.headers,
       body: JSON.stringify(req.body),
       signal: ctrl.signal,
+      ...(req.redirect ? { redirect: req.redirect } : {}),
     });
     const corpo = await res.text().catch(() => "");
     return classificarResposta(res.status, corpo);

@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { logger } from "@/lib/logger";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import type { DestinoGoogle } from "../credenciais";
 
 import { configuracaoDoGoogleAds } from "./config";
 import { renovarToken } from "./token";
@@ -48,19 +49,47 @@ export async function lerConexaoGoogleParaApi(
   organizationId: string,
   somenteCustomerId?: string,
 ): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
+  return lerConexaoGoogle(admin, organizationId, undefined, somenteCustomerId);
+}
+
+/**
+ * Ações de conversão usam a autorização nativa, com o destino explícito da
+ * regra. O leitor de relatórios acima continua recusando redirecionar o legado.
+ */
+export async function lerConexaoNativaParaDestinoGoogle(
+  admin: SupabaseClient,
+  organizationId: string,
+  destino?: DestinoGoogle,
+): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
+  return lerConexaoGoogle(admin, organizationId, destino);
+}
+
+async function lerConexaoGoogle(
+  admin: SupabaseClient,
+  organizationId: string,
+  destino?: DestinoGoogle,
+  somenteCustomerId?: string,
+): Promise<RespostaDaApiGoogle<ConexaoGoogleParaApi>> {
   const { data, error } = await admin
     .from("ad_platform_connections")
     .select("google_refresh_token_encrypted, google_customer_id, google_login_customer_id")
     .eq("organization_id", organizationId)
-    .eq("platform", "google_ads").maybeSingle();
+    .eq("platform", "google_ads")
+    .maybeSingle();
   if (error) return { ok: false, falha: "transitorio", detalhe: "Leitura da conexão falhou." };
   const linha = data as {
     google_refresh_token_encrypted: string | null;
     google_customer_id: string | null;
     google_login_customer_id: string | null;
   } | null;
-  const customerId = normalizarIdLegado(linha?.google_customer_id ?? "");
-  if (!linha?.google_refresh_token_encrypted || !customerId || (somenteCustomerId && somenteCustomerId !== customerId))
+  const customerId = destino?.customerId ?? normalizarIdLegado(linha?.google_customer_id ?? "");
+  // O fallback de relatório só abre a credencial depois de provar, no mesmo
+  // SELECT da organização, que ela pertence à conta solicitada.
+  if (
+    !linha?.google_refresh_token_encrypted ||
+    !customerId ||
+    (somenteCustomerId && somenteCustomerId !== customerId)
+  )
     return {
       ok: false,
       falha: "sem_conexao",
@@ -78,9 +107,11 @@ export async function lerConexaoGoogleParaApi(
     dados: {
       refreshToken,
       customerId,
-      loginCustomerId: linha.google_login_customer_id
-        ? normalizarIdLegado(linha.google_login_customer_id)
-        : null,
+      loginCustomerId: destino
+        ? destino.loginCustomerId
+        : linha.google_login_customer_id
+          ? normalizarIdLegado(linha.google_login_customer_id)
+          : null,
     },
   };
 }
@@ -118,7 +149,8 @@ export function classificarRecusa(
   if (/CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION/.test(bruto))
     return {
       falha: "projeto_sem_acesso",
-      detalhe: "Solicite acesso de produção à Google Ads API no projeto Google Cloud usado na autorização.",
+      detalhe:
+        "Solicite acesso de produção à Google Ads API no projeto Google Cloud usado na autorização.",
     };
   if (/DEVELOPER_TOKEN_NOT_APPROVED|DEVELOPER_TOKEN_PROHIBITED/.test(bruto))
     return {
@@ -149,9 +181,10 @@ async function chamar(
     return {
       ok: false,
       falha: finalidade === "relatorio" ? "oauth_nao_configurado" : "sem_developer_token",
-      detalhe: finalidade === "relatorio"
-        ? "Configure o cliente OAuth do Google Ads para consultar campanhas."
-        : "Esta instalação não tem GOOGLE_ADS_DEVELOPER_TOKEN. Sem ele, só é possível informar o ID da ação à mão.",
+      detalhe:
+        finalidade === "relatorio"
+          ? "Configure o cliente OAuth do Google Ads para consultar campanhas."
+          : "Esta instalação não tem GOOGLE_ADS_DEVELOPER_TOKEN. Sem ele, só é possível informar o ID da ação à mão.",
     };
   const token = await renovarToken(app, conexao.refreshToken, { agora: new Date() });
   if (!token.ok)
@@ -206,18 +239,35 @@ async function chamarComToken(
 
 /** Confere o anunciante com o consentimento recém-concedido antes de guardar a conexão. */
 export async function conferirContaDeRelatorio(
-  accessToken: string, customerId: string, loginCustomerId: string | null,
+  accessToken: string,
+  customerId: string,
+  loginCustomerId: string | null,
 ): Promise<RespostaDaApiGoogle<unknown>> {
-  const resposta = await chamarComToken(accessToken, { customerId, loginCustomerId }, "googleAds:search", {
-    query: "SELECT customer.id, customer.manager FROM customer LIMIT 1",
-  });
+  const resposta = await chamarComToken(
+    accessToken,
+    { customerId, loginCustomerId },
+    "googleAds:search",
+    {
+      query: "SELECT customer.id, customer.manager FROM customer LIMIT 1",
+    },
+  );
   if (!resposta.ok) return resposta;
-  const linha = z.object({
-    results: z.array(z.object({ customer: z.object({ id: z.string(), manager: z.boolean().optional() }) })).length(1),
-  }).safeParse(resposta.dados);
+  const linha = z
+    .object({
+      results: z
+        .array(
+          z.object({ customer: z.object({ id: z.string(), manager: z.boolean().optional() }) }),
+        )
+        .length(1),
+    })
+    .safeParse(resposta.dados);
   const cliente = linha.success ? linha.data.results[0]?.customer : undefined;
   if (!cliente || cliente.id !== customerId || cliente.manager) {
-    return { ok: false, falha: "sem_permissao", detalhe: "Escolha uma conta de anunciante à qual este login do Google tenha acesso." };
+    return {
+      ok: false,
+      falha: "sem_permissao",
+      detalhe: "Escolha uma conta de anunciante à qual este login do Google tenha acesso.",
+    };
   }
   return { ok: true, dados: customerId };
 }
@@ -335,10 +385,15 @@ export interface CampanhaGoogle {
 }
 
 const linhaDeCampanha = z.object({
-  customer: z.object({
-    currencyCode: z.string().regex(/^[A-Z]{3}$/).optional(),
-    timeZone: z.string().optional(),
-  }).optional(),
+  customer: z
+    .object({
+      currencyCode: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .optional(),
+      timeZone: z.string().optional(),
+    })
+    .optional(),
   campaign: z.object({
     id: z.union([z.string(), z.number()]).transform(String),
     name: z.string().default(""),
@@ -367,15 +422,24 @@ export async function lerCampanhas(
   const data = /^\d{4}-\d{2}-\d{2}$/;
   if (!data.test(periodo.de) || !data.test(periodo.ate))
     return { ok: false, falha: "recusado", detalhe: "Período inválido." };
-  const resposta = await chamar(conexao, "googleAds:search", {
-    query: `SELECT customer.currency_code, customer.time_zone, campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
-  }, "relatorio");
+  const resposta = await chamar(
+    conexao,
+    "googleAds:search",
+    {
+      query: `SELECT customer.currency_code, customer.time_zone, campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '${periodo.de}' AND '${periodo.ate}' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 200`,
+    },
+    "relatorio",
+  );
   if (!resposta.ok) return resposta;
   const resultados = z
     .object({ results: z.array(linhaDeCampanha).optional() })
     .safeParse(resposta.dados);
   if (!resultados.success) {
-    return { ok: false, falha: "transitorio", detalhe: "O Google devolveu um relatório de campanhas que não pôde ser lido." };
+    return {
+      ok: false,
+      falha: "transitorio",
+      detalhe: "O Google devolveu um relatório de campanhas que não pôde ser lido.",
+    };
   }
   const campanhas = (resultados.data.results ?? []).map(({ campaign, customer, metrics }) => ({
     id: campaign.id,

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { format } from "date-fns";
@@ -386,13 +386,27 @@ function SugestaoDeTaxa({
 export function StagesSection({
   pipelineId,
   ancoraMapeamento,
+  aoLerEtapas,
 }: {
   pipelineId: string;
   /** Para onde mandar quem precisa desfazer o vínculo de uma etapa com o assistente. */
   ancoraMapeamento: string;
+  /**
+   * Os nomes das etapas a cada leitura deste editor — a primeira e a releitura
+   * depois de criar, renomear ou arquivar. A busca da lista de funis (#4593) lê
+   * daqui, para não ficar com os nomes de quando a página abriu. `lidasEm` é
+   * o instante da leitura (`dataUpdatedAt`): quem recebe decide se ela é mais
+   * nova que o que já tem.
+   */
+  aoLerEtapas?: (nomes: readonly string[], lidasEm: number) => void;
 }) {
   const t = useT();
   const consulta = useAgentMapping(pipelineId);
+  const etapasLidas = consulta.data?.etapas;
+  const lidasEm = consulta.dataUpdatedAt;
+  useEffect(() => {
+    if (etapasLidas) aoLerEtapas?.(etapasLidas.map((e) => e.name), lidasEm);
+  }, [etapasLidas, lidasEm, aoLerEtapas]);
   const taxas = useTaxasDasEtapas(pipelineId);
   // Confere o FORMATO antes de confiar: esta chave pode receber o corpo de
   // outra leitura parada no cache, e corpo errado não pode virar «sem dados» na

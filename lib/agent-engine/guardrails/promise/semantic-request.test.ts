@@ -21,6 +21,7 @@ const comprovante: EvidenciaDeAgendamento = {
   tipo: "Consulta inicial",
   local: "Presencial · Unidade Centro",
   beneficiario: null,
+  profissionais: [],
 };
 
 describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", () => {
@@ -101,6 +102,7 @@ describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", ()
         tipo: comprovante.tipo,
         local: comprovante.local,
         beneficiario: null,
+        profissionais: [],
       },
     ]);
     expect(request.messages[0].content).not.toContain(comprovante.contact_id);
@@ -108,6 +110,42 @@ describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", ()
     expect(request.messages[0].content).not.toContain(comprovante.id);
     expect(request.system).toContain("resultado clínico");
     expect(resultado).toMatchObject({ isPromise: true, suspectPhrase: "você vai ficar curado" });
+  });
+
+  it("profissionais chega ao payload; o nome NÃO entra no system", async () => {
+    await classifyPromise(
+      db,
+      cfg,
+      { tenantId: "tenant-a", leadId: "contato-a", jobId: "turno-profissionais" },
+      {
+        candidate: "Sua consulta está confirmada.",
+        bookingEvidence: [{ ...comprovante, profissionais: ["Ana Exemplo"] }],
+      },
+      { log },
+    );
+    const request = seam.call.mock.calls[0]![2];
+    const payload = JSON.parse(request.messages[0].content);
+    expect(payload.evidencias_agendamento[0].profissionais).toEqual(["Ana Exemplo"]);
+    expect(request.system).not.toContain("Ana Exemplo");
+    expect(request.system).toContain("quem atende AQUELA reserva");
+    expect(request.system).toContain("outro profissional");
+  });
+
+  it("veto do modelo sobre profissional não citado continua vetado mesmo com profissional no comprovante", async () => {
+    seam.call.mockResolvedValue({
+      result: { text: JSON.stringify({ isPromise: true, suspectPhrase: "Carla Exemplo" }) },
+    });
+    const resultado = await classifyPromise(
+      db,
+      cfg,
+      { tenantId: "tenant-a", leadId: "contato-a", jobId: "turno-carla" },
+      {
+        candidate: "Sua consulta está confirmada com Carla Exemplo.",
+        bookingEvidence: [{ ...comprovante, profissionais: ["Ana Exemplo"] }],
+      },
+      { log },
+    );
+    expect(resultado).toMatchObject({ isPromise: true, suspectPhrase: "Carla Exemplo" });
   });
 
   it("diz ao revisor que a lista pode ser parcial, e só quando há comprovante", async () => {

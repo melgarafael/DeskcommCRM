@@ -58,6 +58,11 @@ import {
   tokenTemEscopoDoComparecimento,
 } from "@/lib/agenda/comparecimento";
 import {
+  ERRO_RESPONSAVEIS,
+  responsible_user_idsSchema,
+  traduzErroResponsaveis,
+} from "@/lib/agenda/responsaveis";
+import {
   ALVO_DE_VINCULO_DO_AGENDAMENTO,
   ENTIDADE_DO_AGENDAMENTO,
   NOME_GENERICO_DO_TIPO,
@@ -122,6 +127,61 @@ async function convidadosDaEquipeConferidos(
     );
   }
   return aceitos;
+}
+
+/**
+ * RESPONSÁVEIS ADICIONAIS — conferidos antes de gravar. São membros ATIVOS da
+ * organização, livres no horário (o banco revalida), e nenhum pode ser o
+ * responsável principal. Retorna os ids normalizados (sem repetidos).
+ *
+ * O adicional ocupa a agenda de quem é incluído, então segue a MESMA opção
+ * "Atendentes podem mexer na agenda dos colegas" do principal (#5280): com ela
+ * desligada, o Atendente só inclui a si mesmo. A lista conta inteira, como no
+ * banco (`fn_appointment_change_core`, `fn_appointment_insert_with_responsibles`,
+ * `fn_calendar_service_book`), que recusa com o mesmo `appointment_do_colega`.
+ */
+async function responsaveisConferidos(
+  supabase: SB,
+  ctx: HandlerCtx,
+  ids: readonly string[] | null | undefined,
+  ownerUserId: string | null | undefined,
+): Promise<string[]> {
+  const pedidos = responsible_user_idsSchema.parse(ids ?? []);
+  if (!pedidos.length) return [];
+  if (ownerUserId && pedidos.some((i) => i.toLowerCase() === String(ownerUserId).toLowerCase())) {
+    throw new ApiError(
+      422,
+      ERRO_RESPONSAVEIS.appointment_responsibles_invalid.code,
+      undefined,
+      ctx.requestId,
+      ERRO_RESPONSAVEIS.appointment_responsibles_invalid.message +
+        " O responsável principal não entra na lista de adicionais.",
+    );
+  }
+  const { data, error } = await supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", ctx.organization_id)
+    .in("user_id", pedidos)
+    .is("revoked_at", null);
+  if (error) throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  const aceites = new Set(((data ?? []) as Array<{ user_id: string }>).map((m) => String(m.user_id).toLowerCase()));
+  const faltam = pedidos.filter((i) => !aceites.has(i.toLowerCase()));
+  if (faltam.length) {
+    throw new ApiError(
+      422,
+      ERRO_RESPONSAVEIS.appointment_responsibles_invalid.code,
+      undefined,
+      ctx.requestId,
+      ERRO_RESPONSAVEIS.appointment_responsibles_invalid.message +
+        ` Estes não são membros ativos desta organização: ${faltam.join(", ")}.`,
+    );
+  }
+  const incluiColega = pedidos.some((i) => ctx.actor.type !== "user" || i.toLowerCase() !== ctx.actor.id.toLowerCase());
+  if (incluiColega && aOpcaoPodeRecortar(ctx.actor, false) && !(await colegasPodemMexerNaAgenda(supabase, ctx))) {
+    throw new ApiError(403, "appointment_do_colega", undefined, ctx.requestId, RECUSA_DO_COLEGA_ADICIONAL);
+  }
+  return pedidos;
 }
 
 
@@ -207,6 +267,13 @@ export interface MarcarInput {
   space_id?: string;
   party_size?: number;
   expected_service_revision?: number;
+  /**
+   * Responsáveis adicionais que CONDUZEM junto com o principal (owner_user_id)
+   * e ocupam a agenda: até 9 (teto de 10 conduzindo, contando o principal).
+   * São membros ativos da organização, livres no horário; o agente não os
+   * escolhe. Ausente não mexe; `[]` limpa a lista. O principal nunca entra aqui.
+   */
+  responsible_user_ids?: string[];
 }
 
 export interface AlterarInput {
@@ -241,6 +308,12 @@ export interface AlterarInput {
    * é o da agenda publicada, com capacidade e ocorrência.
    */
   duration_minutes?: number;
+  /**
+   * Responsáveis adicionais que CONDUZEM junto com o principal (owner_user_id)
+   * e ocupam a agenda: até 9 (teto de 10 conduzindo, contando o principal).
+   * Ausente não mexe; `[]` limpa a lista. O principal nunca entra aqui.
+   */
+  responsible_user_ids?: string[];
 }
 
 export interface CancelarInput {
@@ -308,6 +381,11 @@ async function colegasPodemMexerNaAgenda(supabase: SB, ctx: HandlerCtx): Promise
 const RECUSA_DO_COLEGA =
   "Esta empresa está com “Atendentes podem mexer na agenda dos colegas” desligado: " +
   "você mexe só nos compromissos de que é responsável. Peça a um gerente ou administrador.";
+
+/** A mesma recusa, dita para quem tentou incluir um colega como responsável adicional. */
+const RECUSA_DO_COLEGA_ADICIONAL =
+  "Esta empresa está com “Atendentes podem mexer na agenda dos colegas” desligado: " +
+  "você só inclui a si mesmo como responsável adicional. Peça a um gerente ou administrador.";
 
 /**
  * A PERGUNTA QUE VEM ANTES DA LEITURA — e ela é o que evita ler a opção à toa.
@@ -521,7 +599,14 @@ async function executarCriacaoDeAgendamento(
     if (booking && (booking.boundary.organization_id !== ctx.organization_id || booking.boundary.contact_id !== input.contact_id || ctx.actor.type !== "ai_agent"))
       throw new ApiError(403, "forbidden", undefined, ctx.requestId, "A conversa deste atendimento mudou.");
     await guardServiceEffect();
-    const serviceInput = { ...input, expected_revision: input.expected_service_revision,
+    // Equipe adicional conferida com a mesma régua do caminho sem serviço. Ausente = não
+    // vai ao banco (na sessão coletiva, herda a equipe de quem abriu); `[]` = equipe vazia
+    // explícita. O principal ainda não é conhecido aqui (o banco escolhe o profissional):
+    // "não é o principal" é recusado no SQL, depois da ocupação.
+    const responsaveisDoServico = input.responsible_user_ids !== undefined
+      ? await responsaveisConferidos(supabase, ctx, input.responsible_user_ids, input.owner_user_id ?? null)
+      : undefined;
+    const serviceInput = { ...input, ...(responsaveisDoServico !== undefined ? { responsible_user_ids: responsaveisDoServico } : { responsible_user_ids: undefined }), expected_revision: input.expected_service_revision,
         operation_key: ctx.idempotencyKey ?? (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : randomUUID()),
         conversation_id: currentExecutionBoundary()?.conversation_id ?? input.conversation_id ?? null,
         meeting_delivery: booking ? { state: "waiting_for_link", generation: randomUUID(), service_boundary: booking.boundary,
@@ -538,8 +623,21 @@ async function executarCriacaoDeAgendamento(
       void audit({ action: "agenda.appointment_created", actorUserId: ctx.actor.type === "user" ? ctx.actor.id : null,
         organizationId: ctx.organization_id, resourceType: "calendar_appointment", resourceId: row.id, requestId: ctx.requestId,
         metadata: { event_type_id: tipo.id, service: true, participant_count: rows.length } });
+      // A equipe que o BANCO gravou (fn_calendar_service_book), não a que o pedido trouxe.
+      const equipeGravada = row.responsible_user_ids ?? [];
+      if (equipeGravada.length) {
+        void audit({ action: "agenda.appointment_responsibles_changed", actorUserId: ctx.actor.type === "user" ? ctx.actor.id : null,
+          organizationId: ctx.organization_id, resourceType: "calendar_appointment", resourceId: row.id, requestId: ctx.requestId,
+          metadata: { responsaveis: equipeGravada.map((user_id) => ({ user_id })) } });
+      }
     }
-    return { ...rows[0], ...(input.participants ? { appointments: rows } : {}) };
+    // A equipe sai pelo campo `responsaveis`, só quando o pedido a mandou.
+    const semEquipe = <T extends object>(r: T) => ({ ...r, responsible_user_ids: undefined });
+    const primeira = rows[0];
+    if (!primeira) throw new ApiError(500, "internal_error", undefined, ctx.requestId, "A reserva não devolveu a consulta.");
+    const equipeDaReserva = primeira.responsible_user_ids ?? [];
+    return { ...semEquipe(primeira), ...(input.participants ? { appointments: rows.map(semEquipe) } : {}),
+      ...(input.responsible_user_ids !== undefined ? { responsaveis: equipeDaReserva.map((user_id) => ({ user_id })) } : {}) };
   }
 
   const donoId = input.owner_user_id ?? tipo.default_owner_user_id;
@@ -639,44 +737,91 @@ async function executarCriacaoDeAgendamento(
     ctx,
     input.team_guest_user_ids,
   );
-  const { data: criado, error: erroInsert } = await supabase
-    .from("calendar_appointments")
-    .insert({
-      organization_id: ctx.organization_id,
-      event_type_id: tipo.id,
-      title: input.title ?? tipo.name,
-      starts_at: inicio.toISOString(),
-      ends_at: fim.toISOString(),
-      // O fuso do compromisso é campo de primeira classe: é o da JORNADA, onde
-      // o horário foi decidido, e ele viaja até o lembrete (ACHADO 09).
-      time_zone: consulta.fusoDaRegra,
-      status: tipo.requires_confirmation ? "pending" : "confirmed",
-      owner_user_id: donoId,
-      contact_id: input.contact_id ?? null,
-      conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
-      meeting_delivery: delivery as unknown as Json,
-      location_kind: tipo.location_kind,
-      location_details:
-        input.location_details !== undefined
-          ? input.location_details.trim() || null
-          : tipo.location_details,
-      description: input.description !== undefined ? input.description.trim() || null : null,
-      notes: input.notes ?? null,
-      // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
-      // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
-      // Google recusar o EVENTO INTEIRO, não só o convidado.
-      guest_email: input.guest_email || null,
-      // Sempre um array: a coluna é `not null default '{}'`, e mandar `null`
-      // seria trocar o default por ausência em toda marcação sem equipe.
-      team_guest_user_ids: convidadosDaEquipe,
-      created_by_kind: autorParaCriacao(ctx.actor),
-      created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
-      source: ctx.actor.type === "user" ? "ui" : "mcp",
-    })
-    .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url")
-    .single();
-  if (erroInsert) {
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
+  // Responsáveis adicionais são conferidos aqui (membro ativo, sem repetir, sem ser o
+  // principal) para devolver erro nomeado. Sem adicionais, a criação é EXATAMENTE a de
+  // sempre (INSERT direto). Com adicionais, o RPC grava o compromisso e a equipe numa
+  // transação só: a falha de um adicional desfaz o compromisso inteiro.
+  const responsaveis = await responsaveisConferidos(supabase, ctx, input.responsible_user_ids, donoId);
+  const registro = {
+    event_type_id: tipo.id,
+    title: input.title ?? tipo.name,
+    starts_at: inicio.toISOString(),
+    ends_at: fim.toISOString(),
+    // O fuso do compromisso é campo de primeira classe: é o da JORNADA, onde
+    // o horário foi decidido, e ele viaja até o lembrete (ACHADO 09).
+    time_zone: consulta.fusoDaRegra,
+    status: tipo.requires_confirmation ? "pending" : "confirmed",
+    owner_user_id: donoId,
+    contact_id: input.contact_id ?? null,
+    conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
+    meeting_delivery: delivery as unknown as Json,
+    location_kind: tipo.location_kind,
+    location_details:
+      input.location_details !== undefined
+        ? input.location_details.trim() || null
+        : tipo.location_details,
+    description: input.description !== undefined ? input.description.trim() || null : null,
+    notes: input.notes ?? null,
+    // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
+    // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
+    // Google recusar o EVENTO INTEIRO, não só o convidado.
+    guest_email: input.guest_email || null,
+    // Sempre um array: a coluna é `not null default '{}'`, e mandar `null`
+    // seria trocar o default por ausência em toda marcação sem equipe.
+    team_guest_user_ids: convidadosDaEquipe,
+    created_by_kind: autorParaCriacao(ctx.actor),
+    created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+    source: ctx.actor.type === "user" ? "ui" : "mcp",
+  };
+
+  let criado: {
+    id: string;
+    starts_at: string;
+    ends_at: string;
+    status: string;
+    time_zone: string;
+    revision: number;
+    meeting_state: string | null;
+    meeting_url: string | null;
+  };
+  if (responsaveis.length === 0) {
+    const { data, error: erroInsert } = await supabase
+      .from("calendar_appointments")
+      .insert({ organization_id: ctx.organization_id, ...registro })
+      .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url")
+      .single();
+    if (erroInsert) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
+    }
+    criado = data as typeof criado;
+  } else {
+    const { data: criadoBruto, error: erroRpc } = await supabase.rpc(
+      "fn_appointment_insert_with_responsibles",
+      {
+        p_org: ctx.organization_id,
+        p_f: { id: randomUUID(), ...registro },
+        p_responsibles: responsaveis,
+      },
+    );
+    // Nunca ignorar erro de gravação: a exceção nomeada vira o código da recusa; o resto, 500.
+    if (erroRpc) {
+      throw (
+        traduzErroResponsaveis(erroRpc, ctx.requestId) ??
+        new ApiError(500, "internal_error", undefined, ctx.requestId, erroRpc.message)
+      );
+    }
+    const linha = criadoBruto as unknown as typeof criado;
+    // A mesma forma de resposta do INSERT: só as colunas que o select devolvia.
+    criado = {
+      id: linha.id,
+      starts_at: linha.starts_at,
+      ends_at: linha.ends_at,
+      status: linha.status,
+      time_zone: linha.time_zone,
+      revision: linha.revision,
+      meeting_state: linha.meeting_state,
+      meeting_url: linha.meeting_url,
+    };
   }
 
   const transicao: Transicao = criado.status === "pending" ? "pending" : "confirmed";
@@ -700,7 +845,25 @@ async function executarCriacaoDeAgendamento(
     metadata: { event_type_id: tipo.id, owner_user_id: donoId, time_zone: criado.time_zone },
   });
 
-  return criado as Record<string, unknown>;
+  // A equipe gravada pelo RPC (já conferida acima). Auditada só quando há adicionais.
+  if (responsaveis.length > 0) {
+    void audit({
+      action: "agenda.appointment_responsibles_changed",
+      actorUserId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      organizationId: ctx.organization_id,
+      resourceType: "calendar_appointment",
+      resourceId: criado.id,
+      requestId: ctx.requestId,
+      metadata: { responsaveis: responsaveis.map((u) => ({ user_id: u })) },
+    });
+  }
+
+  return {
+    ...(criado as Record<string, unknown>),
+    ...(input.responsible_user_ids !== undefined
+      ? { responsaveis: responsaveis.map((user_id) => ({ user_id })) }
+      : {}),
+  };
 }
 
 /**
@@ -719,6 +882,41 @@ async function executarCriacaoDeAgendamento(
  * inventar encadeamento onde há uma linha só.
  */
 export async function alterarAgendamentoHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  input: AlterarInput,
+): Promise<Record<string, unknown>> {
+  // Com chave (hoje só `crm_reschedule_appointment` a repassa), o recibo cobre
+  // os DOIS caminhos, local e Amigo: a repetição devolve a resposta gravada e a
+  // mesma chave com outro pedido é recusada antes de qualquer efeito. No Amigo a
+  // mesma chave também chega à operação (`key()` em `lib/amigo/agenda.ts`).
+  // Sem chave, nada muda (DES-1952).
+  const chave = ctx.idempotencyKey;
+  if (chave === undefined) return executarAlteracaoDeAgendamento(supabase, ctx, input);
+  const desfecho = await comIdempotencia({
+    db: supabase,
+    organizationId: ctx.organization_id,
+    endpoint: ENDPOINT_IDEMPOTENCIA_ALTERACAO,
+    chave,
+    corpo: input,
+    executar: async () => ({
+      resposta: await executarAlteracaoDeAgendamento(supabase, ctx, input),
+      status: 200,
+    }),
+  });
+  if (desfecho.tipo === "conflito") {
+    throw new ApiError(409, "idempotency_conflict", undefined, ctx.requestId, "Esta chave de idempotência já foi usada com outro conteúdo.");
+  }
+  if (desfecho.tipo === "em_curso") {
+    throw new ApiError(409, "idempotency_in_progress", undefined, ctx.requestId, "A mesma requisição ainda está em curso. Tente de novo em instantes.");
+  }
+  return desfecho.resposta;
+}
+
+/** Outro endpoint que o da criação: a mesma chave numa marcação e numa alteração não se confundem. */
+const ENDPOINT_IDEMPOTENCIA_ALTERACAO = "/api/v1/agenda/agendamentos/:id";
+
+async function executarAlteracaoDeAgendamento(
   supabase: SB,
   ctx: HandlerCtx,
   input: AlterarInput,
@@ -755,6 +953,21 @@ export async function alterarAgendamentoHandler(
       undefined,
       ctx.requestId,
       "Este agendamento foi cancelado. Marque um novo em vez de reabrir este.",
+    );
+  }
+
+  // Responsáveis adicionais atuais, para saber se a lista mudou e emitir audit
+  // só então. `organization_id` vem da fonte confiável (ctx), nunca do body.
+  let responsaveisAtuaisIds = new Set<string>();
+  if (input.responsible_user_ids !== undefined) {
+    const { data: responsaveisAtuais, error: erroAtuais } = await supabase
+      .from("calendar_appointment_responsibles")
+      .select("user_id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("appointment_id", atual.id);
+    if (erroAtuais) throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroAtuais.message);
+    responsaveisAtuaisIds = new Set(
+      ((responsaveisAtuais ?? []) as Array<{ user_id: string }>).map((m) => m.user_id),
     );
   }
 
@@ -806,6 +1019,16 @@ export async function alterarAgendamentoHandler(
       supabase,
       ctx,
       input.team_guest_user_ids,
+    );
+  }
+  // Responsáveis adicionais que ocupam a agenda: conferir membro ativo, teto e
+  // que nenhum é o principal, antes de deixar o banco gravar (e revalidar).
+  if (input.responsible_user_ids !== undefined) {
+    mudanca.responsible_user_ids = await responsaveisConferidos(
+      supabase,
+      ctx,
+      input.responsible_user_ids,
+      typeof atual.owner_user_id === "string" ? atual.owner_user_id : null,
     );
   }
   let transicao: Transicao | null = null;
@@ -1000,7 +1223,45 @@ export async function alterarAgendamentoHandler(
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
-  return salvo as Record<string, unknown>;
+
+  // Responsáveis: o que vale é o que o BANCO gravou, não o que a rota pediu. Relê a
+  // tabela depois do PATCH; a auditoria sai só quando a lista mudou de fato. Sem
+  // `responsible_user_ids` no pedido, a resposta não ganha `responsaveis`.
+  let responsaveisDepois: string[] | undefined;
+  if (input.responsible_user_ids !== undefined) {
+    const { data: depois, error: erroDepois } = await supabase
+      .from("calendar_appointment_responsibles")
+      .select("user_id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("appointment_id", input.id);
+    // A alteração já foi gravada: não há estado real a devolver, então 500 nomeado.
+    if (erroDepois) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId,
+        "A alteração foi salva, mas não foi possível reler os responsáveis. Consulte o compromisso.");
+    }
+    responsaveisDepois = ((depois ?? []) as Array<{ user_id: string }>).map((m) => m.user_id);
+    const mudou =
+      responsaveisDepois.length !== responsaveisAtuaisIds.size ||
+      responsaveisDepois.some((id) => !responsaveisAtuaisIds.has(id));
+    if (mudou) {
+      void audit({
+        action: "agenda.appointment_responsibles_changed",
+        actorUserId: ctx.actor.type === "user" ? ctx.actor.id : null,
+        organizationId: ctx.organization_id,
+        resourceType: "calendar_appointment",
+        resourceId: input.id,
+        requestId: ctx.requestId,
+        metadata: { responsaveis: responsaveisDepois.map((user_id) => ({ user_id })) },
+      });
+    }
+  }
+
+  return {
+    ...(salvo as Record<string, unknown>),
+    ...(responsaveisDepois !== undefined
+      ? { responsaveis: responsaveisDepois.map((user_id) => ({ user_id })) }
+      : {}),
+  };
 }
 
 /**
@@ -1705,6 +1966,11 @@ async function alteraComRevisao(supabase:SB,ctx:HandlerCtx,id:string,revision:nu
   const {data,error}=await supabase.rpc("fn_appointment_change",{p_org:ctx.organization_id,p_id:id,p_revision:revision,p_patch:{...patch,...(execution ? {_service_execution:execution} : {})}});
   // Preserve upstream PT409 and the backward-compatible 40001 conflict mapping.
   const conflito=error?.code === "PT409" || error?.code === "40001";
+  if (error) {
+    // Erro nomeado de responsáveis (teto, membro, principal, ocupação, equipe) vence o genérico.
+    const nomeado = traduzErroResponsaveis(error, ctx.requestId);
+    if (nomeado) throw nomeado;
+  }
   if(error) throw new ApiError(conflito ? 409 : error.code === "42501" ? 403 : error.code === "P0002" ? 404 : 422,
     conflito ? "conflict" : error.code === "42501" ? "forbidden" : error.code === "P0002" ? "not_found" : "validation_failed",undefined,ctx.requestId,
     conflito ? "Este compromisso mudou. Atualize os dados antes de confirmar novamente." : error.message.includes("service_human_confirmation_required") ? "A confirmação deste serviço depende da equipe. A reserva continua aguardando." : "Não foi possível alterar este compromisso. Confira a presença, o horário e a mensagem vinculada.");

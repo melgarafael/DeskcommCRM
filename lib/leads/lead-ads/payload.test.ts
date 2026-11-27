@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { lerLeadsDoFormularioMeta } from "./payload";
+import { lerLeadsDoFormularioMeta, respostasDosAvisos } from "./payload";
 import {
   ESPERADO_DO_EXEMPLO,
   PAYLOAD_DOCUMENTADO_DA_META,
@@ -154,5 +154,48 @@ describe("lerLeadsDoFormularioMeta", () => {
     // Acento e caixa não escondem o campo: `telefone` casa pelo alias, e o
     // número sai normalizado.
     expect(leitura.leads[0]?.telefone).toBe("+5511988887777");
+  });
+});
+
+describe("respostasDosAvisos", () => {
+  it("caixa marcada vira `true`, não marcada vira `false`, com a chave canônica", () => {
+    expect(
+      respostasDosAvisos([
+        { checkbox_key: "optional_1", is_checked: "1" },
+        { checkbox_key: "Optional 2", is_checked: "" },
+        { checkbox_key: "optional_3", is_checked: true },
+        { checkbox_key: "optional_4", is_checked: "0" },
+      ]),
+    ).toEqual([
+      { campo: "custom_disclaimer_optional_1", valor: "true" },
+      { campo: "custom_disclaimer_optional_2", valor: "false" },
+      { campo: "custom_disclaimer_optional_3", valor: "true" },
+      { campo: "custom_disclaimer_optional_4", valor: "false" },
+    ]);
+  });
+
+  it("valor que não se entende DESCARTA a caixa, em vez de inventar aceite ou recusa", () => {
+    expect(
+      respostasDosAvisos([
+        { checkbox_key: "optional_1", is_checked: "yes" },
+        { checkbox_key: "optional_2", is_checked: null },
+        { checkbox_key: "optional_3" },
+        { checkbox_key: "", is_checked: "1" },
+        { is_checked: "1" },
+        "optional_4",
+        null,
+      ]),
+    ).toEqual([]);
+  });
+
+  it("entrada que não é lista não vira nada, e chave repetida conta uma vez", () => {
+    expect(respostasDosAvisos(undefined)).toEqual([]);
+    expect(respostasDosAvisos({ checkbox_key: "optional_1", is_checked: "1" })).toEqual([]);
+    expect(
+      respostasDosAvisos([
+        { checkbox_key: "optional_1", is_checked: "1" },
+        { checkbox_key: "optional_1", is_checked: "" },
+      ]),
+    ).toEqual([{ campo: "custom_disclaimer_optional_1", valor: "true" }]);
   });
 });

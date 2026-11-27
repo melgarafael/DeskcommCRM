@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { createClient } from "@supabase/supabase-js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GOV_AGENT_A, seedGov } from "./gov-helpers";
 import { replyFixture } from "../support/autonomia-fixture";
 import { loadAgentVersionConfig } from "@/lib/agent-engine/agent/agent-config";
@@ -177,6 +177,65 @@ describe("a leitura das reservas, com linhas de verdade", () => {
     expect(r.evidencias).toHaveLength(MAXIMO_DE_RESERVAS_NA_REVISAO);
     expect(r.evidencias[0]?.starts_at.slice(0, 10)).toBe("2030-03-01");
     expect(r.evidencias.at(-1)?.starts_at.slice(0, 10)).toBe("2030-03-20");
+  });
+
+  it("reserva leva profissionais: principal + adicional, nomes resolvidos por uma rpc", async () => {
+    const f = await replyFixture(pool);
+    const tipo = await tipoDeAtendimento(f.org);
+    // membro principal (dono) da org
+    const membro = randomUUID();
+    await pool.query("insert into auth.users (id, email) values ($1, $2::text)", [
+      membro,
+      `${membro}@invariant.test`,
+    ]);
+    await pool.query(
+      "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'agent',now())",
+      [f.org, membro],
+    );
+    // outro membro de f.org como adicional
+    const adicional = randomUUID();
+    await pool.query("insert into auth.users (id, email) values ($1, $2::text)", [
+      adicional,
+      `${adicional}@invariant.test`,
+    ]);
+    await pool.query(
+      "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'agent',now())",
+      [f.org, adicional],
+    );
+
+    const appointmentId = await reserva(f.org, f.contact, tipo, { owner_user_id: membro });
+    await pool.query(
+      "insert into calendar_appointment_responsibles (organization_id, appointment_id, user_id) values($1,$2,$3)",
+      [f.org, appointmentId, adicional],
+    );
+
+    const adminDuble = {
+      rpc: vi.fn(async () => ({
+        data: [
+          { user_id: membro, full_name: "Atendente Sintético" },
+          { user_id: adicional, full_name: "Apoio Sintético" },
+        ],
+        error: null,
+      })),
+    };
+
+    const r = await lerReservasConfirmadasDoContato(
+      pool,
+      { organizationId: f.org, contactId: f.contact },
+      AGORA,
+      adminDuble as never,
+    );
+
+    expect(r.evidencias.map((e) => e.id)).toEqual([appointmentId]);
+    expect(r.evidencias[0]?.profissionais).toEqual(["Atendente Sintético", "Apoio Sintético"]);
+    expect(adminDuble.rpc).toHaveBeenCalledOnce();
+    const args = (adminDuble.rpc.mock.calls[0] as unknown[] | undefined)?.[1] as {
+      p_org?: string;
+      p_ids?: string[];
+    };
+    expect(args.p_org).toBe(f.org);
+    expect([...(args.p_ids ?? [])].sort()).toEqual([membro, adicional].sort());
+    expect(args.p_ids).toHaveLength(2);
   });
 });
 

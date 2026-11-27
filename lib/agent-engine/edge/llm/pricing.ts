@@ -49,6 +49,8 @@
  * contrato escrito acima.
  */
 
+import { multiplicadorDoDegrau } from '@/lib/ai/custo-escalonado';
+
 import type { CacheTtl } from './stable-prefix';
 
 interface Preco {
@@ -68,8 +70,9 @@ interface Preco {
 const USD_PER_MTOK: Record<string, Preco> = {
   // Família 5.5, conferida em platform.claude.com/docs/en/about-claude/pricing em 11/10/2026.
   // Fora da tabela: o Haiku 5.5 cobra 5× (0.5 / 2.5, cache 0.05 / 0.625 / 1) quando o prompt
-  // de UMA requisição passa de 100 mil tokens. O `usage` que chega aqui soma os passos do laço
-  // de ferramentas, então não diz o tamanho de cada requisição — a faixa não é calculável aqui.
+  // de UMA requisição passa de 100 mil tokens. O `usage` do turno soma os passos do laço de
+  // ferramentas e não diz o tamanho de cada requisição: o degrau é cobrado POR PASSO, em
+  // `custoPorPassosComDegrauDoHaiku` (#5017).
   'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4 },
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8 },
@@ -472,6 +475,45 @@ export function custoPorPassosComFaixaLonga(model: string, result: {
       cacheWriteTokens: raw?.input_tokens_details?.cache_write_tokens ?? u?.inputTokenDetails?.cacheWriteTokens ?? 0,
     }) ?? 0);
   }, 0);
+}
+
+/**
+ * O degrau do Haiku 5.5 (`lib/ai/custo-escalonado.ts`), cobrado POR PASSO (#5017).
+ * Cada passo do laço de ferramentas é uma requisição, e a Anthropic decide o
+ * degrau pela entrada de cada uma (`inputTokens` do passo, que no SDK já soma
+ * leitura e escrita de cache). Pela soma do turno, três passos de 40 mil
+ * sairiam 5× quando a Anthropic cobra 1×.
+ *
+ * `undefined` quando nenhum passo passa do degrau (ou o modelo não o tem): aí
+ * vale o `costCents` do turno, o mesmo número de antes. A gravação de cache de
+ * cada passo é dividida por TTL pelo `usage` cru do PRÓPRIO passo, como no turno.
+ */
+export function custoPorPassosComDegrauDoHaiku(
+  model: string,
+  result: { usage: UsoDePasso; steps?: ReadonlyArray<{ usage?: UsoDePasso }> },
+  cacheTtl: CacheTtl = '1h',
+): number | undefined {
+  const passos = result.steps?.length ? result.steps.map((s) => s.usage) : [result.usage];
+  if (!passos.some((u) => multiplicadorDoDegrau(model, u?.inputTokens) !== 1)) return undefined;
+  let total = 0;
+  for (const u of passos) {
+    const cacheWriteTokens = u?.inputTokenDetails?.cacheWriteTokens ?? 0;
+    const cacheWrite1hTokens = gravacaoDeUmaHora([u?.raw], cacheWriteTokens);
+    const custo = costCents(
+      model,
+      {
+        inputTokens: u?.inputTokens ?? 0,
+        outputTokens: u?.outputTokens ?? 0,
+        cacheReadTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0,
+        cacheWriteTokens,
+        ...(cacheWrite1hTokens !== undefined ? { cacheWrite1hTokens } : {}),
+      },
+      cacheTtl,
+    );
+    if (custo === null) return undefined;
+    total += custo * multiplicadorDoDegrau(model, u?.inputTokens);
+  }
+  return total;
 }
 
 /**

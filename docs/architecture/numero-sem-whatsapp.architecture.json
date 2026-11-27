@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "titulo": "Número sem conta: recusa visível",
+  "descricao": "Abre e envia pela mesma sessão autorizada; ausência definitiva recusa, falha de consulta mantém o fluxo.",
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Tela"
+    },
+    {
+      "id": "service",
+      "label": "Servidor"
+    },
+    {
+      "id": "channel",
+      "label": "Canal"
+    }
+  ],
+  "mainPath": ["open-ui", "open", "lookup"],
+  "nodes": [
+    {
+      "id": "open-ui",
+      "lane": "ui",
+      "label": "Iniciar conversa e escolha de canal",
+      "sublabel": "components/channels/SeletorDeCanalParaConversa.tsx",
+      "type": "ui"
+    },
+    {
+      "id": "open",
+      "lane": "service",
+      "label": "Abertura por organização e sessão",
+      "sublabel": "lib/messaging/open-shared-contact-conversation.ts",
+      "type": "service"
+    },
+    {
+      "id": "lookup",
+      "lane": "channel",
+      "label": "Existência em três estados e memo positivo",
+      "sublabel": "lib/waha/resolve-contact-whatsapp-id.ts",
+      "type": "service"
+    },
+    {
+      "id": "send",
+      "lane": "service",
+      "label": "Handler grava failed e natureza permanente",
+      "sublabel": "app/api/v1/messages/_handler.ts",
+      "type": "service"
+    },
+    {
+      "id": "bubble",
+      "lane": "ui",
+      "label": "Motivo visível na mensagem",
+      "sublabel": "components/inbox/MessageBubble.tsx",
+      "type": "ui"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "open-ui",
+      "to": "open",
+      "label": "POST com identidade e canal"
+    },
+    {
+      "id": "e2",
+      "from": "open",
+      "to": "lookup",
+      "label": "capacidade do adapter; sem histórico recebido"
+    },
+    {
+      "id": "e3",
+      "from": "lookup",
+      "to": "open-ui",
+      "label": "false → HTTP422 e toast legível"
+    },
+    {
+      "id": "e4",
+      "from": "send",
+      "to": "lookup",
+      "label": "adapter antes do envio real"
+    },
+    {
+      "id": "e5",
+      "from": "lookup",
+      "to": "send",
+      "label": "recusa permanente ou destino resolvido/fallback"
+    },
+    {
+      "id": "e6",
+      "from": "send",
+      "to": "bubble",
+      "label": "erro classificado na linha da mensagem"
+    }
+  ]
+}

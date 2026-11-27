@@ -14,7 +14,7 @@
  * Os painéis irmãos são dublês em estado de carregamento: o que se mede aqui é
  * a barra de filtro, não o gráfico de atrito.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
@@ -84,17 +84,50 @@ beforeEach(() => {
 
 describe("o botão de exportar vendas", () => {
   it("⭐ está na barra do filtro e baixa o arquivo — sem filtro, o conjunto inteiro", () => {
-    render(<MetricsClient canCompare currentUserId={ANA} funis={[]} />);
+    render(<MetricsClient canCompare currentUserId={ANA} funis={[]} fuso="America/Sao_Paulo" />);
 
     const botao = screen.getByRole("button", { name: /Exportar vendas/ });
     botao.click();
 
-    expect(window.location.href).toBe("/api/v1/reports/vendas/export");
+    const url = new URL(window.location.href, "http://localhost");
+    expect(url.pathname).toBe("/api/v1/reports/vendas/export");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-10-01T00:00:00.000Z",
+    });
   });
 
   it("⭐ para quem não é manager+ a porta não existe — o mesmo gate da rota", () => {
-    render(<MetricsClient canCompare={false} currentUserId={ANA} funis={[]} />);
+    render(<MetricsClient canCompare={false} currentUserId={ANA} funis={[]} fuso="America/Sao_Paulo" />);
 
     expect(screen.queryByRole("button", { name: /Exportar vendas/ })).toBeNull();
   });
+});
+
+it("deixa escolher o intervalo de datas do Desempenho", () => {
+  render(<MetricsClient canCompare currentUserId={ANA} funis={[]} fuso="America/Sao_Paulo" />);
+
+  expect(screen.queryByLabelText("Data inicial"), "o filtro deve expor o início da janela").not.toBeNull();
+  expect(screen.queryByLabelText("Data final"), "o filtro deve expor o fim da janela").not.toBeNull();
+});
+
+it("mantém a consulta anterior ao editar, e aplica as datas no fuso da organização", () => {
+  render(<MetricsClient canCompare={false} currentUserId={ANA} funis={[]} fuso="America/Sao_Paulo" />);
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 0);
+
+  fireEvent.change(screen.getByLabelText("Data inicial"), { target: { value: "2026-09-01" } });
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar" }));
+  expect(screen.getByRole("alert").textContent).toBe("Preencha a data inicial e a data final.");
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 0);
+
+  fireEvent.change(screen.getByLabelText("Data final"), { target: { value: "2026-09-01" } });
+  fireEvent.click(screen.getByRole("button", { name: "Aplicar" }));
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, {
+    from: "2026-09-01T03:00:00.000Z",
+    to: "2026-09-02T03:00:00.000Z",
+  }, 0);
+
+  fireEvent.click(screen.getByRole("button", { name: "Limpar" }));
+  expect(screen.getByText("Últimos 30 dias", { exact: false })).toBeTruthy();
+  expect(useAttendantMetrics).toHaveBeenLastCalledWith(null, null, 1);
 });

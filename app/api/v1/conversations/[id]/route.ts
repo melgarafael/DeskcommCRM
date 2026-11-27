@@ -17,6 +17,8 @@ import { extractBearer } from "@/lib/mcp/auth";
 import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { patchConversationSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { identidadeIndisponivel } from "@/lib/supabase/falha-de-identidade";
+import { conferirOrgNaLeitura } from "@/lib/inbox/autorizacao-da-leitura";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
 
 import { getConversationHandler, patchConversationHandler } from "../_handler";
@@ -104,18 +106,26 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     data: { user },
     error: authErr,
   } = await supabase.auth.getUser();
+  if (identidadeIndisponivel(authErr)) {
+    return fail("auth_unavailable", "Authentication is temporarily unavailable.", 503, { requestId });
+  }
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  if (!authUser) {
+    return fail("auth_unavailable", "Authentication is temporarily unavailable.", 503, { requestId });
+  }
+  const t = (texto: string) => traduzir(texto, authUser.idioma ?? "pt-BR");
   const ativa = await orgAtivaDaApi(authUser, requestId);
   if (!ativa.ok) return ativa.response;
   const activeOrg = ativa.org;
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  const orgDivergente = conferirOrgNaLeitura(req, activeOrg.orgId, requestId);
+  if (orgDivergente) return orgDivergente;
   if (idInvalido(id)) {
     return fail("not_found", "Conversa não encontrada.", 404, { requestId });
   }

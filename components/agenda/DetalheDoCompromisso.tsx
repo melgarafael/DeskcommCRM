@@ -27,6 +27,8 @@ type Detalhe = {
   notes: string | null;
   location_kind: string | null;
   location_details: string | null;
+  service_space_id: string | null;
+  calendar_resources: { name: string } | { name: string }[] | null;
   starts_at: string;
   ends_at: string;
   time_zone: string;
@@ -170,6 +172,14 @@ export function DetalheDoCompromisso({
                 {rotuloDoLocal(a.location_kind, a.location_details)}
               </p>
             ) : null}
+            {(() => {
+              const spaceName = Array.isArray(a.calendar_resources)
+                ? (a.calendar_resources[0]?.name ?? null)
+                : a.calendar_resources?.name ?? null;
+              return spaceName && a.service_space_id ? (
+                <p data-testid="compromisso-lugar">{t("Lugar")}: {spaceName}</p>
+              ) : null;
+            })()}
             {a.description?.trim() ? (
               <p data-testid="compromisso-observacao" className="whitespace-pre-wrap">
                 {a.description}
