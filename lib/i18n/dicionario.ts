@@ -4736,7 +4736,11 @@ export const DICIONARIO: Traducoes = {
   "Descrição interna do agent": { es: "Descripción interna del agente" },
   "Agent ativo": { es: "Agente activo" },
   "read-only — gerenciado pelo backend": { es: "solo lectura — gestionado por el backend" },
+  "Temperatura (0–2)": { es: "Temperatura (0–2)" },
+  "Máximo de tokens (64–4096)": { es: "Máximo de tokens (64–4096)" },
   "Janela de contexto (msgs, 1–50)": { es: "Ventana de contexto (msgs, 1–50)" },
+  "Trechos buscados (1–20)": { es: "Fragmentos buscados (1–20)" },
+  "Limiar de semelhança (0–1)": { es: "Umbral de similitud (0–1)" },
   "Top K = quantos trechos buscar. Similarity threshold = mínimo de relevância (cosine).":
     {
       es: "Top K = cuántos fragmentos buscar. Similarity threshold = relevancia mínima (cosine).",
