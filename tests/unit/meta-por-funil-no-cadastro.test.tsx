@@ -106,7 +106,13 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ from: (tabela: string) => cadeia(tabela) }),
 }));
 
-const form = vi.hoisted(() => ({ definir: vi.fn(), resposta: { ok: true } as { ok: boolean; error?: string } }));
+const form = vi.hoisted(() => ({
+  definir: vi.fn(),
+  resposta: { ok: true } as { ok: boolean; error?: string },
+  /** O que `lerMetasDoMes` devolve por mês — o banco visto pelo formulário. */
+  porMes: {} as Record<string, Array<Record<string, unknown>>>,
+  lidos: [] as string[],
+}));
 vi.mock("@/hooks/team/useTeamMembers", () => ({
   useTeamMembers: () => ({ data: { data: [] }, isLoading: false, refetch: vi.fn() }),
 }));
@@ -138,6 +144,8 @@ beforeEach(() => {
   h.conflito = false;
   form.definir.mockClear();
   form.resposta = { ok: true };
+  form.porMes = {};
+  form.lidos = [];
 });
 
 afterEach(cleanup);
@@ -168,6 +176,11 @@ describe("#4796 — a action grava a meta do funil", () => {
     const r = await definirMetaMensal({ periodo: "2026-11", alvo: 15, pipeline_id: FUNIL } as never);
     expect(r).toEqual({ ok: true });
     expect(h.atualizadas).toEqual([expect.objectContaining({ alvo: 15 })]);
+    // O audit conta a correção da linha que nasceu, com o alvo de antes.
+    expect(h.auditadas[0]).toEqual(
+      expect.objectContaining({ action: "crm_meta.updated", resourceId: "meta-da-outra-pessoa" }),
+    );
+    expect(h.auditadas[0]?.metadata).toEqual(expect.objectContaining({ alvo_anterior: 8 }));
   });
 
   it("funil e vendedor juntos é recusado antes do banco", async () => {
@@ -202,6 +215,12 @@ describe("#4796 — o formulário oferece o funil", () => {
         return form.resposta;
       }),
     }));
+    vi.doMock("@/app/actions/settings/lerMetasDoMes", () => ({
+      lerMetasDoMes: vi.fn(async (periodo: string) => {
+        form.lidos.push(periodo);
+        return { ok: true, metas: form.porMes[periodo] ?? [] };
+      }),
+    }));
     vi.resetModules();
     const { FormularioDaMeta } = await import("@/app/app/settings/metas/_form");
     const props = {
@@ -230,18 +249,24 @@ describe("#4796 — o formulário oferece o funil", () => {
     );
   });
 
-  it("trocar o mês mostra a meta DAQUELE mês, não a deste", async () => {
-    await montar([
-      { periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: FUNIL, alvo: 9 },
+  it("trocar o mês mostra a meta DAQUELE mês (lida do banco), não a deste", async () => {
+    form.porMes["2026-12"] = [
       { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: FUNIL, alvo: 30 },
-    ]);
+    ];
+    await montar([{ periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: FUNIL, alvo: 9 }]);
     await escolher("Funil · Vendas B2B");
     const alvo = document.getElementById("alvo") as HTMLInputElement;
     await waitFor(() => expect(alvo.value).toBe("9"));
     fireEvent.change(document.getElementById("periodo")!, { target: { value: "2026-12" } });
     await waitFor(() => expect(alvo.value).toBe("30"));
+    expect(form.lidos).toContain("2026-12");
     fireEvent.change(document.getElementById("periodo")!, { target: { value: "2027-01" } });
+    await waitFor(() => expect(form.lidos).toContain("2027-01"));
     await waitFor(() => expect(alvo.value).toBe(""));
+    // Salvar em janeiro grava janeiro, com o número digitado — nunca o de outro mês.
+    fireEvent.change(alvo, { target: { value: "4" } });
+    fireEvent.submit(alvo.closest("form")!);
+    await waitFor(() => expect(form.definir).toHaveBeenCalledWith(expect.objectContaining({ periodo: "2027-01", alvo: 4 })));
   });
 
   it("a meta já gravada do funil aparece ao escolher o funil", async () => {

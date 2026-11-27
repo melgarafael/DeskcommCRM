@@ -194,7 +194,9 @@ export async function definirMetaMensal(
   const { data: existente, error: erroLeitura } = await lerMeta();
   if (erroLeitura) return { ok: false, error: "erro_ao_gravar", details: erroLeitura.message };
 
-  const alvoAnterior = ((existente as { alvo?: number } | null)?.alvo ?? null) as number | null;
+  // Quem foi de fato corrigido (a linha lida, ou a que outra pessoa acabou de
+  // criar na corrida do índice) — é ela que o audit conta.
+  let corrigida = existente as { id: string; alvo?: number } | null;
 
   if (existente) {
     const { error } = await supabase
@@ -227,6 +229,7 @@ export async function definirMetaMensal(
         .eq("id", (nascida as { id: string }).id)
         .eq("organization_id", orgId);
       if (erroCorrecao) return { ok: false, error: "erro_ao_gravar", details: erroCorrecao.message };
+      corrigida = nascida as { id: string; alvo?: number };
     } else if (error) {
       return { ok: false, error: "erro_ao_gravar", details: error.message };
     }
@@ -234,13 +237,13 @@ export async function definirMetaMensal(
 
   const hdrs = await headers();
   await audit({
-    action: existente ? "crm_meta.updated" : "crm_meta.created",
+    action: corrigida ? "crm_meta.updated" : "crm_meta.created",
     actorUserId: authUser.id,
     organizationId: orgId,
     resourceType: "crm_meta",
     // Sem id na criação (o PostgREST não devolve a linha no insert sem
     // `select`); o que identifica o alvo é o par período + indicador.
-    resourceId: (existente as { id?: string } | null)?.id ?? null,
+    resourceId: corrigida?.id ?? null,
     requestId: hdrs.get("x-request-id") ?? undefined,
     ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
@@ -252,7 +255,7 @@ export async function definirMetaMensal(
       pipeline_id: pipelineId,
       // O alvo ANTERIOR entra: é a mudança que interessa a quem audita depois —
       // "de 40 para 25" é uma história diferente de "criou 25".
-      alvo_anterior: alvoAnterior,
+      alvo_anterior: corrigida?.alvo ?? null,
     },
   });
 

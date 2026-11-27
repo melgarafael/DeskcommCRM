@@ -21818,6 +21818,9 @@ export const DICIONARIO: Traducoes = {
     {
       es: "La meta del vendedor suma solo los negocios que él cerró como ganados; la del embudo, solo los ganados de ese embudo; la de la empresa suma los de toda la empresa.",
     },
+  "Não consegui ler as metas deste mês. Escolha o mês de novo ou recarregue a página.": {
+    es: "No pude leer las metas de este mes. Elige el mes de nuevo o recarga la página.",
+  },
   "Esse funil não está mais disponível. Recarregue a página e escolha outro.": {
     es: "Ese embudo ya no está disponible. Recarga la página y elige otro.",
   },
