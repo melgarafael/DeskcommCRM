@@ -1,5 +1,5 @@
 ---
-impacto: visual
+impacto: nada_mudou
 secao: corrigido
 titulo: Aviso de erro ao aceitar convite usa a cor de erro
 ---
