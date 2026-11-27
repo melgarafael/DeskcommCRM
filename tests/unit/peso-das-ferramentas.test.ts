@@ -165,7 +165,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
   "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
   "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
-  "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
+  "crm_start_conversation_and_send": {
+    tokens: 634,
+    motivo: "phone_whatsapp opcional para o cadastro novo (DES-1950), medido em 2026-11-26",
+  },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
   "crm_assign_conversation": { tokens: 380, motivo: "+26 da frase que diz ao modelo que atribuir não interrompe o próprio turno e pode ir junto com a passagem (#3926, veio da main)" },
@@ -278,7 +281,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
-const TETO_TOTAL = 47945;
+// +41 do `phone_whatsapp` em `crm_start_conversation_and_send` (DES-1950). MEDIDO neste
+// head sobre a main de 2026-11-26 (`b2b5d4c0d`, que tinha 47945): 47986 = 47945 + 41.
+const TETO_TOTAL = 47986;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
