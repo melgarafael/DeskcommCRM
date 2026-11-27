@@ -118,6 +118,20 @@ export function FormularioDaMeta({
   const metasDoPeriodo: readonly MetaGravada[] | null =
     periodo === mes ? metas : lidas?.periodo === periodo ? lidas.metas : null;
   const erroAoLer = falhaAoLer === periodo && metasDoPeriodo === null;
+  const lendo = metasDoPeriodo === null && !erroAoLer;
+  // Cada "Tentar de novo" é uma leitura nova do mesmo mês.
+  const [tentativa, setTentativa] = useState(0);
+
+  /**
+   * Trocar o mês descarta o que se leu de OUTRO mês: voltar a ele relê, em vez
+   * de reaproveitar um número que outra pessoa pode ter corrigido nesse meio
+   * tempo — salvar em cima dele desfaria a correção.
+   */
+  function trocarMes(novo: string) {
+    setPeriodo(novo);
+    setLidas(null);
+    setFalhaAoLer(null);
+  }
   const [indicador, setIndicador] = useState<IndicadorDaMeta>("vendas_ganhas");
   const [vendedor, setVendedor] = useState<string>(EMPRESA);
   const [alvo, setAlvo] = useState("");
@@ -148,7 +162,7 @@ export function FormularioDaMeta({
   // Ao trocar mês, indicador ou dono, o campo mostra o que JÁ está gravado para
   // aquela combinação — em vez de obrigar a pessoa a lembrar o número antigo.
   useEffect(() => {
-    if (metasDoPeriodo !== null || !/^\d{4}-\d{2}$/.test(periodo)) return;
+    if (metasDoPeriodo !== null || falhaAoLer === periodo || !/^\d{4}-\d{2}$/.test(periodo)) return;
     let vivo = true;
     // A MESMA leitura do Desempenho (`/api/v1/metrics/metas`, mês pelo texto da
     // janela): uma régua só para "as metas deste mês".
@@ -176,7 +190,7 @@ export function FormularioDaMeta({
     return () => {
       vivo = false;
     };
-  }, [periodo, metasDoPeriodo]);
+  }, [periodo, metasDoPeriodo, falhaAoLer, tentativa]);
 
   useEffect(() => {
     // Enquanto o mês novo não chega, o campo não carrega o número de outro mês.
@@ -257,15 +271,26 @@ export function FormularioDaMeta({
             id="periodo"
             type="month"
             value={periodo}
-            onChange={(e) => setPeriodo(e.target.value)}
+            onChange={(e) => trocarMes(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
             {t("A meta vale para o mês escolhido, do dia 1º ao último.")}
           </p>
           {erroAoLer ? (
-            <p role="alert" className="text-xs text-destructive">
-              {t("Não consegui ler as metas deste mês. Escolha o mês de novo ou recarregue a página.")}
-            </p>
+            <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+              <span>{t("Não consegui ler as metas deste mês.")}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setFalhaAoLer(null);
+                  setTentativa((n) => n + 1);
+                }}
+              >
+                {t("Tentar de novo")}
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -347,11 +372,18 @@ export function FormularioDaMeta({
             step={indicador === "valor_vendido" ? 0.01 : 1}
             value={alvo}
             onChange={(e) => setAlvo(e.target.value)}
+            // Enquanto o mês não foi lido, o que a pessoa digitasse seria
+            // trocado pelo número gravado quando a leitura chegasse.
+            disabled={metasDoPeriodo === null}
           />
           <p className="text-xs text-muted-foreground">
-            {alvo.length === 0
-              ? t("Ainda não há meta para este mês.")
-              : t("Salvar de novo corrige a meta deste mês — nada é duplicado.")}
+            {lendo
+              ? t("Lendo as metas deste mês…")
+              : erroAoLer
+                ? null
+                : alvo.length === 0
+                  ? t("Ainda não há meta para este mês.")
+                  : t("Salvar de novo corrige a meta deste mês — nada é duplicado.")}
           </p>
         </div>
 

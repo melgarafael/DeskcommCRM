@@ -112,6 +112,11 @@ const form = vi.hoisted(() => ({
   /** O que `/api/v1/metrics/metas` devolve por mês — o banco visto pelo formulário. */
   porMes: {} as Record<string, Array<Record<string, unknown>>>,
   lidos: [] as string[],
+  /** Quantas leituras ainda falham (rede caída) antes de responder. */
+  falhas: 0,
+  /** Segura a resposta até alguém chamar `liberar()`. */
+  segurar: false,
+  liberar: null as null | (() => void),
 }));
 vi.mock("@/hooks/team/useTeamMembers", () => ({
   useTeamMembers: () => ({ data: { data: [] }, isLoading: false, refetch: vi.fn() }),
@@ -146,6 +151,9 @@ beforeEach(() => {
   form.resposta = { ok: true };
   form.porMes = {};
   form.lidos = [];
+  form.falhas = 0;
+  form.segurar = false;
+  form.liberar = null;
 });
 
 afterEach(cleanup);
@@ -222,6 +230,11 @@ describe("#4796 — o formulário oferece o funil", () => {
           const de = decodeURIComponent(new URL(url, "http://x").searchParams.get("from") ?? "");
           const periodo = de.slice(0, 7);
           form.lidos.push(periodo);
+          if (form.falhas > 0) {
+            form.falhas -= 1;
+            throw new Error("rede fora");
+          }
+          if (form.segurar) await new Promise<void>((r) => (form.liberar = r));
           return { data: { metas: form.porMes[periodo] ?? [] } };
         }),
       },
@@ -272,6 +285,56 @@ describe("#4796 — o formulário oferece o funil", () => {
     fireEvent.change(alvo, { target: { value: "4" } });
     fireEvent.submit(alvo.closest("form")!);
     await waitFor(() => expect(form.definir).toHaveBeenCalledWith(expect.objectContaining({ periodo: "2027-01", alvo: 4 })));
+  });
+
+  it("enquanto o mês lê, o campo trava e não diz «ainda não há meta»", async () => {
+    form.porMes["2026-12"] = [
+      { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 30 },
+    ];
+    form.segurar = true;
+    await montar([]);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    fireEvent.change(document.getElementById("periodo")!, { target: { value: "2026-12" } });
+    await waitFor(() => expect(form.lidos).toContain("2026-12"));
+    expect(alvo).toBeDisabled();
+    expect(screen.queryByText("Ainda não há meta para este mês.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
+    form.liberar?.();
+    await waitFor(() => expect(alvo.value).toBe("30"));
+    expect(alvo).toBeEnabled();
+  });
+
+  it("a leitura falhou: «Tentar de novo» lê o mesmo mês outra vez", async () => {
+    form.falhas = 1;
+    form.porMes["2026-12"] = [
+      { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 30 },
+    ];
+    await montar([]);
+    fireEvent.change(document.getElementById("periodo")!, { target: { value: "2026-12" } });
+    const tentar = await screen.findByRole("button", { name: "Tentar de novo" });
+    expect(screen.getByRole("button", { name: "Salvar meta" })).toBeDisabled();
+    fireEvent.click(tentar);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    await waitFor(() => expect(alvo.value).toBe("30"));
+    expect(form.lidos.filter((m) => m === "2026-12")).toHaveLength(2);
+  });
+
+  it("voltar a um mês já lido lê de novo (outra pessoa pode ter corrigido)", async () => {
+    form.porMes["2026-12"] = [
+      { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 9 },
+    ];
+    await montar([]);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    const mes = document.getElementById("periodo")!;
+    fireEvent.change(mes, { target: { value: "2026-12" } });
+    await waitFor(() => expect(alvo.value).toBe("9"));
+    fireEvent.change(mes, { target: { value: "2026-11" } });
+    form.porMes["2026-12"] = [
+      { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 30 },
+    ];
+    fireEvent.change(mes, { target: { value: "2026-12" } });
+    await waitFor(() => expect(alvo.value).toBe("30"));
+    expect(form.lidos.filter((m) => m === "2026-12")).toHaveLength(2);
   });
 
   it("a meta já gravada do funil aparece ao escolher o funil", async () => {
