@@ -76,6 +76,18 @@ const CABECALHO =
   "Analise a MENSAGEM que o vendedor quer enviar e responda a DUAS perguntas INDEPENDENTES.\n" +
   "\n";
 
+/**
+ * #5259 — anunciar a passagem para uma pessoa da equipe não obriga a empresa a
+ * nada comercial. Sem este exemplo, "que continua seu atendimento por aqui" era
+ * lido como compromisso e o aviso de transferência era vetado. Vale nos DOIS
+ * caminhos da Pergunta 1; a Pergunta 2 (retorno humano) não muda.
+ */
+const TRANSFERENCIA_NAO_E_PROMESSA =
+  "Também NÃO é promessa (isPromise=false) anunciar que a conversa está passando para uma " +
+  "pessoa ou setor da equipe, sem prazo, gratuidade nem garantia " +
+  '("vou transferir você para a Andreia, que continua seu atendimento por aqui", ' +
+  '"estou passando sua conversa para o financeiro").\n';
+
 const PERGUNTA_COMERCIAL_SEM_EVIDENCIA =
   "## Pergunta 1 — isPromise (promessa COMERCIAL concreta)\n" +
   "Decida se a mensagem contém uma PROMESSA ou " +
@@ -87,6 +99,7 @@ const PERGUNTA_COMERCIAL_SEM_EVIDENCIA =
   "NÃO é promessa (isPromise=false): perguntas, saudações, agradecimentos, descrições de " +
   "horário/empresa, próximos passos vagos SEM compromisso concreto e slogans genéricos de " +
   'marketing ("garantimos qualidade", "nossa entrega é rápida", "10x mais rápido que a concorrência").\n' +
+  TRANSFERENCIA_NAO_E_PROMESSA +
   "\n";
 
 /**
@@ -128,6 +141,7 @@ const PERGUNTA_COMERCIAL_COM_EVIDENCIAS =
   "NÃO é promessa (isPromise=false): perguntas, saudações, agradecimentos, descrições de " +
   "horário/empresa, próximos passos vagos SEM compromisso concreto e slogans genéricos de " +
   'marketing ("garantimos qualidade", "nossa entrega é rápida", "10x mais rápido que a concorrência").\n' +
+  TRANSFERENCIA_NAO_E_PROMESSA +
   "\n";
 
 const PERGUNTA_RETORNO_E_FORMATO =

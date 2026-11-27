@@ -133,10 +133,16 @@ async function convidadosDaEquipeConferidos(
  * RESPONSÁVEIS ADICIONAIS — conferidos antes de gravar. São membros ATIVOS da
  * organização, livres no horário (o banco revalida), e nenhum pode ser o
  * responsável principal. Retorna os ids normalizados (sem repetidos).
+ *
+ * O adicional ocupa a agenda de quem é incluído, então segue a MESMA opção
+ * "Atendentes podem mexer na agenda dos colegas" do principal (#5280): com ela
+ * desligada, o Atendente só inclui a si mesmo. A lista conta inteira, como no
+ * banco (`fn_appointment_change_core`, `fn_appointment_insert_with_responsibles`,
+ * `fn_calendar_service_book`), que recusa com o mesmo `appointment_do_colega`.
  */
 async function responsaveisConferidos(
   supabase: SB,
-  ctx: { organization_id: string; requestId: string },
+  ctx: HandlerCtx,
   ids: readonly string[] | null | undefined,
   ownerUserId: string | null | undefined,
 ): Promise<string[]> {
@@ -170,6 +176,10 @@ async function responsaveisConferidos(
       ERRO_RESPONSAVEIS.appointment_responsibles_invalid.message +
         ` Estes não são membros ativos desta organização: ${faltam.join(", ")}.`,
     );
+  }
+  const incluiColega = pedidos.some((i) => ctx.actor.type !== "user" || i.toLowerCase() !== ctx.actor.id.toLowerCase());
+  if (incluiColega && aOpcaoPodeRecortar(ctx.actor, false) && !(await colegasPodemMexerNaAgenda(supabase, ctx))) {
+    throw new ApiError(403, "appointment_do_colega", undefined, ctx.requestId, RECUSA_DO_COLEGA_ADICIONAL);
   }
   return pedidos;
 }
@@ -371,6 +381,11 @@ async function colegasPodemMexerNaAgenda(supabase: SB, ctx: HandlerCtx): Promise
 const RECUSA_DO_COLEGA =
   "Esta empresa está com “Atendentes podem mexer na agenda dos colegas” desligado: " +
   "você mexe só nos compromissos de que é responsável. Peça a um gerente ou administrador.";
+
+/** A mesma recusa, dita para quem tentou incluir um colega como responsável adicional. */
+const RECUSA_DO_COLEGA_ADICIONAL =
+  "Esta empresa está com “Atendentes podem mexer na agenda dos colegas” desligado: " +
+  "você só inclui a si mesmo como responsável adicional. Peça a um gerente ou administrador.";
 
 /**
  * A PERGUNTA QUE VEM ANTES DA LEITURA — e ela é o que evita ler a opção à toa.

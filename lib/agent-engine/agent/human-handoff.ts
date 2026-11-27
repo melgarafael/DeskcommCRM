@@ -437,6 +437,21 @@ export async function iaVetadaNoEnvio(
   tenantId: string,
   leadId: string,
   conversationId: string,
+  opcoes: { jobDoTurno?: string } = {},
+): Promise<boolean> {
+  if (!(await travasDaConversaVetam(db, tenantId, leadId, conversationId))) return false;
+  // #5259: o turno que TRANSFERIU não está diante de "uma pessoa assumiu" — as
+  // duas travas acima foram gravadas por ele mesmo (`fn_conversation_assign`
+  // grava dono humano E silêncio sem prazo na mesma transação).
+  if (opcoes.jobDoTurno === undefined) return true;
+  return !(await soOProprioTurnoAtribuiu(db, tenantId, leadId, conversationId, opcoes.jobDoTurno));
+}
+
+async function travasDaConversaVetam(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
 ): Promise<boolean> {
   if (await isLeadInHandoff(db, tenantId, leadId, { conversationId })) return true;
   const { rows } = await db.query<{ assignee_kind: string | null; metadata: unknown }>(
@@ -451,6 +466,64 @@ export async function iaVetadaNoEnvio(
     assigneeKind: conversa.assignee_kind,
     iaComDono: lerModoIaComDono(conversa.metadata),
   });
+}
+
+/**
+ * O veto em vigor é SÓ o que a atribuição deste turno gravou? (#5259)
+ *
+ * O agente transfere com `crm_assign_conversation` e avisa o cliente em seguida.
+ * `fn_conversation_assign` grava o dono humano e `bot_silenced_until = 'infinity'`
+ * juntos, e o evento de atribuição leva `source_job_id` — campo que só o runtime
+ * escreve (#3926, migration 9103). Sem esta leitura, o aviso de transferência
+ * era recusado como `pessoa_assumiu_a_conversa` e o cliente ficava sem resposta.
+ *
+ * Libera somente quando TUDO vale:
+ *   - a ÚLTIMA atribuição da conversa veio deste job, e o dono atual é o que ela
+ *     gravou (outro ator, ou o dono trocado depois, gera evento mais novo → veta);
+ *   - nenhuma fala humana (Inbox ou aparelho) na conversa desde que o job nasceu;
+ *   - nenhuma trava do CONTATO (`force_human`, sempre-humano, contato interno) —
+ *     essas não são gravadas pela atribuição.
+ * Vale só para o resto DESTE turno: o próximo turno passa pelo gate do começo,
+ * que vê o dono humano e não fala.
+ */
+async function soOProprioTurnoAtribuiu(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+  jobDoTurno: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ do_proprio_turno: boolean }>(
+    `select (
+       not c.force_human
+       and not c.ai_opt_out
+       and not ${sqlContatoInterno('c')}
+       and v.assignee_kind = 'user'
+       and e.source_job_id = $4
+       and e.to_user_id = v.assigned_to_user_id
+       and not exists (
+         select 1 from messages m
+          where m.organization_id = $1 and m.conversation_id = v.id
+            and m.direction = 'outbound'
+            and m.sent_via in ('user', 'crm', 'external_device')
+            and m.type not in ('reaction', 'system')
+            and m.created_at >= j.created_at
+       )
+     ) as do_proprio_turno
+       from conversations v
+       join contacts c on c.organization_id = v.organization_id and c.id = v.contact_id
+       join job_queue j on j.organization_id = v.organization_id and j.id = $4
+       cross join lateral (
+         select e.source_job_id, e.to_user_id
+           from conversation_assignment_events e
+          where e.organization_id = $1 and e.conversation_id = v.id
+          order by e.created_at desc
+          limit 1
+       ) e
+      where v.organization_id = $1 and c.id = $2 and v.id = $3`,
+    [tenantId, leadId, conversationId, jobDoTurno],
+  );
+  return rows[0]?.do_proprio_turno === true;
 }
 
 export interface HandoffIds {
