@@ -416,9 +416,12 @@ function readWonReasons(settings: Record<string, unknown> | null): string[] {
   const r = (settings as { won_reasons?: unknown } | null)?.won_reasons;
   return Array.isArray(r) ? r.filter((v): v is string => typeof v === "string") : [];
 }
+/** Sem etapas: um objeto só, para a identidade não mudar a cada render (a busca compara). */
+const SEM_ETAPAS: Record<string, EtapaDoFunil[]> = {};
+
 export function PipelinesClient({
   pipelines,
-  etapas = {},
+  etapas = SEM_ETAPAS,
   podeEditarConfig,
   comandaDisponivel = false,
 }: {
@@ -467,6 +470,15 @@ export function PipelinesClient({
   // nova que ela.
   const [abertaEm] = useState(() => Date.now());
   const [etapasDoEditor, setEtapasDoEditor] = useState<Record<string, readonly string[]>>({});
+  // A página RELIDA do servidor (salvar o funil revalida a rota) traz etapas
+  // mais novas que qualquer leitura anterior do editor — inclusive o que outra
+  // aba mudou no Kanban. Etapas novas do servidor apagam as do editor; a próxima
+  // leitura dele (depois de uma edição aqui) volta a valer.
+  const [etapasDoServidor, setEtapasDoServidor] = useState(etapas);
+  if (etapasDoServidor !== etapas) {
+    setEtapasDoServidor(etapas);
+    setEtapasDoEditor({});
+  }
   const aoLerEtapas = useCallback((pipelineId: string, nomes: readonly string[], lidasEm: number) => {
     if (lidasEm < abertaEm) return;
     setEtapasDoEditor((antes) => {
