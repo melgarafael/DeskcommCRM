@@ -16,8 +16,14 @@
  *   - o recibo da aprovação de pedido LGPD fica, em qualquer idade (aquela rota
  *     lê a chave sem olhar o vencimento);
  *   - quem chama é a service role (o papel do cron); `anon` e `authenticated`
- *     não executam.
+ *     não executam;
+ *   - linha que OUTRA sessão está reescrevendo (a reserva renovada de
+ *     `lib/api/idempotency.ts`) não trava a poda nem é apagada: a poda pula a
+ *     travada e apaga as outras. Sem o `for update skip locked`, ela esperaria
+ *     a trava e cairia no `lock_timeout`.
  */
+import { spawn } from "node:child_process";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { sql } from "./psql-transporte";
@@ -76,7 +82,64 @@ beforeEach(() => {
   `);
 });
 
+/**
+ * Uma SEGUNDA sessão psql, em paralelo, como `psql-transporte` abre a primeira
+ * (mesmo container ou mesmo binário, mesmo banco). Devolve quando ela termina.
+ */
+function outraSessao(script: string): Promise<string> {
+  const container = process.env.TEST_DB_CONTAINER;
+  const psqlLocal = process.env.TEST_DB_PSQL;
+  const args = ["-v", "ON_ERROR_STOP=1", "-tA", "-f", "-"];
+  const [bin, todos] = psqlLocal
+    ? [psqlLocal, [process.env.TEST_DB_CONN ?? "postgres://postgres@localhost/postgres", ...args]]
+    : ["docker", ["exec", "-i", container as string, "psql", "-U", "postgres", "-d", "postgres", ...args]];
+  return new Promise((resolve, reject) => {
+    const filho = spawn(bin, todos);
+    let saida = "";
+    filho.stdout.on("data", (d) => (saida += String(d)));
+    filho.on("error", reject);
+    filho.on("close", (codigo) => (codigo === 0 ? resolve(saida) : reject(new Error(`psql saiu com ${codigo}`))));
+    filho.stdin.end(script);
+  });
+}
+
 describe("#1613 — fn_expurgar_chaves_de_idempotencia_vencidas", () => {
+  it("a linha que outra sessão está renovando não trava a poda nem é apagada", async () => {
+    // A sessão A renova a k-3 (como a leitura faz com uma reserva vencida) e
+    // segura a trava por 4 s.
+    const a = outraSessao(`
+      begin;
+      update public.idempotency_keys set expires_at = now() + interval '60 seconds'
+       where organization_id = '${ORG_A}' and key = 'k-3-vencida-ha-2-dias';
+      select pg_sleep(4);
+      commit;
+    `);
+    // Espera a trava existir antes de podar.
+    for (let i = 0; i < 40; i++) {
+      const travas = valor(`
+        select count(*) from pg_stat_activity
+         where state = 'active' and query like '%pg_sleep(4)%' and pid <> pg_backend_pid();
+      `);
+      if (travas > 0) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    // A poda não espera a trava: com 1 s de `lock_timeout`, esperar seria erro.
+    const apagadas = valor(`
+      set lock_timeout = '1s';
+      set role service_role;
+      select public.fn_expurgar_chaves_de_idempotencia_vencidas(1, 1000);
+      reset role;
+    `);
+    expect(apagadas).toBe(1); // só a k-4, da outra organização
+    await a;
+    expect(chavesQueRestam()).toEqual([
+      "k-1-viva",
+      "k-2-vencida-ha-12h",
+      "k-3-vencida-ha-2-dias",
+      "k-5-lgpd-vencida-ha-2-dias",
+    ]);
+  }, 20_000);
+
   it("CONTROLE POSITIVO: a função existe e devolve inteiro", () => {
     expect(podar("1, 1000")).toBeGreaterThanOrEqual(0);
   });

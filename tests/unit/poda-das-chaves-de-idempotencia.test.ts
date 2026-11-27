@@ -135,7 +135,13 @@ describe("#1613 — a função nasce na migration e no baseline", () => {
     const texto = ler();
     const inicio = texto.lastIndexOf(`create or replace function public.${FUNCAO}(`);
     expect(inicio).toBeGreaterThan(-1);
-    const corpo = texto.slice(inicio, texto.indexOf("$$;", inicio) + 3);
+    // Sem os comentários: a explicação do `for update skip locked` repete as
+    // palavras, e o teste tem de olhar só o SQL que roda.
+    const corpo = texto
+      .slice(inicio, texto.indexOf("$$;", inicio) + 3)
+      .split("\n")
+      .map((linha) => linha.replace(/--.*$/, ""))
+      .join("\n");
     expect(corpo).toMatch(/security definer/);
     expect(corpo).toMatch(/set search_path to 'public', 'pg_temp'/);
     expect(corpo).toMatch(/p_retencao_dias is null or p_retencao_dias < 1/);
