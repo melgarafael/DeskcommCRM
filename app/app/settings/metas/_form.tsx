@@ -110,12 +110,14 @@ export function FormularioDaMeta({
   // As metas gravadas do mês que está NA TELA. A página entrega as do mês em que
   // abriu; trocar o mês lê as daquele mês (#4796) — antes, o alvo deste mês
   // aparecia no campo do outro, e salvar gravava esse número lá.
-  const [gravadas, setGravadas] = useState<{ periodo: string; metas: readonly MetaGravada[] }>({
-    periodo: mes,
-    metas,
-  });
-  const [erroAoLer, setErroAoLer] = useState(false);
-  const carregando = gravadas.periodo !== periodo && !erroAoLer;
+  // As do mês em que a página abriu vêm por prop (e se renovam no
+  // `router.refresh`); as de outro mês, da última leitura — `null` = ainda não
+  // chegaram, e aí o campo fica vazio e salvar fica travado.
+  const [lidas, setLidas] = useState<{ periodo: string; metas: readonly MetaGravada[] } | null>(null);
+  const [falhaAoLer, setFalhaAoLer] = useState<string | null>(null);
+  const metasDoPeriodo: readonly MetaGravada[] | null =
+    periodo === mes ? metas : lidas?.periodo === periodo ? lidas.metas : null;
+  const erroAoLer = falhaAoLer === periodo && metasDoPeriodo === null;
   const [indicador, setIndicador] = useState<IndicadorDaMeta>("vendas_ganhas");
   const [vendedor, setVendedor] = useState<string>(EMPRESA);
   const [alvo, setAlvo] = useState("");
@@ -145,16 +147,9 @@ export function FormularioDaMeta({
 
   // Ao trocar mês, indicador ou dono, o campo mostra o que JÁ está gravado para
   // aquela combinação — em vez de obrigar a pessoa a lembrar o número antigo.
-  // A página releu (router.refresh depois de salvar): as metas novas do mês em
-  // que ela abriu valem na hora.
   useEffect(() => {
-    setGravadas((atual) => (atual.periodo === mes ? { periodo: mes, metas } : atual));
-  }, [mes, metas]);
-
-  useEffect(() => {
-    if (gravadas.periodo === periodo || !/^\d{4}-\d{2}$/.test(periodo)) return;
+    if (metasDoPeriodo !== null || !/^\d{4}-\d{2}$/.test(periodo)) return;
     let vivo = true;
-    setErroAoLer(false);
     // A MESMA leitura do Desempenho (`/api/v1/metrics/metas`, mês pelo texto da
     // janela): uma régua só para "as metas deste mês".
     const janela = janelaDoMes(periodo);
@@ -164,7 +159,7 @@ export function FormularioDaMeta({
       )
       .then((r) => {
         if (!vivo) return;
-        const lidas = (r.data?.metas ?? [])
+        const doMes = (r.data?.metas ?? [])
           .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
           .map((m) => ({
             periodo,
@@ -173,25 +168,21 @@ export function FormularioDaMeta({
             pipeline_id: (m.pipeline_id as string | null | undefined) ?? null,
             alvo: Number(m.alvo),
           }));
-        setGravadas({ periodo, metas: lidas });
+        setLidas({ periodo, metas: doMes });
       })
       .catch(() => {
-        if (vivo) setErroAoLer(true);
+        if (vivo) setFalhaAoLer(periodo);
       });
     return () => {
       vivo = false;
     };
-  }, [periodo, gravadas.periodo]);
+  }, [periodo, metasDoPeriodo]);
 
   useEffect(() => {
-    if (gravadas.periodo !== periodo) {
-      // Enquanto o mês novo não chega, o campo não carrega o número de outro mês.
-      setAlvo("");
-      return;
-    }
-    const existente = gravadas.metas.find(
+    // Enquanto o mês novo não chega, o campo não carrega o número de outro mês.
+    const existente = (metasDoPeriodo ?? []).find(
       (m) =>
-        (m.periodo ?? gravadas.periodo) === periodo &&
+        (m.periodo ?? periodo) === periodo &&
         m.indicador === indicador &&
         (m.vendedor_id ?? null) === vendedorId &&
         (m.pipeline_id ?? null) === pipelineId,
@@ -203,7 +194,7 @@ export function FormularioDaMeta({
     setAlvo(
       indicador === "valor_vendido" ? (existente.alvo / 100).toFixed(2) : String(existente.alvo),
     );
-  }, [periodo, indicador, vendedorId, pipelineId, gravadas]);
+  }, [periodo, indicador, vendedorId, pipelineId, metasDoPeriodo]);
 
   const numero = indicador === "valor_vendido" ? Number(alvo.replace(",", ".")) : Number(alvo);
   const alvoEmUnidade = Math.round(numero * (indicador === "valor_vendido" ? 100 : 1));
@@ -214,7 +205,7 @@ export function FormularioDaMeta({
     alvoEmUnidade > 0 &&
     !vendedorSaiu &&
     // Sem ler o mês, salvar poderia corrigir uma meta que a tela não mostrou.
-    gravadas.periodo === periodo;
+    metasDoPeriodo !== null;
 
   function salvar(evento: React.FormEvent) {
     evento.preventDefault();
@@ -240,6 +231,8 @@ export function FormularioDaMeta({
       });
       if (resultado.ok) {
         toast.success(t("Meta salva."));
+        // O mês da página volta pelo refresh; outro mês é relido na hora.
+        if (periodo !== mes) setLidas(null);
         router.refresh();
         return;
       }
