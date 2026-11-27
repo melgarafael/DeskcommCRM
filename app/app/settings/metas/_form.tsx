@@ -26,7 +26,7 @@
  * "forbidden_role" mandaria um atendente tentar de novo para falhar igual,
  * então ela diz quem pode.
  */
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -110,13 +110,18 @@ export function FormularioDaMeta({
   // As metas gravadas do mês que está NA TELA. A página entrega as do mês em que
   // abriu; trocar o mês lê as daquele mês (#4796) — antes, o alvo deste mês
   // aparecia no campo do outro, e salvar gravava esse número lá.
-  // As do mês em que a página abriu vêm por prop (e se renovam no
-  // `router.refresh`); as de outro mês, da última leitura — `null` = ainda não
-  // chegaram, e aí o campo fica vazio e salvar fica travado.
-  const [lidas, setLidas] = useState<{ periodo: string; metas: readonly MetaGravada[] } | null>(null);
+  // As do mês em que a página abriu vêm por prop só na PRIMEIRA pintura; daí em
+  // diante todo mês — inclusive esse — vem da última leitura, e trocar de mês
+  // ou salvar descarta a leitura (`null` = ainda não chegou: o campo e o salvar
+  // ficam travados).
+  const [lidas, setLidas] = useState<{ periodo: string; metas: readonly MetaGravada[] } | null>(() => ({
+    periodo: mes,
+    metas,
+  }));
   const [falhaAoLer, setFalhaAoLer] = useState<string | null>(null);
-  const metasDoPeriodo: readonly MetaGravada[] | null =
-    periodo === mes ? metas : lidas?.periodo === periodo ? lidas.metas : null;
+  const metasDoPeriodo: readonly MetaGravada[] | null = lidas?.periodo === periodo ? lidas.metas : null;
+  // O mês que está NA TELA agora — a resposta de um salvar antigo confere com ele.
+  const periodoNaTela = useRef(periodo);
   const erroAoLer = falhaAoLer === periodo && metasDoPeriodo === null;
   const lendo = metasDoPeriodo === null && !erroAoLer;
   // Cada "Tentar de novo" é uma leitura nova do mesmo mês.
@@ -128,6 +133,7 @@ export function FormularioDaMeta({
    * tempo — salvar em cima dele desfaria a correção.
    */
   function trocarMes(novo: string) {
+    periodoNaTela.current = novo;
     setPeriodo(novo);
     setLidas(null);
     setFalhaAoLer(null);
@@ -245,8 +251,9 @@ export function FormularioDaMeta({
       });
       if (resultado.ok) {
         toast.success(t("Meta salva."));
-        // O mês da página volta pelo refresh; outro mês é relido na hora.
-        if (periodo !== mes) setLidas(null);
+        // Relê o mês salvo — só se ele ainda é o da tela: a resposta de um
+        // salvar antigo não pode apagar o que a pessoa já digita em outro mês.
+        if (periodoNaTela.current === periodo) setLidas(null);
         router.refresh();
         return;
       }

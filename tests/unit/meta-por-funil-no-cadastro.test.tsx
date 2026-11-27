@@ -117,6 +117,9 @@ const form = vi.hoisted(() => ({
   /** Segura a resposta até alguém chamar `liberar()`. */
   segurar: false,
   liberar: null as null | (() => void),
+  /** Segura a resposta do SALVAR até `liberarSalvar()`. */
+  segurarSalvar: false,
+  liberarSalvar: null as null | (() => void),
 }));
 vi.mock("@/hooks/team/useTeamMembers", () => ({
   useTeamMembers: () => ({ data: { data: [] }, isLoading: false, refetch: vi.fn() }),
@@ -154,6 +157,8 @@ beforeEach(() => {
   form.falhas = 0;
   form.segurar = false;
   form.liberar = null;
+  form.segurarSalvar = false;
+  form.liberarSalvar = null;
 });
 
 afterEach(cleanup);
@@ -220,6 +225,7 @@ describe("#4796 — o formulário oferece o funil", () => {
     vi.doMock("@/app/actions/settings/definirMetaMensal", () => ({
       definirMetaMensal: vi.fn(async (entrada: unknown) => {
         form.definir(entrada);
+        if (form.segurarSalvar) await new Promise<void>((r) => (form.liberarSalvar = r));
         return form.resposta;
       }),
     }));
@@ -335,6 +341,40 @@ describe("#4796 — o formulário oferece o funil", () => {
     fireEvent.change(mes, { target: { value: "2026-12" } });
     await waitFor(() => expect(alvo.value).toBe("30"));
     expect(form.lidos.filter((m) => m === "2026-12")).toHaveLength(2);
+  });
+
+  it("voltar ao mês em que a página abriu também lê de novo", async () => {
+    await montar([{ periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 9 }]);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    const mes = document.getElementById("periodo")!;
+    await waitFor(() => expect(alvo.value).toBe("9"));
+    fireEvent.change(mes, { target: { value: "2026-12" } });
+    await waitFor(() => expect(form.lidos).toContain("2026-12"));
+    // Outra pessoa corrigiu novembro enquanto esta tela olhava dezembro.
+    form.porMes["2026-11"] = [
+      { periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: null, alvo: 30 },
+    ];
+    fireEvent.change(mes, { target: { value: "2026-11" } });
+    await waitFor(() => expect(alvo.value).toBe("30"));
+    expect(form.lidos).toContain("2026-11");
+  });
+
+  it("a resposta de um salvar antigo não apaga o que já se digita em outro mês", async () => {
+    form.segurarSalvar = true;
+    await montar([]);
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    const mes = document.getElementById("periodo")!;
+    fireEvent.change(alvo, { target: { value: "5" } });
+    fireEvent.submit(alvo.closest("form")!);
+    await waitFor(() => expect(form.definir).toHaveBeenCalledTimes(1));
+    fireEvent.change(mes, { target: { value: "2027-01" } });
+    await waitFor(() => expect(alvo).toBeEnabled());
+    fireEvent.change(alvo, { target: { value: "18" } });
+    const leiturasAntes = form.lidos.length;
+    form.liberarSalvar?.();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(alvo.value).toBe("18");
+    expect(form.lidos.length).toBe(leiturasAntes);
   });
 
   it("a meta já gravada do funil aparece ao escolher o funil", async () => {
