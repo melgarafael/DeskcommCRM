@@ -886,6 +886,41 @@ export async function alterarAgendamentoHandler(
   ctx: HandlerCtx,
   input: AlterarInput,
 ): Promise<Record<string, unknown>> {
+  // Com chave (hoje só `crm_reschedule_appointment` a repassa), o recibo cobre
+  // os DOIS caminhos, local e Amigo: a repetição devolve a resposta gravada e a
+  // mesma chave com outro pedido é recusada antes de qualquer efeito. No Amigo a
+  // mesma chave também chega à operação (`key()` em `lib/amigo/agenda.ts`).
+  // Sem chave, nada muda (DES-1952).
+  const chave = ctx.idempotencyKey;
+  if (chave === undefined) return executarAlteracaoDeAgendamento(supabase, ctx, input);
+  const desfecho = await comIdempotencia({
+    db: supabase,
+    organizationId: ctx.organization_id,
+    endpoint: ENDPOINT_IDEMPOTENCIA_ALTERACAO,
+    chave,
+    corpo: input,
+    executar: async () => ({
+      resposta: await executarAlteracaoDeAgendamento(supabase, ctx, input),
+      status: 200,
+    }),
+  });
+  if (desfecho.tipo === "conflito") {
+    throw new ApiError(409, "idempotency_conflict", undefined, ctx.requestId, "Esta chave de idempotência já foi usada com outro conteúdo.");
+  }
+  if (desfecho.tipo === "em_curso") {
+    throw new ApiError(409, "idempotency_in_progress", undefined, ctx.requestId, "A mesma requisição ainda está em curso. Tente de novo em instantes.");
+  }
+  return desfecho.resposta;
+}
+
+/** Outro endpoint que o da criação: a mesma chave numa marcação e numa alteração não se confundem. */
+const ENDPOINT_IDEMPOTENCIA_ALTERACAO = "/api/v1/agenda/agendamentos/:id";
+
+async function executarAlteracaoDeAgendamento(
+  supabase: SB,
+  ctx: HandlerCtx,
+  input: AlterarInput,
+): Promise<Record<string, unknown>> {
   const atual = await exigeAgendamento(supabase, ctx, input.id, [
     "id",
     "revision",
