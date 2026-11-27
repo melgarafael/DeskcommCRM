@@ -677,6 +677,7 @@ export const AUDIT_ACTIONS = [
   // handler o consumiria; evento sem consumer é o anti-pattern nº 3).
   "platform.internal_destinations_updated",
   "platform_google_oauth.updated",
+  "platform_microsoft_oauth.updated",
   "platform_smtp_settings.updated",
   // A credencial do APP da Meta da INSTALAÇÃO (migration 0257): o App Secret que
   // assina a entrega do webhook e o verify token que responde ao handshake.
@@ -826,6 +827,10 @@ export const AUDIT_ACTIONS = [
   "agenda.google.conexao_falhou",
   "agenda.google.conexao_concluida",
   "agenda.google.conexao_desconectada",
+  "agenda.microsoft.conexao_iniciada",
+  "agenda.microsoft.conexao_falhou",
+  "agenda.microsoft.conexao_concluida",
+  "agenda.microsoft.conexao_desconectada",
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
   "agenda.tipo_criado",
@@ -917,6 +922,8 @@ export const AUDIT_ACTIONS = [
   // `nossos_ignorados` de propósito: é o número que prova o anti-eco
   // funcionando — sem ele, esses eventos teriam virado compromisso fantasma.
   "agenda.google.sync_executado",
+  "agenda.microsoft.sync_executado",
+  "agenda.microsoft.selecao_atualizada",
   "agenda.google_selection_updated",
   "agenda.google_catalog_updated",
   "agenda.meet_action_requested",

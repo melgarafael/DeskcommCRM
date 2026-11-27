@@ -12992,6 +12992,34 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_microsoft_oauth: {
+        Row: {
+          client_id: string | null;
+          client_secret_encrypted: string | null;
+          id: number;
+          tenant: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          id?: number;
+          tenant?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          id?: number;
+          tenant?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       platform_settings: {
         Row: {
           divulgacao_de_pagamento: string | null;
@@ -15667,6 +15695,16 @@ export type Database = {
       fn_historico_analise_motivo_para_pular: {
         Args: { p_contato: string; p_importacao: string; p_org: string };
         Returns: string;
+      };
+      fn_microsoft_calendar_save: {
+        Args: {
+          p_calendar: string;
+          p_end: string;
+          p_items: Json;
+          p_org: string;
+          p_start: string;
+        };
+        Returns: number;
       };
       fn_previa_historico_analise: {
         Args: { p_importacao: string; p_limite: number; p_org: string };

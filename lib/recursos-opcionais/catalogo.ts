@@ -340,6 +340,17 @@ const DO_SERVIDOR: RecursoOpcional[] = [
     ler: peloServidor("google_agenda"),
   },
   {
+    id: "microsoft_agenda",
+    nome: "Agenda do Outlook",
+    oQueFaz: "Cada pessoa conecta a própria agenda do Outlook, e o horário ocupado lá não é oferecido aqui.",
+    nivel: "servidor",
+    padrao: "desligado",
+    quemDecide: "dono_do_servidor",
+    href: "/admin/microsoft",
+    comoLigar: "Cadastre o aplicativo da Microsoft na tela Agenda do Outlook.",
+    ler: peloServidor("microsoft_agenda"),
+  },
+  {
     id: "meta",
     nome: "API Oficial da Meta",
     oQueFaz: "Permite conectar números pela API oficial do WhatsApp.",

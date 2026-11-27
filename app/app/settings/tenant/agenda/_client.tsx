@@ -1,6 +1,7 @@
 "use client";
 import { TituloDaAgenda } from "@/components/agenda/TituloDaAgenda";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
+import { AgendasDoOutlook } from "@/components/agenda/AgendasDoOutlook";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
@@ -482,6 +483,7 @@ export function TiposDeAgendamentoClient({
   podeEditar,
   usuarioAtualId,
   podeConfigurarGoogle,
+  outlook,
   erroDeLeitura = null,
   clientePelaAgendaLigado,
   podeLigarClientePelaAgenda,
@@ -501,6 +503,8 @@ export function TiposDeAgendamentoClient({
   podeEditar: boolean;
   usuarioAtualId: string;
   podeConfigurarGoogle: boolean;
+  /** Ausente = a instalação não tem Outlook e a pessoa não tem conta conectada. */
+  outlook?: { configurado: boolean };
   /** Mensagem do banco quando a consulta FALHOU. `null` = a consulta rodou. */
   erroDeLeitura?: string | null;
   /** `organizations.settings.crm.cliente_pela_agenda`, lido pela página. */
@@ -1028,6 +1032,7 @@ export function TiposDeAgendamentoClient({
         ))}
       </ul>
       {podeConfigurarGoogle && <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Contas e calendários Google")}</summary><div className="mt-4"><AgendasConectadas /></div></details>}
+      {podeConfigurarGoogle && outlook && <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Contas e calendários do Outlook")}</summary><div className="mt-4"><AgendasDoOutlook configurado={outlook.configurado} /></div></details>}
       <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Regras gerais da agenda")}</summary><div className="mt-4 space-y-4">
         <TituloDaAgenda tituloInicial={tituloDaAgenda} podeEditar={podeEditar}/>
       <PrazosDePresenca podeEditar={podeEditar}/>

@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agenda Outlook: leitura da ocupação",
+    "subtitle": "Cada pessoa conecta a própria conta; o CRM só lê",
+    "output": "agenda-outlook.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "humano"
+    },
+    {
+      "id": "borda",
+      "label": "borda"
+    },
+    {
+      "id": "execucao",
+      "label": "execucao"
+    },
+    {
+      "id": "banco",
+      "label": "banco"
+    },
+    {
+      "id": "externo",
+      "label": "externo"
+    }
+  ],
+  "mainPath": [
+    "pessoa",
+    "oauth",
+    "microsoft"
+  ],
+  "nodes": [
+    {
+      "id": "admin",
+      "lane": "humano",
+      "col": 0,
+      "type": "service",
+      "label": "/admin/microsoft: quem administra a instalação cadastra o aplicativo"
+    },
+    {
+      "id": "pessoa",
+      "lane": "humano",
+      "col": 1,
+      "type": "service",
+      "label": "Agenda: cartão do Outlook (conectar, reconectar, desconectar) e escolha das agendas"
+    },
+    {
+      "id": "grade",
+      "lane": "humano",
+      "col": 2,
+      "type": "service",
+      "label": "Grade e horários livres: ocupado na agenda externa"
+    },
+    {
+      "id": "oauth",
+      "lane": "borda",
+      "col": 1,
+      "type": "service",
+      "label": "connect/callback: sessão, state assinado, nonce de uso único, membro ativo"
+    },
+    {
+      "id": "rotas",
+      "lane": "borda",
+      "col": 2,
+      "type": "service",
+      "label": "calendarios/desconectar: só a própria conexão"
+    },
+    {
+      "id": "cron",
+      "lane": "execucao",
+      "col": 1,
+      "type": "service",
+      "label": "cron agenda-microsoft-sync: piso ocioso, rodízio, só membros ativos"
+    },
+    {
+      "id": "sync",
+      "lane": "execucao",
+      "col": 2,
+      "type": "service",
+      "label": "sincronizarConexao: renova o token e lê a janela inteira"
+    },
+    {
+      "id": "app",
+      "lane": "banco",
+      "col": 0,
+      "type": "service",
+      "label": "platform_microsoft_oauth: segredo cifrado, só service_role"
+    },
+    {
+      "id": "conexao",
+      "lane": "banco",
+      "col": 1,
+      "type": "service",
+      "label": "calendar_connections: provider microsoft_calendar, status e recuo"
+    },
+    {
+      "id": "espelho",
+      "lane": "banco",
+      "col": 2,
+      "type": "service",
+      "label": "fn_microsoft_calendar_save: troca atômica de calendar_external_events e cobertura"
+    },
+    {
+      "id": "auditoria",
+      "lane": "banco",
+      "col": 3,
+      "type": "service",
+      "label": "api_audit_log: agenda.microsoft.*"
+    },
+    {
+      "id": "microsoft",
+      "lane": "externo",
+      "col": 2,
+      "type": "service",
+      "label": "Microsoft identity v2 e Graph (somente leitura)"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "admin",
+      "to": "app",
+      "label": "grava o aplicativo"
+    },
+    {
+      "id": "e2",
+      "from": "app",
+      "to": "oauth",
+      "label": "configura o consentimento"
+    },
+    {
+      "id": "e3",
+      "from": "pessoa",
+      "to": "oauth",
+      "label": "inicia a conexão"
+    },
+    {
+      "id": "e4",
+      "from": "oauth",
+      "to": "microsoft",
+      "label": "consentimento e troca do código"
+    },
+    {
+      "id": "e5",
+      "from": "oauth",
+      "to": "conexao",
+      "label": "grava a conta de quem conectou"
+    },
+    {
+      "id": "e6",
+      "from": "oauth",
+      "to": "sync",
+      "label": "primeira leitura"
+    },
+    {
+      "id": "e7",
+      "from": "pessoa",
+      "to": "rotas",
+      "label": "escolhe o que conta ou desconecta"
+    },
+    {
+      "id": "e8",
+      "from": "rotas",
+      "to": "conexao",
+      "label": "atualiza seleção e status"
+    },
+    {
+      "id": "e9",
+      "from": "cron",
+      "to": "conexao",
+      "label": "escolhe o lote"
+    },
+    {
+      "id": "e10",
+      "from": "cron",
+      "to": "sync",
+      "label": "chama por conexão"
+    },
+    {
+      "id": "e11",
+      "from": "app",
+      "to": "sync",
+      "label": "credencial da instalação"
+    },
+    {
+      "id": "e12",
+      "from": "sync",
+      "to": "microsoft",
+      "label": "calendarView"
+    },
+    {
+      "id": "e13",
+      "from": "sync",
+      "to": "espelho",
+      "label": "substitui a janela"
+    },
+    {
+      "id": "e14",
+      "from": "sync",
+      "to": "conexao",
+      "label": "token_expired ou recuo"
+    },
+    {
+      "id": "e15",
+      "from": "espelho",
+      "to": "grade",
+      "label": "ocupa o dono"
+    },
+    {
+      "id": "e16",
+      "from": "conexao",
+      "to": "pessoa",
+      "label": "pede para reconectar"
+    },
+    {
+      "id": "e17",
+      "from": "cron",
+      "to": "auditoria",
+      "label": "rodada com efeito"
+    },
+    {
+      "id": "e18",
+      "from": "oauth",
+      "to": "auditoria",
+      "label": "conexão concluída ou falha"
+    }
+  ]
+}

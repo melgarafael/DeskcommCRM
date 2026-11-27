@@ -27,6 +27,8 @@ function consulta(data: unknown) {
   const resposta = { data, error: null };
   const elo = {
     eq: () => elo,
+    neq: () => elo,
+    limit: () => elo,
     is: () => elo,
     order: () => elo,
     maybeSingle: () => Promise.resolve(resposta),

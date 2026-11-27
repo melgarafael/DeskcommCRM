@@ -99,11 +99,11 @@ como conferência no painel (**Settings → Usage → Auth**), não como primeir
 | 3 | **Autohospedar** o Supabase | a cota deixa de existir; o custo vira a VPS | só está documentado para instalação **nova** — migração com dados não tem passo a passo |
 
 **1. Limpar — custo zero, e o que exatamente sai.** O cron `data-retention` roda às 04h40
-(`docker/scheduler/entrypoint.sh:181`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
+(`docker/scheduler/entrypoint.sh:184`) e poda as tabelas que crescem sozinhas; o que ele apaga e as
 alavancas (`JOB_QUEUE_RETENTION_DAYS`, `AUDIT_LOG_RETENTION_DAYS`, as de telemetria de IA) estão em
 §4.1 e §4.2. Para o storage há dois crons, e eles trabalham em par:
 
-- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:185`), enfileira o arquivo de mensagem
+- `media-retention`, às 05h20 (`docker/scheduler/entrypoint.sh:188`), enfileira o arquivo de mensagem
   mais velho que `organizations.media_retention_days` — padrão **365** dias, piso **30**
   (`supabase/migrations/20260926200200_0432_poda_de_midia.sql:35`) — e o órfão de conversa apagada;
   a rodada enfileira até 10 mil arquivos (`app/api/v1/cron/media-retention/route.ts:39-41`);
