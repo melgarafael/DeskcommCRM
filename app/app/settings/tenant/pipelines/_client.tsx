@@ -461,15 +461,20 @@ export function PipelinesClient({
   // As etapas que a busca enxerga são as VIVAS (a arquivada não recebe card), e
   // as da ÚLTIMA leitura do editor de cada funil: criar, renomear ou arquivar
   // aqui relê o editor, e a busca não pode ficar com os nomes de quando a página
-  // abriu. Antes da primeira leitura, valem as que vieram do servidor.
+  // abriu. Antes da primeira leitura, valem as que vieram do servidor — e uma
+  // leitura do editor guardada em cache de ANTES de a página abrir (o Kanban
+  // renomeia a etapa sem mexer nesse cache) não vence a do servidor, que é mais
+  // nova que ela.
+  const [abertaEm] = useState(() => Date.now());
   const [etapasDoEditor, setEtapasDoEditor] = useState<Record<string, readonly string[]>>({});
-  const aoLerEtapas = useCallback((pipelineId: string, nomes: readonly string[]) => {
+  const aoLerEtapas = useCallback((pipelineId: string, nomes: readonly string[], lidasEm: number) => {
+    if (lidasEm < abertaEm) return;
     setEtapasDoEditor((antes) => {
       const atual = antes[pipelineId];
       if (atual && atual.length === nomes.length && atual.every((n, i) => n === nomes[i])) return antes;
       return { ...antes, [pipelineId]: nomes };
     });
-  }, []);
+  }, [abertaEm]);
   // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
   const visiveis = funisQueCasam(
     pipelines.map((p) => ({
@@ -625,12 +630,12 @@ function CardDoFunil({
    */
   oculto?: boolean;
   /** Repassa à lista os nomes que o editor de etapas leu (a busca usa, #4593). */
-  aoLerEtapas?: (pipelineId: string, nomes: readonly string[]) => void;
+  aoLerEtapas?: (pipelineId: string, nomes: readonly string[], lidasEm: number) => void;
 }) {
   const t = useT();
   const pipelineId = pipeline.id;
   const aoLerEtapasDoFunil = useCallback(
-    (nomes: readonly string[]) => aoLerEtapas?.(pipelineId, nomes),
+    (nomes: readonly string[], lidasEm: number) => aoLerEtapas?.(pipelineId, nomes, lidasEm),
     [aoLerEtapas, pipelineId],
   );
   const [editorAberto, setEditorAberto] = useState(false);

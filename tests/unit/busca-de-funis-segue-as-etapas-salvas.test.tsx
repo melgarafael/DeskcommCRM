@@ -160,3 +160,28 @@ describe("Funis: a busca acompanha o editor de etapas da mesma tela", () => {
     await waitFor(() => expect(visiveis()).toEqual([]));
   });
 });
+
+describe("Funis: leitura velha do editor, guardada de antes de a página abrir, não vence a do servidor", () => {
+  it("etapa renomeada em outra tela (o Kanban): vale o nome que a página trouxe", async () => {
+    // O cache do editor ainda guarda o nome de antes (o Kanban renomeou e não
+    // mexeu nele) e está fresco: o editor não relê ao montar.
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
+    qc.setQueryData(["agent-mapping", POS.id], {
+      etapas: [{ id: "e3", name: "Aguardando pagamento", is_won: false, is_lost: false }],
+      mapeamento: { new: null, contacted: null, qualifying: null, qualified: null, negotiating: null, won: null, lost: null },
+    });
+    const servidor = doServidor();
+    servidor[POS.id] = [{ id: "e3", name: "Pendência bancária", is_archived: false }];
+    render(
+      <QueryClientProvider client={qc}>
+        <PipelinesClient pipelines={FUNIS} etapas={servidor} podeEditarConfig />
+      </QueryClientProvider>,
+    );
+    const campo = screen.getByRole("textbox", { name: "Buscar funis" });
+
+    fireEvent.change(campo, { target: { value: "pendencia" } });
+    await waitFor(() => expect(visiveis()).toEqual(["Pós-venda"]));
+    fireEvent.change(campo, { target: { value: "aguardando" } });
+    await waitFor(() => expect(visiveis()).toEqual([]));
+  });
+});
