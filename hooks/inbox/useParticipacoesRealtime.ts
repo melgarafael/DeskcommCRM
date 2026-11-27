@@ -6,25 +6,28 @@ import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 
 /** O próprio vínculo continua legível depois de left_at: a saída também chega. */
-export function useParticipacoesRealtime(userId: string | null, orgId: string | null) {
+export function useParticipacoesRealtime(
+  userId: string | null,
+  orgId: string | null,
+  revalidar?: (afetada: string | null) => string | null,
+) {
   const qc = useQueryClient();
   const onChange = useCallback((payload: unknown) => {
+    const evento = payload as { new?: { conversation_id?: string }; old?: { conversation_id?: string } } | null;
+    const afetada = evento?.new?.conversation_id ?? evento?.old?.conversation_id ?? null;
+    const aberta = revalidar?.(afetada);
     agendarRecargaDasConversas(qc);
     void qc.invalidateQueries({ queryKey: ["conversation-counts"] });
-    const linha = (payload as { new?: { conversation_id?: string } } | null)?.new;
-    if (linha?.conversation_id) {
-      // Limpa o snapshot aberto antes de reler: uma remoção não deve continuar
-      // desenhando o histórico antigo enquanto a RLS já recusa a conversa.
-      void qc.resetQueries({ queryKey: ["conversation", linha.conversation_id] });
-      void qc.resetQueries({ queryKey: ["messages", linha.conversation_id] });
-    } else {
-      // Reconexão: o canal não guarda os eventos que ocorreram enquanto caiu.
-      // Um 404 no refetch mantém o dado anterior no react-query. Resetar tira
-      // esse snapshot também quando a remoção ocorreu durante a desconexão.
-      void qc.resetQueries({ queryKey: ["conversation"] });
-      void qc.resetQueries({ queryKey: ["messages"] });
+    for (const tipo of ["conversation", "messages", "notes", "passagens"]) {
+      const queryKey = afetada ? [tipo, afetada] : [tipo];
+      // A tela revalida a conversa aberta. Outra consulta do cache não pode
+      // disputar a mesma leitura nem continuar exibindo o snapshot antigo.
+      if (aberta && (!afetada || afetada === aberta)) {
+        void qc.cancelQueries({ queryKey: [tipo, aberta], exact: false });
+      }
+      void qc.resetQueries({ queryKey, predicate: ({ queryKey: chave }) => !aberta || chave[1] !== aberta });
     }
-  }, [qc]);
+  }, [qc, revalidar]);
   useRealtimeChannel({
     name: `participacoes-${orgId ?? "sem-org"}-${userId ?? "sem-usuario"}`,
     postgresChanges: userId ? {

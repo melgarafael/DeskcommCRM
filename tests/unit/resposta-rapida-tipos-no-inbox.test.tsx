@@ -37,12 +37,8 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
   useSendMessage: () => ({
-    // O envio de verdade é assíncrono; aqui o `onSuccess` é chamado na hora para
-    // a fila andar — é o que faz o 2º anexo sair depois do 1º.
-    mutate: (payload: unknown, opcoes?: { onSuccess?: () => void }) => {
-      h.enviar(payload);
-      opcoes?.onSuccess?.();
-    },
+    mutate: h.enviar,
+    mutateAsync: async (payload: unknown) => h.enviar(payload),
     isPending: false,
   }),
 }));

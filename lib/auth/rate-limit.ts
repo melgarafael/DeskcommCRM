@@ -22,7 +22,13 @@
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 
-import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import {
+  aplicarPenalidade,
+  checkRateLimit,
+  limparRateLimit,
+  peekRateLimit,
+  segundosDePenalidade,
+} from "@/lib/ai/dispatcher/rate-limit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 
 export interface AuthRateLimits {
@@ -149,9 +155,186 @@ export async function contaBloqueadaPorFalhas(email: string, limits: AuthRateLim
 }
 
 /** Registra uma senha errada no contador da conta. */
-export async function registrarFalhaDeLogin(email: string, limits: AuthRateLimits): Promise<void> {
-  if (limits.id === undefined) return;
-  await checkRateLimit(`auth:login_fail:id:${opaque(email)}`, limits.id, limits.windowSec);
+export async function registrarFalhaDeLogin(
+  email: string,
+  limits: AuthRateLimits,
+): Promise<DegrauDoBloqueio | null> {
+  if (limits.id !== undefined) {
+    await checkRateLimit(`auth:login_fail:id:${opaque(email)}`, limits.id, limits.windowSec);
+  }
+  // A janela do dia é alimentada pela MESMA falha — é o que impede o ataque de
+  // "5 erros a cada 5 minutos, para sempre": a curta esquece, a do dia não.
+  return registrarFalhaNaRegua(email);
+}
+
+/**
+ * ─── BLOQUEIO PROGRESSIVO POR CONTA (issue #4743, item 1) ──────────────────
+ *
+ * O limite acima é de JANELA CURTA (5 falhas / 5 min) e zera a cada 5 minutos:
+ * 5 erros a cada 5 minutos dão até 1.440 tentativas por dia na MESMA conta,
+ * todo dia, sem ninguém saber. Ele continua valendo exatamente como está — o
+ * que entra aqui é uma SEGUNDA janela, a do DIA, que não zera a cada 5 minutos
+ * e cujo castigo CRESCE com o número de falhas.
+ *
+ * "Dia" aqui é o dia do calendário UTC, não 24 horas desde a primeira falha: a
+ * chave do contador nasce alinhada (`floor(agora / 86400 s)`), então ela vira à
+ * meia-noite UTC. O castigo em curso NÃO vira junto — ele tem TTL próprio.
+ *
+ * ─── O mecanismo é o do `MFA_DIARIO`, não um segundo ───────────────────────
+ *
+ * O segundo fator já fazia isso (`auth:mfa_fail_daily:id:<hash>`, 86400 s):
+ * um balde diário ao lado do balde curto, `peekRateLimit` antes e
+ * `checkRateLimit` depois da falha. A senha passa a ter o mesmo par de baldes.
+ * A única peça nova é o PRAZO do castigo: um contador de janela fixa não sabe
+ * dizer "30 minutos a partir de agora" (a chave nasce alinhada ao início da
+ * janela), então o degrau grava uma penalidade com TTL próprio —
+ * `aplicarPenalidade`, no mesmo módulo de contador, mesmo armazenamento.
+ *
+ * ─── A RÉGUA, com os números ───────────────────────────────────────────────
+ *
+ *   falhas no dia │ castigo │ efeito
+ *   ──────────────┼─────────┼───────────────────────────────────────────────
+ *    5            │  5 min  │ igual à janela curta; o balde do dia só passa
+ *                 │         │ a LEMBRAR (é o degrau 1)
+ *   10            │ 30 min  │ e cada falha nova a partir daí renova os 30 min
+ *
+ * A conta, do jeito mais rápido possível para quem ataca: 10 falhas na
+ * primeira meia hora e depois uma a cada 30 minutos — no máximo 57 por dia
+ * UTC contra a mesma conta (medido em `signInWithPassword.test.ts`), em vez de
+ * ~1.440.
+ *
+ * ─── Por que NÃO há degrau "até redefinir a senha" (decisão do dono) ───────
+ *
+ * A issue sugere um terceiro degrau (20 falhas → trancada até redefinir). Ele
+ * ficou de fora de propósito: quem souber o e-mail do dono poderia trancá-lo
+ * fora do próprio CRM sem saber a senha, e a saída seria o "esqueci a senha"
+ * por e-mail — que numa instalação sem e-mail configurado não chega. O degrau
+ * longo entra junto com o destravamento pelo administrador em Equipe (item 1
+ * da issue) e o aviso ao dono da conta (item 2).
+ *
+ * ─── Enumeração ────────────────────────────────────────────────────────────
+ *
+ * O balde é derivado do E-MAIL APRESENTADO, exista conta ou não — a mesma
+ * decisão que o balde curto já toma. Consequência: quem digita um e-mail que
+ * não existe recebe exatamente a mesma sequência de respostas de quem digita o
+ * e-mail de uma vítima real, inclusive o `rate_limited` a partir da 6ª. Se o
+ * castigo só valesse para contas existentes, o PRÓPRIO bloqueio viraria o
+ * oráculo de enumeração que a issue pede para não criar.
+ */
+export interface DegrauDoBloqueio {
+  /** Falhas dentro da janela do dia que disparam este degrau. */
+  falhas: number;
+  /** Duração do castigo. */
+  segundos: number;
+  /** Evento de auditoria próprio do degrau. */
+  acao: AcaoDeBloqueio;
+}
+
+export type AcaoDeBloqueio = "auth.login_bloqueio_5min" | "auth.login_bloqueio_30min";
+
+/** Janela do dia (vira à meia-noite UTC) — o mesmo 86400 do `MFA_DIARIO`. */
+export const JANELA_DIARIA_DA_CONTA_SEC = 86_400;
+
+export const DEGRAUS_DO_BLOQUEIO: readonly DegrauDoBloqueio[] = [
+  { falhas: 5, segundos: 300, acao: "auth.login_bloqueio_5min" },
+  { falhas: 10, segundos: 1800, acao: "auth.login_bloqueio_30min" },
+];
+
+/** Falhas no dia do degrau mais alto — o `limit` do contador do dia. */
+const FALHAS_DO_ULTIMO_DEGRAU = DEGRAUS_DO_BLOQUEIO[DEGRAUS_DO_BLOQUEIO.length - 1]?.falhas ?? 0;
+
+export interface BloqueioProgressivo {
+  bloqueado: boolean;
+  /** 0 = livre; 1..2 = degrau da régua. */
+  degrau: number;
+  /** Evento de auditoria do degrau ativo (o da última falha registrada). */
+  acao: AcaoDeBloqueio | null;
+  restanteSec: number;
+}
+
+function chaveDiariaDaConta(email: string): string {
+  return `auth:falha_conta_dia:id:${opaque(email)}`;
+}
+
+function chaveDoDegrau(email: string, indice: number): string {
+  return `auth:falha_conta_bloqueio:id:${opaque(email)}:d${indice + 1}`;
+}
+
+/** Falhas da conta no dia UTC corrente (sem incrementar). */
+export async function falhasNaJanelaDiaria(email: string): Promise<number> {
+  return peekRateLimit(chaveDiariaDaConta(email), JANELA_DIARIA_DA_CONTA_SEC);
+}
+
+/** `0` = abaixo do primeiro degrau; `n` = degrau `n` (1..2). */
+export function degrauDeFalhas(falhas: number): number {
+  let degrau = 0;
+  DEGRAUS_DO_BLOQUEIO.forEach((d, i) => {
+    if (falhas >= d.falhas) degrau = i + 1;
+  });
+  return degrau;
+}
+
+/**
+ * A conta está sob castigo? Consulta do degrau mais alto para o mais baixo —
+ * quem chegou ao 2 não pode "cair" para o 1 só porque o castigo do 1 venceu.
+ */
+export async function bloqueioProgressivoDeConta(email: string): Promise<BloqueioProgressivo> {
+  const restantes = await Promise.all(
+    DEGRAUS_DO_BLOQUEIO.map((_, i) => segundosDePenalidade(chaveDoDegrau(email, i))),
+  );
+  for (let i = DEGRAUS_DO_BLOQUEIO.length - 1; i >= 0; i--) {
+    const degrau = DEGRAUS_DO_BLOQUEIO[i];
+    const restanteSec = restantes[i] ?? 0;
+    if (degrau && restanteSec > 0) {
+      return { bloqueado: true, degrau: i + 1, acao: degrau.acao, restanteSec };
+    }
+  }
+  return { bloqueado: false, degrau: 0, acao: null, restanteSec: 0 };
+}
+
+/**
+ * Conta a falha na janela do dia e aplica o castigo do degrau alcançado.
+ *
+ * ZERO sleep: o prazo é o TTL da penalidade, não um temporizador — é o que
+ * torna a janela do dia testável com relógio controlado.
+ *
+ * @returns o degrau que ACABOU de ser disparado (para o evento de auditoria),
+ *   ou `null` quando a falha não mudou o estado do bloqueio.
+ */
+export async function registrarFalhaNaRegua(email: string): Promise<DegrauDoBloqueio | null> {
+  const antes = await bloqueioProgressivoDeConta(email);
+
+  await checkRateLimit(
+    chaveDiariaDaConta(email),
+    FALHAS_DO_ULTIMO_DEGRAU,
+    JANELA_DIARIA_DA_CONTA_SEC,
+  );
+  const falhas = await falhasNaJanelaDiaria(email);
+  const indice = degrauDeFalhas(falhas);
+  const degrau = DEGRAUS_DO_BLOQUEIO[indice - 1];
+  if (!degrau) return null;
+
+  await aplicarPenalidade(chaveDoDegrau(email, indice - 1), degrau.segundos);
+
+  // Já estava castigado neste degrau (o castigo foi renovado, não nasceu
+  // agora): não é um evento novo. Castigo vencido e reincidente É evento novo.
+  return indice > antes.degrau ? degrau : null;
+}
+
+/**
+ * O desbloqueio antecipado: o caminho de redefinir a senha por e-mail.
+ *
+ * Medido no código: `/login` → "esqueci a senha" → `requestPasswordReset`
+ * (manda o link) → `/auth/confirm` (abre a sessão de recuperação) →
+ * `updatePassword` (grava a senha nova). É esse último passo que chama isto.
+ * Zera o balde do dia e os castigos, então a conta volta a aceitar a senha
+ * nova imediatamente — sem esperar os 30 minutos vencerem.
+ */
+export async function liberarBloqueioProgressivo(email: string): Promise<void> {
+  for (let i = 0; i < DEGRAUS_DO_BLOQUEIO.length; i++) {
+    await limparRateLimit(chaveDoDegrau(email, i));
+  }
+  await limparRateLimit(chaveDiariaDaConta(email), [JANELA_DIARIA_DA_CONTA_SEC]);
 }
 
 /**

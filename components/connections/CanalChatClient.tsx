@@ -615,7 +615,7 @@ function ComConexao({ estado, aoMudar }: { estado: Estado; aoMudar: () => Promis
             id="canal-chat-respostas-rapidas"
             rows={4}
             value={respostasRapidas}
-            placeholder="Ex.: Sim"
+            placeholder={t("Ex.: Sim")}
             onChange={(e) => setRespostasRapidas(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">

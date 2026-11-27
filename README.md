@@ -195,9 +195,33 @@ Se a versão nova subir quebrada, o agente **volta pra imagem anterior sozinho**
 volta no `.env` — sem isso, o próximo restart traria o app quebrado de novo, em silêncio.
 
 > Por baixo: o app só registra o pedido; quem executa é o agente que o `install.sh` deixou na
-> sua VPS, num cron que confere **a cada 5 minutos** — então a atualização começa em até 5
-> minutos depois do clique. Se esse agente estiver fora do ar, a tela avisa
-> **"Atualização automática indisponível"** e mostra o comando abaixo — ela não finge que deu certo.
+> sua VPS, num cron que confere **a cada 5 minutos**. Sem janela de manutenção configurada, a
+> atualização começa em até 5 minutos depois do clique — com janela, ela espera a madrugada
+> (veja abaixo). Se esse agente estiver fora do ar, a tela avisa **"Atualização automática
+> indisponível"** e mostra o comando abaixo — ela não finge que deu certo.
+
+**Janela de manutenção (atualizar de madrugada).** Se você não quer o CRM reiniciando no meio
+do expediente, declare no `.env` da instalação — o mesmo arquivo que o instalador preencheu, na
+raiz do projeto — a hora em que a atualização pode rodar:
+
+```bash
+# das 2h às 5h59, de 5 em 5 minutos
+SYSTEM_UPDATE_WINDOW=*/5 2-5 * * *
+# o fuso em que essa janela é lida (nome IANA)
+SYSTEM_UPDATE_WINDOW_TZ=America/Sao_Paulo
+```
+
+Comentário sempre em linha própria: o agente lê como valor tudo o que vem depois do `=`, e um
+`# ...` na mesma linha faz a janela ser recusada.
+
+Com a janela configurada, a atualização **espera a janela**: o clique das 10h não reinicia nada
+na hora, e a tela passa a mostrar **"Atualização agendada para 02h00"**. O pedido fica pendente
+e **não se perde** — ele roda sozinho na próxima abertura da janela, sem precisar clicar de
+novo. O fuso é o de `SYSTEM_UPDATE_WINDOW_TZ` (nome IANA), `America/Sao_Paulo` quando ausente —
+não o fuso do servidor, que numa VPS nova costuma ser UTC. Valor que o agente não entende é
+recusado em voz alta (o aviso vai para o `.update-agent.log`) e a janela fica aberta: a
+atualização executa como antes, para uma linha digitada errada não deixar a instalação sem
+atualizar para sempre.
 
 ### Pelo terminal
 

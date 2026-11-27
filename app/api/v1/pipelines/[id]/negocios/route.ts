@@ -83,6 +83,7 @@ import { audit } from "@/lib/audit";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 import { recusaDeCamposDoLote } from "@/lib/leads/campos-obrigatorios-em-lote";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
@@ -396,7 +397,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       p_stage_id: destinoStageId,
       p_lost_reason: null,
     });
-    if (error) return fail("internal_error", error.message, 500, { requestId });
+    if (error) {
+      // Um card do lote é cópia de um negócio que já tem outra aberta no funil
+      // de destino (#5281). A função é uma transação: nenhum card mudou.
+      const copiaAberta = recusaDeCopiaAbertaPeloBanco(error, authz.user.idioma);
+      if (copiaAberta) return fail(copiaAberta.codigo, copiaAberta.mensagem, 409, { requestId });
+      return fail("internal_error", error.message, 500, { requestId });
+    }
     movidosNoBanco = (data ?? []) as typeof movidosNoBanco;
     await registraEstagioNaTimeline({
       supabase,

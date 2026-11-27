@@ -16402,6 +16402,10 @@ export type Database = {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;
       };
+      fn_expurgar_chaves_de_idempotencia_vencidas: {
+        Args: { p_limite?: number; p_retencao_dias?: number };
+        Returns: number;
+      };
       fn_expurgar_candidatos_do_golden: {
         Args: { p_limite?: number; p_retencao_dias?: number };
         Returns: number;

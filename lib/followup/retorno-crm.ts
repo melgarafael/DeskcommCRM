@@ -361,6 +361,17 @@ export type FalhaDeAlvo = Extract<ResolucaoDoAlvo, { ok: false }>;
  * abrir o dossiê pega. O padrão da casa é o de `stageChangeReason` — o rótulo
  * nomeia o QUE aconteceu, o reason conta o PORQUÊ, e eles não se repetem.
  */
+/**
+ * Quem desmarcou o retorno pela fila, em uma frase — a mesma que o agente e a
+ * timeline leem. Pelo token o "quem" não é uma pessoa (#5160): a linha diria
+ * "Integração · <token>" ao lado de "por uma pessoa da equipe".
+ */
+export function motivoDoCancelamentoPelaFila(actor: Actor): string {
+  if (actor.type === "user") return "desmarcado por uma pessoa da equipe";
+  if (actor.type === "ai_agent") return "desmarcado pelo agente de IA";
+  return "desmarcado por uma integração";
+}
+
 function motivoLegivel(texto: string): string {
   const limpo = texto.trim();
   if (limpo === "") return "Sem motivo informado";

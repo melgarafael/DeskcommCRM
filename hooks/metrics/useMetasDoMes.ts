@@ -65,5 +65,10 @@ export function useMetasDoMes(janela: { from: string; to: string }) {
     queryFn: async () =>
       apiClient.get<{ data: MetasDoMes }>(`/api/v1/metrics/metas${qs}`),
     staleTime: 30_000,
+    // Quem acabou de salvar a meta em Configurações volta ao Desempenho e tem
+    // de ver o número novo — não o de antes enquanto relê (#4796). A meta muda
+    // fora desta tela, então sair dela descarta o cache e a volta lê de novo,
+    // com o estado de carregando que o painel já tem.
+    gcTime: 0,
   });
 }

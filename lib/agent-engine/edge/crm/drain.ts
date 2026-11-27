@@ -463,7 +463,16 @@ async function processEvent(
       agora: new Date(),
       ttlMs: knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
     });
-    if (!canAssist && elegib !== null && !elegib.permite) {
+    // O teto do visitante anônimo (Spec 36, F4) é a exceção: quem pede o contato
+    // e passa a conversa para a equipe é o TURNO. Descartado aqui, o visitante
+    // ficaria no silêncio. O turno revalida e não chama o modelo; depois da
+    // passagem, o `force_human` veta nesta mesma consulta.
+    if (
+      !canAssist &&
+      elegib !== null &&
+      !elegib.permite &&
+      elegib.motivo !== 'teto_do_visitante_anonimo'
+    ) {
       log.info('drain: conversa não elegível para IA — turno pulado (sem gasto)', {
         event_id: event.id,
         conversation_id: p.conversation_id,

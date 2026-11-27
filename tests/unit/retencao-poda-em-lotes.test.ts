@@ -74,14 +74,33 @@ let rascunhosApagados: Array<{ id: string }> = [];
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: async () => respostaRpc,
+    // #5139: o dreno dos arquivos da abordagem lê o Storage depois de listar
+    // `organizations`; aqui a lista de organizações é VAZIA (este arquivo mede a
+    // poda), então o `list`/`remove` do bucket nunca é chamado.
+    storage: {
+      from: () => ({
+        list: async () => ({ data: [], error: null }),
+        remove: async () => ({ data: [], error: null }),
+      }),
+    },
     from: (tabela: string) => {
       tabelasLidas.push(tabela);
       const q: Record<string, unknown> = {
         eq: () => q,
         in: () => q,
         limit: () => q,
+        // #5139: `organizations`/`prospecting_campaigns` agora são lidas por
+        // `lerPaginado` (`.order().range()`) e respondem VAZIO — sem essas duas
+        // superfícies, o dreno viraria uma falha parcial inventada e derrubaria
+        // a rodada para 500 nos casos deste arquivo.
+        order: () => q,
+        range: () => q,
         then: (r: (v: unknown) => unknown) =>
-          Promise.resolve({ data: contatosAnonimizados, error: null }).then(r),
+          Promise.resolve(
+            tabela === "organizations" || tabela === "prospecting_campaigns"
+              ? { data: [], error: null, count: 0 }
+              : { data: contatosAnonimizados, error: null },
+          ).then(r),
       };
       // A superfície do DELETE da décima poda: `.delete().lt().select().order().limit()`.
       // O dublê recusa `limit` sem `order` antes, como o PostgREST 12.2 recusa
@@ -375,9 +394,10 @@ describe("podarHistorico — o laço de lotes", () => {
     };
     const r = await podarHistorico(db, {});
 
-    // 18 drenos: 16 pelo rpc (o 15º é o aviso de agendamento, 0753; o 16º é o
-    // traço do turno, 0778) + a mídia + a décima poda (o DELETE do admin).
-    expect(r.falhas).toHaveLength(18);
+    // 19 drenos: 17 pelo rpc (o 15º é o aviso de agendamento, 0753; o 16º é o
+    // traço do turno, 0778; o 17º as chaves de idempotência, 9506) + a mídia +
+    // a décima poda (o DELETE do admin).
+    expect(r.falhas).toHaveLength(19);
     expect(r.falhas.some((f) => f.includes("conversation_drafts"))).toBe(true);
     expect(r.falhas.some((f) => f.includes("fn_enfileirar_midia_vencida"))).toBe(true);
     expect(r.jobs_apagados).toBe(0);
@@ -431,8 +451,8 @@ describe("podarHistorico — o laço de lotes", () => {
     };
     const r = await podarHistorico(db, {});
 
-    // Só os 16 drenos do rpc falham nesta rodada (mídia e rascunhos vão bem).
-    expect(r.falhas).toHaveLength(16);
+    // Só os 17 drenos do rpc falham nesta rodada (mídia e rascunhos vão bem).
+    expect(r.falhas).toHaveLength(17);
     for (const f of r.falhas) expect(f.length).toBeLessThanOrEqual(300);
   });
 });
@@ -556,6 +576,10 @@ describe("houveEfeito — as duas direções", () => {
     espelho_apagado: 0,
     // Quarta poda (migration 0190): os nonces de OAuth do Google já queimados.
     nonces_apagados: 0,
+    // As chaves de idempotência vencidas (migration 9506, #1613).
+    chaves_de_idempotencia_apagadas: 0,
+    lotes_chaves_de_idempotencia: 0,
+    chaves_de_idempotencia_tem_resto: false,
     lotes_espelho: 0,
     espelho_tem_resto: false,
     retencao_fila_dias: RETENCAO_FILA_DIAS_PADRAO,
@@ -628,6 +652,12 @@ describe("houveEfeito — as duas direções", () => {
     lotes_tracos: 0,
     tracos_tem_resto: false,
     retencao_traco_dias: 400,
+    // Décima oitava etapa (issue #5139): o arquivo órfão da primeira abordagem,
+    // removido do Storage. Não é poda de banco — mas é mutação e precisa de
+    // trilha como qualquer DELETE (por isso entra em `houveEfeito`).
+    arquivos_orfaos_da_abordagem_removidos: 0,
+    arquivos_orfaos_da_abordagem_bytes: 0,
+    arquivos_orfaos_da_abordagem_trilha: [] as Array<{ caminho: string; bytes: number | null }>,
     avisos: [] as string[],
     falhas: [] as string[],
   };
@@ -712,6 +742,13 @@ describe("houveEfeito — as duas direções", () => {
     // parar de auditar —, e um efeito novo que não entra em `houveEfeito` é
     // exatamente o silêncio que ela proíbe.
     expect(houveEfeito({ ...base, espelho_apagado: 1 })).toBe(true);
+  });
+
+  it("...e removeu arquivo órfão da abordagem → TAMBÉM audita (#5139)", () => {
+    // A etapa nova não é poda de banco: apaga OBJETO do Storage. Sem esta linha
+    // em `houveEfeito`, um dia em que só ela agiu seria indistinguível de "nada
+    // a fazer" — e a remoção de um arquivo não deixaria rastro nenhum.
+    expect(houveEfeito({ ...base, arquivos_orfaos_da_abordagem_removidos: 1 })).toBe(true);
   });
 });
 

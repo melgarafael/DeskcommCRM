@@ -10,6 +10,7 @@
 export const ApiErrorCodes = {
   // 400 — body / params
   invalid_request: "invalid_request",
+  numero_sem_whatsapp: "numero_sem_whatsapp", // 422: todas as grafias consultadas não têm conta
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
   // POST /api/v1/avisos (#1418): `publicar_em` no futuro é recusado
@@ -178,6 +179,11 @@ export const ApiErrorCodes = {
   // ESTE `23505` dos outros índices mora em `lib/ai/agents/nome-repetido.ts`.
   // Irmão do `sector_name_taken`: mesma classe, outro cadastro.
   agent_name_taken: "agent_name_taken",
+  // Mover ou reabrir um card bate no índice único `crm_leads_clone_aberto_no_funil_uidx`
+  // (migration 9496, #5281): o mesmo negócio de origem já tem uma cópia ABERTA
+  // neste funil. A régua que separa ESTE `23505` dos outros mora em
+  // `lib/leads/copia-aberta-no-funil.ts`. Era 500.
+  copia_aberta_no_funil: "copia_aberta_no_funil",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
   // Doc 301 = B: o disparo do que ficou parado no assistido caiu fora da janela de envio

@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { liberarEcoLocal, marcarEcoLocal } from "@/lib/kanban/local-echo";
 import { fundeRespostaNoCard } from "@/lib/kanban/owner";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -42,24 +43,52 @@ function gravaLeadNoQuadro(
 
 interface WinArgs {
   leadId: string;
+  /**
+   * O motivo do ganho (issue #5181) — o que a caixa do card coletou antes de
+   * fechar. Ausente/`""` mantém o corpo `{}` de antes: o servidor decide
+   * (lista do funil, `won_reason_required`), e é ele quem recusa.
+   */
+  wonReason?: string;
 }
 interface LoseArgs {
   leadId: string;
   lostReason: string;
 }
 
-export function useWinLead(pipelineId: string) {
+interface OpcoesDoGanho {
+  /**
+   * A recusa `won_reason_invalid` do servidor (motivo fora de
+   * `settings.won_reasons`) vira mensagem NA PRÓPRIA CAIXA, não toast: a pessoa
+   * acabou de escolher na lista, e o único conserto possível é escolher outra —
+   * um toast genérico ("deu errado") some justamente quando ela precisa reler
+   * a lista. Sem esta opção, cai no `showApiError` de sempre.
+   */
+  onMotivoRecusado?: (erro: ApiError) => void;
+}
+
+export function useWinLead(pipelineId: string, opcoes: OpcoesDoGanho = {}) {
   const qc = useQueryClient();
   const queryKey = ["board", pipelineId] as const;
   return useMutation({
-    mutationFn: async ({ leadId }: WinArgs) => {
+    mutationFn: async ({ leadId, wonReason }: WinArgs) => {
       marcarEcoLocal(leadId);
-      return apiClient.post<{ data: Lead }>(`/api/v1/leads/${leadId}/win`, {});
+      // Corpo EXATAMENTE o de antes quando não há motivo: `won_reason: ""` não é
+      // o mesmo que "não informei" para quem lê o corpo no servidor.
+      return apiClient.post<{ data: Lead }>(
+        `/api/v1/leads/${leadId}/win`,
+        wonReason ? { won_reason: wonReason } : {},
+      );
     },
     onSuccess: (res, { leadId }) => {
       gravaLeadNoQuadro(qc, queryKey, leadId, res?.data);
     },
-    onError: showApiError,
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === "won_reason_invalid" && opcoes.onMotivoRecusado) {
+        opcoes.onMotivoRecusado(err);
+        return;
+      }
+      showApiError(err);
+    },
     onSettled: (_data, _err, { leadId }) => {
       liberarEcoLocal(leadId);
       qc.invalidateQueries({ queryKey });

@@ -209,6 +209,8 @@ function seed() {
 
 let db: ReturnType<typeof fakeDb>;
 let recusaNaGravacao: { message: string; code?: string } | null;
+/** Um escritor de fora da transação grava a cópia antes do INSERT desta (#5281). */
+let corridaNaGravacao: (() => void) | null;
 let sessaoDoInsert: unknown;
 let storageRecusa = new Set<string>();
 
@@ -224,6 +226,14 @@ async function gravaClone(args: Row) {
   if (linha || fechamento) {
     sessaoDoInsert = args.p_sessao;
     if (recusaNaGravacao) return { data: null, error: recusaNaGravacao };
+  }
+  if (!clone && linha && corridaNaGravacao) {
+    corridaNaGravacao();
+    corridaNaGravacao = null;
+    return {
+      data: null,
+      error: { code: "23505", message: 'duplicate key value violates unique constraint "crm_leads_clone_aberto_no_funil_uidx"' },
+    };
   }
   const criou = !clone && Boolean(linha);
   const fechou = origem.status === "open" && Boolean(fechamento);
@@ -253,6 +263,7 @@ async function gravaClone(args: Row) {
 beforeEach(() => {
   vi.clearAllMocks();
   recusaNaGravacao = null;
+  corridaNaGravacao = null;
   sessaoDoInsert = undefined;
   storageRecusa = new Set<string>();
   db = fakeDb(seed());
@@ -414,6 +425,25 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     expect(segunda.status).toBe(200);
     expect(reutilizado.data.lead.id).toBe(criado.data.lead.id);
     expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+  });
+
+  it("a cópia gravada fora da transação no meio do caminho é reaproveitada, não vira 500 (#5281)", async () => {
+    corridaNaGravacao = () => {
+      db.tables.crm_leads!.push({
+        id: "copia-da-automacao", organization_id: ORG_ID, pipeline_id: P2, stage_id: S2_A,
+        status: "open", title: "Cópia da automação",
+        source_metadata: { clonado_de: { lead_id: LEAD_ID, pipeline_id: P1 } },
+      });
+    };
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.lead.id).toBe("copia-da-automacao");
+    expect(db.tables.crm_leads?.filter((lead) => lead.pipeline_id === P2)).toHaveLength(1);
+    expect(db.tables.crm_leads?.find((lead) => lead.id === LEAD_ID)?.status).toBe("lost");
   });
 
   it("a cópia reaproveitada completa os anexos que a primeira transferência não levou", async () => {

@@ -16,10 +16,9 @@
  * (`lib/auth/require-role.ts`).
  *
  * ─── Transporte — escolha declarada na PR da #2335 ──────────────────────────
- * - Rotas `/api/v1/**`: HEADER `X-Org-Da-Aba`, carimbado pelo `apiClient`
- *   SOMENTE em método mutante. Leitura (GET) não carrega o header, então a
- *   recusa acontece só em escrita — e o ponto de validação é o `requireRole`,
- *   o gate único que toda rota /api/v1 já atravessa.
+ * - Rotas `/api/v1/**`: o `apiClient` carimba `X-Org-Da-Aba` nas mutações e
+ *   `requireRole` valida. As leituras de detalhe e histórico da Inbox também
+ *   enviam o header explicitamente (#4508). O 409 dessas rotas usa o mesmo aviso.
  * - Server actions: PARÂMETRO explícito, como no #2068
  *   (`requireOnboardingCtx(orgIdDaAba)`) — server action não recebe header
  *   custom do cliente. Esta PR declara a escolha; o amortecimento das server
