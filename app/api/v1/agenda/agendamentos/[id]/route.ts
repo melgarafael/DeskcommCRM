@@ -23,7 +23,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const { data, error } = await db
     .from("calendar_appointments")
     .select(
-      "id,title,description,notes,location_kind,location_details,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,service_occurrence_id,service_block,service_publication_mode,service_space_id,calendar_resources!calendar_appointments_service_space_fk(name),calendar_appointment_responsibles(user_id),google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
+      "id,title,description,notes,location_kind,location_details,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,service_occurrence_id,event_type_id,service_block,service_publication_mode,service_space_id,calendar_resources!calendar_appointments_service_space_fk(name),calendar_appointment_responsibles(user_id),google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
     )
     .eq("organization_id", org)
     .eq("id", id)
@@ -32,6 +32,20 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return fail("internal_error", "Não foi possível carregar o compromisso.", 500, { requestId });
   if (!data)
     return fail("not_found", "Este compromisso está indisponível para você.", 404, { requestId });
+  // Sessão coletiva: se há ocorrência de serviço e tipo, confere se o tipo é de
+  // sessão coletiva para travar a equipe (#3067). Sem ocorrência: false, nenhuma
+  // consulta extra.
+  let equipe_travada = false;
+  if (data.service_occurrence_id && data.event_type_id) {
+    const { data: tipo, error: erroTipo } = await db
+      .from("calendar_event_types")
+      .select("service_enabled, booking_mode")
+      .eq("id", data.event_type_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (erroTipo) return fail("internal_error", erroTipo.message, 500, { requestId });
+    equipe_travada = Boolean(tipo?.service_enabled && tipo.booking_mode !== "individual");
+  }
   // Só depois de provar a entidade pela sessão. Recibo privado não é listável.
   const recovery = await createAdminClient()
     .from("appointment_recovery_receipts")
@@ -85,6 +99,6 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const conflict = conflictSchema.safeParse(google_conflict);
   const canResolve = await googleRpc(db, "fn_calendar_service_can_resolve", { p_org: org, p_id: id }).catch(() => false);
   const configured = !(data.service_occurrence_id || data.service_block) || data.service_publication_mode !== "none";
-  return ok({ ...detail, principal_user_id: _ownerUserId, responsaveis: (equipe ?? []).map((r) => r.user_id), meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
+  return ok({ ...detail, principal_user_id: _ownerUserId, equipe_travada, responsaveis: (equipe ?? []).map((r) => r.user_id), meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
     configured, pending: configured && BigInt(google_local_revision) > BigInt(google_synced_local_revision), conflict: conflict.success ? conflict.data : null, can_resolve: canResolve === true }, recovery: recovery.data ? {...recovery.data,enrollment_status:enrollment.data?.status??null,cancel_reason:enrollment.data?.cancel_reason??null} : null, evidence_messages: messages.data }, { requestId });
 }

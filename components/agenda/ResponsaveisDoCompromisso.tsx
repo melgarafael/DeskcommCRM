@@ -18,6 +18,7 @@ export function ResponsaveisDoCompromisso({
   desabilitado,
   onChange,
   onSalvar,
+  travada,
 }: {
   principalId: string;
   gravados: string[];
@@ -26,16 +27,40 @@ export function ResponsaveisDoCompromisso({
   desabilitado: boolean;
   onChange: (ids: string[]) => void;
   onSalvar: (ids: string[]) => void;
+  /** Sessão coletiva: a equipe é travada por quem abre a sessão (#3067). */
+  travada?: boolean;
 }) {
   const t = useT();
   const { data: pessoas = [] } = usePessoasDaAgenda();
   if (!pessoas.length) return null;
 
+  const nomesGravados = gravados.flatMap((id) => pessoas.find((p) => p.id === id)?.nome ?? []);
+
+  if (travada) {
+    // Somente leitura: mostra quem conduz e a nota de que a equipe é definida
+    // por quem abre a sessão. Mostra a nota mesmo sem nomes, se pode editar.
+    const mostrarNomes = nomesGravados.length > 0;
+    return (
+      <p data-testid="compromisso-quem-conduz" className="space-y-1">
+        {mostrarNomes && (
+          <>
+            {t("Conduz com")}: {nomesGravados.join(", ")}
+            <br />
+          </>
+        )}
+        {podeEditar && (
+          <span className="text-xs text-text-muted" data-testid="compromisso-equipe-travada">
+            {t("A equipe desta sessão coletiva é definida por quem abre a sessão.")}
+          </span>
+        )}
+      </p>
+    );
+  }
+
   if (!podeEditar) {
-    const nomes = gravados.flatMap((id) => pessoas.find((p) => p.id === id)?.nome ?? []);
-    return nomes.length ? (
+    return nomesGravados.length ? (
       <p data-testid="compromisso-quem-conduz">
-        {t("Conduz com")}: {nomes.join(", ")}
+        {t("Conduz com")}: {nomesGravados.join(", ")}
       </p>
     ) : null;
   }

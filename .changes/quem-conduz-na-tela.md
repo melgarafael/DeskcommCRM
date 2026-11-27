@@ -1,0 +1,9 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: "Quem conduz": escolha na tela as pessoas que conduzem cada consulta
+---
+
+Na Agenda, ao marcar uma consulta e no detalhe dela, o campo "Quem conduz" mostra o responsável principal e permite acrescentar até nove pessoas, que ficam com o horário ocupado. A consulta aparece na agenda de cada uma, no quadro por profissional e, nos blocos de uma hora ou mais, com a linha "Conduz com". Se alguém já estiver ocupado, o aviso diz o nome. Em sessão coletiva, a equipe é definida por quem abre a sessão. Quem não usa o campo continua como antes.
+
+Crédito: @paulolimajr77.

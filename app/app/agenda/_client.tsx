@@ -1081,6 +1081,11 @@ export function AgendaClient({
                   principalId={donoDaMarcacao ?? tipo.donoId ?? null}
                   selecionados={responsaveis}
                   onChange={setResponsaveis}
+                  aviso={
+                    tipo.servicoColetivo
+                      ? t("Sessão coletiva: quem abre a sessão define a equipe; quem entra depois fica com a mesma.")
+                      : undefined
+                  }
                 />
               </div>
             ) : null}

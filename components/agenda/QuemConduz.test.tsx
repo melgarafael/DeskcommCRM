@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { QuemConduz } from "./QuemConduz";
@@ -60,5 +61,17 @@ describe("QuemConduz (#3067)", () => {
     expect(screen.queryByRole("button", { name: /Retirar Ana/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Retirar Bruno/ })).toBeInTheDocument();
     expect(screen.getByTestId("quem-conduz-contador")).toHaveTextContent("2 de 10");
+  });
+
+  it("com aviso, mostra o texto no quem-conduz-aviso", () => {
+    renderizar([A, B, C], A.id, []);
+    const onChange = vi.fn(); // renderizar já renderiza; re-render com aviso
+    render(<QuemConduz pessoas={[A]} principalId={A.id} selecionados={[]} onChange={onChange} aviso="Sessão coletiva: aviso de teste." />);
+    expect(screen.getByTestId("quem-conduz-aviso")).toHaveTextContent("Sessão coletiva: aviso de teste.");
+  });
+
+  it("sem aviso, não há quem-conduz-aviso", () => {
+    renderizar([A, B, C], A.id, []);
+    expect(screen.queryByTestId("quem-conduz-aviso")).not.toBeInTheDocument();
   });
 });

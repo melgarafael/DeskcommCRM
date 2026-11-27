@@ -42,6 +42,8 @@ type Detalhe = {
   /** Quem conduz (#3067): o principal e os adicionais, por id. */
   principal_user_id?: string | null;
   responsaveis?: string[];
+  /** Sessão coletiva: a equipe é travada por quem abre a sessão (#3067). */
+  equipe_travada?: boolean;
   outcome_source_kind: string | null;
   outcome_recorded_at: string | null;
   recovery: {
@@ -232,6 +234,7 @@ export function DetalheDoCompromisso({
                 rascunho={equipe}
                 podeEditar={podeEditar && ["pending", "confirmed"].includes(a.status)}
                 desabilitado={mutation.isPending || staleDraft}
+                travada={a.equipe_travada === true}
                 onChange={(ids) => {
                   beginDraft();
                   setEquipe(ids);

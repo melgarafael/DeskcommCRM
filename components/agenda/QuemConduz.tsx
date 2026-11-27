@@ -15,11 +15,13 @@ export function QuemConduz({
   principalId,
   selecionados,
   onChange,
+  aviso,
 }: {
   pessoas: Pessoa[];
   principalId: string | null;
   selecionados: string[];
   onChange: (ids: string[]) => void;
+  aviso?: string;
 }) {
   const t = useT();
   const nomeDe = (id: string) => pessoas.find((p) => p.id === id)?.nome;
@@ -35,6 +37,11 @@ export function QuemConduz({
         {t("Quem conduz")} <span className="font-normal opacity-70">({t("opcional")})</span>
       </legend>
       <p className="mt-1 text-xs text-text-muted">{t("Quem conduz fica com este horário ocupado.")}</p>
+      {aviso ? (
+        <p className="mt-1 text-xs text-text-muted" data-testid="quem-conduz-aviso">
+          {aviso}
+        </p>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {principal ? (
           <span data-testid="quem-conduz-principal" className={`${pilula} border-border-strong bg-surface-elevated`}>

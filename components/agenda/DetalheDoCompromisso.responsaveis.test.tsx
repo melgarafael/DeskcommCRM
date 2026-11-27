@@ -154,4 +154,17 @@ describe("DetalheDoCompromisso — responsáveis (#3067)", () => {
       ),
     );
   });
+
+  it("equipe_travada (sessão coletiva): mostra a nota, sem seletor nem botão salvar", async () => {
+    renderizar({ ...DETALHE, equipe_travada: true }, PESSOAS, true);
+    await screen.findByTestId("compromisso-quem-conduz");
+    expect(screen.getByTestId("compromisso-equipe-travada")).toHaveTextContent(
+      "A equipe desta sessão coletiva é definida por quem abre a sessão.",
+    );
+    expect(screen.queryByTestId("quem-conduz-adicionar")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Salvar quem conduz/ })).not.toBeInTheDocument();
+    // A nota aparece mesmo sem nomes gravados (sem responsaveis).
+    renderizar({ ...DETALHE, equipe_travada: true, responsaveis: [] }, PESSOAS, true);
+    expect(screen.getByTestId("compromisso-equipe-travada")).toBeInTheDocument();
+  });
 });

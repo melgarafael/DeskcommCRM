@@ -108,6 +108,8 @@ const COPY: Record<string, { variant: Variant; msg?: string }> = {
   agenda_listagem_sem_recorte: { variant: "info" },
   // Recusa rotineira (#3067): a frase já chega com o nome de quem está ocupado.
   responsavel_indisponivel: { variant: "warning" },
+  // Recusa rotineira (#3067): sessão coletiva já tem equipe definida.
+  service_team_conflict: { variant: "warning" },
 
   // ---- Motivo da perda (issue #917) ----
   //
