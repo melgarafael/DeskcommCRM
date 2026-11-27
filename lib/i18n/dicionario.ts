@@ -22747,6 +22747,10 @@ export const DICIONARIO: Traducoes = {
   "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": { es: "Hace más de 24 horas que el módulo no busca los avisos, y la LGPD exige borrar esos datos." },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+  // Escolher de qual número a mensagem sai no envio por telefone (#5028): uma
+  // frase só para "não existe aqui" e "fora do ar", para não dizer se a sessão
+  // existe em outra organização.
+  "Canal informado indisponível: ele precisa existir nesta organização e estar conectado.": { es: "Canal indicado no disponible: debe existir en esta organización y estar conectado." },
   // O seletor único de variável (#3687): o catálogo é o mesmo nas quatro telas,
   // e os grupos são os rótulos que ele mostra.
   "Inserir variável": { es: "Insertar variable" },

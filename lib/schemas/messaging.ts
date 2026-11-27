@@ -218,6 +218,22 @@ export const sendMessagePorTelefoneSchema = camposDoEnvio
      * normaliza nada, para o corpo validado continuar sendo o que chegou.
      */
     phone_number: z.string().min(8).max(32).optional(),
+    /**
+     * ─── DE QUAL NÚMERO A MENSAGEM SAI (#5028) ─────────────────────────────
+     *
+     * Com mais de um número conectado, a porta por telefone mandava pelo
+     * primeiro canal que disca — quem chama não tinha como escolher. Este campo
+     * é o "por ESTE número", e é OPCIONAL por decisão do mantenedor: sem ele
+     * nada muda (nem no caminho `phone_number`, nem no `conversation_id`).
+     *
+     * Aqui é só a forma: uuid, ou ausente. Que a sessão seja DA ORGANIZAÇÃO
+     * resolvida pela autenticação e esteja conectada é pergunta do helper que
+     * abre a conversa (`openSharedContactConversation`, que já consulta
+     * `channel_sessions` com `organization_id`). A recusa nomeada é da rota —
+     * 422 `validation_error` com `campo: "channel_session_id"`, que não
+     * distingue "não existe aqui" de "existe em outra organização".
+     */
+    channel_session_id: z.string().uuid().optional(),
   })
   .refine(conteudoObrigatorio, {
     message:
