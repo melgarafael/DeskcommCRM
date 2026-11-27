@@ -5639,11 +5639,11 @@ async function executarTurnoDoAgente(
             casesEnabled: agentConfig?.casesEnabled ?? false,
             hasOpenCase,
             openedCaseThisTurn,
-            // #5191 — a ferramenta de PASSAGEM está NO TURNO? É o que o
-            // `casePromiseGate` lê para aceitar a promessa explícita de humano
-            // como o aviso que a própria passagem completa (a conversa vai para
-            // `pending` e a Central avisa). Lido do conjunto REAL, não da coluna:
-            // o turno pode ter removido a ferramenta (`handoff_tool_enabled`).
+            // #5191 — a ferramenta de PASSAGEM está NO TURNO? O `casePromiseGate`
+            // continua vetando a promessa explícita de humano sem caso, mas com
+            // ela na mão a razão do veto manda chamar `request_human_handoff` em
+            // vez de abrir caso ao lado da passagem. Lido do conjunto REAL, não da
+            // coluna: o turno pode ter removido a ferramenta (`handoff_tool_enabled`).
             handoffDisponivel: rawTools.request_human_handoff !== undefined,
             // Nome(s) próprio(s) que o prompt do tenant usa pra retaguarda humana (ex.:
             // "Fulano") — o mesmo vocabulário que `matchesHandoffKeyword` já usa do lado

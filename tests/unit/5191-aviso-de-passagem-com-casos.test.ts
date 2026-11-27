@@ -8,7 +8,11 @@ import {
   aplicaAChaveDeAssuntoJuridico,
   descricaoDaFerramentaDePassagem,
 } from "@/lib/agent-engine/agent/inbound-turn";
-import { casePromiseGate, type GateContext } from "@/lib/agent-engine/guardrails/before-send";
+import {
+  casePromiseGate,
+  RAZAO_DE_PASSAGEM_SEM_CASO,
+  type GateContext,
+} from "@/lib/agent-engine/guardrails/before-send";
 import {
   deveAbrirCasoDoFailsafe,
   passagemDispensaCasoHumano,
@@ -28,8 +32,8 @@ import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
  *
  * Este arquivo mede os três pontos do conserto:
  *
- *   1. o gate reconhece a PASSAGEM (ferramenta no turno) como destino da
- *      promessa explícita de humano, sem afrouxar quando ela não está lá;
+ *   1. com a ferramenta no turno, o veto da promessa explícita de humano
+ *      aponta a PASSAGEM (não um caso); a promessa segue vetada até a chamada;
  *   2. a descrição com casos ligados manda CHAMAR a ferramenta (quem avisa é o
  *      sistema) e a sem casos continua byte a byte a de hoje;
  *   3. o fail-safe dispensa o caso quando a passagem explícita está disponível,
@@ -71,12 +75,28 @@ const AVISOS_MEDIDOS = [
 /** A promessa de RETOMADA do #3725/#3816 — NÃO é passagem. */
 const RETOMADA = "Sem problema! Nossa equipe vai te responder outro dia.";
 
-describe("#5191 ponto 1 — o gate aceita a passagem como destino (e só ela)", () => {
+describe("#5191 ponto 1 — o gate aponta a passagem como destino (e só ela)", () => {
   it.each(AVISOS_MEDIDOS)(
-    "com casos ligados e a ferramenta de passagem NO TURNO, não produz case_promise_without_case: %j",
+    "com casos ligados e a ferramenta de passagem NO TURNO, o veto manda chamar request_human_handoff: %j",
     (body) => {
+      // A promessa continua vetada até a chamada: o gate não prova uma chamada
+      // futura, e prometer sem chamar é o handoff fantasma.
       const v = casePromiseGate.evaluate(baseCtx({ body, handoffDisponivel: true }));
-      expect(v).toEqual({ pass: true });
+      expect(v).toMatchObject({
+        pass: false,
+        code: "case_promise_without_case",
+        reason: RAZAO_DE_PASSAGEM_SEM_CASO,
+      });
+    },
+  );
+
+  it.each(AVISOS_MEDIDOS)(
+    "SEM a ferramenta no turno, a razão segue mandando abrir caso: %j",
+    (body) => {
+      const v = casePromiseGate.evaluate(baseCtx({ body }));
+      expect(v).toMatchObject({ pass: false, code: "case_promise_without_case" });
+      expect((v as { reason: string }).reason).toContain("open_human_case");
+      expect((v as { reason: string }).reason).not.toContain("request_human_handoff");
     },
   );
 

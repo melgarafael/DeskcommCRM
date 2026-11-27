@@ -255,12 +255,11 @@ export interface GateContext {
   openedCaseThisTurn: boolean;
   /**
    * #5191 — a ferramenta `request_human_handoff` está NO TURNO (o modelo pode
-   * chamá-la). O `casePromiseGate` usa isto para reconhecer a PASSAGEM como
-   * destino real da promessa explícita de humano: com a ferramenta na mão,
-   * "vou chamar um consultor da equipe" é o aviso que o próprio sistema
-   * completa (a conversa vai para `pending` e a Central avisa), e vetar o texto
-   * só empurrava o modelo para `open_human_case` — o caso DUPLICADO do mesmo
-   * atendimento. Ausente/false = comportamento anterior (veta).
+   * chamá-la). O `casePromiseGate` continua VETANDO a promessa explícita de
+   * humano sem caso, mas com a ferramenta na mão a razão do veto aponta a
+   * PASSAGEM (`RAZAO_DE_PASSAGEM_SEM_CASO`) em vez de `open_human_case` — que
+   * empurrava o modelo para o caso DUPLICADO do mesmo atendimento. Quem avisa
+   * o lead depois da passagem é o sistema. Ausente/false = razão anterior.
    *
    * Não é "casos ligados": é a presença da ferramenta no turno. Quem a remove é
    * `ai_agent_versions.handoff_tool_enabled`; sem ela, a promessa de humano
@@ -627,11 +626,6 @@ export const semanticPromiseGate: Gate = {
  * usada. Exportada porque o fail-safe do turno (`inbound-turn.ts`) devolve esta
  * MESMA frase ao modelo quando decide NÃO abrir caso: gate e fail-safe não podem
  * discordar sobre qual é o destino certo (é o mesmo erro que o #3816 mediu).
- *
- * Com a ferramenta no turno o gate PASSA (ver o `return { pass: true }` do
- * `handoffExplicito`); esta frase fica para quando a passagem existe no prompt
- * mas não foi chamada — é o fail-safe quem a usa, para ensinar o caminho certo
- * em vez de abrir um caso que ninguém pediu.
  */
 export const RAZAO_DE_PASSAGEM_SEM_CASO =
   'Você prometeu passar a conversa para uma pessoa, mas não chamou a tool ' +
@@ -718,20 +712,6 @@ export const casePromiseGate: Gate = {
     }
     if (!ctx.casesEnabled) return { pass: true };
     if (ctx.hasOpenCase || ctx.openedCaseThisTurn) return { pass: true };
-    // #5191 — A PASSAGEM É DESTINO DE VERDADE. Com `request_human_handoff` NO
-    // TURNO, a promessa explícita de humano ("vou chamar um consultor da equipe
-    // para finalizar com você") é exatamente o aviso que a ferramenta pede e que
-    // o sistema completa: a conversa vai para `pending`, o roteamento assume e a
-    // Central é avisada. Vetar esse texto mandava o modelo abrir
-    // `open_human_case` para o MESMO atendimento — o caso duplicado do #5191.
-    //
-    // A rede NÃO afrouxa, e as duas condições fechadas são o contrato:
-    //   - só a família da AÇÃO explícita (`handoffExplicito`), nunca a de RETORNO
-    //     ("nossa equipe vai te responder em breve"), que segue exigindo
-    //     caso/follow-up como antes;
-    //   - só com a ferramenta no turno. Sem ela, o veto continua sendo a
-    //     garantia anti-alucinação: não há quem receba a conversa.
-    if (handoffExplicito && ctx.handoffDisponivel === true) return { pass: true };
     // Lê TRÊS sinais, em OU — e o OU é o ponto. Exigir todos faria o conserto
     // não consertar nada: o léxico de humano (`detectHumanPromise`) é o filtro
     // BARATO e continua valendo sozinho (roda sem chamada de modelo, e pega as
@@ -774,10 +754,12 @@ export const casePromiseGate: Gate = {
       pass: false,
       code: 'case_promise_without_case',
       reason:
-        // #5191 — normalmente inalcançável: `handoffExplicito && handoffDisponivel`
-        // passou no `return` acima. Fica aqui porque a MESMA frase é a que o
-        // fail-safe do turno devolve ao modelo quando decide não abrir caso — e
-        // gate e fail-safe não podem discordar sobre o destino (lição do #3816).
+        // #5191 — com a ferramenta de passagem NO TURNO, a promessa explícita de
+        // humano tem destino real: a razão manda chamar `request_human_handoff`
+        // em vez de abrir um caso ao lado da passagem. O texto continua VETADO
+        // até a chamada — o gate não consegue provar uma chamada futura, e a
+        // promessa sem ação é o handoff fantasma. É a MESMA frase que o fail-safe
+        // devolve ao decidir não abrir caso (gate e fail-safe concordam — #3816).
         handoffExplicito && ctx.handoffDisponivel === true
           ? RAZAO_DE_PASSAGEM_SEM_CASO
           : (promessaDoAssistente || soRetornoDeHumano) && ctx.followup?.disponivel === true
