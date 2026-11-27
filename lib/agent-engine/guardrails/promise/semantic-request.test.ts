@@ -112,6 +112,54 @@ describe("contexto via seam do revisor, sem confundi-lo com fonte comercial", ()
     expect(resultado).toMatchObject({ isPromise: true, suspectPhrase: "você vai ficar curado" });
   });
 
+  it("recibo cancelado chega ao payload com status cancelled", async () => {
+    await classifyPromise(
+      db,
+      cfg,
+      { tenantId: "tenant-a", leadId: "contato-a", jobId: "turno-cancelado" },
+      {
+        candidate: "Sua consulta foi cancelada.",
+        bookingEvidence: [{ ...comprovante, status: "cancelled" }],
+      },
+      { log },
+    );
+    const request = seam.call.mock.calls[0]![2];
+    const payload = JSON.parse(request.messages[0].content);
+    expect(payload.evidencias_agendamento[0].status).toBe("cancelled");
+    expect(request.messages[0].content).not.toContain(comprovante.contact_id);
+    expect(request.messages[0].content).not.toContain(comprovante.organization_id);
+  });
+
+  it("a instrução de cancelamento entra só quando há cancelado; com só confirmados ela não aparece", async () => {
+    // só confirmados: nada acrescentado (prompt byte a byte igual ao de hoje)
+    await classifyPromise(
+      db,
+      cfg,
+      { tenantId: "tenant-a", leadId: "contato-a", jobId: "turno-so-confirmado" },
+      { candidate: "Sua consulta está confirmada.", bookingEvidence: [comprovante] },
+      { log },
+    );
+    const semCancelado = seam.call.mock.calls[0]![2];
+    expect(semCancelado.system).not.toContain("Comprovante de cancelamento");
+    expect(semCancelado.system).not.toContain("status=cancelled");
+
+    // com cancelado: trecho novo acrescentado ao system
+    await classifyPromise(
+      db,
+      cfg,
+      { tenantId: "tenant-a", leadId: "contato-a", jobId: "turno-com-cancelado" },
+      { candidate: "Sua consulta foi cancelada.", bookingEvidence: [{ ...comprovante, status: "cancelled" }] },
+      { log },
+    );
+    const comCancelado = seam.call.mock.calls[1]![2];
+    expect(comCancelado.system).toContain("Comprovante de cancelamento");
+    expect(comCancelado.system).toContain("status=cancelled");
+    expect(comCancelado.system).toContain("não autoriza remarcação");
+    expect(comCancelado.system).toContain("não é reserva confirmada");
+    expect(comCancelado.system).toContain("numa troca");
+    expect(comCancelado.system).not.toContain("não é preciso duplicar");
+  });
+
   it("profissionais chega ao payload; o nome NÃO entra no system", async () => {
     await classifyPromise(
       db,

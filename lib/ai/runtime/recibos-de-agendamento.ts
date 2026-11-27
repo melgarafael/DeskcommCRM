@@ -35,7 +35,7 @@ function terminaDepois(inicio: unknown, fim: unknown): boolean {
 const reciboSchema = z
   .object({
     id: z.uuid(),
-    status: z.literal("confirmed"),
+    status: z.enum(["confirmed", "cancelled"]),
     starts_at: z.iso.datetime({ offset: true }),
     ends_at: z.iso.datetime({ offset: true }),
     revision: z.number().int().positive(),
@@ -44,13 +44,21 @@ const reciboSchema = z
 
 export type ReciboDeAgendamento = z.infer<typeof reciboSchema>;
 
-/** Só o RESULTADO estruturado de uma mutação bem-sucedida; nunca argumentos ou prosa. */
+/**
+ * Só o RESULTADO estruturado de uma mutação bem-sucedida; nunca argumentos ou prosa.
+ * `marcado`/`remarcado`/`confirmado` exigem `status="confirmed"`; `cancelado` exige
+ * `status="cancelled"`. `cancelado=true` não aplica a checagem de `human_confirmation`
+ * (aprovação pendente não impede cancelamento). `error`, `resultado_incerto`,
+ * `aguarda_confirmacao` e `agenda_externa_nunca_lida` continuam recusando. Resultado
+ * sem datas/revisão (ex. `{ id, status:"cancelled", ja_estava:true }`) não gera recibo.
+ */
 export function extrairRecibosDeAgendamento(resultado: unknown): ReciboDeAgendamento[] {
   const r = z
     .object({
       marcado: z.boolean().optional(),
       remarcado: z.boolean().optional(),
       confirmado: z.boolean().optional(),
+      cancelado: z.boolean().optional(),
       aguarda_confirmacao: z.boolean().optional(),
       agenda_externa_nunca_lida: z.boolean().optional(),
       resultado_incerto: z.boolean().optional(),
@@ -63,21 +71,29 @@ export function extrairRecibosDeAgendamento(resultado: unknown): ReciboDeAgendam
     r.data.error !== undefined ||
     r.data.resultado_incerto ||
     r.data.aguarda_confirmacao ||
-    r.data.agenda_externa_nunca_lida ||
-    !(r.data.marcado === true || r.data.remarcado === true || r.data.confirmado === true)
+    r.data.agenda_externa_nunca_lida
   )
     return [];
+  const cancelado = r.data.cancelado === true;
+  const operacao =
+    cancelado || r.data.marcado === true || r.data.remarcado === true || r.data.confirmado === true;
+  if (!operacao) return [];
   const compromisso = r.data.compromisso as Record<string, unknown> | null;
+  if (!compromisso) return [];
+  // `human_confirmation` pendente barra reserva confirmada; cancelamento não.
   if (
-    !compromisso ||
-    (compromisso.human_confirmation !== undefined &&
-      !["not_required", "confirmed"].includes(String(compromisso.human_confirmation)))
+    !cancelado &&
+    compromisso.human_confirmation !== undefined &&
+    !["not_required", "confirmed"].includes(String(compromisso.human_confirmation))
   )
     return [];
   // Reserva de grupo só vale inteira, e o teto coincide com o input da agenda.
   const bruto = Array.isArray(compromisso.appointments) ? compromisso.appointments : [compromisso];
   const recibos = z.array(reciboSchema).min(1).max(20).safeParse(bruto);
-  return recibos.success ? recibos.data : [];
+  if (!recibos.success) return [];
+  const esperado = cancelado ? "cancelled" : "confirmed";
+  if (recibos.data.some((rec) => rec.status !== esperado)) return [];
+  return recibos.data;
 }
 
 const linhaSchema = reciboSchema.and(
@@ -121,17 +137,21 @@ interface EscopoDoContato {
   contactId: string | null;
 }
 
-/** A linha é desta organização e deste contato, e nenhuma aprovação humana está pendente. */
+/**
+ * A linha é desta organização e deste contato. Organização, contato e tipo relacionado
+ * valem sempre; a exigência de aprovação humana vale só para `status="confirmed"`.
+ */
 function comprovaReserva(row: LinhaDeAgendamento, escopo: EscopoDoContato): boolean {
   return (
     row.organization_id === escopo.organizationId &&
     row.contact_id === escopo.contactId &&
     row.calendar_event_types.organization_id === escopo.organizationId &&
     row.calendar_event_types.id === row.event_type_id &&
-    !(
-      row.service_requires_confirmation === true &&
-      (!row.service_confirmed_by_user_id || !row.service_confirmed_at)
-    )
+    (row.status !== "confirmed" ||
+      !(
+        row.service_requires_confirmation === true &&
+        (!row.service_confirmed_by_user_id || !row.service_confirmed_at)
+      ))
   );
 }
 
@@ -199,7 +219,8 @@ async function comProfissionais(
 /**
  * Confere o recibo atual antes da revisão (inclusive replay de idempotência).
  * A leitura usa service role: filtra organização/contato E o tipo relacionado.
- * Mudança de estado, horário ou revisão descarta o recibo inteiro; nunca regrava.
+ * Mudança de estado (`row.status === recibo.status` exigido), horário ou revisão
+ * descarta o recibo inteiro; nunca regrava.
  */
 export async function conferirRecibosDeAgendamento(
   db: SupabaseClient,
@@ -229,6 +250,7 @@ export async function conferirRecibosDeAgendamento(
     const row = parsed.data;
     if (
       !comprovaReserva(row, escopo) ||
+      row.status !== recibo.status ||
       row.revision !== recibo.revision ||
       !mesmoInstante(row.starts_at, recibo.starts_at) ||
       !mesmoInstante(row.ends_at, recibo.ends_at)
@@ -292,10 +314,13 @@ export async function lerReservasConfirmadasDoContato(
       limit $4`,
     [escopo.organizationId, escopo.contactId, agora.toISOString(), MAXIMO_DE_RESERVAS_NA_REVISAO + 1],
   );
-  // Só linhas que passaram em comprovaReserva e dentro do teto.
+  // Só linhas confirmed (SQL filtra; linha cancelada devolvida por engano não vira evidência),
+  // que passaram em comprovaReserva e dentro do teto.
   const reservas = rows.slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).flatMap((bruta) => {
     const linha = linhaSchema.safeParse(bruta);
-    return linha.success && comprovaReserva(linha.data, escopo) ? [projetarEvidencia(linha.data)] : [];
+    return linha.success && linha.data.status === "confirmed" && comprovaReserva(linha.data, escopo)
+      ? [projetarEvidencia(linha.data)]
+      : [];
   });
   const evidencias = await comProfissionais(admin, escopo, reservas);
   return { evidencias, parcial: rows.length > MAXIMO_DE_RESERVAS_NA_REVISAO };

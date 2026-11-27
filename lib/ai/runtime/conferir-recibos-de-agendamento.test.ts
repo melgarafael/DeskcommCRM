@@ -421,6 +421,12 @@ describe("conferência atual dos recibos, sem repetir a gravação", () => {
       ).toBe(false);
     });
 
+    it("leitura persistida não devolve cancelado", async () => {
+      const db = pool([{ ...linhaDoPool, status: "cancelled" }]);
+      const r = await lerReservasConfirmadasDoContato(db as never, escopo, agora);
+      expect(r.evidencias).toEqual([]);
+    });
+
     it("sem contato confiável não consulta", async () => {
       const db = pool([linhaDoPool]);
       await expect(
@@ -480,6 +486,46 @@ describe("conferência atual dos recibos, sem repetir a gravação", () => {
       expect(comRecibo.evidencias).toHaveLength(1);
       expect(db.query).not.toHaveBeenCalled();
     });
+  });
+
+  it("cancelado confere", async () => {
+    const cancelado: ReciboDeAgendamento = { ...recibo, status: "cancelled", revision: 2 };
+    const db = banco([{ ...linha, ...cancelado, status: "cancelled" }]);
+    const evidencias = await conferirRecibosDeAgendamento(db as never, { organizationId: org, contactId: contato }, [cancelado]);
+    expect(evidencias).toHaveLength(1);
+    expect(evidencias[0]?.status).toBe("cancelled");
+  });
+
+  it("status divergente → vazio", async () => {
+    const cancelado: ReciboDeAgendamento = { ...recibo, status: "cancelled", revision: 2 };
+    // recibo cancelado, linha confirmed
+    const db1 = banco([{ ...linha, status: "confirmed", revision: 2 }]);
+    expect(await conferirRecibosDeAgendamento(db1 as never, { organizationId: org, contactId: contato }, [cancelado])).toEqual([]);
+    // recibo confirmado, linha cancelled
+    const db2 = banco([{ ...linha, status: "cancelled", revision: 2 }]);
+    expect(await conferirRecibosDeAgendamento(db2 as never, { organizationId: org, contactId: contato }, [{ ...recibo, revision: 2 }])).toEqual([]);
+  });
+
+  it("cancelado com aprovação humana pendente confere", async () => {
+    const cancelado: ReciboDeAgendamento = { ...recibo, status: "cancelled", revision: 2 };
+    const db = banco([{ ...linha, ...cancelado, status: "cancelled", service_requires_confirmation: true, service_confirmed_by_user_id: null, service_confirmed_at: null }]);
+    const evidencias = await conferirRecibosDeAgendamento(db as never, { organizationId: org, contactId: contato }, [cancelado]);
+    expect(evidencias).toHaveLength(1);
+    expect(evidencias[0]?.status).toBe("cancelled");
+  });
+
+  it("troca com os dois confere", async () => {
+    const idCancel = "12121212-1212-4212-8212-121212121212";
+    const cancelado: ReciboDeAgendamento = { id: idCancel, status: "cancelled", revision: 2, starts_at: "2026-12-10T13:00:00Z", ends_at: "2026-12-10T13:30:00Z" };
+    const confirmado: ReciboDeAgendamento = { ...recibo };
+    const db = banco([
+      { ...linha, ...cancelado, id: idCancel, status: "cancelled" },
+      { ...linha, ...confirmado, status: "confirmed" },
+    ]);
+    const evidencias = await conferirRecibosDeAgendamento(db as never, { organizationId: org, contactId: contato }, [cancelado, confirmado]);
+    expect(evidencias).toHaveLength(2);
+    expect(evidencias.some((e) => e.status === "cancelled" && e.id === idCancel)).toBe(true);
+    expect(evidencias.some((e) => e.status === "confirmed" && e.id === recibo.id)).toBe(true);
   });
 
   it("o mesmo texto recebe nova revisão depois do booking e de alteração/erro na agenda", async () => {
