@@ -387,6 +387,7 @@ export function StagesSection({
   pipelineId,
   ancoraMapeamento,
   aoLerEtapas,
+  releitura = 0,
 }: {
   pipelineId: string;
   /** Para onde mandar quem precisa desfazer o vínculo de uma etapa com o assistente. */
@@ -399,6 +400,11 @@ export function StagesSection({
    * nova que o que já tem.
    */
   aoLerEtapas?: (nomes: readonly string[], lidasEm: number) => void;
+  /**
+   * Muda quando a página foi relida do servidor (#4593): o editor relê as
+   * etapas, e a busca da lista volta a usar uma leitura de agora.
+   */
+  releitura?: number;
 }) {
   const t = useT();
   const consulta = useAgentMapping(pipelineId);
@@ -407,6 +413,10 @@ export function StagesSection({
   useEffect(() => {
     if (etapasLidas) aoLerEtapas?.(etapasLidas.map((e) => e.name), lidasEm);
   }, [etapasLidas, lidasEm, aoLerEtapas]);
+  const { refetch } = consulta;
+  useEffect(() => {
+    if (releitura > 0) void refetch();
+  }, [releitura, refetch]);
   const taxas = useTaxasDasEtapas(pipelineId);
   // Confere o FORMATO antes de confiar: esta chave pode receber o corpo de
   // outra leitura parada no cache, e corpo errado não pode virar «sem dados» na

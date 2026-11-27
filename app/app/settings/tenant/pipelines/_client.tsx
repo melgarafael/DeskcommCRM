@@ -470,17 +470,23 @@ export function PipelinesClient({
   // nova que ela.
   const [abertaEm] = useState(() => Date.now());
   const [etapasDoEditor, setEtapasDoEditor] = useState<Record<string, readonly string[]>>({});
-  // A página RELIDA do servidor (salvar o funil revalida a rota) traz etapas
-  // mais novas que qualquer leitura anterior do editor — inclusive o que outra
-  // aba mudou no Kanban. Etapas novas do servidor apagam as do editor; a próxima
-  // leitura dele (depois de uma edição aqui) volta a valer.
+  // A página RELIDA do servidor (salvar o funil revalida a rota) pode trazer o
+  // que outra aba mudou no Kanban — ou chegar depois de uma leitura do editor e
+  // ser MAIS VELHA que ela (a releitura saiu antes de um rename feito aqui).
+  // Não dá para saber qual das duas é a mais nova; então etapas novas do
+  // servidor apagam as do editor (vale a página) e pedem ao editor uma releitura
+  // (`releitura`), que volta a valer quando chegar — e essa é sempre de agora.
   const [etapasDoServidor, setEtapasDoServidor] = useState(etapas);
+  const [releitura, setReleitura] = useState(0);
   if (etapasDoServidor !== etapas) {
     setEtapasDoServidor(etapas);
     setEtapasDoEditor({});
+    setReleitura((n) => n + 1);
   }
   const aoLerEtapas = useCallback((pipelineId: string, nomes: readonly string[], lidasEm: number) => {
-    if (lidasEm < abertaEm) return;
+    // `<=`: a leitura do mesmo milissegundo em que a página abriu é do cache de
+    // antes dela, não uma leitura feita depois.
+    if (lidasEm <= abertaEm) return;
     setEtapasDoEditor((antes) => {
       const atual = antes[pipelineId];
       if (atual && atual.length === nomes.length && atual.every((n, i) => n === nomes[i])) return antes;
@@ -574,6 +580,7 @@ export function PipelinesClient({
           }}
           oculto={visiveis !== null && !visiveis.has(p.id)}
           aoLerEtapas={aoLerEtapas}
+          releitura={releitura}
         />
       ))}
       {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
@@ -627,6 +634,7 @@ function CardDoFunil({
   aoAlternar,
   oculto = false,
   aoLerEtapas,
+  releitura = 0,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
@@ -643,6 +651,8 @@ function CardDoFunil({
   oculto?: boolean;
   /** Repassa à lista os nomes que o editor de etapas leu (a busca usa, #4593). */
   aoLerEtapas?: (pipelineId: string, nomes: readonly string[], lidasEm: number) => void;
+  /** Muda quando a página foi relida do servidor: o editor de etapas relê também. */
+  releitura?: number;
 }) {
   const t = useT();
   const pipelineId = pipeline.id;
@@ -706,6 +716,7 @@ function CardDoFunil({
             pipelineId={pipeline.id}
             ancoraMapeamento={ancoraDoMapeamento(pipeline.id)}
             aoLerEtapas={aoLerEtapasDoFunil}
+            releitura={releitura}
           />
           <div className="border-t border-border pt-6">
             <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />

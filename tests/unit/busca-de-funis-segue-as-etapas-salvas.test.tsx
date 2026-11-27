@@ -166,17 +166,25 @@ describe("Funis: leitura velha do editor, guardada de antes de a página abrir, 
     // O cache do editor ainda guarda o nome de antes (o Kanban renomeou e não
     // mexeu nele) e está fresco: o editor não relê ao montar.
     qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
-    qc.setQueryData(["agent-mapping", POS.id], {
-      etapas: [{ id: "e3", name: "Aguardando pagamento", is_won: false, is_lost: false }],
-      mapeamento: { new: null, contacted: null, qualifying: null, qualified: null, negotiating: null, won: null, lost: null },
-    });
+    // No MESMO milissegundo em que a página abre: o caso de fronteira.
+    const agora = Date.now();
+    qc.setQueryData(
+      ["agent-mapping", POS.id],
+      {
+        etapas: [{ id: "e3", name: "Aguardando pagamento", is_won: false, is_lost: false }],
+        mapeamento: { new: null, contacted: null, qualifying: null, qualified: null, negotiating: null, won: null, lost: null },
+      },
+      { updatedAt: agora },
+    );
     const servidor = doServidor();
     servidor[POS.id] = [{ id: "e3", name: "Pendência bancária", is_archived: false }];
+    const relogio = vi.spyOn(Date, "now").mockReturnValue(agora);
     render(
       <QueryClientProvider client={qc}>
         <PipelinesClient pipelines={FUNIS} etapas={servidor} podeEditarConfig />
       </QueryClientProvider>,
     );
+    relogio.mockRestore();
     const campo = screen.getByRole("textbox", { name: "Buscar funis" });
 
     fireEvent.change(campo, { target: { value: "pendencia" } });
@@ -203,11 +211,38 @@ describe("Funis: a página relida do servidor vence a leitura anterior do editor
 
     // Outra aba renomeou no Kanban; salvar aqui relê a página (router.refresh)
     // e as etapas chegam novas — o cache do editor segue com o nome velho.
+    // O banco já tem o nome novo: a rota do editor também o devolve se relida.
+    h.etapas[POS.id] = [{ id: "e3", name: "Pendência bancária" }];
     const relida = doServidor();
     relida[POS.id] = [{ id: "e3", name: "Pendência bancária", is_archived: false }];
     rerender(arvore(relida));
 
     fireEvent.change(campo, { target: { value: "pendencia" } });
+    await waitFor(() => expect(visiveis()).toEqual(["Pós-venda"]));
+    fireEvent.change(campo, { target: { value: "aguardando" } });
+    await waitFor(() => expect(visiveis()).toEqual([]));
+  });
+});
+
+describe("Funis: página relida com dado mais velho que a última leitura do editor", () => {
+  it("o editor relê depois da página e o nome novo volta a valer", async () => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
+    const arvore = (etapas: Record<string, EtapaDoFunil[]>) => (
+      <QueryClientProvider client={qc}>
+        <PipelinesClient pipelines={FUNIS} etapas={etapas} podeEditarConfig />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(arvore(doServidor()));
+    const campo = screen.getByRole("textbox", { name: "Buscar funis" });
+    // Renomeou a etapa aqui: o editor relê e já sabe o nome novo.
+    await editorSalvou(POS.id, [{ id: "e3", name: "Pendência bancária" }]);
+    fireEvent.change(campo, { target: { value: "pendencia" } });
+    await waitFor(() => expect(visiveis()).toEqual(["Pós-venda"]));
+
+    // A releitura da página (de um «Salvar» do funil disparado junto) chega
+    // DEPOIS, mas foi lida antes do rename: traz o nome velho.
+    rerender(arvore(doServidor()));
+
     await waitFor(() => expect(visiveis()).toEqual(["Pós-venda"]));
     fireEvent.change(campo, { target: { value: "aguardando" } });
     await waitFor(() => expect(visiveis()).toEqual([]));
