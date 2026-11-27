@@ -181,6 +181,93 @@ describe("Tailwind 4 — a ponte token → utilitário", () => {
   });
 });
 
+/**
+ * Toda classe de cor precisa de um token que a gere — a lição da #5184.
+ *
+ * A família `danger` — em classe de texto, de fundo e de borda — estava em 11
+ * arquivos e NÃO pintava nada: o Tailwind 4 gera utilitário a partir das
+ * CHAVES do `@theme inline`, e não existe `--color-danger` em lugar nenhum do
+ * `app/globals.css` (o token da mesma cor se chama `--color-destructive`). Nem
+ * erro, nem aviso: o texto herdava a cor da página, o fundo ficava
+ * transparente.
+ *
+ * A guarda acima (`…sem ponte`) não pega este caso, e a razão é estrutural: ela
+ * deriva os nomes proibidos dos tokens do `:root` que não ganharam ponte. Um
+ * nome que não existe em LUGAR NENHUM — nem no `:root`, nem no `@theme` — não
+ * está em nenhum dos dois lados, então escapa. Lista manual também não resolve:
+ * na primeira vez que alguém inventar `text-alerta`, ela envelhece.
+ *
+ * Por isso esta guarda é a mão que faltava: para cada utilitário de cor que o
+ * código escreve, exige uma FAMÍLIA que exista. Família = primeiro segmento de
+ * um token publicado no `@theme inline` (`accent-500` → `accent`) ou de um
+ * token da paleta PADRÃO do Tailwind, lida do `theme.css` do pacote. Nome
+ * inventado não fala com família nenhuma e reprova sozinho.
+ *
+ * O que fica fora, dito para ninguém supor que está coberto: um erro de
+ * digitação DENTRO de família conhecida (`text-accent-strng`) passa — a família
+ * existe. Medido na árvore desta issue, esse furo tem dois moradores antigos e
+ * alheios ao recorte (`text-accent-strong`, `border-warning-border`), registrados
+ * no PR e NÃO tocados aqui.
+ */
+describe("Tailwind 4 — toda classe de cor precisa de família de token (issue #5184)", () => {
+  /** Tokens que o `@theme inline` publica — é deles que o Tailwind gera utilitário. */
+  const PUBLICADOS = new Set(
+    propsDe(bloco("@theme inline"))
+      .filter((p) => p.startsWith("--color-"))
+      .map((p) => p.slice("--color-".length)),
+  );
+
+  /**
+   * Famílias válidas. Nenhuma digitada aqui: saem do `@theme inline` do produto
+   * e do `theme.css` do próprio pacote (a paleta padrão continua valendo —
+   * `text-red-500` pinta porque existe no Tailwind, não porque existe no
+   * produto). `current`, `transparent` e `inherit` são palavras do CSS, aceitas
+   * sem token declarado.
+   */
+  const FAMILIAS = new Set<string>(["current", "transparent", "inherit"]);
+  for (const token of PUBLICADOS) FAMILIAS.add(token.split("-")[0]!);
+  const PALETA_PADRAO = fs.readFileSync(
+    path.join(RAIZ, "node_modules/tailwindcss/theme.css"),
+    "utf8",
+  );
+  for (const d of PALETA_PADRAO.matchAll(/^\s*--color-([a-z][a-z0-9-]*)\s*:/gim)) {
+    FAMILIAS.add(d[1]!.split("-")[0]!);
+  }
+
+  it("nenhuma classe de cor cita família inexistente", () => {
+    const achados = ocorrenciasDeClasse(
+      listarFontes(["app", "components", "lib", "hooks"]),
+      // A variante (`hover:`, `dark:`, `md:`, `data-[…]:`) entra pelo separador
+      // `:` do prefixo; o `/` e o `!` do lookahead são o alpha e o `important`.
+      /(?:^|[\s"'`:])(text|bg|border|ring|fill|stroke)-([a-z][a-z0-9-]*)(?=[\s"'`/!]|$)/g,
+    );
+
+    // Piso de vacuidade: a árvore escreve centenas destas classes. Se a
+    // varredura zerar (extrator quebrado, `node_modules` fora do lugar), o
+    // verde seria cego — e cego é indistinguível de guarda morta.
+    expect(achados.length, "guarda cega: nenhuma classe de cor varrida").toBeGreaterThan(200);
+
+    const mudas = [
+      ...new Set(
+        achados
+          .filter(({ nome }) => {
+            if (SINTAXE_NAO_COR.some((rx) => rx.test(nome))) return false;
+            // `ring-offset-<cor>` fala do token do offset, não de uma família
+            // chamada `offset`.
+            const segmentos = nome.replace(/^offset-/, "").split("-");
+            return !segmentos.some((s) => FAMILIAS.has(s));
+          })
+          .map(({ onde, prefixo, nome }) => `${onde}  ${prefixo}-${nome}`),
+      ),
+    ].sort();
+
+    expect(
+      mudas,
+      "classe de cor sem token que a gere não emite CSS: o texto herda a cor da página e o fundo fica transparente, com build verde",
+    ).toEqual([]);
+  });
+});
+
 describe("Tailwind 4 — utilitários que mudaram de significado", () => {
   const ARQUIVOS = listarFontes(["app", "components", "lib", "hooks"]);
 
@@ -382,6 +469,126 @@ function ocorrencias(arquivos: string[], rx: RegExp): string[] {
         achados.push(`${path.relative(RAIZ, f)}:${i + 1}`);
       }
     });
+  }
+  return achados;
+}
+
+/**
+ * O que NÃO é cor: os cinco prefixos têm sufixos que não nomeiam token nenhum —
+ * lado de borda, largura de anel, tamanho de texto, alinhamento, direção de
+ * gradiente. Esta lista é de SINTAXE do Tailwind; nome de COR não entra aqui, e
+ * é por isso que um nome inventado (`danger`) não tem onde se esconder.
+ */
+const SINTAXE_NAO_COR: RegExp[] = [
+  /^\d+(\.\d+)?$/, // escala numérica: border-2, ring-4, stroke-1.5
+  /^[tblrxyse](-\d+(\.\d+)?)?$/, // lado/aresta: border-b, border-x-2, ring-y
+  /^offset-\d+(\.\d+)?$/, // ring-offset-2
+  /^(2xs|xs|sm|base|lg|xl|[2-9]xl)$/, // corpo de texto
+  /^(left|center|right|justify|start|end)$/, // alinhamento
+  /^(wrap|nowrap|balance|pretty|ellipsis|clip)$/, // quebra e transbordo
+  /^(uppercase|lowercase|capitalize|underline|overline|line-through|no-underline)$/,
+  /^underline-offset-\d+$/,
+  /^(none|solid|dashed|dotted|double|hidden|collapse|separate|inset)$/, // estilo de borda/anél
+  /^(gradient|linear|radial|conic)(-|$)/, // forma e direção de gradiente
+  /^(top|bottom|left|right|center)(-|$)/, // posição de background
+  /^(auto|cover|contain|repeat|no-repeat|repeat-x|repeat-y|fixed|local|scroll)$/,
+  /^(clip|origin|blend)-(|.*)$/, // background-clip/origin/blend
+  /^(round|butt|square)$/, // linecap do stroke
+  /^(shadow|spacing)(-|$)/, // text-shadow-*, border-spacing-*
+];
+
+/**
+ * Literais de string que de fato carregam classe: `className=…`, chaves que
+ * terminam em `…Class…` (`borderClassName:`) e as chamadas de
+ * `cn`/`cva`/`clsx`/`twMerge`.
+ *
+ * Varrer o arquivo cru traria a allowlist de propriedades CSS de
+ * `lib/branding/css-personalizado.ts` (`"border-color"`, `"border-radius"`,
+ * `"text-transform"`) como se fossem utilitários — e guarda que acusa prosa é
+ * guarda que a próxima pessoa desliga.
+ */
+function literaisDeClasse(fonte: string): { texto: string; indice: number }[] {
+  const saida: { texto: string; indice: number }[] = [];
+  const MARCAS = /\b(?:className\s*=|[\w$]*Class[\w$]*\s*[:=]|(?:cn|cva|clsx|twMerge)\s*\()/g;
+
+  /** Anda uma string literal e devolve o índice logo depois da aspa de fecho. */
+  const pulaString = (i: number): number => {
+    const aspa = fonte[i]!;
+    let j = i + 1;
+    while (j < fonte.length) {
+      const c = fonte[j]!;
+      if (c === "\\") {
+        j += 2;
+        continue;
+      }
+      if (c === aspa) return j + 1;
+      j++;
+    }
+    return j;
+  };
+
+  /** Do abre em `i`, devolve o índice logo depois do fecha correspondente. */
+  const pulaExpressao = (i: number): number => {
+    let profundidade = 0;
+    for (let j = i; j < fonte.length; j++) {
+      const c = fonte[j]!;
+      if (c === '"' || c === "'" || c === "`") {
+        j = pulaString(j) - 1;
+        continue;
+      }
+      if (c === "(" || c === "{" || c === "[") profundidade++;
+      else if (c === ")" || c === "}" || c === "]") {
+        profundidade--;
+        if (profundidade === 0) return j + 1;
+      }
+    }
+    return fonte.length;
+  };
+
+  for (const m of fonte.matchAll(MARCAS)) {
+    let i = (m.index ?? 0) + m[0].length;
+    while (i < fonte.length && /\s/.test(fonte[i]!)) i++;
+    const c = fonte[i];
+    if (!c) break;
+    const fim =
+      c === '"' || c === "'" || c === "`"
+        ? pulaString(i)
+        : c === "{" || c === "("
+          ? pulaExpressao(i)
+          : i;
+    if (fim <= i) continue;
+    // Dentro da expressão, todo literal é candidato — inclusive o que mora na
+    // interpolação de um template (`${ativo ? "…" : ""}`).
+    for (const lit of fonte
+      .slice(i, fim)
+      .matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g)) {
+      saida.push({
+        texto: lit[1] ?? lit[2] ?? lit[3] ?? "",
+        indice: i + (lit.index ?? 0),
+      });
+    }
+  }
+  return saida;
+}
+
+/** Utilitários que casam `rx` nos literais de classe, com arquivo:linha. */
+function ocorrenciasDeClasse(
+  arquivos: string[],
+  rx: RegExp,
+): { onde: string; prefixo: string; nome: string }[] {
+  const achados: { onde: string; prefixo: string; nome: string }[] = [];
+  for (const f of arquivos) {
+    const fonte = fs.readFileSync(f, "utf8");
+    for (const { texto, indice } of literaisDeClasse(fonte)) {
+      const linha = fonte.slice(0, indice).split("\n").length;
+      for (const m of texto.matchAll(rx)) {
+        achados.push({
+          onde: `${path.relative(RAIZ, f)}:${linha}`,
+          prefixo: m[1]!,
+          nome: m[2]!,
+        });
+      }
+    }
   }
   return achados;
 }

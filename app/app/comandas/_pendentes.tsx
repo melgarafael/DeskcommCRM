@@ -122,7 +122,7 @@ export function AtendimentosSemComanda({
               </span>
               <span className="tabular-nums">
                 {semPreco ? (
-                  <span className="text-xs text-danger">{t("sem preço no serviço")}</span>
+                  <span className="text-xs text-destructive">{t("sem preço no serviço")}</span>
                 ) : (
                   formatCents(p.suggested_price_cents ?? 0, p.currency ?? moeda)
                 )}
@@ -170,7 +170,7 @@ export function AtendimentosSemComanda({
             ele evita um erro multiplicado por trinta.
           */}
           {escolhida && !escolhida.account_id ? (
-            <p className="w-full text-xs text-danger">
+            <p className="w-full text-xs text-destructive">
               {t(
                 "Esta forma de pagamento ainda não tem conta de destino. Defina em Configurações › Financeiro.",
               )}

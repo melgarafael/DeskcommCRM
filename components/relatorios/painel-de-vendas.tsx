@@ -162,7 +162,7 @@ export function PainelDeVendas({ periodoInicial, tz }: { periodoInicial: Periodo
       {isLoading ? (
         <p className="text-sm text-text-muted">{t("Carregando…")}</p>
       ) : isError || !painel ? (
-        <p className="text-sm text-danger">{t("Erro ao carregar o painel de vendas.")}</p>
+        <p className="text-sm text-destructive">{t("Erro ao carregar o painel de vendas.")}</p>
       ) : (
         <>
           {/* ── Os cartões ──────────────────────────────────────────────────── */}
