@@ -1,4 +1,7 @@
 {
+  "A regra usa o clique do próprio negócio e vale para mudanças de etapa feitas pela equipe, pela IA ou por automação após a ativação. Com uma única conta do Google Ads cadastrada, o CRM envia para ela mesmo que o clique não informe a conta ou indique outra. Com várias contas, só envia se o clique identificar a conta de destino.": "规则使用商机自身记录的点击，适用于规则启用后由团队、AI 或自动化流程执行的阶段变更。如果只配置了一个 Google Ads 帐号，即使点击不含帐号 ID 或指向其他帐号，CRM 也会向已配置的帐号发送转化。如果配置了多个帐号，则仅当点击中的帐号 ID 与目标帐号一致时才发送转化。",
+  "O clique não tem um ID de conta do Google Ads válido. Confira o parâmetro google_customer_id no link de rastreamento.": "点击中没有有效的 Google Ads 客户 ID。请检查跟踪链接中的 google_customer_id 参数。",
+  "O clique pertence a outra conta do Google Ads. A conversão desta etapa não foi enviada.": "此次点击来自其他 Google Ads 帐号。系统未发送此阶段的转化。",
   "Já cadastrado como": "已登记为",
   "De quem é": "归属于",
   "Conferindo…": "检查中…",
@@ -424,6 +427,8 @@
   "Nome completo": "全名",
   "Trocar email — em breve.": "更换邮箱 — 即将推出。",
   "Fuso horário": "时区",
+  "Padrão (regex)": "模式 (regex)",
+  "Opções da regex": "正则表达式选项",
   "Avatar URL": "头像 URL",
   "Upload de arquivo — em breve. Cole uma URL pública.": "文件上传 — 即将推出。请粘贴公开 URL。",
   "Nome de exibição": "显示名称",
@@ -2882,6 +2887,7 @@
   "Incidentes": "事件",
   "Último acesso": "最后访问",
   "Este follow-up ainda não deu nenhum passo.": "此跟进尚未执行任何步骤。",
+  "Mostrando os eventos mais recentes deste follow-up.": "显示此跟进的最近事件。",
   "Mostrando os primeiros passos — este follow-up tem histórico maior que o desta tela.": "正在显示前几步——此跟进的历史记录比本页显示的更多。",
   "Carregando o follow-up…": "正在加载跟进…",
   "Não consegui carregar este follow-up. Recarregue a página; se persistir, ele pode ter sido removido.": "无法加载此跟进。请刷新页面；如果仍然如此，它可能已被移除。",
@@ -3482,6 +3488,13 @@
   "Esperando a resposta do cliente": "正在等待客户回复",
   "O cliente não respondeu dentro do prazo": "客户未在期限内回复",
   "Conferiu se a mensagem já tinha saído": "检查消息是否已发出",
+  "Tarefa de envio enfileirada": "发送任务已入队",
+  "Mensagem gerada": "消息已生成",
+  "Rascunho de mensagem gerado para aprovação": "消息草稿已生成，等待批准",
+  "Mensagem aguardando o canal": "消息等待渠道发送",
+  "Falha ao enviar a mensagem": "消息发送失败",
+  "Apenas parte da mensagem foi enviada": "只发出了部分消息",
+  "Solicitou o envio da mensagem": "已请求发送消息",
   "Mensagem enviada": "消息已发送",
   "O agente interpretou a resposta": "智能体解读了回复",
   "Fluxo concluído": "流程已完成",
@@ -6085,5 +6098,7 @@
   "Somente as contas marcadas abaixo podem receber respostas automáticas enquanto o canal está em teste. Sem nenhuma marcada, a IA fica pausada.": "频道处于测试模式时，只有下方勾选的账号会收到自动回复。如果一个都没勾选，AI 保持暂停。",
   "Contas autorizadas para teste": "授权测试的账号",
   "Nenhum contato desta rede conversou com o canal ainda. Peça para a conta de teste mandar uma mensagem e reabra este painel.": "这个网络还没有联系人与该频道对话。请让测试账号先发一条消息，然后重新打开此面板。",
-  "Salvar contas de teste": "保存测试账号"
+  "Salvar contas de teste": "保存测试账号",
+  "Continuar a conversa assim que a equipe devolver ao automático": "团队恢复自动后立即继续对话",
+  "Quando alguém da equipe atende, manda a última mensagem (um orçamento, por exemplo) e clica em Devolver ao automático, o agente continua dali na hora, sem esperar o cliente escrever. Ele não fala se o cliente já respondeu, se a conversa tem um follow-up em andamento ou se o contato está marcado para atendimento humano.": "当团队成员接手、发送最后一条消息（例如报价）并点击“恢复自动”后，智能体会立即从那里继续，无需等待客户回复。如果客户已经回复、对话中有进行中的跟进，或联系人被标记为人工服务，它不会发言。"
 }

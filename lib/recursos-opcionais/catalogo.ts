@@ -191,7 +191,7 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   },
   reservas_de_lugar: {
     nome: "Reservas de lugar",
-    oQueFaz: "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.",
+    oQueFaz: "A agenda reserva um lugar, como sala, mesa, camarote ou quadra, com capacidade em pessoas, e a reserva escolhe qual lugar.",
   },
   link_de_pagamento: {
     nome: "Link de pagamento na conversa",
@@ -201,6 +201,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   canal_bot: {
     nome: "Robô de mensagens (@BotFather)",
     oQueFaz: "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.",
+  },
+  canal_webchat: {
+    nome: "Chat no site",
+    oQueFaz: "Cada empresa cola um chat na página do próprio site, e as conversas que começam nele chegam ao Inbox.",
   },
   campanha_por_email: {
     nome: "Campanha por e-mail (em construção)",
@@ -217,6 +221,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Catálogo sincronizado por feed",
     oQueFaz:
       "O catálogo acompanha sozinho o feed que o sistema de estoque da revenda publica: a cada 2 horas cria, atualiza e desativa produtos, sem apagar nenhum.",
+  },
+  menu_de_atendimento: {
+    nome: "Menu de atendimento sem IA",
+    oQueFaz: "A primeira mensagem recebe um menu com opções numeradas e o cliente escolhe por número — fila, pessoa ou arquivo — sem nenhuma resposta gerada por IA.",
   },
 };
 

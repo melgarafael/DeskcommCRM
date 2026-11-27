@@ -75,6 +75,12 @@ type Campaign = {
    * duas campanhas "Em andamento" parecem a mesma coisa repetida.
    */
   channel_session_id: string | null;
+  /**
+   * A pausa foi da JANELA (#4830)? O cartão oferece "Pausar abordagens" também
+   * nesse estado (#4847): quem quer parar às 14h a campanha da manhã precisa
+   * conseguir, senão ela volta sozinha na próxima abertura.
+   */
+  pausada_pela_janela?: boolean;
 };
 type Candidate = {
   id: string;
@@ -133,6 +139,30 @@ const labels: Record<string, string> = {
   qualified: "Qualificado",
 };
 const selectClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
+/**
+ * Dias da janela da campanha (#4830) na convenção do servidor: 0=domingo …
+ * 6=sábado. Os rótulos passam por `t()` na tela; a ORDEM é a da semana.
+ */
+const NOMES_DOS_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
+/**
+ * Os sete dias traduzidos, na ordem da semana, em `t()` com LITERAL dia a dia
+ * (#4847): é a mesma régua do formulário da janela — o leitor de i18n
+ * (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`) só enxerga chave escrita
+ * literal no argumento, e `t(nome)` por variável deixaria o espanhol do cartão
+ * sem prova nenhuma.
+ */
+function diasTraduzidos(t: (texto: string) => string): string[] {
+  return [t("Dom"), t("Seg"), t("Ter"), t("Qua"), t("Qui"), t("Sex"), t("Sáb")];
+}
+/** A janela em texto — o mesmo formato que o servidor descreve (`7h–12h`). */
+function janelaEmTexto(
+  janela: NonNullable<CampaignConfig["janela"]>,
+  t: (texto: string) => string,
+): string {
+  const rotulos = diasTraduzidos(t);
+  const dias = janela.dias.map((d) => rotulos[d] ?? NOMES_DOS_DIAS[d] ?? String(d)).join(", ");
+  return `${dias}, ${janela.inicio}h–${janela.fim}h`;
+}
 const emptyConfig: CampaignConfig = {
   agent_id: "",
   channel_session_id: "",
@@ -429,6 +459,10 @@ export function ProspectingClient() {
     config.texto_da_saida,
     data?.organization_locale,
   );
+  // #5133: a janela invertida (início chegando ao fim) é a MESMA régua do aviso
+  // embaixo das horas — uma régua só. Sem ela no `disabled`, o clique passava e o
+  // erro genérico subia para o topo, longe do campo que o causou.
+  const janelaInvalida = config.janela != null && config.janela.inicio >= config.janela.fim;
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -1638,6 +1672,11 @@ export function ProspectingClient() {
                         {data?.personalizacao?.vendedor_nome
                           ? `${t("Voz:")} ${data.personalizacao.vendedor_nome}`
                           : t("Sem voz definida")}
+                        {configCompleta.janela && (
+                          <span className="block">
+                            {t("Roda só em")} {janelaEmTexto(configCompleta.janela, t)}.
+                          </span>
+                        )}
                       </p>
                       {campaign.status === "running" ? (
                         <Button
@@ -1654,6 +1693,27 @@ export function ProspectingClient() {
                         </Button>
                       ) : campaign.status === "paused" ? (
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* #4847: a campanha que a JANELA pausou continua
+                              pausável pela pessoa. Sem este botão nesse estado,
+                              quem quer parar às 14h a campanha da manhã não
+                              consegue — ela volta a abordar às 7h do dia
+                              seguinte, a menos que seja arquivada. A rota grava
+                              `pausada_pela_janela=false`, e a pausa passa a ser
+                              definitiva. */}
+                          {campaign.pausada_pela_janela === true && (
+                            <Button
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                perform(
+                                  { action: "pause", id: campaign.id },
+                                  t("Novas abordagens pausadas."),
+                                )
+                              }
+                            >
+                              {t("Pausar abordagens")}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             disabled={busy}
@@ -2339,6 +2399,120 @@ export function ProspectingClient() {
                           </div>
                           <fieldset className="space-y-2">
                             <legend className="text-sm font-medium">
+                              {t("Rodar só em horário próprio")}
+                            </legend>
+                            <label className="flex items-start gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={!!config.janela}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  update(
+                                    "janela",
+                                    e.target.checked
+                                      ? { dias: [1, 2, 3, 4, 5], inicio: 7, fim: 12 }
+                                      : undefined,
+                                  )
+                                }
+                              />
+                              <span>
+                                {t("Esta campanha só dispara nos dias e horas abaixo")}
+                                <span className="block text-xs text-muted-foreground">
+                                  {t(
+                                    "Fora do horário ela pausa sozinha e volta na próxima abertura. A janela do número continua valendo: as duas precisam estar abertas. É assim que um número só atende dois nichos — um de manhã, outro à tarde.",
+                                  )}
+                                </span>
+                              </span>
+                            </label>
+                            {config.janela && (
+                              <div className="space-y-3 pl-6">
+                                <div className="flex flex-wrap gap-3">
+                                  {[
+                                    t("Dom"),
+                                    t("Seg"),
+                                    t("Ter"),
+                                    t("Qua"),
+                                    t("Qui"),
+                                    t("Sex"),
+                                    t("Sáb"),
+                                  ].map((rotulo, dia) => (
+                                    <label key={dia} className="flex items-center gap-1 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={config.janela!.dias.includes(dia)}
+                                        disabled={busy}
+                                        onChange={() => {
+                                          const atuais = config.janela!.dias;
+                                          const proximos = atuais.includes(dia)
+                                            ? atuais.filter((d) => d !== dia)
+                                            : [...atuais, dia].sort((a, b) => a - b);
+                                          // Nenhum dia marcado = fila parada para
+                                          // sempre; a tela não deixa desmarcar o último.
+                                          if (proximos.length === 0) return;
+                                          update("janela", { ...config.janela!, dias: proximos });
+                                        }}
+                                      />
+                                      <span>{rotulo}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <Label htmlFor="prospecting-window-start">
+                                      {t("Começa às (hora cheia)")}
+                                    </Label>
+                                    <Input
+                                      id="prospecting-window-start"
+                                      type="number"
+                                      min={0}
+                                      max={23}
+                                      value={config.janela.inicio}
+                                      disabled={busy}
+                                      aria-invalid={janelaInvalida}
+                                      onChange={(e) =>
+                                        update("janela", {
+                                          ...config.janela!,
+                                          inicio: Number(e.target.value),
+                                        })
+                                      }
+                                      className="mt-1"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="prospecting-window-end">
+                                      {t("Termina às (hora cheia)")}
+                                    </Label>
+                                    <Input
+                                      id="prospecting-window-end"
+                                      type="number"
+                                      min={1}
+                                      max={24}
+                                      value={config.janela.fim}
+                                      disabled={busy}
+                                      aria-invalid={janelaInvalida}
+                                      onChange={(e) =>
+                                        update("janela", {
+                                          ...config.janela!,
+                                          fim: Number(e.target.value),
+                                        })
+                                      }
+                                      className="mt-1"
+                                    />
+                                  </div>
+                                </div>
+                                {janelaInvalida && (
+                                  <p className="text-xs text-destructive" role="alert">
+                                    {t(
+                                      "A janela precisa começar antes de terminar (ex.: 7h às 12h).",
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </fieldset>
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium">
                               {t("Quando a empresa entra no funil")}
                             </legend>
                             <label className="flex items-start gap-2 text-sm">
@@ -2589,7 +2763,8 @@ export function ProspectingClient() {
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING") ||
                             etiquetasComProblema !== null ||
-                            problemaDoTextoDaSaida !== null
+                            problemaDoTextoDaSaida !== null ||
+                            janelaInvalida
                           }
                         >
                           {t("Iniciar abordagens com IA")}

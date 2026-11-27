@@ -229,7 +229,7 @@ describe("GET /api/v1/reports/vendas/export — o envelope das exportações da 
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
     expect(res.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="vendas-por-atendente-2026-09-01_a_2026-10-01.csv"',
+      'attachment; filename="vendas-por-atendente-2026-08-31_a_2026-09-30.csv"',
     );
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
@@ -323,7 +323,7 @@ describe("GET /api/v1/reports/vendas/export — papel, escopo e auditoria", () =
         formato: "csv",
         total: 1,
         filtros: { atendente: ANA },
-        janela: { de: "2026-09-01T00:00:00.000Z", ate: "2026-10-01T00:00:00.000Z", dias: 30 },
+        janela: { de: "2026-09-01T00:00:00.000Z", ate: "2026-10-01T00:00:00.000Z", dias: 31 },
       },
     });
   });

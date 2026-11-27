@@ -75,8 +75,8 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_amigo_attendance_reschedule: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
   crm_amigo_attendance_status: { connection_id: "configuracao", contact_id: "contato", patient_id: "paciente_amigo", attendance_id: "consulta_amigo" },
   // ---- agenda ----
-  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
-  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
+  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", space_id: "configuracao" },
+  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", space_id: "configuracao" },
   crm_reschedule_appointment: { appointment_id: "compromisso" },
   crm_cancel_appointment: { appointment_id: "compromisso" },
   crm_confirm_appointment: { appointment_id: "compromisso" },
@@ -102,6 +102,15 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_send_material: { conversation_id: "conversa", material_id: "configuracao" },
   crm_request_human_handoff: { conversation_id: "conversa", target_user_id: "configuracao" },
   crm_resume_ai_attendance: { conversation_id: "conversa" },
+  // #4517 — os quatro comandos de conversa. A conversa é o único identificador
+  // que trazem, e cada um é uma transição de atendimento (`fn_service_status` ou
+  // o silêncio do bot), nunca escrita no cadastro nem no negócio.
+  crm_pause_ai: { conversation_id: "conversa" },
+  crm_resume_ai: { conversation_id: "conversa" },
+  crm_close_conversation: { conversation_id: "conversa" },
+  crm_reopen_conversation: { conversation_id: "conversa" },
+  // #4517 — a ficha editada. `contact_id` é o próprio alvo da escrita.
+  crm_update_contact: { contact_id: "contato" },
 
   // ---- casos humanos ----
   crm_add_case_note: { case_id: "chamado" },

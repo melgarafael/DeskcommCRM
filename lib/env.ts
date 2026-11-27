@@ -711,8 +711,10 @@ const schema = z.object({
 
   /**
    * Chave PRIVADA (PEM PKCS#8, curva P-256) com que o host assina o JWT de contexto do módulo
-   * conectado (spec 33, F3). Vazio = recurso desligado: a rota de contexto responde 503 e o módulo
-   * fica com teto `agent` e sem pessoa. Instalação fresca não precisa dela. Nunca vai a log.
+   * conectado (spec 33, F3). Vazio = recurso desligado: a rota de contexto responde 503 e, sem
+   * `MODULE_JWT_PRIVATE_KEY`, o módulo fica como `viewer` — lê o que um visitante lê; rotas que
+   * cobram `agent` respondem 403 `forbidden_role`. A chave só acrescenta a identificação da
+   * pessoa, com teto `manager`. Instalação fresca não precisa dela. Nunca vai a log.
    */
   MODULE_JWT_PRIVATE_KEY: z.string().optional().default(""),
 });

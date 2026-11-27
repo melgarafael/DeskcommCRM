@@ -8,7 +8,7 @@
  *
  * Pelo SEAM inteiro, com o pool fingido e o `generateText` dublê (o mesmo molde
  * de `custo-do-provedor-personalizado-vem-do-catalogo.test.ts`). O ponto de
- * verdade são os parâmetros `$16..$22` do INSERT. As posições `$1..$15` não
+ * verdade são os parâmetros `$16..$23` do INSERT. As posições `$1..$15` não
  * mudam — o custo continua em `params[11]`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -127,12 +127,12 @@ describe("llm_calls grava passos e composição do pedido", () => {
     });
 
     expect(inserts).toHaveLength(1);
-    // 23 — e não 22 — desde a 9348 (#4426): `preview_run_id` entrou no FIM da
-    // lista de colunas, como `$23`. As posições `$1..$22` NÃO se moveram (é por
-    // isso que o custo continua em params[11] e os passos em params[15]); o que
-    // mudou foi só o tamanho da lista. Aqui o run é real, sem prévia: a coluna
-    // nova vai NULA e nada muda para o turno de verdade.
-    expect(params).toHaveLength(23);
+    // 24 — e não 23 — desde a 9481 (#5020): `cache_write_1h_tokens` entrou
+    // antes de `preview_run_id`, que segue a ÚLTIMA coluna. As posições
+    // `$1..$21` NÃO se moveram (é por isso que o custo continua em params[11] e
+    // os passos em params[15]); o que mudou foi só o tamanho da lista. Aqui o
+    // provedor não manda a divisão de TTL: a coluna nova vai NULA.
+    expect(params).toHaveLength(24);
     expect(params[15]).toBe(2); // passos
     expect(params[16]).toBe(1000); // entrada do 1º passo, como o provedor informou
     expect(params[17]).toBe(SISTEMA.length); // chars_sistema
@@ -140,7 +140,8 @@ describe("llm_calls grava passos e composição do pedido", () => {
     expect(params[19]).toBe("oi".length); // chars_mensagens
     expect(params[20]).toBe(0); // partes_de_midia
     expect(params[21]).toMatch(/^[0-9a-f]{64}$/); // prefixo_hash
-    expect(params[22]).toBeNull(); // preview_run_id — execução real não tem prévia
+    expect(params[22]).toBeNull(); // cache_write_1h_tokens — sem cache_creation, não medido
+    expect(params[23]).toBeNull(); // preview_run_id — execução real não tem prévia
 
     // A soma dos passos segue sendo o total gravado, e o custo não mudou de posição.
     expect(params[7]).toBe(2100);
@@ -149,11 +150,11 @@ describe("llm_calls grava passos e composição do pedido", () => {
     expect(resultado.costCents).toBeCloseTo(esperado!, 9);
   });
 
-  it("o run de prévia viaja em $23 — é o elo até a pergunta e a resposta do teste", async () => {
+  it("o run de prévia viaja em $24 — é o elo até a pergunta e a resposta do teste", async () => {
     const { params } = await rodar({}, undefined, RUN_DE_PREVIA);
-    expect(params).toHaveLength(23);
-    expect(params[22]).toBe(RUN_DE_PREVIA);
-    // A coluna nova entrou no FIM: nada do que já era gravado saiu do lugar.
+    expect(params).toHaveLength(24);
+    expect(params[23]).toBe(RUN_DE_PREVIA);
+    // A coluna nova entrou ANTES de preview_run_id: nada do que já era gravado saiu do lugar.
     expect(params[7]).toBe(2100);
     expect(params[15]).toBe(2);
     expect(params[21]).toMatch(/^[0-9a-f]{64}$/);

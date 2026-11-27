@@ -205,7 +205,22 @@ describe("o laço está cortado nos três pontos que o formavam", () => {
   const PONTOS: Array<[string, string]> = [
     ["app/onboarding/layout.tsx", 'if (!activeOrg) redirect("/get-started")'],
     ["app/onboarding/page.tsx", 'if (!activeOrg) redirect("/get-started")'],
-    ["app/auth/confirm/route.ts", 'return redirectTo("/get-started")'],
+    // ── O DESTINO NÃO MUDOU; O VEÍCULO MUDOU (#4335) ──────────────────────
+    // Esta entrada exigia o literal `return redirectTo("/get-started")`. Depois
+    // da #4335 o confirm não responde mais 3xx para tela que exige sessão: a
+    // volta que chega de FORA (o GET com `code`, que vem do `/auth/v1/verify`
+    // do GoTrue, iniciado num cliente de e-mail) sai pela PONTE, e quem decide
+    // isso é `sair()` — `paraTelaAutenticada` quando `pelaPonte`, `redirectTo`
+    // no POST de `/login/continuar`, que parte de um documento nosso.
+    //
+    // O que esta cerca protege continua sendo o CORTE DO LAÇO: o confirm manda
+    // para a SAÍDA (`/get-started`), nunca de volta para `/login`. Trocar o
+    // veículo não move o destino — e é por isso que a expectativa passa a ser o
+    // literal do veículo novo, e não um `toContain("/get-started")` frouxo, que
+    // aceitaria um comentário citando a rota enquanto o código fosse para outro
+    // lugar. Um `redirectTo("/get-started")` de volta aqui reprova esta entrada
+    // E `tests/unit/volta-de-fora-nao-sai-por-302.test.ts`.
+    ["app/auth/confirm/route.ts", 'return await sair("/get-started")'],
   ];
 
   it.each(PONTOS)("%s manda para a saída, não de volta para o login", async (arquivo, esperado) => {

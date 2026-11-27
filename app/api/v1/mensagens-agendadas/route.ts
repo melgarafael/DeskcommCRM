@@ -23,13 +23,19 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { criarAgendamentoSchema, horarioNoFuturo } from "@/lib/agendamento-mensagem/schema";
+import {
+  criarAgendamentoSchema,
+  horarioNoFuturo,
+  motivoRegraInvalida,
+  primeiraOcorrenciaIso,
+  regraDoCorpo,
+} from "@/lib/agendamento-mensagem/schema";
 import { listarAgendamentosVisiveis, paginaDaConsulta, temMaisPagina } from "@/lib/agendamento-mensagem/lista";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, conversation_id, title, body, scheduled_at, status, se_desconectado, motivo, created_at, mensagem:messages(status)";
+  "id, conversation_id, title, body, scheduled_at, status, se_desconectado, motivo, created_at, recorrencia, intervalo_dias, inicio_local, termino_local, tz, mensagem:messages(status)";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -89,7 +95,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
   const v = parsed.data;
-  if (!horarioNoFuturo(v.scheduled_at)) {
+  const regra = regraDoCorpo(v);
+  const motivo = motivoRegraInvalida(regra);
+  if (motivo) return fail("validation_failed", "Confira a recorrência e as datas.", 422, { requestId, details: { motivo } });
+  const scheduledAt = primeiraOcorrenciaIso(regra);
+  if (!horarioNoFuturo(scheduledAt)) {
     return fail("validation_failed", "Escolha um horário no futuro.", 422, { requestId, details: { motivo: "horario_no_passado" } });
   }
   const orgId = auth.org.orgId;
@@ -117,7 +127,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       channel_session_id: conversa.channel_session_id,
       title: v.title ?? null,
       body: v.body,
-      scheduled_at: v.scheduled_at,
+      scheduled_at: scheduledAt,
+      recorrencia: v.recorrencia,
+      intervalo_dias: v.recorrencia === "a_cada_n_dias" ? (v.intervalo_dias ?? null) : null,
+      inicio_local: v.inicio_local,
+      termino_local: v.termino_local ?? null,
+      tz: v.tz,
       se_desconectado: v.se_desconectado,
       created_by_user_id: auth.user.id,
     })
@@ -132,7 +147,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "mensagens_agendadas",
     resourceId: criado.id,
     requestId,
-    metadata: { conversation_id: conversa.id, scheduled_at: v.scheduled_at },
+    metadata: { conversation_id: conversa.id, scheduled_at: scheduledAt, recorrencia: v.recorrencia },
   });
   return ok(criado, { requestId });
 }

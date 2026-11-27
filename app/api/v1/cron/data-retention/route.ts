@@ -121,6 +121,10 @@ export interface ResultadoDaRetencao {
   auditoria_tem_resto: boolean;
   /** Os nonces de OAuth do Google já queimados (migration 0190). */
   nonces_apagados: number;
+  /** As chaves de idempotência vencidas há mais de 1 dia (migration 9506, #1613). */
+  chaves_de_idempotencia_apagadas: number;
+  lotes_chaves_de_idempotencia: number;
+  chaves_de_idempotencia_tem_resto: boolean;
   /** O espelho da agenda conectada — cache com prazo (migration 0187). */
   espelho_apagado: number;
   lotes_espelho: number;
@@ -243,6 +247,7 @@ export interface PodaDb {
       | "fn_expurgar_auditoria_vencida"
       | "fn_expurgar_espelho_da_agenda"
       | "fn_expurgar_nonces_de_oauth"
+      | "fn_expurgar_chaves_de_idempotencia_vencidas"
       | "fn_expurgar_conversa_do_caso_vencida"
       | "fn_expurgar_passagens_vencidas"
       | "fn_expurgar_avisos_de_caso_vencidos"
@@ -312,6 +317,7 @@ async function drenar(
     | "fn_expurgar_auditoria_vencida"
     | "fn_expurgar_espelho_da_agenda"
     | "fn_expurgar_nonces_de_oauth"
+    | "fn_expurgar_chaves_de_idempotencia_vencidas"
     | "fn_expurgar_conversa_do_caso_vencida"
     | "fn_expurgar_passagens_vencidas"
     | "fn_expurgar_avisos_de_caso_vencidos"
@@ -602,6 +608,17 @@ export async function podarHistorico(
   // cresceria para sempre, uma linha por conexão tentada, num produto que se
   // instala e ninguém monitora.
   const nonces = await executarDreno(falhas, "fn_expurgar_nonces_de_oauth", () => drenar(db, "fn_expurgar_nonces_de_oauth", 1), zerado);
+  // As chaves de idempotência vencidas (migration 9506, #1613): ninguém as lê
+  // depois de vencer (`lib/api/idempotency.ts` só aceita `expires_at > now()`),
+  // e sem esta linha a tabela só crescia, com o recibo de cada envio dentro.
+  // Mesma folga de 1 dia dos nonces: a reserva vale 60 s e o recibo 24 h, e a
+  // linha recém-vencida pode ser a de um envio ainda gravando o recibo.
+  const chavesDeIdempotencia = await executarDreno(
+    falhas,
+    "fn_expurgar_chaves_de_idempotencia_vencidas",
+    () => drenar(db, "fn_expurgar_chaves_de_idempotencia_vencidas", 1),
+    zerado,
+  );
   // Quinta poda: a conversa da equipe com a IA sobre um caso (migration 0281).
   // O piso de 90 dias mora no CORPO da função; o número daqui é o que o
   // operador pediu, já elevado, e é ele que aparece no relatório da rodada.
@@ -672,6 +689,9 @@ export async function podarHistorico(
     auditoria_apagada: linhas.apagadas,
     espelho_apagado: eventos.apagadas,
     nonces_apagados: nonces.apagadas,
+    chaves_de_idempotencia_apagadas: chavesDeIdempotencia.apagadas,
+    lotes_chaves_de_idempotencia: chavesDeIdempotencia.lotes,
+    chaves_de_idempotencia_tem_resto: chavesDeIdempotencia.temResto,
     conversa_do_caso_apagada: conversas.apagadas,
     passagens_apagadas: passagens.apagadas,
     avisos_de_caso_apagados: avisosDeCaso.apagadas,
@@ -774,6 +794,9 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // nonces ao laço e ao retorno e esqueci desta linha. O comentário acima
     // descrevia exatamente o defeito que eu estava criando um parágrafo abaixo.
     resultado.nonces_apagados > 0 ||
+    // As chaves de idempotência (#1613), pela mesma razão: uma rodada que só
+    // podou chaves vencidas apagaria linhas sem deixar trilha.
+    resultado.chaves_de_idempotencia_apagadas > 0 ||
     // A quinta, pela MESMA razão das duas acima: uma rodada que só apagou
     // conversa de caso vencida apagaria linhas e não deixaria registro — e o
     // CLAUDE.md manda auditar QUANDO HÁ EFEITO, nunca parar de auditar.

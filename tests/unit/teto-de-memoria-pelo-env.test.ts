@@ -42,10 +42,35 @@ const TETOS = [
   { servico: "app", variavel: "APP_MEM_LIMIT", padrao: "768m" },
   { servico: "worker", variavel: "WORKER_MEM_LIMIT", padrao: "512m" },
   { servico: "waha", variavel: "WAHA_MEM_LIMIT", padrao: "1280m" },
+  { servico: "redis", variavel: "REDIS_MEM_LIMIT", padrao: "256m" },
+  { servico: "srh", variavel: "SRH_MEM_LIMIT", padrao: "256m" },
+  { servico: "scheduler", variavel: "SCHEDULER_MEM_LIMIT", padrao: "128m" },
+  { servico: "caddy", variavel: "CADDY_MEM_LIMIT", padrao: "512m" },
 ] as const;
 
+/**
+ * Teto de CPU: desligado por padrão (`0` = sem limite no Compose), ajustável
+ * pelo `.env` para quem divide o host com outras aplicações. Todo serviço que
+ * sobe — inclusive os de profile — tem o seu.
+ */
+const CPUS = [
+  "app",
+  "worker",
+  "waha",
+  "redis",
+  "srh",
+  "scheduler",
+  "wacalls",
+  "asterisk",
+  "voice-agent",
+  "caddy",
+].map((servico) => ({
+  servico,
+  variavel: `${servico.toUpperCase().replace(/-/g, "_")}_CPUS`,
+}));
+
 describe("teto de memória configurável pelo .env", () => {
-  it("o leitor enxerga os três serviços (guarda do instrumento)", () => {
+  it("o leitor enxerga os serviços (guarda do instrumento)", () => {
     for (const { servico } of TETOS) {
       expect(blocoDoServico(COMPOSE, servico), servico).toMatch(/\bimage:/);
     }
@@ -59,6 +84,21 @@ describe("teto de memória configurável pelo .env", () => {
 
     it(`${variavel} está documentada no modelo de .env`, () => {
       expect(MODELO_ENV).toMatch(new RegExp(`^# ${variavel}=\\d+m$`, "m"));
+    });
+  }
+});
+
+describe("teto de CPU configurável pelo .env", () => {
+  for (const { servico, variavel } of CPUS) {
+    it(`${servico}: cpus lê ${variavel} e cai em 0 (sem limite)`, () => {
+      const bloco = blocoDoServico(COMPOSE, servico);
+      expect(bloco, servico).toMatch(/\bimage:/);
+      const tetos = bloco.match(/^\s*cpus:.*$/gm) ?? [];
+      expect(tetos.map((l) => l.trim())).toEqual([`cpus: \${${variavel}:-0}`]);
+    });
+
+    it(`${variavel} está documentada no modelo de .env`, () => {
+      expect(MODELO_ENV).toMatch(new RegExp(`^# ${variavel}=[\\d.]+$`, "m"));
     });
   }
 });

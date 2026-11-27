@@ -815,6 +815,27 @@ saude_ok "unhealthy AINDA QUE o redis esteja ok" nao      unhealthy "$UNHEALTHY"
 saude_ok "porta aberta, app mudo"                nao      ''        ''
 saude_ok "proxy devolveu HTML de erro"           nao      ''        '<html>502 Bad Gateway</html>'
 
+echo "prazo dos comandos com o docker (#5055)"
+# `com_prazo` é o que impede o healthcheck de parar num `docker compose exec`
+# que herda o terminal: o filho, em grupo de processos fora do primeiro plano,
+# PARA ao ler o stdin (SIGTTIN), e o TERM do prazo fica pendente num processo
+# parado — o `timeout` espera por ele para sempre. Fechar o stdin tira a leitura
+# do terminal; o `-k` garante que quem ignora o TERM também não prenda o passo.
+# A prova de TEMPO (o healthcheck terminando com o app mudo) fica em
+# tests/shell/healthcheck-com-prazo-nao-trava.test.sh; aqui a leitura é do
+# contrato, que é o que qualquer refatoração futura de `com_prazo` pode quebrar.
+corpo_do_prazo="$(awk '/^com_prazo\(\)/{dentro=1} dentro{print} dentro && /^}/{exit}' ./_common.sh)"
+if printf '%s' "$corpo_do_prazo" | grep -q '</dev/null'; then
+  printf '  ✓ com_prazo fecha o stdin de quem roda sob prazo\n'
+else
+  printf '  ✗ com_prazo não fecha o stdin: um `docker compose exec` sob prazo para no terminal (SIGTTIN) e o passo não termina\n'; fail=1
+fi
+if printf '%s' "$corpo_do_prazo" | grep -q -- '-k 5'; then
+  printf '  ✓ com_prazo mata à força 5s depois do prazo (-k)\n'
+else
+  printf '  ✗ com_prazo não usa -k: um comando que ignora o TERM prende o passo para sempre\n'; fail=1
+fi
+
 wait_recovers_after_probe_timeout() (
   local dir deadline body rc=0
   deadline="$(command -v timeout)"
@@ -4294,6 +4315,60 @@ if [ -n "$crases_no_sql" ]; then
 else
   printf '  ✓ o heredoc do bootstrap do dono está livre de crase\n'
 fi
+
+echo "troca do e-mail de login (change-email.sh, issue #5073)"
+# O caminho e o corpo do PUT são montados por duas funções PURAS de _common.sh
+# (`url_admin_user`, `corpo_troca_de_email`) justamente para serem conferidos
+# aqui, sem VPS e sem GoTrue. O que este bloco NÃO prova: que o GoTrue aceita o
+# pedido — isso foi medido com um servidor de mentira no PR da #5073, e é
+# declarado como não medido contra um GoTrue real.
+#
+# O corpo é comparado BYTE A BYTE: `email_confirm` ausente faria o GoTrue
+# mandar a confirmação para o endereço novo e a troca ficaria pendente para
+# sempre numa instalação sem SMTP — um "campo a mais" aqui é a diferença entre
+# o dono entrar e o dono não entrar.
+url_supabase_antes="${NEXT_PUBLIC_SUPABASE_URL:-}"
+NEXT_PUBLIC_SUPABASE_URL="https://abcdefghijklmnop.supabase.co"
+uid_teste="11111111-2222-3333-4444-555555555555"
+
+corpo_esperado='{"email":"dono@empresa.com.br","email_confirm":true}'
+corpo_obtido="$(corpo_troca_de_email dono@empresa.com.br 2>/dev/null)"
+if [ "$corpo_obtido" = "$corpo_esperado" ]; then
+  printf '  ✓ o corpo é exatamente %s\n' "$corpo_esperado"
+else
+  printf '  ✗ o corpo saiu %s (esperado %s)\n' "$corpo_obtido" "$corpo_esperado"; fail=1
+fi
+
+url_esperada="https://abcdefghijklmnop.supabase.co/auth/v1/admin/users/${uid_teste}"
+url_obtida="$(url_admin_user "$uid_teste")"
+if [ "$url_obtida" = "$url_esperada" ]; then
+  printf '  ✓ o caminho é /auth/v1/admin/users/<uid>\n'
+else
+  printf '  ✗ o caminho saiu %s\n' "$url_obtida"; fail=1
+fi
+
+# Barra final no .env (quem edita à mão deixa) não pode virar `//auth/v1`.
+NEXT_PUBLIC_SUPABASE_URL="https://abcdefghijklmnop.supabase.co/"
+if [ "$(url_admin_user "$uid_teste")" = "$url_esperada" ]; then
+  printf '  ✓ a barra final do NEXT_PUBLIC_SUPABASE_URL não vira barra dupla\n'
+else
+  printf '  ✗ barra final no NEXT_PUBLIC_SUPABASE_URL quebrou o caminho: %s\n' "$(url_admin_user "$uid_teste")"; fail=1
+fi
+
+# Guarda do corpo: aspa ou barra invertida no endereço quebrariam o JSON, e um
+# corpo quebrado o GoTrue recusaria com uma mensagem que não fala do endereço.
+if corpo_troca_de_email 'dono"x@empresa.com.br' >/dev/null 2>&1; then
+  printf '  ✗ aspa no endereço passou pela guarda do corpo — o JSON sairia quebrado\n'; fail=1
+else
+  printf '  ✓ aspa no endereço é recusada antes de virar corpo JSON\n'
+fi
+if corpo_troca_de_email 'dono\x@empresa.com.br' >/dev/null 2>&1; then
+  printf '  ✗ barra invertida no endereço passou pela guarda do corpo\n'; fail=1
+else
+  printf '  ✓ barra invertida no endereço é recusada antes de virar corpo JSON\n'
+fi
+
+NEXT_PUBLIC_SUPABASE_URL="$url_supabase_antes"
 
 echo
 if [ "$fail" = 0 ]; then echo "todos os validadores passaram"; else echo "FALHOU"; fi

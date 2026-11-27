@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import { definirFiltroDasTarefas } from "@/app/actions/settings/definirFiltroDasTarefas";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -17,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { EscopoDaTelaDeTarefas } from "@/lib/tarefas/escopo-do-atendente";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
@@ -37,12 +40,28 @@ export interface FunilDoFiltro {
 
 export function TarefasClient({
   podeEditar,
-  minhasDeInicio = false,
+  filtroInicial = "todos",
+  escopoProprio = null,
   funis = [],
   setoresLigados = false,
 }: {
   podeEditar: boolean;
-  minhasDeInicio?: boolean;
+  /**
+   * O filtro com que a tela ABRE (#4737), decidido no servidor: o
+   * `?assigned_to=me` do endereço, ou o último que a pessoa escolheu, ou
+   * "Minhas" quando o papel é de atendente. Nunca recalculado aqui — o
+   * componente só parte dele.
+   */
+  filtroInicial?: FiltroDeResponsavel;
+  /**
+   * O recorte que a RLS aplica a esta pessoa (`escopoDaTelaDeTarefas`), ou
+   * `null` quando ela vê a equipe. Com recorte, a tela diz o que a lista traz
+   * e não oferece os colegas: o banco entregaria só as tarefas deles que esta
+   * pessoa criou, e o filtro pareceria a lista inteira do colega. "Todos" fica,
+   * porque é exatamente o que a policy entrega — inclusive a tarefa que ela
+   * criou e entregou a alguém.
+   */
+  escopoProprio?: EscopoDaTelaDeTarefas;
   funis?: FunilDoFiltro[];
   /** Módulo opcional de setores (doc 213), lido no servidor pela página. Ausente = desligado. */
   setoresLigados?: boolean;
@@ -51,7 +70,10 @@ export function TarefasClient({
   const usuario = useUser();
   const [modo, setModo] = useState<"lista" | "calendario" | "quadro">("lista");
   const [situacao, setSituacao] = useState<FiltroDeSituacao>("aberto");
-  const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
+  const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(filtroInicial);
+  // A gravação da preferência vai numa transição: trocar o filtro não pode
+  // bloquear a lista, e a action é o que faz a escolha sobreviver à recarga.
+  const [, iniciarGravacao] = useTransition();
   // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
   const [setor, setSetor] = useState<string>("todos");
   // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
@@ -142,6 +164,29 @@ export function TarefasClient({
     else await criarTarefa(entrada);
   }
 
+  /**
+   * Trocar o filtro de responsável (#4737): a lista muda na hora e a escolha é
+   * gravada em segundo plano, na preferência da pessoa — o MESMO mecanismo da
+   * camada de datas da Agenda.
+   *
+   * Falha ao gravar NÃO desfaz o filtro: a lista já está recortada, e voltar
+   * para o filtro anterior seria mentir sobre o que está na tela. O aviso
+   * existe para ninguém achar que a escolha sobreviveu à recarga quando não.
+   */
+  function mudarResponsavel(novo: FiltroDeResponsavel) {
+    setResponsavel(novo);
+    iniciarGravacao(async () => {
+      const aviso = () =>
+        toast.error(t("A lista mudou, mas não consegui lembrar esta escolha para a próxima visita."));
+      try {
+        const resposta = await definirFiltroDasTarefas(novo);
+        if (!resposta.ok) aviso();
+      } catch {
+        aviso();
+      }
+    });
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -152,6 +197,13 @@ export function TarefasClient({
               "O que ficou combinado, com prazo. Tarefa presa a um negócio aparece na linha do tempo dele.",
             )}
           </p>
+          {escopoProprio && (
+            <p className="mt-1 text-xs text-muted-foreground" data-testid="tarefas-escopo-proprio">
+              {escopoProprio === "own"
+                ? t("Sua empresa mostra aqui as suas tarefas e as que você criou.")
+                : t("Sua empresa mostra aqui as suas tarefas, as que você criou e as que ainda não têm responsável.")}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -203,20 +255,23 @@ export function TarefasClient({
             </Select>
           )}
 
-          <Select value={responsavel} onValueChange={(v) => setResponsavel(v as FiltroDeResponsavel)}>
+          <Select value={responsavel} onValueChange={(v) => mudarResponsavel(v as FiltroDeResponsavel)}>
             <SelectTrigger aria-label={t("Responsável")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-responsavel">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {/* Com o recorte do banco, os colegas não aparecem: a lista de
+                  um colega viria só com o que esta pessoa criou para ele. */}
               <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
-              {(membros ?? [])
-                .filter((m) => m.user_id !== usuario.id)
-                .map((m) => (
-                  <SelectItem key={m.user_id} value={m.user_id}>
-                    {rotuloDoMembro(m, t)}
-                  </SelectItem>
-                ))}
+              {!escopoProprio &&
+                (membros ?? [])
+                  .filter((m) => m.user_id !== usuario.id)
+                  .map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {rotuloDoMembro(m, t)}
+                    </SelectItem>
+                  ))}
               <SelectItem value="ninguem">{t("Sem responsável")}</SelectItem>
             </SelectContent>
           </Select>

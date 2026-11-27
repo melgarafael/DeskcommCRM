@@ -12,6 +12,8 @@
  * Só manager+ (a rota é manager+): é o funil inteiro, não o pedaço de quem
  * olha.
  */
+import type { JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
+import { ErroDoPainel } from "./ErroDoPainel";
 import { useT } from "@/hooks/i18n/useT";
 import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { SEM_CATEGORIA, SEM_ETAPA, SEM_MOEDA, SEM_MOTIVO } from "@/lib/metrics/perdas";
@@ -77,12 +79,12 @@ function Bloco({
   );
 }
 
-export function PerdasPanel() {
+export function PerdasPanel({ janela }: { janela: JanelaDeMetricas }) {
   const t = useT();
-  const { data, isLoading, isError } = usePerdasMetrics();
-  if (isLoading) return <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>;
+  const { data, isLoading, isError, isFetching, refetch } = usePerdasMetrics(janela);
+  if (janela === undefined || isLoading) return <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>;
   if (isError || !data)
-    return <p className="text-sm text-destructive">{t("Erro ao carregar o relatório de perdas.")}</p>;
+    return <ErroDoPainel mensagem={t("Erro ao carregar o relatório de perdas.")} tentando={isFetching} onRetry={() => void refetch()} />;
 
   const relatorio = data.data;
 

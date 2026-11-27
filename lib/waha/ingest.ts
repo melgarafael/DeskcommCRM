@@ -1206,6 +1206,8 @@ async function handleInbound(
   // dispara o pedido de rodízio pelo banco. Cortar depois já teria criado
   // contato, conversa e uma "conversa do suporte" na fila de um atendente — e o
   // "cancelar" que alguém da equipe digitasse bloquearia esse contato.
+  // Resposta citando o aviso de caso (#5257): o id citado casa com a entrega.
+  const citacaoDoAviso = citacaoDoPayload(p);
   if (await consumirRespostaDoSuporteNoWhatsApp(admin, {
     organizationId: session.organization_id,
     channelSessionId: session.id,
@@ -1213,6 +1215,9 @@ async function handleInbound(
     direction: "inbound",
     texto,
     externalId: p.id,
+    citacao: citacaoDoAviso
+      ? { idsDoAviso: wahaEchoExternalIds(citacaoDoAviso.id, chatId) }
+      : null,
   })) {
     return;
   }
@@ -1855,7 +1860,8 @@ async function handleOutboundFromUserPhone(
           actor: { type: "webhook_source", id: session.id },
           requestId,
         },
-        { conversationId },
+        // `#on` é a pessoa devolvendo pelo celular (`limparClassificacaoDaIa`).
+        { conversationId, limparClassificacaoDaIa: true },
       );
       if (!devolucao.ok) {
         // O `#on` fica VISÍVEL no chat: é o único sinal de que o atendente

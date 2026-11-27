@@ -30,7 +30,8 @@ interface ListResponse {
 
 interface Props {
   /** Query já montada no pai — evita duplicar subscription Realtime + refetch. */
-  listQuery: UseInfiniteQueryResult<InfiniteData<ListResponse>, Error>;
+  listQuery: Pick<UseInfiniteQueryResult<InfiniteData<ListResponse>, Error>,
+    "data" | "error" | "fetchNextPage" | "hasNextPage" | "isError" | "isFetchingNextPage" | "isPending" | "refetch">;
   filters: ConversationsFilters;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -52,6 +53,7 @@ interface Props {
    * controle: o leitor veria um botão que só devolve 403.
    */
   podeMarcarExemplo?: boolean;
+  podeAgirNaLinha?: (id: string) => boolean;
 }
 
 export function ConversationList({
@@ -65,6 +67,7 @@ export function ConversationList({
   onAlternarSelecao,
   onSelecionarTodosVisiveis,
   podeMarcarExemplo = false,
+  podeAgirNaLinha,
 }: Props) {
   const t = useT();
   /**
@@ -318,23 +321,27 @@ export function ConversationList({
             <span className="text-xs text-text-muted">{t("Selecionar todas")}</span>
           </div>
         )}
-        {items.map((c, i) => (
-          <ConversationListItem
+        {items.map((c, i) => {
+          const podeAgir = podeAgirNaLinha?.(c.id) ?? true;
+          return <ConversationListItem
             key={c.id}
             conversation={c}
+            ocultarPrevia={!podeAgir}
             isSelected={c.id === selectedId}
             onSelect={abrirConversa}
             mencionado={mencionadas.has(c.id)}
-            queuePosition={isQueue ? i + 1 : undefined}
+            // Na ordem "Mais recentes" o índice não é a posição na fila: o
+            // número "1º" diria que quem acabou de chegar é o próximo a ser atendido.
+            queuePosition={isQueue && filters.ordem_fila !== "recentes" ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
             mostrarAutomatico={mostrarAutomatico}
             automaticoDaOrg={automaticoDaOrg.data}
             selecionado={selecionados?.has(c.id)}
-            onAlternarSelecao={onAlternarSelecao}
-            onAlternarExemplo={podeMarcarExemplo ? alternarExemplo : undefined}
-          />
-        ))}
+            onAlternarSelecao={podeAgir ? onAlternarSelecao : undefined}
+            onAlternarExemplo={podeAgir && podeMarcarExemplo ? alternarExemplo : undefined}
+          />;
+        })}
         {q.hasNextPage && (
           <div className="flex justify-center p-3">
             <Button

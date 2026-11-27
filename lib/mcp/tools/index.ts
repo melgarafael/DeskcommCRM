@@ -12,9 +12,16 @@
 import type { McpToolDefinition } from "../types";
 import { amigoTools } from "./amigo";
 import { TOOL_CATALOG, VALID_TOOL_IDS } from "./catalog";
-import { crmSearchContacts, crmGetContact, crmProposeContactField } from "./contacts";
+import { crmSearchContacts, crmGetContact, crmProposeContactField, crmUpdateContact } from "./contacts";
+import {
+  crmPauseAi,
+  crmResumeAi,
+  crmCloseConversation,
+  crmReopenConversation,
+} from "./comandos-de-conversa";
 import {
   crmListConversations,
+  crmCountConversations,
   crmGetConversation,
   crmGetConversationHistory,
   crmCreateConversationDraft,
@@ -128,7 +135,14 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmSearchContacts,
   crmGetContact,
   crmProposeContactField,
+  crmUpdateContact,
   crmListConversations,
+  crmCountConversations,
+  // #4517 — os quatro comandos da conversa, por token e pelo agente.
+  crmPauseAi,
+  crmResumeAi,
+  crmCloseConversation,
+  crmReopenConversation,
   crmGetConversation,
   crmGetConversationHistory,
   crmGetQueueStatus,

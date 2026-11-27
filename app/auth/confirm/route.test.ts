@@ -42,6 +42,10 @@ vi.mock("@/lib/auth/convite-no-signup", () => ({ decidirConviteDoSignup: vi.fn()
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/politica-de-cadastro", () => ({ modoDeCadastro: vi.fn(async () => "aberto") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// A marca da ponte vem do banco (instalação → `.env` → padrão). Aqui é fixa.
+vi.mock("@/lib/branding/saida", () => ({
+  marcaDaSaida: vi.fn(async () => ({ nome: "Central de Teste" })),
+}));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "http://localhost:3000" } }));
 
 const USUARIO = { id: "11111111-1111-4111-8111-111111111111", email: "convidado@example.com" };
@@ -83,9 +87,30 @@ function envio(qs: string) {
   });
 }
 
-/** O destino do redirect, sem o host — é o que o teste realmente afirma. */
+/**
+ * O destino de um 3xx, sem o host.
+ *
+ * Continua lendo SÓ o `Location`, de propósito: no POST de `/login/continuar` a
+ * volta É um 303 legítimo (o formulário parte de um documento nosso), e um
+ * helper tolerante esconderia a troca por ponte. Quem sai pela ponte é medido
+ * por `destinoDaPonte`, abaixo, junto com `status` 200 e `Location` nulo.
+ */
 function destino(res: Response): string {
   return new URL(res.headers.get("location") ?? "").pathname + new URL(res.headers.get("location") ?? "").search;
+}
+
+/**
+ * O destino levado pela PONTE (documento same-origin com 200), lido do CORPO.
+ *
+ * O GET com `code` chega aqui por navegação vinda de outro site: um 3xx para
+ * tela que exige sessão continua a cadeia do provedor, o cookie `Strict` não
+ * viaja, e a pessoa cai em `/login` com a sessão já criada (issue #4335).
+ */
+async function destinoDaPonte(res: Response): Promise<string> {
+  const corpo = await res.clone().text();
+  const m = /window\.location\.replace\((".*?")\);/.exec(corpo);
+  expect(m, "a resposta não trouxe a ponte (script de `location.replace`)").not.toBeNull();
+  return JSON.parse(m![1]!) as string;
 }
 
 describe("GET /auth/confirm", () => {
@@ -271,5 +296,103 @@ describe("GET /auth/confirm", () => {
 
     expect(destino(res)).toBe("/app");
     expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+  });
+
+  // ─── #4335: o GET com `code` volta de OUTRO site — tela com sessão sai pela ponte ─
+  //
+  // O formato `code` do template PADRÃO do Supabase faz o e-mail apontar para o
+  // `/auth/v1/verify` do GoTrue, que valida e só então manda o navegador para
+  // cá. A cadeia começou num cliente de e-mail (outro site) e o cookie de sessão
+  // é `sameSite: "strict"`: um 3xx daqui para `/app`, `/get-started`,
+  // `/onboarding/welcome` ou `/login/reset` continua a cadeia, o `proxy.ts` não
+  // enxerga usuário e a pessoa cai em `/login` — com a sessão já criada. É a
+  // mesma classe da #1646/#4335; a entrega passa a ser a ponte (200, sem
+  // `Location`), e o destino é o mesmo de antes.
+  it("GET com code e convite válido: entra no app pela ponte, sem 302", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({
+      tipo: "convite",
+      token: "tok",
+      payload: PAYLOAD,
+    } as ReturnType<typeof decidirConviteDoSignup>);
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("code=abc&type=signup"));
+
+    expect(
+      res.headers.get("location"),
+      "302 para tela autenticada continua a cadeia cross-site do provedor: o cookie Strict não viaja nela",
+    ).toBeNull();
+    expect(res.status).toBe(200);
+    expect(await destinoDaPonte(res)).toBe("/app");
+  });
+
+  it("GET com code e cadastro com aprovação: o pedido de empresa sai pela ponte", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({ tipo: "provisionar" });
+    vi.mocked(modoDeCadastro).mockResolvedValue("com_aprovacao");
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("code=abc&type=signup"));
+
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.status).toBe(200);
+    expect(await destinoDaPonte(res)).toBe("/get-started");
+    expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+  });
+
+  it("GET com code e sem convite: o onboarding sai pela ponte", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({ tipo: "provisionar" });
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("code=abc&type=signup"));
+
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.status).toBe(200);
+    expect(await destinoDaPonte(res)).toBe("/onboarding/welcome");
+  });
+
+  it("GET com code de recuperação: a tela da senha nova também sai pela ponte", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("code=abc&type=recovery"));
+
+    // `/login/reset` faz `getUser()` como `/login/mfa`: sem a sessão ela devolve
+    // a pessoa para `/login` e a senha nunca é trocada.
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.status).toBe(200);
+    expect(await destinoDaPonte(res)).toBe("/login/reset");
+  });
+
+  it("POST de /login/continuar continua saindo por 303 — o formulário é nosso", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({
+      tipo: "convite",
+      token: "tok",
+      payload: PAYLOAD,
+    } as ReturnType<typeof decidirConviteDoSignup>);
+
+    const { POST } = await import("./route");
+    const res = await POST(envio("type=signup&token_hash=abc"));
+
+    // A ponte é só de quem chega de fora. O POST parte de um documento nosso,
+    // então o 303 mantém o cookie Strict viajando e não vira documento extra.
+    expect(res.status).toBe(303);
+    expect(destino(res)).toBe("/app");
+  });
+
+  it("GET com code que não vira sessão: a recusa continua 302 para a tela pública", async () => {
+    comSupabase({
+      verifyOtp: { data: { user: null }, error: { message: "invalid flow state" } },
+      getUser: { data: { user: null } },
+    });
+
+    const { GET } = await import("./route");
+    const res = await GET(requisicao("code=abc"));
+
+    expect(res.status).toBe(307);
+    expect(destino(res)).toBe("/login?error=template_padrao");
   });
 });

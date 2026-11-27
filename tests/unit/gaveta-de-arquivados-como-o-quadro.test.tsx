@@ -43,6 +43,12 @@ vi.mock("@/hooks/pipelines/usePipelines", () => ({
   useCriarFunil: () => ({ isPending: false, mutate: mocks.criar }),
   useEditarFunil: () => ({ isPending: false, mutate: mocks.editar }),
   useArquivarFunil: () => ({ isPending: false, mutate: mocks.arquivar }),
+  // #4802 (item 3) — `_client` renderiza `TransferirNegocios`, que lê estes três.
+  // Zero negócio faz o painel da escolha não aparecer, e é o que esta gaveta mede:
+  // a confirmação da exclusão, não a transferência.
+  useNegociosDoFunil: () => ({ negocios: 0, carregando: false, erro: null }),
+  useEtapasDoFunil: () => ({ etapas: [], carregando: false }),
+  useMoverNegociosDoFunil: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/app/app/kanban/_components/ImportarLeads", () => ({ ImportarLeads: () => null }));
 

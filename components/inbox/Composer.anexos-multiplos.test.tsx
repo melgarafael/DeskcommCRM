@@ -13,9 +13,9 @@
  * provaria o compositor contra o contrato que o teste escreveu.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComponentProps } from "react";
+import { createRef, type ComponentProps } from "react";
 
 const deps = vi.hoisted(() => ({
   uploadMutateAsync: vi.fn(),
@@ -26,10 +26,10 @@ const deps = vi.hoisted(() => ({
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
 
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: deps.sendMutate, isPending: false }),
+  useSendMessage: () => ({ mutate: deps.sendMutate, mutateAsync: deps.sendMutate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useCreateNote", () => ({
-  useCreateNote: () => ({ mutate: deps.noteMutate, isPending: false }),
+  useCreateNote: () => ({ mutate: deps.noteMutate, mutateAsync: deps.noteMutate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: deps.uploadMutateAsync, isPending: false }),
@@ -98,7 +98,7 @@ vi.mock("@/components/inbox/composer/AudioRecorder", () => ({ AudioRecorder: () 
 vi.mock("@/components/inbox/composer/EmojiButton", () => ({ EmojiButton: () => null }));
 vi.mock("@/components/inbox/composer/BarraDeRecursos", () => ({ BarraDeRecursos: () => null }));
 
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 
 const arquivo = (nome: string) => new File(["conteudo"], nome, { type: "application/pdf" });
 
@@ -125,11 +125,7 @@ beforeEach(() => {
     media_size_bytes: 17,
     kind: "document",
   });
-  // O envio real só libera o próximo da fila no `onSuccess`; sem isso a fila
-  // pararia no primeiro e o teste mediria uma prévia que nunca sai.
-  deps.sendMutate.mockImplementation((_payload: unknown, opts?: { onSuccess?: () => void }) =>
-    opts?.onSuccess?.(),
-  );
+  deps.sendMutate.mockResolvedValue(undefined);
 });
 
 describe("o botão + entrega vários anexos na fila do compositor (#4364)", () => {
@@ -166,4 +162,38 @@ describe("o botão + entrega vários anexos na fila do compositor (#4364)", () =
     await waitFor(() => expect(deps.sendMutate).toHaveBeenCalledTimes(1));
     expect(deps.uploadMutateAsync).toHaveBeenCalledTimes(1);
   });
+
+  it("continua uma fila confirmada depois de deixar a conversa", async () => {
+    let liberar!: () => void;
+    const primeiro = new Promise<void>((resolve) => { liberar = resolve; });
+    deps.uploadMutateAsync.mockImplementationOnce(async () => {
+      await primeiro;
+      return { storage_path: "conv-1/primeiro.pdf", media_mime: "application/pdf",
+        media_size_bytes: 17, kind: "document" };
+    });
+    const { container, unmount } = renderComposer();
+    await escolherPeloMenu(container, [arquivo("primeiro.pdf"), arquivo("segundo.pdf")]);
+    await userEvent.click(screen.getByRole("button", { name: "Enviar anexos" }));
+    expect(deps.uploadMutateAsync).toHaveBeenCalledOnce();
+    unmount();
+    await act(async () => liberar());
+    await waitFor(() => expect(deps.sendMutate).toHaveBeenCalledTimes(2));
+    expect(deps.sendMutate.mock.calls.map(([dados]) => dados.conversation_id)).toEqual(["conv-1", "conv-1"]);
+  });
+
+  it("restaura o anexo ainda não enviado com o destino de nota interna", async () => {
+    const ref = createRef<ComposerHandle>();
+    const view = renderComposer({ ref });
+    await userEvent.click(screen.getByRole("button", { name: "Nota interna" }));
+    await escolherPeloMenu(view.container, [arquivo("privado.pdf")]);
+    const guardado = ref.current?.guardarRascunho?.();
+    expect(guardado).toMatchObject({ modo: "note", modoDosArquivos: "note" });
+    view.unmount();
+    renderComposer({ rascunhoGuardado: guardado });
+    expect(screen.getByTestId("previa-arquivo")).toHaveTextContent("privado.pdf");
+    await userEvent.click(screen.getByRole("button", { name: "Enviar anexos" }));
+    await waitFor(() => expect(deps.noteMutate).toHaveBeenCalledOnce());
+    expect(deps.sendMutate).not.toHaveBeenCalled();
+  });
+
 });

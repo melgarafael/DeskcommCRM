@@ -31,6 +31,7 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { listarFerramentasDoServidor } from "@/lib/mcp/servidor-externo/chamada";
 import { apagado, cifrar, ultimos4 } from "@/lib/mcp/servidor-externo/cifra";
 import { urlDoCallbackMcp } from "@/lib/mcp/servidor-externo/do-agente/enderecos";
+import { prazoDoLinkEmMinutos } from "@/lib/mcp/servidor-externo/do-agente/prazo-do-link";
 import {
   ErroDeOauth,
   descobrir,
@@ -228,6 +229,13 @@ export async function salvarServidorMcpDoAgente(
   }
 
   if (entrada.modo === "oauth_por_contato") {
+    // #5126: prazo (min) em que o link pode ser ABERTO. Do formulário quando
+    // veio; senão, o que o servidor já tinha; senão, 10. Clampado AQUI para o
+    // jsonb nunca guardar lixo — e preservado quando o endereço muda e a
+    // descoberta refaz os metadados (o prazo não é do endereço).
+    const prazoDoLink = prazoDoLinkEmMinutos(
+      entrada.prazoDoLinkMinutos !== undefined ? entrada.prazoDoLinkMinutos : atual?.oauth?.prazo_do_link_minutos,
+    );
     const mudouEndereco = !atual || atual.endpoint !== entrada.endpoint || !atual.oauth;
     let metadados: MetadadosOauth | null = mudouEndereco ? null : atual!.oauth;
     let clientId = entrada.oauthClientId || (mudouEndereco ? "" : atual?.oauthClientId ?? "");
@@ -256,7 +264,8 @@ export async function salvarServidorMcpDoAgente(
     } catch (err) {
       return { ok: false, error: err instanceof ErroDeOauth ? err.codigo : "descoberta_falhou" };
     }
-    colunas.oauth_metadados = metadados;
+    // `!`: o `catch` acima retorna, então aqui `metadados` já existe.
+    colunas.oauth_metadados = { ...metadados!, prazo_do_link_minutos: prazoDoLink } satisfies MetadadosOauth;
     colunas.oauth_client_id = clientId;
     // Cliente do registro dinâmico é público: segredo NUNCA é gravado (um campo
     // de senha autopreenchido pelo navegador não pode virar credencial).

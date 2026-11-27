@@ -700,9 +700,10 @@ jobs:
     # medido — não há Docker onde esta matriz foi escrita —, e existe para o
     # vermelho continuar falando de schema: mantido em 20, a perna morreria por
     # relógio no meio da segunda passada.
-    timeout-minutes: 45
+    timeout-minutes: 60
     # 30 → 45 em 10/11/2026 (doc de decisão 302): cortada por relógio aos 30 min
-    # no pg15 e no pg17, também na `main`. Razão inteira em
+    # no pg15 e no pg17, também na `main`. 45 → 60 em 26/11/2026 (doc 421, issue
+    # #1149): verde de 28 a 44 min e 10 cortes aos 45 em 60 rodadas. Razão inteira em
     # tests/unit/preambulo-do-ci-nao-come-o-relogio.test.ts (TETOS).
     # RUNNERS PRÓPRIOS (VPS `deskcomm-vps`, aprovados pelo dono em 12/11/2026).
     # Por quê: a fila do Actions (teto de jobs simultâneos) segura esta matriz,

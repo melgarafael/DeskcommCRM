@@ -68,6 +68,14 @@ export interface DrainKnobs {
   idleIntervalMs: number;
   /** Janela de coalescência de rajada inbound por contato (0 = sem debounce). */
   debounceMs: number;
+  /**
+   * Teto da rajada DESLIZANTE (`INBOUND_BURST_MAX_MS`, issue #196): quanto tempo,
+   * contado do `created_at` do job da primeira mensagem, ele ainda aceita
+   * carona e é empurrado para frente. Ausente = janela ancorada (o `run_after`
+   * nasce e não anda), que é o comportamento de antes do #196 — os dublês de
+   * teste que não o passam ficam no modo antigo de propósito.
+   */
+  debounceMaxMs?: number;
   /** Evento 'processing' órfão volta a 'pending' após isto. */
   reapTimeoutMs: number;
   /**
@@ -455,7 +463,16 @@ async function processEvent(
       agora: new Date(),
       ttlMs: knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
     });
-    if (!canAssist && elegib !== null && !elegib.permite) {
+    // O teto do visitante anônimo (Spec 36, F4) é a exceção: quem pede o contato
+    // e passa a conversa para a equipe é o TURNO. Descartado aqui, o visitante
+    // ficaria no silêncio. O turno revalida e não chama o modelo; depois da
+    // passagem, o `force_human` veta nesta mesma consulta.
+    if (
+      !canAssist &&
+      elegib !== null &&
+      !elegib.permite &&
+      elegib.motivo !== 'teto_do_visitante_anonimo'
+    ) {
       log.info('drain: conversa não elegível para IA — turno pulado (sem gasto)', {
         event_id: event.id,
         conversation_id: p.conversation_id,
@@ -603,11 +620,24 @@ async function processEvent(
         agora: knobs.clock?.() ?? new Date(),
         log,
       }),
+    // Teto da rajada deslizante (#196). Ausente no knob = janela ancorada, que
+    // é o comportamento anterior a esta mudança (ver `tetoDaRajada`).
+    knobs.debounceMaxMs,
   );
   if (rajada.tipo === 'coalescido') {
+    if (rajada.erroAoEstender !== undefined) {
+      // Não derruba o evento: a mensagem JÁ entrou na carona, só a janela ficou
+      // onde estava — o lote responde um pouco antes, e o cliente não espera.
+      log.warn('drain: não consegui empurrar a janela da rajada — lote segue no horário antigo', {
+        event_id: event.id,
+        job_id: rajada.jobId,
+        error: rajada.erroAoEstender.slice(0, 160),
+      });
+    }
     log.info('drain: rajada coalescida em job pendente', {
       event_id: event.id,
       job_id: rajada.jobId,
+      janela_estendida_ate: rajada.janelaEstendidaAte?.toISOString() ?? null,
     });
     return 'processado';
   }

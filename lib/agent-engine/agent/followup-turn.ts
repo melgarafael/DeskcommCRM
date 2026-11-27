@@ -2,6 +2,7 @@ import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { falasDaEquipeNoFim, ultimaFalaEDaEquipe } from "@/lib/escalacao/fala-da-equipe";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 /**
  * Handler do job `followup_turn` (F3-03; blueprint 1.3) — a peça BUILD da
@@ -33,6 +34,7 @@ import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
 import { rescheduleJob } from '../queue/queue';
 import {
+  corpoDaMensagem,
   getLeadContext,
   textoDoClienteNaUltimaMensagem,
   type LeadContext,
@@ -135,7 +137,10 @@ export const followupTurnPayloadSchema = z
     // F3-04: 'template' = re-entrada DETERMINÍSTICA — envia a variante versionada
     // direto pela cadeia de guardrails, sem LLM (custo $0, blueprint). Ausente/'agent'
     // = run normal do agente (comportamento F3-03 intocado).
-    mode: z.enum(['agent', 'template']).optional(),
+    // 'retomada' = a equipe devolveu o atendimento ao agente e a última fala é
+    // dela (lib/escalacao/retomada-ao-devolver.ts enfileira). O agente continua
+    // de onde a pessoa parou — ver `runRetomadaAoDevolver`.
+    mode: z.enum(['agent', 'template', 'retomada']).optional(),
     // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO (lib/followup/engine.ts enfileira
     // este payload, campo a campo IDÊNTICO ao FollowupJobRequest.payload de lá).
     // Presente ⇒ ramo guardado em runFlowDrivenTurn; ausente ⇒ comportamento LEGADO
@@ -722,6 +727,14 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
       return;
     }
 
+    // Retomar ao devolver: continua o que a equipe começou. Caminho próprio
+    // porque a abertura de follow-up ("NÃO houve nova mensagem dele desde
+    // então", o bloco temporal) contaria ao modelo uma história errada.
+    if (payload.mode === 'retomada') {
+      await runRetomadaAoDevolver(deps, job, pool, ctx, target);
+      return;
+    }
+
     // F3-04: caminho determinístico ($0) — envia o template versionado direto pela
     // cadeia de guardrails, sem chamar o modelo. É um CAMINHO ADICIONAL: o run do
     // agente (abaixo) segue intocado quando o modo não é 'template'.
@@ -761,6 +774,115 @@ type EnvioFixoDesfecho =
   | { kind: "sent" }
   | { kind: "deferred"; until: Date; reason: string; janelaRegulatoria: boolean }
   | { kind: "skipped" };
+
+/** Quantas mensagens do fim da conversa o turno de retomada lê para achar as falas da equipe. */
+const FALAS_DA_EQUIPE_LIDAS = 8;
+
+/**
+ * Abertura do turno de RETOMADA (retomar ao devolver): a equipe atendeu, a
+ * última fala é dela, e o atendimento voltou ao agente. As falas vão na
+ * íntegra porque é delas que o agente continua (o orçamento que a pessoa
+ * mandou, a condição que ela ofereceu) — o resumo do checkpoint conta o que foi
+ * decidido, não o que foi dito. Exportada PURA para teste, como as irmãs.
+ */
+export function buildRetomadaOpeningMessage(
+  falasDaEquipe: readonly string[],
+  previous: LeadCheckpointRow | null,
+  leadState: LeadStateRow | null,
+  context: LeadContext,
+  notesIndexBlock: string,
+  projeta = false,
+): string {
+  const falas = falasDaEquipe
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+    .map((t) => `- "${t}"`);
+  return [
+    'Retomada após atendimento da equipe: uma pessoa da equipe atendeu este cliente e acabou de devolver o atendimento a você.',
+    'A última mensagem da conversa é da equipe — o cliente ainda NÃO respondeu a ela.',
+    '',
+    '## O que a equipe acabou de enviar ao cliente',
+    ...(falas.length > 0 ? falas : ['(a equipe enviou um arquivo ou mídia sem texto — veja no histórico)']),
+    '',
+    ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta),
+    '',
+    'Continue o atendimento a partir do que a equipe enviou, seguindo as suas instruções (por exemplo: confirmar',
+    'se o cliente recebeu e conduzir ao próximo passo). NÃO repita o que a equipe já disse e não se apresente de novo.',
+    'Responda usando a tool send_message — NUNCA escreva a resposta como texto direto',
+    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
+    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+    'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+  ].join('\n');
+}
+
+/**
+ * Turno de RETOMADA. O consumidor do evento já decidiu enfileirar, mas entre a
+ * decisão e este instante o mundo pode ter andado — e falar por cima seria o
+ * defeito que a opção existe para evitar. Então confere DE NOVO, com a mesma
+ * régua (`lib/escalacao/fala-da-equipe.ts`):
+ *
+ *   - a última fala ainda é da equipe? Se o cliente escreveu, o turno de
+ *     resposta normal responde; se a IA ou um fluxo já falou, não há o que
+ *     retomar. Nos dois casos, no-op sem gastar modelo;
+ *   - nasceu um follow-up vivo para o contato? Uma voz só: ele fala.
+ *
+ * O resto dos portões é do núcleo (`runAgentTurn`) e da cadeia de envio:
+ * passagem para humano/`force_human`, elegibilidade, janela anti-ban e o veto
+ * do before-send (bloqueio, opt-out). A fronteira de atendimento já foi
+ * conferida no topo do handler.
+ */
+async function runRetomadaAoDevolver(
+  deps: FollowupTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  target: ReentrySendTarget,
+): Promise<void> {
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId });
+  const { rows } = await pool.query<{
+    direction: string;
+    sent_via: string | null;
+    type: string;
+    body: string | null;
+    media_url: string | null;
+    media_storage_path: string | null;
+    media_derived_text: string | null;
+  }>(
+    `select direction, sent_via, type, body, media_url, media_storage_path, media_derived_text
+       from messages
+      where organization_id = $1 and conversation_id = $2
+      order by coalesce(sent_at, created_at) desc, created_at desc, id desc
+      limit $3`,
+    [target.tenantId, target.conversationId, FALAS_DA_EQUIPE_LIDAS],
+  );
+  if (!ultimaFalaEDaEquipe(rows[0])) {
+    runLog.info('retomada no-op — a última fala já não é da equipe', {
+      ultima_direcao: rows[0]?.direction ?? null,
+      ultimo_envio: rows[0]?.sent_via ?? null,
+    });
+    return;
+  }
+  const { rows: vivos } = await pool.query<{ id: string }>(
+    `select id from followup_enrollments
+      where organization_id = $1 and contact_id = $2
+        and status in ('active','waiting_reply','paused_handoff','paused_manual')
+      limit 1`,
+    [target.tenantId, target.leadId],
+  );
+  if (vivos.length > 0) {
+    runLog.info('retomada no-op — há follow-up vivo para o contato (uma voz só)', {
+      enrollment_id: vivos[0]!.id,
+    });
+    return;
+  }
+  const falas = falasDaEquipeNoFim(rows).map((m) => corpoDaMensagem(m));
+  await runAgentTurn(deps, job, pool, ctx, {
+    channelSessionId: target.channelSessionId,
+    conversationId: target.conversationId,
+    buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) =>
+      buildRetomadaOpeningMessage(falas, previous, leadState, context, notesIndexBlock, projeta),
+  });
+}
 
 interface ReentrySendTarget {
   tenantId: string;
@@ -1095,6 +1217,22 @@ async function runFlowDrivenTurn(
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
+      historicoDoFollowup: {
+        jobId: job.id,
+        async registrar(fase, candidata) {
+          try {
+            await pool.query("select public.fn_followup_registrar_envio($1,$2,$3,$4,$5)", [
+              job.organization_id,
+              job.id,
+              fase === "gerada" ? "followup_message_generated" : "followup_send_partial",
+              `${job.id}:${job.attempts}:${candidata}`,
+              { candidata },
+            ]);
+          } catch {
+            runLog.warn("falha ao registrar a etapa de envio no dossiê", { fase });
+          }
+        },
+      },
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
         const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
         return buildFlowStepOpeningMessage(

@@ -33,6 +33,8 @@ class FakeRecorder {
   start() {
     this.state = "recording";
   }
+  pause() { this.state = "paused"; }
+  resume() { this.state = "recording"; }
   stop() {
     this.state = "inactive";
     this.ondataavailable?.({ data: new Blob([new Uint8Array([1, 2])], { type: this.mimeType }) });
@@ -101,12 +103,42 @@ describe("AudioRecorder", () => {
     );
   });
 
+  it.each(["troca", "revalidação"])("conclui o envio confirmado durante %s", async (mudanca) => {
+    let terminarUpload!: (value: Awaited<ReturnType<typeof uploadMock>>) => void;
+    uploadMock.mockImplementationOnce(() => new Promise((resolve) => { terminarUpload = resolve; }));
+    const view = render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /enviar áudio/i }));
+    expect(uploadMock).toHaveBeenCalledOnce();
+    view.rerender(<AudioRecorder conversationId={mudanca === "troca" ? "conv-2" : "conv-1"}
+      suspenso={mudanca === "revalidação"} />);
+    await act(async () => terminarUpload({ storage_path: "anexo.ogg", media_mime: "audio/ogg",
+      media_size_bytes: 2, kind: "audio" }));
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ conversation_id: "conv-1" }), expect.anything());
+  });
+
   it("cancelar descarta sem upload", async () => {
     render(<AudioRecorder conversationId="conv-1" />);
     fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
     fireEvent.click(await screen.findByRole("button", { name: /cancelar gravação/i }));
     expect(uploadMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /gravar áudio/i })).toBeInTheDocument();
+  });
+
+  it("pausa a captação durante a revalidação e permite enviar depois", async () => {
+    const view = render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    await screen.findByRole("button", { name: /enviar áudio/i });
+    view.rerender(<AudioRecorder conversationId="conv-1" suspenso />);
+    expect(FakeRecorder.instances[0]?.state).toBe("paused");
+    expect(screen.getByRole("button", { name: /enviar áudio/i })).toBeDisabled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    view.rerender(<AudioRecorder conversationId="conv-1" />);
+    expect(FakeRecorder.instances[0]?.state).toBe("recording");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /enviar áudio/i })));
+    expect(uploadMock).toHaveBeenCalledOnce();
+    expect(sendMock).toHaveBeenCalledOnce();
   });
 
   it("desmontar durante a gravação libera o microfone", async () => {

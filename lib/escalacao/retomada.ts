@@ -59,6 +59,9 @@ import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { logger } from "@/lib/logger";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
+import { limparSetorDaIaNaDevolucao } from "@/lib/atendimento/setor-da-conversa";
+import { CHAVE_DA_RETOMADA_DA_IA, marcaDeRetomada } from "@/lib/routing/retomada-da-ia";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { lerContinuidadeHumana, type ContinuidadeHumana } from "./continuidade";
 
@@ -121,6 +124,7 @@ interface ConversaRow {
   assigned_to_user_id: string | null;
   assignee_kind: string | null;
   bot_silenced_until: string | null;
+  metadata?: unknown;
 }
 
 export async function devolverAtendimentoAoAgente(
@@ -130,13 +134,28 @@ export async function devolverAtendimentoAoAgente(
     origem?: OrigemDaRetomada;
     /** Dono autorizado pela rota; ausente nos chamadores automáticos. null é uma precondição. */
     expectedAssignee?: string | null;
+    /**
+     * Uma PESSOA devolveu (botão, encerrar com devolução, tool chamada por gente,
+     * `#on` do celular): o atendimento acabou, e o setor que a IA ou uma automação
+     * escolheu para ele é limpo (`limparSetorDaIaNaDevolucao`). Ausente nos
+     * caminhos automáticos — o cron e a reação à derivação técnica devolvem porque
+     * ninguém atendeu, e ali a necessidade classificada continua valendo.
+     */
+    limparClassificacaoDaIa?: boolean;
+    /**
+     * Cron de prazo vencido: o corte (ISO) depois do qual um sinal humano —
+     * passagem, "assumir" ou mensagem que saiu — desfaz a devolução. Conferido
+     * na MESMA escrita que solta o dono ou devolve o comando, porque o cron
+     * decidiu sobre uma leitura antiga e a pessoa pode ter respondido no meio.
+     */
+    semSinalHumanoDesde?: string;
   },
 ): Promise<RetomadaResultado> {
   const { supabase, organizationId } = deps;
 
   const { data: convData, error: convErr } = await supabase
     .from("conversations")
-    .select("id, contact_id, status, assigned_to_user_id, assignee_kind, bot_silenced_until")
+    .select("id, contact_id, status, assigned_to_user_id, assignee_kind, bot_silenced_until, metadata")
     .eq("id", input.conversationId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -212,7 +231,21 @@ export async function devolverAtendimentoAoAgente(
   // da linha; perder a comparação retorna SETOF vazio, sem erro SQL. A ausência
   // desse recibo também recusa antes dos efeitos de retomada. Cron/tool sem
   // precondição explícita conservam o contrato de liberação anterior.
-  if (conv.assigned_to_user_id !== null) {
+  const corte = input.semSinalHumanoDesde;
+  if (conv.assigned_to_user_id !== null && corte !== undefined) {
+    // Dono E relógio conferidos sob o lock da linha, e o release na mesma
+    // transação (migration 9472). `false` = a conversa mudou depois da varredura.
+    const { data: soltou, error: releaseErr } = await supabase.rpc("fn_conversation_release_if_idle", {
+      p_organization_id: organizationId,
+      p_conversation_id: input.conversationId,
+      p_expected_assignee: conv.assigned_to_user_id,
+      p_sem_sinal_humano_desde: corte,
+    });
+    if (releaseErr || soltou !== true) {
+      await restaurarTrava(deps, conv.contact_id, travaEstavaLigada);
+      return { ok: false, erro: "assignment_conflict", ...(releaseErr ? { detalhe: releaseErr.message } : {}) };
+    }
+  } else if (conv.assigned_to_user_id !== null) {
     const exigeDono = input.expectedAssignee !== undefined;
     const { data: liberadas, error: releaseErr } = await supabase.rpc("fn_conversation_assign", {
       p_organization_id: organizationId,
@@ -234,10 +267,12 @@ export async function devolverAtendimentoAoAgente(
   // null` (CHECK conversations_assignee_kind_coherence) — o filtro `.is(...)` é o
   // guarda otimista: se alguém assumiu entre o release e aqui, 0 linhas e a gente
   // reporta o conflito em vez de estourar a constraint.
+  // Sem dono não houve release: esta é a única escrita, e o relógio vai nela.
+  const conferirRelogio = corte !== undefined && conv.assigned_to_user_id === null;
   const proximoStatus = STATUS_REATIVAVEIS.has(conv.status ?? "")
     ? "ai_handling"
     : (conv.status ?? "open");
-  const { data: atualizada, error: updErr } = await supabase
+  let devolucao = supabase
     .from("conversations")
     .update({
       bot_silenced_until: null,
@@ -246,12 +281,29 @@ export async function devolverAtendimentoAoAgente(
       assignee_kind: "ai",
       status: proximoStatus,
       status_changed_at: new Date().toISOString(),
+      // A marca que segura a distribuição automática enquanto a IA atende e a
+      // conversa não passa para humano de novo (`lib/routing/retomada-da-ia.ts`).
+      // Na MESMA escrita da devolução: gravada depois, um "oi" do cliente no meio
+      // já pediria — e ganharia — a distribuição.
+      metadata: {
+        ...(conv.metadata && typeof conv.metadata === "object"
+          ? (conv.metadata as Record<string, unknown>)
+          : {}),
+        [CHAVE_DA_RETOMADA_DA_IA]: marcaDeRetomada(
+          input.limparClassificacaoDaIa ? "pessoa" : "automatica",
+          new Date(),
+        ),
+      },
     })
     .eq("id", input.conversationId)
     .eq("organization_id", organizationId)
-    .is("assigned_to_user_id", null)
-    .select("id")
-    .maybeSingle();
+    .is("assigned_to_user_id", null);
+  if (conferirRelogio) {
+    for (const coluna of ["last_handoff_at", "assigned_at", "last_outbound_at"]) {
+      devolucao = devolucao.or(`${coluna}.is.null,${coluna}.lte.${corte}`);
+    }
+  }
+  const { data: atualizada, error: updErr } = await devolucao.select("id").maybeSingle();
   if (updErr || !atualizada) {
     await restaurarTrava(deps, conv.contact_id, travaEstavaLigada);
     return updErr
@@ -294,6 +346,40 @@ export async function devolverAtendimentoAoAgente(
       conversation_id: input.conversationId,
       error: passagemErr.message,
     });
+  }
+
+  // (3d) A CLASSIFICAÇÃO DO ATENDIMENTO QUE ACABOU (só quando uma PESSOA devolve).
+  // O setor que a IA/automação escolheu era da necessidade daquele atendimento; a
+  // próxima passagem precisa ser classificada pelo assunto novo. Setor escolhido
+  // por pessoa fica. A leitura do módulo vai pelo cliente de serviço
+  // (`platform_config` só é legível por ele); a escrita na conversa, pelo cliente
+  // de quem devolveu. Falha aqui NÃO derruba a devolução: o comando já voltou.
+  if (input.limparClassificacaoDaIa) {
+    try {
+      const limpeza = await limparSetorDaIaNaDevolucao({
+        db: supabase,
+        admin: createAdminClient(),
+        organizationId,
+        conversationId: input.conversationId,
+        ator: {
+          tipo: deps.actor.type === "user" ? "user" : "automacao",
+          userId: deps.actor.type === "user" ? deps.actor.id : null,
+          apiTokenId: deps.apiTokenId ?? null,
+        },
+        requestId: deps.requestId,
+      });
+      if (!limpeza.limpou && limpeza.motivo === "falha") {
+        logger.warn("[escalacao.retomada] setor da IA não foi limpo", {
+          conversation_id: input.conversationId,
+          detalhe: limpeza.mensagem,
+        });
+      }
+    } catch (erro) {
+      logger.warn("[escalacao.retomada] limpeza do setor da IA lançou", {
+        conversation_id: input.conversationId,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      });
+    }
   }
 
   // (4) Sinal durável de fim do episódio. AWAITED, não fire-and-forget, pela

@@ -94,9 +94,11 @@ describe("o guia do envio por telefone descreve o que a rota faz", () => {
   it("a resolução da conversa é a função que o guia cita — não uma segunda regra", () => {
     contemNoCodigo(ABERTURA, "export async function openSharedContactConversation");
     prometeNoGuia("openSharedContactConversation");
-    // Quem grava contato novo é esta RPC, e o guia diz isso porque é ela que
-    // explica por que o isolamento vem do `organization_id` da consulta.
-    contemNoCodigo(ABERTURA, 'admin.rpc(\n    "fn_upsert_wa_contact"');
+    // Quem grava contato novo é esta função, com a organização da consulta e
+    // `nao_sei` no WhatsApp (DES-1950): o guia promete as duas coisas.
+    contemNoCodigo(ABERTURA, "organization_id: orgId,");
+    contemNoCodigo(ABERTURA, 'phone_whatsapp: input.phone_whatsapp ?? "nao_sei"');
+    prometeNoGuia("nao_sei");
     prometeNoGuia("fn_upsert_wa_contact");
   });
 

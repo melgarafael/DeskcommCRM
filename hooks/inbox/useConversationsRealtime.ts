@@ -104,6 +104,8 @@ export interface ConversationsFilters {
    * vida, este é quem responde a próxima mensagem do cliente.
    */
   comando?: readonly ComandoDoBanco[];
+  /** A ordem da Fila — `recentes` põe o contato que acabou de chegar em cima. */
+  ordem_fila?: "espera" | "recentes";
   search?: string;
   /**
    * Só as que têm mensagem não lida para o dono. Vai ao BANCO — migration nenhuma,
@@ -139,6 +141,7 @@ export interface ConversationsFilters {
 }
 
 interface ListResponse {
+  consultaIniciadaEm?: number;
   data: ConversationWithContact[];
   meta?: { cursor?: string | null; has_more?: boolean };
 }
@@ -198,6 +201,7 @@ export function useConversationsRealtime(
       if (filters.comando && filters.comando.length > 0) {
         qs.set("comando", filters.comando.join(","));
       }
+      if (filters.ordem_fila) qs.set("ordem_fila", filters.ordem_fila);
       if (filters.exclude_finished) qs.set("exclude_finished", "true");
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);
@@ -234,9 +238,9 @@ export function useConversationsRealtime(
         // O `apiClient` já sabia cancelar (`RequestOpts.signal`, e o `catch`
         // dele propaga abort do chamador sem repetir) — o que faltava era a
         // lista entregar o dela.
-        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, {
-          signal,
-        });
+        const consultaIniciadaEm = performance.now();
+        const resposta = await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, { signal });
+        return { ...resposta, consultaIniciadaEm };
       } catch (err) {
         // Aborto de quem chamou não é falha da API: não há motivo a mostrar, e
         // o `showApiError` transformaria um cancelamento em toast de erro.

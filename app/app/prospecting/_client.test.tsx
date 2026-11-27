@@ -1053,6 +1053,177 @@ describe("baixar a lista da campanha (issue #4360)", () => {
   });
 });
 
+/**
+ * #4847 — o cartão de uma campanha PAUSADA PELA JANELA oferece "Pausar
+ * abordagens". Sem o botão nesse estado, quem quer parar às 14h a campanha da
+ * manhã não consegue: a rota hoje aceitaria (com o conserto), mas a tela não dá
+ * o gesto. Os outros botões do cartão pausado (Editar ritmo, Editar instrução,
+ * Retomar fila) continuam lá — o botão novo NÃO substitui nada.
+ */
+describe("o cartão da campanha pausada pela janela (#4847)", () => {
+  function campanhaPausada(marca: boolean | undefined) {
+    return {
+      configured: true,
+      campaigns: [
+        {
+          id: COMPLETA,
+          search: BUSCA_NOVA,
+          name: "Manhã — clínicas",
+          status: "paused",
+          search_status: "succeeded",
+          error: "Fora do horário da campanha. Ela volta sozinha na próxima abertura.",
+          config: CONFIG,
+          result_count: 5,
+          skipped_count: 0,
+          cost_usd: "0.10",
+          next_send_at: "2026-11-18T10:00:00Z",
+          channel_session_id: CHANNEL,
+          ...(marca === undefined ? {} : { pausada_pela_janela: marca }),
+        },
+      ],
+      candidates: [],
+      agents: [{ id: AGENT, name: "Agente existente" }],
+      personalizacao: {
+        vendedor_nome: "",
+        vendedor_apresentacao: "",
+        vendedor_diferencial: "",
+        vocabulario: {},
+      },
+      channels: [{ id: CHANNEL, display_name: "Comercial", phone_number: null, status: "WORKING" }],
+      stages: [],
+    };
+  }
+
+  async function abrirCartao(marca: boolean | undefined) {
+    api.get.mockImplementation(async () => ({ data: campanhaPausada(marca) }));
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Manhã — clínicas/ }));
+    await screen.findByRole("heading", { name: "Manhã — clínicas" });
+  }
+
+  it("A5: com a marca da janela, o cartão oferece Pausar abordagens JUNTO de Retomar fila", async () => {
+    await abrirCartao(true);
+    const pausar = await screen.findByRole("button", { name: "Pausar abordagens" });
+    expect(pausar).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retomar fila" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Editar ritmo" })).toBeVisible();
+    // O gesto vai para a rota com a ação certa.
+    fireEvent.click(pausar);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+        action: "pause",
+        id: COMPLETA,
+      }),
+    );
+  });
+
+  it("A5: sem a marca (pausa da pessoa), o botão NÃO aparece — nada mudou para quem já pausou", async () => {
+    await abrirCartao(false);
+    await screen.findByRole("button", { name: "Retomar fila" });
+    expect(screen.queryByRole("button", { name: "Pausar abordagens" })).toBeNull();
+  });
+
+  it("A5: campanha pausada SEM a coluna no JSON (GET de antes do conserto) também não mostra o botão", async () => {
+    // O cartão lê o que o GET devolve: sem a coluna, `undefined` — e "talvez"
+    // não é "sim": a marca verdadeira é o que autoriza o botão.
+    await abrirCartao(undefined);
+    await screen.findByRole("button", { name: "Retomar fila" });
+    expect(screen.queryByRole("button", { name: "Pausar abordagens" })).toBeNull();
+  });
+});
+
+/**
+ * A JANELA INVERTIDA TRAVA O "INICIAR" (#5133).
+ *
+ * O aviso embaixo das horas já dizia a régua ("A janela precisa começar antes de
+ * terminar"), mas só o aviso sabia dela: o botão de iniciar olhava tudo menos a
+ * janela. Com 12h → 7h o clique passava e o erro genérico aparecia no topo,
+ * longe do campo que o causou. A régua do aviso passa a mandar no botão —
+ * uma régua só, sem número mágico repetido.
+ */
+describe("a janela invertida trava o iniciar (#5133)", () => {
+  const FRASE_DA_JANELA = /A janela precisa começar antes de terminar/;
+
+  /** Rascunho sem config gravada: os campos do preparo ficam editáveis. */
+  function rascunho() {
+    return {
+      ...fixture(),
+      campaigns: [{ ...fixture().campaigns[0]!, config: null }],
+    };
+  }
+
+  async function abrirFormulario() {
+    api.get.mockImplementation(async () => ({ data: rascunho() }));
+    openPage();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Usar agente existente / configurar manualmente",
+      }),
+    );
+    return screen.findByRole("button", { name: /Iniciar abordagens com IA/ });
+  }
+
+  function ligarJanela() {
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Esta campanha só dispara nos dias e horas abaixo/ }),
+    );
+  }
+
+  function porAsHoras(inicio: number, fim: number) {
+    fireEvent.change(screen.getByLabelText("Começa às (hora cheia)"), {
+      target: { value: String(inicio) },
+    });
+    fireEvent.change(screen.getByLabelText("Termina às (hora cheia)"), {
+      target: { value: String(fim) },
+    });
+  }
+
+  it("com início depois do fim, o Iniciar fica desabilitado e o aviso da janela aparece", async () => {
+    const iniciar = await abrirFormulario();
+    // Controle de base: sem janela, o formulário pode iniciar.
+    expect(iniciar).toBeEnabled();
+
+    ligarJanela();
+    porAsHoras(12, 7);
+
+    expect(iniciar).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(FRASE_DA_JANELA);
+    // A trava é na tela: nada foi enviado ao servidor.
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("controle (a): janela válida (7 → 12) deixa o Iniciar habilitado", async () => {
+    const iniciar = await abrirFormulario();
+    ligarJanela();
+    porAsHoras(12, 7);
+    expect(iniciar).toBeDisabled();
+
+    porAsHoras(7, 12);
+    expect(iniciar).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("controle (b): com a janela desligada o Iniciar continua habilitado", async () => {
+    const iniciar = await abrirFormulario();
+    ligarJanela();
+    porAsHoras(12, 7);
+    expect(iniciar).toBeDisabled();
+
+    ligarJanela(); // desmarca: config.janela volta a ser undefined
+    expect(iniciar).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("controle (c): o aviso da janela continua na tela — o conserto tira o clique, não o alerta", async () => {
+    await abrirFormulario();
+    ligarJanela();
+    porAsHoras(7, 7); // hora igual também não abre: a régua é "início chega ao fim"
+    const aviso = screen.getByRole("alert");
+    expect(aviso).toHaveTextContent(FRASE_DA_JANELA);
+    expect(aviso).toBeVisible();
+  });
+});
+
 describe("R4: 'Suas campanhas' agrupa por nicho (#4956/PR9)", () => {
   /** Uma campanha como o servidor manda — `search.niche` é o único campo que o grupo lê. */
   function doGrupo(id: string, nome: string, nicho: string | null, result_count = 3) {

@@ -1,15 +1,27 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BulkActionBar } from "./BulkActionBar";
 
 const get = vi.hoisted(() => vi.fn());
+const post = vi.hoisted(() => vi.fn());
 const bulkMutate = vi.hoisted(() => vi.fn());
 const bulkMutateAsync = vi.hoisted(() => vi.fn());
 const toastSuccess = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/api/client", () => ({ apiClient: { get, post: vi.fn(), patch: vi.fn() } }));
+vi.mock("@/lib/api/client", () => ({ apiClient: { get, post, patch: vi.fn() } }));
+// O diálogo "Levar para outro funil" consulta os destinos por este hook; o
+// teste de #5102 alimenta a lista direto.
+vi.mock("@/hooks/kanban/useDestinosDeFunil", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  useDestinosDeFunil: vi.fn(),
+}));
+
+import { useDestinosDeFunil } from "@/hooks/kanban/useDestinosDeFunil";
+import { ApiError } from "@/lib/api/types";
 // O idioma da tela é trocável por caso: o nome do card vem do BANCO, e o padrão
 // neutro ("Negócio") é palavra portuguesa — numa tela em espanhol ele tem de sair traduzido.
 const idioma = vi.hoisted(() => ({ atual: "pt-BR" as "pt-BR" | "es" }));
@@ -18,9 +30,12 @@ vi.mock("@/hooks/i18n/useT", async () => {
   return { useT: () => (chave: string) => traduzir(chave, idioma.atual) };
 });
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, warning: vi.fn(), error: vi.fn() } }));
+// #5024: o papel da organização ativa é trocável por caso — a opção "Outro
+// funil…" depende dele, e o padrão continua sendo o mesmo de antes.
+const papelDaOrg = vi.hoisted(() => ({ atual: "manager" as "manager" | "agent" | "viewer" }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useUser: () => ({ id: "u1", is_platform_admin: false }),
-  useActiveOrg: () => ({ role: "manager" }),
+  useActiveOrg: () => ({ role: papelDaOrg.atual }),
 }));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({ useAssignableMembers: () => ({ data: [] }) }));
 vi.mock("@/hooks/kanban/useBulkAction", () => ({
@@ -215,6 +230,48 @@ describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
   });
 });
 
+describe("BulkActionBar — \"Outro funil…\" só para quem a rota aceita (#5024)", () => {
+  // A rota em lote exige `agent` para tudo que não é `assign`
+  // (`app/api/v1/leads/bulk/route.ts`). Oferecer a opção ao `viewer` é
+  // controle decorativo: o clique morre em 403. A opção some, como em funil
+  // arquivado — não fica desabilitada.
+  beforeEach(() => {
+    get.mockReset();
+    get.mockResolvedValue({ data: [] });
+  });
+
+  async function abrirMenuDoMover() {
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1", "lead-2"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Mover para…" }));
+    return user;
+  }
+
+  it("viewer: a opção não aparece no menu", async () => {
+    papelDaOrg.atual = "viewer";
+    await abrirMenuDoMover();
+
+    expect(screen.queryByTestId("lote-outro-funil")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Outro funil…" })).not.toBeInTheDocument();
+  });
+
+  it("agent: a opção aparece no menu", async () => {
+    papelDaOrg.atual = "agent";
+    await abrirMenuDoMover();
+
+    expect(await screen.findByTestId("lote-outro-funil")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Outro funil…" })).toBeInTheDocument();
+  });
+});
+
 describe('Funil: "promocao" sugere a etiqueta "Promoção"', () => {
   // #4166: a sugestão em lote filtrava `tag.toLowerCase().includes(tagInput...)`
   // nos dois lados crus. Quem digita sem acento não via a etiqueta existente e
@@ -259,5 +316,83 @@ describe('Funil: "promocao" sugere a etiqueta "Promoção"', () => {
 
     expect(screen.queryByRole("menuitem", { name: "Promoção" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "vip" })).not.toBeInTheDocument();
+  });
+});
+
+describe("BulkActionBar — Levar para outro funil depois de uma falha parcial (#5102)", () => {
+  // A tela real: o quadro guarda `selectedIds` e passa `onClear`; aqui o mesmo
+  // contrato — o diálogo avisa que houve efeito e a seleção inteira é limpa.
+  function BarraComSelecao({ inicial }: { inicial: string[] }) {
+    const [selecionados, setSelecionados] = useState(inicial);
+    return (
+      <BulkActionBar
+        selectedIds={selecionados}
+        stages={STAGES_COM_PERDA}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={() => setSelecionados([])}
+      />
+    );
+  }
+
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  beforeEach(() => {
+    post.mockReset();
+    vi.mocked(useDestinosDeFunil).mockReturnValue({
+      data: [
+        {
+          id: "p-2",
+          name: "Pós-venda",
+          stages: [{ id: "s-1", name: "Novo", position: 1, is_won: false, is_lost: false }],
+        },
+      ],
+    } as never);
+  });
+
+  it("a falha parcial com cópia criada limpa a seleção e não sobra negócio para um segundo Levar", async () => {
+    const cloneId = "c0a1b2c3-1111-4111-8111-111111111111";
+    post.mockImplementation(async (url: string) => {
+      // lead-1: a cópia nasceu no destino, o vínculo falhou (500 com o id).
+      if (String(url).includes("lead-1")) {
+        throw new ApiError(500, "internal_error", { cloned_lead_id: cloneId }, "qa-1", "Falha ao vincular a origem");
+      }
+      // lead-2: recusado sem cópia; mesmo assim a seleção é limpa (regra de
+      // antes: houve efeito no lote, ninguém fica selecionado).
+      throw new ApiError(422, "required_fields_missing", undefined, "qa-2", "Campos obrigatórios faltando");
+    });
+
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <BarraComSelecao inicial={["lead-1", "lead-2"]} />
+      </QueryClientProvider>,
+    );
+
+    async function levarSelecionados() {
+      await user.click(screen.getByRole("button", { name: "Mover para…" }));
+      await user.click(await screen.findByTestId("lote-outro-funil"));
+      const caixa = await screen.findByTestId("levar-lote-para-outro-funil");
+      await user.click(within(caixa).getByRole("combobox", { name: "Funil de destino" }));
+      await user.click(await screen.findByRole("option", { name: "Pós-venda" }));
+      await user.click(within(caixa).getByRole("button", { name: "Levar" }));
+      await within(caixa).findByTestId("resultado-do-lote");
+      await user.click(within(caixa).getAllByRole("button", { name: "Fechar" })[0]!);
+    }
+
+    await levarSelecionados();
+
+    // A cópia criada no destino (mesmo com a resposta sem sucesso) conta como
+    // efeito: a seleção é limpa, e não sobra nada para um segundo "Levar".
+    expect(screen.queryByRole("button", { name: "Mover para…" })).not.toBeInTheDocument();
+
+    const chamadas = post.mock.calls.map(([url]) => String(url));
+    expect(chamadas.filter((url) => url.includes("lead-1"))).toHaveLength(1);
+    expect(chamadas.filter((url) => url.includes("lead-2"))).toHaveLength(1);
   });
 });
