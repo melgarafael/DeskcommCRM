@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import type { CategoriaDeConversao } from "@/lib/conversoes/regras-google";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
+import { cn } from "@/lib/utils";
 
 export function CriarAcaoNoGoogle({
   idioma,
@@ -25,6 +26,7 @@ export function CriarAcaoNoGoogle({
   googleCustomerId,
   googleLoginCustomerId,
   motivoDesabilitado,
+  className,
   onCriada,
 }: {
   idioma: Idioma;
@@ -36,6 +38,7 @@ export function CriarAcaoNoGoogle({
   googleCustomerId?: string | null;
   googleLoginCustomerId?: string | null;
   motivoDesabilitado?: string;
+  className?: string;
   onCriada: (id: string, nomeFinal: string) => void;
 }) {
   const t = (texto: string) => traduzir(texto, idioma);
@@ -81,6 +84,7 @@ export function CriarAcaoNoGoogle({
               "Criar direto no Google exige o developer token do Google Ads nesta instalação e a conta reconectada. Enquanto isso, cole o ID da ação.",
             ))
       }
+      className={cn("shrink-0", className)}
     >
       {isPending ? t("Criando...") : t("Criar no Google")}
     </Button>
