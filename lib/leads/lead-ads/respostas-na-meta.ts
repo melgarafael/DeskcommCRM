@@ -41,7 +41,7 @@
  * e o lead NÃO entra com dado inventado; a reentrega seguinte tenta de novo.
  */
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
-import { respostasDoFieldData, type RespostaDoFormulario } from "./payload";
+import { respostasDoFieldData, respostasDosAvisos, type RespostaDoFormulario } from "./payload";
 
 /**
  * Teto da chamada. Ver o cabeçalho: curto porque quem espera é o webhook.
@@ -100,9 +100,11 @@ export async function buscarRespostasDoLead(
 
   const buscar = opcoes.fetchImpl ?? fetch;
   const limite = opcoes.tempoLimiteMs ?? TEMPO_LIMITE_DA_BUSCA_MS;
-  // `fields` explícito: sem ele o padrão da plataforma muda sem aviso, e o que
-  // esta peça precisa é de UM campo só.
-  const url = `${graphBaseUrl()}/${encodeURIComponent(pedido.leadgenId)}?fields=field_data`;
+  // `fields` explícito: sem ele o padrão da plataforma muda sem aviso. São dois
+  // campos: as respostas (`field_data`) e as caixas do aviso personalizado
+  // (`custom_disclaimer_responses`), que a Meta NÃO põe no `field_data` e só
+  // devolve quando pedidas pelo nome — é nelas que mora o consentimento.
+  const url = `${graphBaseUrl()}/${encodeURIComponent(pedido.leadgenId)}?fields=field_data,custom_disclaimer_responses`;
 
   let resposta: Response;
   try {
@@ -152,7 +154,14 @@ export async function buscarRespostasDoLead(
   if (respostas.length === 0) {
     return { ok: false, motivo: "sem_respostas", detalhe: `field_data_itens=${fieldData.length}` };
   }
-  return { ok: true, respostas };
+  // As caixas entram DEPOIS da conta de vazio: um lead só com caixas e sem
+  // nenhuma resposta continua sendo `sem_respostas` (não há quem contatar). E
+  // nunca sobrescrevem uma pergunta do formulário que tenha o mesmo nome.
+  const jaRespondidos = new Set(respostas.map((r) => r.campo));
+  const avisos = respostasDosAvisos(
+    (corpo as { custom_disclaimer_responses?: unknown }).custom_disclaimer_responses,
+  ).filter((r) => !jaRespondidos.has(r.campo));
+  return { ok: true, respostas: [...respostas, ...avisos] };
 }
 
 /** A página que um token lê — ou por que não foi possível saber. */

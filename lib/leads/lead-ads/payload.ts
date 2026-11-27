@@ -243,6 +243,54 @@ export function respostasDoFieldData(bruto: unknown): RespostaDoFormulario[] {
 }
 
 /**
+ * As caixas do AVISO PERSONALIZADO do formulário, como respostas.
+ *
+ * A Meta não põe essas caixas no `field_data`: elas vêm à parte, em
+ * `custom_disclaimer_responses`, na forma `{ checkbox_key, is_checked }`, e só
+ * quando a busca pede o campo pelo nome. É nelas que o anunciante costuma pôr o
+ * consentimento para ligação e mensagem ("I agree to receive calls and texts…"),
+ * então perder a caixa é perder a prova de que a pessoa autorizou o contato.
+ *
+ * Cada caixa vira `custom_disclaimer_<checkbox_key>` com `true` ou `false`, ao
+ * lado das outras respostas em `custom_fields`. O prefixo é o nome que a própria
+ * Meta usa, para quem procura o campo achar a origem; o valor é neutro de idioma
+ * porque é dado, e não texto de tela.
+ *
+ * A Meta documenta `is_checked` como `"1"` (marcada) e `""` (não marcada). Aceita
+ * também `true`/`false` e `"true"`/`"false"`/`"0"`, por desconfiança de mudança
+ * de forma. Qualquer outro valor DESCARTA a caixa: gravar `false` para um valor
+ * que não se entendeu diria que a pessoa recusou, e gravar `true` diria que ela
+ * aceitou — os dois inventam um fato.
+ */
+export function respostasDosAvisos(bruto: unknown): RespostaDoFormulario[] {
+  const lista = Array.isArray(bruto) ? bruto : [];
+  const respostas: RespostaDoFormulario[] = [];
+  const vistas = new Set<string>();
+  for (const item of lista) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const { checkbox_key: chaveBruta, is_checked: marcada } = item as {
+      checkbox_key?: unknown;
+      is_checked?: unknown;
+    };
+    const chave = typeof chaveBruta === "string" ? chaveCanonica(chaveBruta) : "";
+    if (chave === "") continue;
+    const valor = caixaMarcada(marcada);
+    if (valor === null) continue;
+    const campo = `custom_disclaimer_${chave}`;
+    if (vistas.has(campo)) continue;
+    vistas.add(campo);
+    respostas.push({ campo, valor: valor ? "true" : "false" });
+  }
+  return respostas;
+}
+
+function caixaMarcada(valor: unknown): boolean | null {
+  if (valor === true || valor === "1" || valor === "true") return true;
+  if (valor === false || valor === "" || valor === "0" || valor === "false") return false;
+  return null;
+}
+
+/**
  * O lead COM a identidade tirada das respostas.
  *
  * Existe separado porque o mesmo lead chega em dois tempos: os ids (leadgen, page,
