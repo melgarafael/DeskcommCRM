@@ -91,7 +91,7 @@ services:
       - "127.0.0.1:3000:3000"   # bind localhost; Nginx faz TLS termination
     environment:
       # Auth (vide §2.2)
-      WAHA_API_KEY: ${WAHA_API_KEY_SHA512}
+      WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"   # o prefixo diz ao WAHA que é hash
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
 
