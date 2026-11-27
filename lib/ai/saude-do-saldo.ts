@@ -1,9 +1,16 @@
 import type { Pool } from "pg";
 
+import { FRASES_DE_SEM_SALDO } from "@/lib/agent-engine/queue/espera-de-saldo";
+
 // O status 429 também representa limites temporários. Só sinais explícitos
 // de crédito insuficiente contam, inclusive quando o SDK registra só a frase.
-const ERRO_DE_SALDO =
-  "credit_balance_exhausted|credit balance is too low|no (prepaid )?credits remaining|insufficient (prepaid )?(credit balance|credits|balance)";
+// As frases da fila de espera por saldo entram daqui, para a faixa e a fila não
+// divergirem: enquanto eram duas listas, o "exceeded your current quota" da
+// OpenAI segurava a resposta na fila e não acendia a faixa (triagem do #5312).
+const ERRO_DE_SALDO = [
+  "credit_balance_exhausted|no (prepaid )?credits remaining|insufficient (prepaid )?(credit balance|credits|balance)",
+  ...FRASES_DE_SEM_SALDO.map((f) => f.padrao.source),
+].join("|");
 
 export interface AvisoDeSaldoDaIa {
   provider: string;
