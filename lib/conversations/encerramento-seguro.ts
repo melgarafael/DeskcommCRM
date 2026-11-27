@@ -55,6 +55,9 @@ const MENSAGENS_POR_MOTIVO: Record<MotivoConflitoEncerramento, string> = {
 /**
  * Indica se a chamada acionou o modo condicional de encerramento seguro
  * (explicitamente via `safeClose: true` ou pelo envio de qualquer pré-condição).
+ *
+ * `idempotencyKey` NÃO liga o modo: o `apiClient` da tela carimba
+ * `Idempotency-Key` em todo POST, e o botão Fechar receberia 422.
  */
 export function usaEncerramentoSeguro(opcoes: OpcoesEncerramentoSeguro): boolean {
   return (
@@ -63,8 +66,7 @@ export function usaEncerramentoSeguro(opcoes: OpcoesEncerramentoSeguro): boolean
     opcoes.expectedLastInboundMessageId !== undefined ||
     opcoes.expectedLastInboundAt !== undefined ||
     opcoes.expectedAssignedToUserId !== undefined ||
-    opcoes.expectedSectorId !== undefined ||
-    opcoes.idempotencyKey !== undefined
+    opcoes.expectedSectorId !== undefined
   );
 }
 

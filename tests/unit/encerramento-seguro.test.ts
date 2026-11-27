@@ -545,6 +545,17 @@ describe("PR 01 — Encerramento Seguro Condicional (REST + Handler + MCP)", () 
     expect(audit).toHaveBeenCalledTimes(1);
   });
 
+  it("15b. Regressão: o botão Fechar da tela manda Idempotency-Key em todo POST e segue no fechamento legado", async () => {
+    // `lib/api/client.ts` carimba `Idempotency-Key` em todo POST; o cabeçalho
+    // sozinho não pode ligar o modo condicional, senão a tela recebe 422.
+    const res = await chamarRota({ expected_revision: 3 }, { "Idempotency-Key": "chave-do-apiclient" });
+    const json = (await res.json()) as { data: { status: string; service_revision: number } };
+
+    expect(res.status).toBe(200);
+    expect(json.data.status).toBe("closed");
+    expect(json.data.service_revision).toBe(4);
+  });
+
   it("16. MCP crm_close_conversation funciona com token de integração autorizado (conversations:write)", async () => {
     const mcpCtxToken: McpContext = {
       organizationId: ORG_A,
