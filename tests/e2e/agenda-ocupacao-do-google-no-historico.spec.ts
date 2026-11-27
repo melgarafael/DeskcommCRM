@@ -15,7 +15,7 @@ import { irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
  * ═══ O achado ═══════════════════════════════════════════════════════════════
  *
  * `GradeDaAgenda` trata a origem `google_sync` com cuidado: `disabled`, sem
- * arraste, sem clique, com o rótulo dizendo "ocupado na agenda do Google". O
+ * arraste, sem clique, com o rótulo dizendo "ocupado na agenda externa". O
  * comentário do próprio componente nomeia a razão — "deixar o clique disponível
  * prometeria uma ação que não existe — o defeito do 'controle decorativo' que
  * esta base já pagou uma vez".

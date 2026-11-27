@@ -2,13 +2,20 @@
  * Abre (ou reabre) a conversa 1:1 com um contato compartilhado no cartão do inbox.
  * Usa a mesma sessão de canal da mensagem onde o cartão apareceu.
  */
+import {
+  getAdapter,
+  provedoresQueConferemNumero,
+  resolveSessionRef,
+  CHANNEL_SESSION_REF_COLUMNS,
+  type ChannelSessionRef,
+} from "@/lib/channels";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ensureConversation, escolherSessaoParaEnvio } from "@/lib/automation/start-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canalDesativado } from "@/lib/channels/desativado";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
-import { phoneLookupVariants, canonicalPhoneBR } from "@/lib/channels/phone-variants";
+import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { parseDialablePhone } from "@/lib/messaging/contact-card";
 import type { TelefoneWhatsapp } from "@/lib/schemas/contacts";
 
@@ -147,14 +154,14 @@ export async function openSharedContactConversation(
   }
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
-    .select("id, provider, status, metadata")
+    .select(`id, status, metadata, ${CHANNEL_SESSION_REF_COLUMNS}`)
     .eq("organization_id", organizationId)
     .eq("id", sessionId)
     .maybeSingle();
   if (sessErr) throw new Error(sessErr.message);
   if (!session) throw new Error("session_not_found");
 
-  const sessao = session as {
+  const sessao = session as ChannelSessionRef & {
     id: string;
     provider: string | null;
     status: string | null;
@@ -172,7 +179,7 @@ export async function openSharedContactConversation(
   // vazia já teria nascido.
   const { data: alvo, error: alvoErr } = await admin
     .from("contacts")
-    .select("is_personal")
+    .select("is_personal, phone_number")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
@@ -180,11 +187,36 @@ export async function openSharedContactConversation(
   if ((alvo as { is_personal?: boolean } | null)?.is_personal === true) {
     throw new Error("contact_personal");
   }
-  const conversationId = await ensureConversation(
-    admin,
-    organizationId,
-    contactId,
-    sessionId,
-  );
+  const telefone = (alvo as { phone_number?: string | null } | null)?.phone_number;
+  if (telefone && provedoresQueConferemNumero().some((p) => p === sessao.provider)) {
+    const adapter = getAdapter(sessao.provider);
+    const { data: anterior, error: erroAnterior } = await admin
+      .from("conversations")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .eq("channel_session_id", sessionId)
+      .limit(1)
+      .maybeSingle();
+    let recebeu = false;
+    if (!erroAnterior && anterior) {
+      const { data: mensagem, error: erroMensagem } = await admin
+        .from("messages")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("conversation_id", anterior.id)
+        .eq("direction", "inbound")
+        .limit(1)
+        .maybeSingle();
+      recebeu = !erroMensagem && Boolean(mensagem);
+    }
+    if (!recebeu && typeof adapter.numeroTemConta === "function") {
+      const existe = await adapter
+        .numeroTemConta({ organizationId, sessionRef: resolveSessionRef(sessao), phone: telefone })
+        .catch(() => null);
+      if (existe === false) throw new Error("numero_sem_whatsapp");
+    }
+  }
+  const conversationId = await ensureConversation(admin, organizationId, contactId, sessionId);
   return { conversation_id: conversationId, contact_id: contactId };
 }

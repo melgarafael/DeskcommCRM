@@ -40327,10 +40327,17 @@ alter table public.google_ads_conversion_rules
   references public.crm_stages (organization_id, id)
   on delete cascade;
 
-create unique index if not exists google_ads_conversion_rules_org_stage_uk
-  on public.google_ads_conversion_rules (organization_id, stage_id);
-create unique index if not exists google_ads_conversion_rules_org_event_uk
-  on public.google_ads_conversion_rules (organization_id, event_name);
+-- A forma nova permite duas contas na mesma etapa/evento. Na reaplicação,
+-- não recriar os índices antigos antes de alcançar o apêndice do destino.
+do $legacy_google_rules$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public'
+    and table_name = 'google_ads_conversion_rules' and column_name = 'google_customer_id') then
+    create unique index if not exists google_ads_conversion_rules_org_stage_uk
+      on public.google_ads_conversion_rules (organization_id, stage_id);
+    create unique index if not exists google_ads_conversion_rules_org_event_uk
+      on public.google_ads_conversion_rules (organization_id, event_name);
+  end if;
+end $legacy_google_rules$;
 
 comment on table public.google_ads_conversion_rules is
   'Qual ação de conversão do Google Ads cada etapa do funil envia quando um negócio entra nela. event_name é a chave do livro-razão ad_conversion_dispatches. Server-side only: RLS sem policy e grants revogados de anon/authenticated.';
@@ -40434,6 +40441,7 @@ revoke execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, tex
 grant execute on function public.fn_solicitar_reenvio_conversao(uuid, uuid, text) to service_role;
 
 notify pgrst, 'reload schema';
+
 
 -- ---- links rastreáveis nomeados (migration 0437) ----
 -- Links nomeados compartilham os refs existentes; o clique continua sendo consumido uma vez.
@@ -69691,7 +69699,7 @@ create or replace function public.fn_extensions_permissoes_validas(p_permissions
 returns boolean language sql immutable set search_path = public, pg_temp as $$
   select p_permissions is not null
     and jsonb_typeof(p_permissions) = 'array'
-    and jsonb_array_length(p_permissions) between 1 and 26
+    and jsonb_array_length(p_permissions) between 1 and 30
     and not exists (
       select 1 from jsonb_array_elements(p_permissions) e
       where jsonb_typeof(e.value) <> 'string'
@@ -69707,7 +69715,9 @@ returns boolean language sql immutable set search_path = public, pg_temp as $$
               'area.agentes_ia.leitura', 'area.agentes_ia.escrita',
               'area.catalogo.leitura', 'area.catalogo.escrita',
               'area.configuracao.leitura', 'area.configuracao.escrita',
-              'area.analise.leitura', 'area.analise.escrita')
+              'area.analise.leitura', 'area.analise.escrita',
+              'area.tarefas.leitura', 'area.tarefas.escrita',
+              'area.financeiro.leitura', 'area.financeiro.escrita')
     )
     and (select count(distinct e.value) from jsonb_array_elements(p_permissions) e)
         = jsonb_array_length(p_permissions);
@@ -70401,7 +70411,7 @@ notify pgrst, 'reload schema';
 
 -- ---- modulo conectado: consentimento por área (migration 9442) ----
 -- Espelho idempotente da 9442 (racional completo no arquivo da migration): `organization_extensions.consented_areas`
--- (com CHECK nas 18 permissões `area.*`) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9441 e ANTES
+-- (com CHECK nas 22 permissões `area.*`; tarefas e financeiro entraram na migration 9508) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9441 e ANTES
 -- da VARREDURA anon.
 
 alter table public.organization_extensions
@@ -70421,7 +70431,9 @@ begin
       'area.agentes_ia.leitura','area.agentes_ia.escrita',
       'area.catalogo.leitura','area.catalogo.escrita',
       'area.configuracao.leitura','area.configuracao.escrita',
-      'area.analise.leitura','area.analise.escrita'
+      'area.analise.leitura','area.analise.escrita',
+      'area.tarefas.leitura','area.tarefas.escrita',
+      'area.financeiro.leitura','area.financeiro.escrita'
     ]::text[]);
 end
 $consentidas$;
@@ -70462,8 +70474,8 @@ begin
   if exists (select 1 from unnest(p_areas) a where a <> all (v_declaradas)) then
     raise exception using errcode='PT409',message='extension_area_not_declared';
   end if;
-  -- Decisão 5 da spec 33: configuração e agentes de IA só por quem administra a organização.
-  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia)\.') then
+  -- Decisão 5 da spec 33: configuração, agentes de IA e financeiro só por quem administra a organização.
+  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia|financeiro)\.') then
     select u.role into v_role from public.user_organizations u
       where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;
     if v_role is distinct from 'admin' and v_role is distinct from 'owner' then
@@ -85576,6 +85588,253 @@ end$$;
 revoke execute on function public.fn_expurgar_chaves_de_idempotencia_vencidas(int, int) from public, anon, authenticated;
 grant execute on function public.fn_expurgar_chaves_de_idempotencia_vencidas(int, int) to service_role;
 
+
+-- Últimas definições de fn_preservar_conversao_enviada e
+-- fn_marcar_configuracao_regra_google; não há outra depois deste bloco.
+-- Antes da janela 9243, comparada integralmente com sua migration, e da
+-- VARREDURA anon: as dependências de conversão já existem desde 0436.
+-- ---- Destino Google por regra (migration 9509) ----
+-- manifest: Permite destinos Google distintos na mesma etapa e preserva o destino original de cada envio, sem trocar a autorização global nem reenviar protocolos legados.
+-- 9509 — destino explícito por regra, sem credencial de leitura no envio.
+
+-- IDs externos do Google, como em ad_platform_connections. Não apontam para
+-- google_ads_reporting_accounts: autorizar leitura não autoriza conversões.
+alter table public.google_ads_conversion_rules
+  add column if not exists google_customer_id text,
+  add column if not exists google_login_customer_id text;
+
+do $rule_destination$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.google_ads_conversion_rules'::regclass
+    and conname = 'google_ads_conversion_rules_destination_check') then
+    alter table public.google_ads_conversion_rules
+      add constraint google_ads_conversion_rules_destination_check check (
+        (google_customer_id is null or google_customer_id ~ '^[0-9]{10}$')
+        and (google_login_customer_id is null or google_login_customer_id ~ '^[0-9]{10}$')
+        and (google_customer_id is not null or google_login_customer_id is null)
+      );
+  end if;
+end $rule_destination$;
+
+-- NULL é a regra global legada; também só pode existir uma por etapa.
+-- Um bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit, e uma
+-- falha no create depois dos drops deixaria a tabela sem índice único.
+do $rule_destination_uk$ begin
+  drop index if exists public.google_ads_conversion_rules_org_stage_uk;
+  drop index if exists public.google_ads_conversion_rules_org_event_uk;
+  create unique index if not exists google_ads_conversion_rules_org_stage_customer_uk
+    on public.google_ads_conversion_rules (organization_id, stage_id, google_customer_id) nulls not distinct;
+end $rule_destination_uk$;
+
+comment on column public.google_ads_conversion_rules.google_customer_id is
+  'Conta Google de destino desta regra; NULL conserva a conta global de conversões. Identidade externa, sem vínculo com a autorização de leitura.';
+comment on column public.google_ads_conversion_rules.google_login_customer_id is
+  'Gerente MCC para o destino explícito; NULL significa acesso direto. Na regra global, ambos os IDs vêm da conexão de conversões.';
+comment on column public.google_ads_conversion_rules.event_name is
+  'Identidade estável por etapa, compartilhada por suas contas de destino. QualifiedLead legado e Etapa:<uuid> já existentes não são renomeados.';
+
+create or replace function public.fn_marcar_configuracao_regra_google()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    new.configured_at := coalesce(new.configured_at, now());
+  elsif new.stage_id is distinct from old.stage_id
+     or new.google_action_id is distinct from old.google_action_id
+     or new.google_customer_id is distinct from old.google_customer_id
+     or new.google_login_customer_id is distinct from old.google_login_customer_id
+     or (new.enabled and not old.enabled) then
+    new.configured_at := now();
+  else
+    new.configured_at := old.configured_at;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_marcar_configuracao_regra_google() from public, anon, authenticated;
+grant execute on function public.fn_marcar_configuracao_regra_google() to service_role;
+
+-- Retrato histórico, sem FK: remover/alterar configuração não muda um envio.
+-- Não preencher retroativamente: o destino de protocolos antigos é desconhecido.
+alter table public.ad_conversion_dispatches
+  add column if not exists google_customer_id text,
+  add column if not exists google_login_customer_id text,
+  add column if not exists google_api text,
+  add column if not exists google_destination_explicit boolean;
+
+do $dispatch_destination$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.ad_conversion_dispatches'::regclass
+    and conname = 'ad_conversion_dispatches_google_destination_check') then
+    alter table public.ad_conversion_dispatches
+      add constraint ad_conversion_dispatches_google_destination_check check (
+        (google_customer_id is null and google_login_customer_id is null
+          and google_api is null and google_destination_explicit is null)
+        or (google_customer_id is not null and google_customer_id ~ '^[0-9]{10}$'
+          and (google_login_customer_id is null or google_login_customer_id ~ '^[0-9]{10}$')
+          and google_destination_explicit is not null)
+      );
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.ad_conversion_dispatches'::regclass
+    and conname = 'ad_conversion_dispatches_google_api_check') then
+    alter table public.ad_conversion_dispatches
+      add constraint ad_conversion_dispatches_google_api_check
+      check (google_api is null or google_api in ('google_ads', 'data_manager'));
+  end if;
+end $dispatch_destination$;
+
+comment on column public.ad_conversion_dispatches.google_customer_id is
+  'Conta de destino do primeiro envio. NULL em registros legados; um protocolo sem retrato continua sendo consultado pela conexão global, nunca reenviado.';
+comment on column public.ad_conversion_dispatches.google_login_customer_id is
+  'MCC do primeiro envio; NULL com conta registrada preserva o acesso direto original.';
+comment on column public.ad_conversion_dispatches.google_api is
+  'Primeira API disponível, registrada antes do envio. Pode ser NULL enquanto só o destino explícito é conhecido; depois de preenchida não muda.';
+comment on column public.ad_conversion_dispatches.google_destination_explicit is
+  'Se o primeiro envio escolheu destino por regra (true) ou herdou a conta global (false); NULL é registro legado sem retrato.';
+
+create or replace function public.fn_preservar_conversao_enviada()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if old.status = 'sent' and new.status <> 'sent' then return old; end if;
+  new.event_occurred_at := coalesce(old.event_occurred_at, new.event_occurred_at);
+  new.google_action_id := coalesce(old.google_action_id, new.google_action_id);
+  -- A identidade vence primeiro, inclusive MCC NULL; a API pode ser preenchida
+  -- uma vez quando a autorização existir. Protocolo legado não ganha retrato.
+  if old.google_customer_id is not null then
+    new.google_customer_id := old.google_customer_id;
+    new.google_login_customer_id := old.google_login_customer_id;
+    new.google_api := coalesce(old.google_api, new.google_api);
+    new.google_destination_explicit := old.google_destination_explicit;
+  elsif old.remote_request_id is not null then
+    new.google_customer_id := old.google_customer_id;
+    new.google_login_customer_id := old.google_login_customer_id;
+    new.google_api := old.google_api;
+    new.google_destination_explicit := old.google_destination_explicit;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_preservar_conversao_enviada() from public, anon, authenticated;
+grant execute on function public.fn_preservar_conversao_enviada() to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- agenda do Outlook (migration 9511) ----
+-- manifest: **Agenda do Outlook (Microsoft 365 e conta pessoal): o horário ocupado lá fora bloqueia a grade daqui (#1754, fatia 1).** `calendar_connections.provider` passa a aceitar `microsoft_calendar`; tabela de instalação `platform_microsoft_oauth` (singleton, RLS sem policy, grants só de service_role, segredo cifrado), irmã de `platform_google_oauth`; função `fn_microsoft_calendar_save` (service_role) troca numa transação o espelho de ocupação de UMA agenda e carimba a cobertura. `fn_google_selection` e `fn_calendar_service_sources_to_refresh` passam a mexer só em agendas do Google, para salvar a escolha do Google não desligar a do Outlook e o leitor do Google não receber agenda alheia. Aditiva e idempotente, sem backfill. Espelho no apêndice do `supabase/baseline.sql`, antes da cascata da 9243 e da VARREDURA anon.
+
+-- Num bloco só: o update.sh reaplica sem ON_ERROR_STOP e em autocommit, e uma
+-- falha entre o drop e o add deixaria a tabela sem regra de provedor. O CHECK
+-- novo contém o antigo, então nenhum dado existente o viola.
+do $provider_check$ begin
+  alter table public.calendar_connections drop constraint if exists calendar_connections_provider_check;
+  alter table public.calendar_connections add constraint calendar_connections_provider_check
+    check (provider in ('google_calendar','microsoft_calendar'));
+end $provider_check$;
+
+create table if not exists public.platform_microsoft_oauth (
+  id smallint primary key default 1,
+  client_id text,
+  client_secret_encrypted bytea,
+  -- NULL = qualquer conta (empresa ou pessoal). Preenchido = só aquele diretório.
+  tenant text,
+  updated_at timestamptz not null default now(),
+  updated_by uuid,
+  constraint platform_microsoft_oauth_singleton check (id = 1)
+);
+
+comment on table public.platform_microsoft_oauth is
+  'O aplicativo OAuth da Microsoft DESTA INSTALAÇÃO (singleton). Server-side only: RLS ligada sem policies e grants revogados de anon/authenticated. O segredo nunca volta ao navegador.';
+comment on column public.platform_microsoft_oauth.client_secret_encrypted is
+  'Cifrado por fn_encrypt_oauth (pgp_sym/aes256), a mesma cifra dos tokens em calendar_connections. Nunca gravar em claro.';
+
+alter table public.platform_microsoft_oauth enable row level security;
+revoke all on public.platform_microsoft_oauth from public, anon, authenticated;
+grant select, insert, update on public.platform_microsoft_oauth to service_role;
+
+drop trigger if exists trg_platform_microsoft_oauth_updated_at on public.platform_microsoft_oauth;
+create trigger trg_platform_microsoft_oauth_updated_at
+  before update on public.platform_microsoft_oauth
+  for each row execute function public.fn_set_updated_at();
+
+-- A troca do espelho é UMA transação: apagar e inserir em duas chamadas deixaria
+-- a grade livre no intervalo, e é no intervalo que se marca em cima.
+create or replace function public.fn_microsoft_calendar_save(
+  p_org uuid, p_calendar uuid, p_items jsonb, p_start timestamptz, p_end timestamptz
+) returns integer
+language plpgsql security definer set search_path=public as $$
+declare c public.calendar_connection_calendars; total integer;
+begin
+  select k.* into c from public.calendar_connection_calendars k
+    join public.calendar_connections x on x.organization_id=k.organization_id and x.id=k.connection_id
+    join public.user_organizations m on m.organization_id=x.organization_id and m.user_id=x.user_id and m.revoked_at is null
+   where k.organization_id=p_org and k.id=p_calendar and x.provider='microsoft_calendar' and x.status='healthy'
+     for update of k;
+  -- Desconectou, saiu da empresa ou agenda alheia: nada é gravado.
+  if c.id is null then raise exception 'microsoft_calendar_unavailable' using errcode='42501'; end if;
+  if p_end <= p_start then raise exception 'microsoft_window_invalid' using errcode='22023'; end if;
+
+  delete from public.calendar_external_events
+   where organization_id=p_org and connection_id=c.connection_id and external_calendar_id=c.external_calendar_id;
+
+  insert into public.calendar_external_events(
+    organization_id, connection_id, external_calendar_id, external_event_id, starts_at, ends_at,
+    is_all_day, status, transparency, ical_uid)
+  select distinct on (i->>'external_event_id')
+    p_org, c.connection_id, c.external_calendar_id, i->>'external_event_id',
+    (i->>'starts_at')::timestamptz, (i->>'ends_at')::timestamptz,
+    coalesce((i->>'is_all_day')::boolean,false), i->>'status', i->>'transparency', i->>'ical_uid'
+  from jsonb_array_elements(p_items) i
+  order by i->>'external_event_id';
+  get diagnostics total = row_count;
+
+  update public.calendar_connection_calendars set
+    sync_coverage=jsonb_build_object('generation',gen_random_uuid(),'window_start',p_start,'window_end',p_end,'completed_at',now()),
+    last_sync_at=now(), sync_error=null, sync_next_attempt_at=now()+interval '5 minutes'
+   where organization_id=p_org and id=p_calendar;
+  update public.calendar_connections set last_sync_at=now(), last_sync_error=null
+   where organization_id=p_org and id=c.connection_id;
+  return total;
+end $$;
+revoke execute on function public.fn_microsoft_calendar_save(uuid,uuid,jsonb,timestamptz,timestamptz) from public, anon, authenticated;
+grant execute on function public.fn_microsoft_calendar_save(uuid,uuid,jsonb,timestamptz,timestamptz) to service_role;
+
+create or replace function public.fn_google_selection(p_org uuid,p_revisions jsonb,p_sources uuid[],p_destination uuid)
+returns void language plpgsql security definer set search_path=public as $$
+declare actor uuid:=auth.uid(); expected jsonb; actual jsonb;
+begin
+ if actor is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'google_selection_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'google_mfa_required' using errcode='42501';end if;
+ perform 1 from public.user_organizations where organization_id=p_org and user_id=actor and revoked_at is null for update;
+ if not found then raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ select jsonb_agg(value order by value->>'connection_id') into expected from jsonb_array_elements(p_revisions);
+ select jsonb_agg(jsonb_build_object('connection_id',id,'revision',calendar_selection_revision::text) order by id::text) into actual from public.calendar_connections where organization_id=p_org and user_id=actor and provider='google_calendar';
+ if actual is distinct from expected then raise exception 'google_selection_stale' using errcode='PT409';end if;
+ if not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=p_destination and c.user_id=actor and c.provider='google_calendar' and c.status='healthy' and k.available and k.access_role in ('owner','writer')) then raise exception 'google_destination_unavailable' using errcode='42501';end if;
+ if exists(select 1 from unnest(p_sources) selected(id) where not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=selected.id and c.user_id=actor and c.provider='google_calendar' and c.status='healthy' and k.available and k.access_role in ('owner','writer','reader','writerWithoutPrivateAccess'))) then raise exception 'google_source_unavailable' using errcode='42501';end if;
+ update public.calendar_connection_calendars k set is_destination=false from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor and c.provider='google_calendar';
+ update public.calendar_connection_calendars k set is_destination=k.id=p_destination,counts_for_conflicts=k.id=any(p_sources),sync_next_attempt_at=now() from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor and c.provider='google_calendar';
+ update public.calendar_connections set calendar_selection_revision=calendar_selection_revision+1 where organization_id=p_org and user_id=actor and provider='google_calendar';
+end;$$;
+revoke all on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) from public,anon;
+grant execute on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) to authenticated;
+
+create or replace function public.fn_calendar_service_sources_to_refresh(p_org uuid,p_type uuid,p_owner uuid default null)
+returns jsonb language sql stable security definer set search_path=public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id',id) order by id),'[]'::jsonb) from (
+    select distinct k.id from public.calendar_connection_calendars k
+      join public.calendar_connections c on c.organization_id=k.organization_id and c.id=k.connection_id
+      join public.user_organizations m on m.organization_id=c.organization_id and m.user_id=c.user_id and m.revoked_at is null
+      join public.calendar_event_types t on t.organization_id=k.organization_id and t.id=p_type
+      where k.organization_id=p_org and c.provider='google_calendar' and (
+        k.id=t.destination_calendar_id or
+        exists(select 1 from public.calendar_service_calendar_sources s where s.organization_id=p_org and s.event_type_id=p_type and s.calendar_id=k.id) or
+        (k.counts_for_conflicts and exists(select 1 from public.calendar_service_professionals s where s.organization_id=p_org and s.event_type_id=p_type
+          and s.user_id=c.user_id and (p_owner is null or s.user_id=p_owner))))
+  ) x;
+$$;
+revoke all on function public.fn_calendar_service_sources_to_refresh(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_sources_to_refresh(uuid,uuid,uuid) to service_role;
+
+notify pgrst,'reload schema';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

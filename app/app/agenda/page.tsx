@@ -15,7 +15,8 @@ import { funisComCamposDeData } from "@/lib/agenda/datas-dos-negocios";
 import { lerEscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
-import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
+import { PROVEDOR_GOOGLE, PROVEDOR_MICROSOFT } from "@/lib/agenda/tipos";
+import { microsoftEstaConfigurada } from "@/lib/agenda/microsoft/config";
 import { requireAuth, resolveActiveOrg, metadadosDaSessao } from "@/lib/auth/server";
 import { diaDeHojeNoFuso, semanaSemente } from "@/lib/agenda/semana-semente";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
@@ -274,6 +275,16 @@ export default async function AgendaPage() {
   // `.env`. `faltaParaConectarOGoogle` já só devolve nomes de variável quando as
   // DUAS fontes estão vazias — mandar editar o `.env` de uma instalação que
   // gravou a credencial pela tela seria pior que não dizer nada.
+  const { data: contasDoOutlook } = await supabase
+    .from("calendar_connections")
+    .select("account_email, status")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("user_id", user.id)
+    .eq("provider", PROVEDOR_MICROSOFT)
+    .neq("status", "disconnected")
+    .order("account_email");
+  const outlookConfigurado = await microsoftEstaConfigurada();
+
   const googleConfigurado = await googleEstaConfigurado();
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
@@ -347,6 +358,11 @@ export default async function AgendaPage() {
       // e no campo dela, em qualquer aparelho. Saneada logo acima.
       escolhaDaCamada={escolhaDaCamada}
       googleConfigurado={googleConfigurado}
+      outlook={{
+        configurado: outlookConfigurado,
+        conta: contasDoOutlook?.map((c) => c.account_email).join(", ") || null,
+        precisaReconectar: Boolean(contasDoOutlook?.some((c) => c.status !== "healthy")),
+      }}
       contaConectada={conexoes?.map((c) => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
       faltaNoGoogle={faltaNoGoogle}

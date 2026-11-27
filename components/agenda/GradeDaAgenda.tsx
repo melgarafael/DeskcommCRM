@@ -630,7 +630,7 @@ function BlocoDeAgendamento({
       }${convidados.length > 0
         ? `, ${t("com a equipe")} ${convidados.map((p) => p.nome).join(", ")}`
         : ""}${
-        doGoogle ? `, ${t("ocupado na agenda do Google")}` : ""
+        doGoogle ? `, ${t("ocupado na agenda externa")}` : ""
       }`}
       className={cn(
         "group absolute flex flex-col items-start overflow-hidden rounded-sm px-1.5 py-0.5 text-left",

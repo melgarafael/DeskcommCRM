@@ -191,6 +191,15 @@ async function receiver() {
   const target = new URL(process.env.WAHA_API_BASE_URL!);
   expect(["127.0.0.1", "localhost"]).toContain(target.hostname);
   const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", target);
+    if (url.pathname === "/api/contacts/check-exists") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        numberExists: true,
+        chatId: `${url.searchParams.get("phone")}@c.us`,
+      }));
+      return;
+    }
     if (ehVistoAzul(req.url)) {
       res.end("{}");
       return;

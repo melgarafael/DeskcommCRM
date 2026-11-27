@@ -20,6 +20,7 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import type { SendMessageInput } from "@/lib/schemas";
 import { criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
+import { limparMemoCheckExists } from "@/lib/waha/resolve-contact-whatsapp-id";
 
 // O nome do atendente vem de LIB/USERS — resolvedor próprio que fala com o
 // GoTrue Admin API. Aqui é dublado de propósito: o que se mede é o handler
@@ -127,6 +128,7 @@ function respostaOk() {
 }
 
 afterEach(() => {
+  limparMemoCheckExists();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   mockedNomes.mockReset();
@@ -200,10 +202,12 @@ describe("a assinatura sai pela cadeia de envio, sem poluir messages.body", () =
   ])("#3310 · interruptor por_agente %s", async (_rotulo, porAgente, esperado) => {
     vi.stubEnv("WAHA_API_BASE_URL", "http://waha.teste");
     vi.stubEnv("WAHA_API_KEY", "chave-de-teste");
-    const fetchMock = vi.fn(async (_url: string, _init?: { body?: string }) => ({
+    const fetchMock = vi.fn(async (url: string | URL, _init?: { body?: string }) => ({
       ok: true,
       status: 200,
-      json: async () => ({ id: "true_595991733685@c.us_3EB0AAAA" }),
+      json: async () => String(url).includes("/api/contacts/check-exists")
+        ? { numberExists: true, chatId: "595991733685@c.us" }
+        : { id: "true_595991733685@c.us_3EB0AAAA" },
     }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -218,7 +222,7 @@ describe("a assinatura sai pela cadeia de envio, sem poluir messages.body", () =
     // O cliente tenta forjar o nome do balão: o servidor sobrescreve.
     await sendMessageHandler(supabase, iaCtx, texto({ metadata: { ai_actor_name: "Forjado" } }));
 
-    const sendText = fetchMock.mock.calls.find(([url]) => url.endsWith("/api/sendText"));
+    const sendText = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/api/sendText"));
     expect(JSON.parse(sendText?.[1]?.body ?? "{}")).toEqual(expect.objectContaining({ text: esperado }));
     expect(capturas.inserts.messages!.at(-1)?.["body"]).toBe("oi");
     // #3649: o nome é lido UMA vez, ligado ou não — ele serve também ao balão

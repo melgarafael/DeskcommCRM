@@ -25,6 +25,7 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
+import { useRegraDoMotivoDeGanho } from "@/hooks/kanban/useRegraDoMotivoDeGanho";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
 import { usePropostaEnviadaDoLead } from "@/hooks/kanban/usePropostaEnviadaDoLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
@@ -33,6 +34,7 @@ import { usePermission } from "@/hooks/auth/AuthProvider";
 import { BotaoRegistrarVenda } from "@/components/vendas/BotaoRegistrarVenda";
 import { MOEDA_PADRAO } from "@/lib/money";
 import { LoseLeadDialog } from "./LoseLeadDialog";
+import { WinLeadDialog } from "./WinLeadDialog";
 import { MoveToOtherPipelineDialog } from "./MoveToOtherPipelineDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
 import type { Lead } from "@/lib/types/leads";
@@ -52,10 +54,15 @@ interface KanbanCardActionsProps {
 export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: KanbanCardActionsProps) {
   const t = useT();
   const [loseOpen, setLoseOpen] = useState(false);
+  const [winOpen, setWinOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const winMutation = useWinLead(pipelineId);
+  // #5181: o funil manda no "pede o motivo?". Com lista cadastrada, a caixa
+  // oferece a lista; com `won_reason_required`, ela não deixa fechar vazia;
+  // sem um nem outro, o item fecha em um clique, como sempre fechou.
+  const regraDoGanho = useRegraDoMotivoDeGanho(pipelineId);
   const editMutation = useEditLead(pipelineId);
   // Excluir um card é a mesma ação da barra de seleção, com um id só: mesma
   // rota, mesmo gate de papel, mesmo evento e auditoria.
@@ -201,6 +208,13 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
           <DropdownMenuItem
             disabled={winMutation.isPending}
             onSelect={() => {
+              // #5181: com lista ou com `won_reason_required`, a pergunta vem
+              // ANTES do POST — é o que evita o 422 depois do clique. Sem um
+              // nem outro, o item continua fazendo exatamente o que fazia.
+              if (regraDoGanho.pergunta) {
+                setWinOpen(true);
+                return;
+              }
               winMutation.mutate({ leadId: lead.id });
             }}
           >
@@ -321,6 +335,17 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
           leadId={lead.id}
           leadLabel={lead.title}
           pipelineId={pipelineId}
+        />
+      )}
+      {winOpen && (
+        <WinLeadDialog
+          open={winOpen}
+          onOpenChange={setWinOpen}
+          leadId={lead.id}
+          pipelineId={pipelineId}
+          leadLabel={lead.title}
+          motivos={regraDoGanho.motivos}
+          exigido={regraDoGanho.exigido}
         />
       )}
       {moveOpen && (

@@ -220,7 +220,7 @@ export function Faturamento({
       </form>
 
       {relatorio.isError ? (
-        <p className="text-sm text-danger">{t("Não foi possível carregar o período.")}</p>
+        <p className="text-sm text-destructive">{t("Não foi possível carregar o período.")}</p>
       ) : null}
 
       {variasMoedas ? (

@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "titulo": "Mensagens institucionais sem efeito colateral no atendimento",
+    "pergunta": "Como uma integração envia avisos institucionais pela conversa ativa sem alterar fila, IA, dono, não lidas, relógios operacionais ou status?",
+    "resumo": "Tokens de servidor com o escopo messages:institutional podem enviar com dispatch_mode = \"institutional\" exclusivamente por conversation_id em conversas não encerradas. A rota REST e o handler validam escopo, bloqueiam agentes de IA e impersonação, conferem status ativo antes e no corte de envio, gravam sent_via = \"system\" com carimbo de servidor metadata.dispatch_mode = \"institutional\", pulam carimbos operacionais, assumir conversa, assinatura e retry automático. Na volta dos provedores (WAHA e Zernio), a detecção de eco reconhece o envio institucional pré-carimbo para preservar fila, não lidas, relógios e atividade de leads; o watch-dog fail-closed falha linhas queued se a conversa encerrar antes do redrive; e a UI diferencia o balão com o selo Aviso institucional e permite configurar o escopo nos tokens de API."
+  },
+  "lanes": [
+    { "id": "configuracao", "label": "Configuração e Auth" },
+    { "id": "envio", "label": "Porta e Handler de Envio" },
+    { "id": "ingestao", "label": "Canais e Reconhecimento de Eco" },
+    { "id": "workers", "label": "Watchdog e Persistência" },
+    { "id": "ui", "label": "Observabilidade e Inbox" }
+  ],
+  "mainPath": [
+    "tokens_ui",
+    "escopo_institucional",
+    "rota_messages",
+    "handler_messages",
+    "tabela_messages",
+    "eco_waha_zernio",
+    "balao_inbox"
+  ],
+  "nodes": [
+    {
+      "id": "tokens_ui",
+      "lane": "configuracao",
+      "col": 1,
+      "type": "frontend",
+      "label": "ApiTokensClient.tsx",
+      "sublabel": "Superfície de configuração para emitir tokens com o escopo messages:institutional"
+    },
+    {
+      "id": "escopo_institucional",
+      "lane": "configuracao",
+      "col": 2,
+      "type": "regra",
+      "label": "lib/api/escopos-do-token.ts",
+      "sublabel": "ESCOPO_MENSAGENS_INSTITUCIONAIS + tokenTemEscopo (separado de mcp:write e on_behalf)"
+    },
+    {
+      "id": "regra_modo",
+      "lane": "envio",
+      "col": 2,
+      "type": "regra",
+      "label": "lib/messaging/modo-de-envio.ts",
+      "sublabel": "MODO_DE_ENVIO_INSTITUCIONAL, conversaEncerradaParaEnvioInstitucional e ehMensagemInstitucional"
+    },
+    {
+      "id": "rota_messages",
+      "lane": "envio",
+      "col": 3,
+      "type": "route",
+      "label": "POST /api/v1/messages",
+      "sublabel": "Exige token com messages:institutional, bloqueia ai_agent/on_behalf/phone_number e pula assumirConversaAposEnvio"
+    },
+    {
+      "id": "mcp_messages",
+      "lane": "envio",
+      "col": 3,
+      "type": "tool",
+      "label": "crm_send_whatsapp_message",
+      "sublabel": "lib/mcp/tools/messages.ts — repassa dispatch_mode só fora de ai_agent"
+    },
+    {
+      "id": "handler_messages",
+      "lane": "envio",
+      "col": 4,
+      "type": "service",
+      "label": "sendMessageHandler",
+      "sublabel": "Anti-spoofing de metadata, check de status pré-send e no corte, força sent_via='system', pula conversationUpdate e audit/event_log"
+    },
+    {
+      "id": "tabela_messages",
+      "lane": "workers",
+      "col": 4,
+      "type": "tabela",
+      "label": "messages & conversations & api_audit_log",
+      "sublabel": "Linha gravada com metadata.dispatch_mode='institutional'; conversations intacta em owner, status, unread e relógios"
+    },
+    {
+      "id": "eco_waha_zernio",
+      "lane": "ingestao",
+      "col": 5,
+      "type": "service",
+      "label": "waha/ingest.ts & zernio/ingest.ts",
+      "sublabel": "Reconhece eco institucional pré-stamp via metadata e pula markConversation / duplicata external_device / pausa IA"
+    },
+    {
+      "id": "reconciler",
+      "lane": "workers",
+      "col": 5,
+      "type": "worker",
+      "label": "session-reconciler.ts (redriveQueued)",
+      "sublabel": "Falha linha institucional queued como conversation_closed se conversa encerrou antes do reenvio"
+    },
+    {
+      "id": "balao_inbox",
+      "lane": "ui",
+      "col": 6,
+      "type": "frontend",
+      "label": "MessageBubble.tsx",
+      "sublabel": "Renderiza data-dispatch-mode='institutional' e rótulo traduzido Aviso institucional sem confundir com resposta humana"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "tokens_ui",
+      "to": "escopo_institucional",
+      "label": "emite token com scope messages:institutional"
+    },
+    {
+      "id": "e2",
+      "from": "tokens_ui",
+      "to": "tabela_messages",
+      "label": "grava scopes e nome da integração em api_tokens"
+    },
+    {
+      "id": "e3",
+      "from": "escopo_institucional",
+      "to": "rota_messages",
+      "label": "valida autorização na borda"
+    },
+    {
+      "id": "e4",
+      "from": "rota_messages",
+      "to": "regra_modo",
+      "label": "consulta MODO_DE_ENVIO_INSTITUCIONAL"
+    },
+    {
+      "id": "e5",
+      "from": "rota_messages",
+      "to": "handler_messages",
+      "label": "encaminha ctx.dispatchMode após autorização e pula assumirConversaAposEnvio"
+    },
+    {
+      "id": "e6",
+      "from": "mcp_messages",
+      "to": "regra_modo",
+      "label": "reutiliza MODO_DE_ENVIO_INSTITUCIONAL e bloqueia ai_agent"
+    },
+    {
+      "id": "e7",
+      "from": "mcp_messages",
+      "to": "handler_messages",
+      "label": "encaminha dispatch_mode para o mesmo handler REST/MCP"
+    },
+    {
+      "id": "e8",
+      "from": "handler_messages",
+      "to": "regra_modo",
+      "label": "confere conversaEncerradaParaEnvioInstitucional no início e no corte"
+    },
+    {
+      "id": "e9",
+      "from": "handler_messages",
+      "to": "tabela_messages",
+      "label": "grava message sent_via='system' sem tocar em conversations e registra audit"
+    },
+    {
+      "id": "e10",
+      "from": "tabela_messages",
+      "to": "eco_waha_zernio",
+      "label": "webhook de eco compara linha institucional em voo ou carimbada"
+    },
+    {
+      "id": "e11",
+      "from": "eco_waha_zernio",
+      "to": "regra_modo",
+      "label": "usa ehMensagemInstitucional para pular markConversation e duplicata"
+    },
+    {
+      "id": "e12",
+      "from": "tabela_messages",
+      "to": "reconciler",
+      "label": "redrive lê queued e garante bloqueio se conversa encerrou"
+    },
+    {
+      "id": "e13",
+      "from": "reconciler",
+      "to": "regra_modo",
+      "label": "confere conversaEncerradaParaEnvioInstitucional e ehMensagemInstitucional no watchdog"
+    },
+    {
+      "id": "e14",
+      "from": "tabela_messages",
+      "to": "balao_inbox",
+      "label": "Inbox lê metadata.dispatch_mode='institutional' e destaca selo próprio"
+    },
+    {
+      "id": "e15",
+      "from": "balao_inbox",
+      "to": "regra_modo",
+      "label": "usa ehMensagemInstitucional para distinguir aviso institucional de fala humana"
+    }
+  ],
+  "cards": [
+    {
+      "titulo": "Isolamento operacional garantido no envio e no eco",
+      "texto": "O envio institucional grava apenas a linha da mensagem (sent_via = 'system', metadata.dispatch_mode = 'institutional' gravado pelo servidor após remover qualquer tentativa do body) e o audit/evento message.sent. O conversationUpdate (last_outbound_at, last_message_at, last_message_preview, awaiting_since, unread_count_for_assignee e contacts.last_activity_at) e assumirConversaAposEnvio não executam, e os webhooks de eco de WAHA e Zernio pulam markConversation quando identificam envio institucional."
+    },
+    {
+      "titulo": "Não-ligações declaradas",
+      "texto": "Mensagens institucionais não acionam retry automático de throttle (reenvioDesaceleradoAtende('system') é falso), não entram em reenvio manual do operador, não disparam gatilho de atividade de vendedor em crm_leads (trg_mensagem_do_vendedor_e_atividade só aceita user/crm/external_device), não pausam nem retomam a IA e não permitem criação de conversa por phone_number nem impersonação via on_behalf_of_user_id."
+    }
+  ]
+}

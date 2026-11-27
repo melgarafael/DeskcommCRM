@@ -217,7 +217,7 @@ export function EditorDeAtalhos({
               <Trash size={12} weight="regular" aria-hidden />
             </button>
             {recusa !== null && (
-              <p className="text-xs text-danger-fill lg:col-span-4" role="status">
+              <p className="text-xs text-destructive lg:col-span-4" role="status">
                 {fraseDaRecusa(recusa, t)}
               </p>
             )}

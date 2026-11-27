@@ -54,6 +54,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { inboundEhDestaPergunta } from "@/lib/followup/aplicar-inbound";
+import {
+  chegouNaJanelaDaSaudacaoAutomatica,
+  ehMensagemDeRobo,
+  ehMenuQuePedeEscolha,
+} from "@/lib/agent-engine/agent/human-handoff";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { EnrollmentPatch } from "./engine";
@@ -119,6 +124,11 @@ export interface LiveEnrollmentRef {
 /** Interface estreita de DB (mesma doutrina de `AdminClient`/`TurnBridgeAdminClient`
  *  — reactivity não usa claim/loadFlowGraph/loadLeadFacts/insertDeadInboxItem, então
  *  não estende `AdminClient` do engine; só o que este consumidor precisa. */
+export interface InicioDaConversa {
+  abertura: { direction: "inbound" | "outbound"; sent_at: string } | null;
+  primeiraResposta: { id: string; sent_at: string } | null;
+}
+
 export interface ReactivityAdminClient {
   loadConversationContactId(orgId: string, conversationId: string): Promise<string | null>;
   loadContactBlocked(orgId: string, contactId: string): Promise<boolean>;
@@ -131,6 +141,18 @@ export interface ReactivityAdminClient {
    * `createSupabaseReactivityClient`); ausente lê-se como "não é pessoal".
    */
   loadContactPersonal?(orgId: string, contactId: string): Promise<boolean>;
+  /**
+   * Lê o corpo completo da mensagem pelo `message_id` do payload, porque
+   * `body_preview` vem truncado em 280 caracteres pelo gatilho do banco.
+   * Opcional para não quebrar mocks existentes.
+   */
+  loadMessageBody?(orgId: string, messageId: string): Promise<string | null>;
+  /**
+   * A primeira mensagem da conversa e a primeira RESPOSTA (inbound) dela — o
+   * que a janela da abertura precisa (doc 422). Opcional pelo mesmo motivo de
+   * `loadMessageBody`; ausente desliga a janela, e o inbound cancela como antes.
+   */
+  loadInicioDaConversa?(orgId: string, conversationId: string): Promise<InicioDaConversa>;
   /**
    * `statuses` existe só para o ramo de opt-out, que precisa alcançar o
    * `dormente`. As demais reações usam o default e seguem sem enxergá-lo — em
@@ -232,6 +254,70 @@ export type ResultadoDaMudancaDeEtapa =
 export const EVENTO_DE_MUDANCA_AO_RESPONDER = "move_to_stage_on_reply";
 /** A linha de trilha quando ele NÃO andou — recusa ou contato sem card na etapa. */
 export const EVENTO_DE_MUDANCA_FALHOU = "move_to_stage_on_reply_failed";
+/** A linha de trilha quando um inbound de robô não cancelou/despertou `cancel_on_reply`. */
+export const EVENTO_DE_ROBO_IGNORADO = "inbound_de_robo_ignorado";
+
+/**
+ * O inbound é resposta automática da empresa do outro lado? (issue 5262, doc 422 = B)
+ *
+ * Duas portas, e só duas:
+ *   1. sinal SEGURO no texto — o robô que se declara (`ehMensagemDeRobo`) ou o
+ *      menu que pede a escolha (`ehMenuQuePedeEscolha`);
+ *   2. a JANELA DA ABERTURA — esta é a PRIMEIRA resposta da conversa, a conversa
+ *      nasceu de mensagem nossa, e ela chegou até 60 s depois. É a marca 3 da
+ *      guarda do agente (issue 3106), a mesma função.
+ *
+ * Saudação e menu sem instrução ficam fora do texto de propósito: pelo texto,
+ * "1. qual o preço? / 2. qual o prazo?" de um cliente não se separa de
+ * "1 - Serviços / 2 - Valores" de um robô; o que separa é o tempo. O custo é do
+ * cliente que responde em menos de um minuto: essa primeira resposta não
+ * cancela, e a segunda dele já cancela.
+ */
+async function inboundEhDeRobo(
+  db: ReactivityAdminClient,
+  row: EventRow,
+): Promise<boolean> {
+  const payload = row.payload;
+  const messageId = strOrNull(payload.message_id);
+  const fullBody =
+    messageId && db.loadMessageBody
+      ? await db.loadMessageBody(row.organization_id, messageId)
+      : null;
+  const raw =
+    typeof fullBody === "string" && fullBody.trim()
+      ? fullBody.trim()
+      : typeof payload.body_preview === "string" && payload.body_preview.trim()
+        ? payload.body_preview.trim()
+        : typeof payload.body === "string" && payload.body.trim()
+          ? payload.body.trim()
+          : "";
+  if (ehMensagemDeRobo(raw) || ehMenuQuePedeEscolha(raw)) return true;
+
+  const conversationId = strOrNull(payload.conversation_id);
+  if (!messageId || !conversationId || !db.loadInicioDaConversa) return false;
+  const { abertura, primeiraResposta } = await db.loadInicioDaConversa(row.organization_id, conversationId);
+  if (abertura === null || primeiraResposta?.id !== messageId) return false;
+  return chegouNaJanelaDaSaudacaoAutomatica(raw, [
+    { direction: abertura.direction, body: "", sent_at: abertura.sent_at },
+    { direction: "inbound", body: raw, sent_at: primeiraResposta.sent_at },
+  ]);
+}
+
+async function registrarRoboIgnorado(
+  db: ReactivityAdminClient,
+  row: EventRow,
+  e: LiveEnrollmentRef,
+): Promise<void> {
+  const roboKey = `reactivity:${row.id}:${e.id}:${EVENTO_DE_ROBO_IGNORADO}`;
+  await db.insertEnrollmentEvent({
+    organization_id: row.organization_id,
+    enrollment_id: e.id,
+    node_id: e.current_node_id,
+    event_type: EVENTO_DE_ROBO_IGNORADO,
+    payload: { reason: "bot_reply" },
+    idempotency_key: roboKey,
+  });
+}
 
 /**
  * A etapa de destino declarada no gatilho de ETAPA, junto com a etapa de
@@ -430,8 +516,18 @@ async function reactToInbound(
   // no conjunto que reage.
   const waitingReply = live.filter((e) => e.status === "waiting_reply");
   const esperaAtiva = live.filter((e) => e.status === "active");
+  // Só pergunta (e só paga as idas ao banco) quando alguém ali cancela na resposta.
+  const inboundDeRobo =
+    [...waitingReply, ...esperaAtiva].some((e) => parseCancelOnReply(e.trigger_config)) &&
+    (await inboundEhDeRobo(db, row));
   let reacted = 0;
   for (const e of waitingReply) {
+    const cancelOnReply = parseCancelOnReply(e.trigger_config);
+    if (cancelOnReply && inboundDeRobo) {
+      await registrarRoboIgnorado(db, row, e);
+      continue;
+    }
+
     // #3974 — "quando o cliente responder, mover o card para a etapa X": irmã
     // de `cancel_on_reply`, e ortogonal a ela. Vem ANTES do ramo de
     // cancelamento porque as duas podem estar ligadas: o card anda e a
@@ -445,7 +541,7 @@ async function reactToInbound(
       if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
     }
 
-    if (parseCancelOnReply(e.trigger_config)) {
+    if (cancelOnReply) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
@@ -470,6 +566,12 @@ async function reactToInbound(
   // acordar o próximo nó e disparar a próxima mensagem imediatamente. Sem a
   // verificação abaixo, a opção funcionava apenas para nós `waiting_reply`.
   for (const e of esperaAtiva) {
+    const cancelOnReply = parseCancelOnReply(e.trigger_config);
+    if (cancelOnReply && inboundDeRobo) {
+      await registrarRoboIgnorado(db, row, e);
+      continue;
+    }
+
     // Mesma opção do laço acima, e pelo mesmo motivo: a espera por tempo fixo
     // fica `active`, e a resposta do cliente também tira o card da etapa.
     if (!opcoes.semAcordar) {
@@ -477,7 +579,7 @@ async function reactToInbound(
       if (mudanca && (await moverCardAoResponder(db, row, e, contactId, mudanca))) reacted++;
     }
 
-    if (parseCancelOnReply(e.trigger_config)) {
+    if (cancelOnReply) {
       const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
       const applied = await applyStep(
         db,
@@ -683,6 +785,36 @@ export function createSupabaseReactivityClient(admin: SupabaseClient): Reactivit
         .maybeSingle();
       if (error) throw new Error(error.message);
       return (data as { is_personal?: boolean } | null)?.is_personal ?? false;
+    },
+    async loadMessageBody(orgId, messageId) {
+      const { data, error } = await admin
+        .from("messages")
+        .select("body")
+        .eq("id", messageId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return (data as { body?: string | null } | null)?.body ?? null;
+    },
+    async loadInicioDaConversa(orgId, conversationId) {
+      const primeira = () =>
+        admin
+          .from("messages")
+          .select("id, direction, sent_at")
+          .eq("organization_id", orgId)
+          .eq("conversation_id", conversationId)
+          .order("sent_at", { ascending: true })
+          .limit(1);
+      const [abertura, resposta] = await Promise.all([
+        primeira().maybeSingle(),
+        primeira().eq("direction", "inbound").maybeSingle(),
+      ]);
+      if (abertura.error) throw new Error(abertura.error.message);
+      if (resposta.error) throw new Error(resposta.error.message);
+      return {
+        abertura: (abertura.data as InicioDaConversa["abertura"]) ?? null,
+        primeiraResposta: (resposta.data as InicioDaConversa["primeiraResposta"]) ?? null,
+      };
     },
     async loadLiveEnrollmentsForContact(orgId, contactId, statuses = LIVE_STATUSES) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);

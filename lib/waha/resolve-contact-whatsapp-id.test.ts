@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { wahaContactPayload } from "@/lib/waha/contact-card";
 import {
   limparMemoCheckExists,
+  numeroTemContaNoWhatsapp,
   resolveCanonicalCusChatId,
   resolveWhatsappIdForContactCard,
   sendChatIdFromCheckResult,
@@ -136,5 +137,31 @@ describe("wahaContactPayload com wa_id resolvido", () => {
     expect(p.phoneNumber).toBe("+553198966398");
     expect(p.vcard).toContain("waid=553198966398");
     expect(p.vcard).toContain("+553198966398");
+  });
+});
+
+
+describe("consulta de existência em três estados", () => {
+  it("só recusa quando TODAS as grafias responderam false", async () => {
+    const client = { checkContactExists: vi.fn().mockResolvedValue({ numberExists: false }) };
+    expect(await numeroTemContaNoWhatsapp(client as never, "s", "5532984793302")).toBe(false);
+    expect(client.checkContactExists).toHaveBeenCalledTimes(2);
+  });
+  it("uma falha e nenhum positivo preservam desconhecido e o envio original", async () => {
+    const client = { checkContactExists: vi.fn().mockRejectedValueOnce(Error("rede")).mockResolvedValue({ numberExists: false }) };
+    expect(await numeroTemContaNoWhatsapp(client as never, "s", "5532984793302")).toBeNull();
+    client.checkContactExists.mockRejectedValue(Error("rede"));
+    expect(await resolveCanonicalCusChatId(client as never, "s", "5532984793302@c.us")).toBe("5532984793302@c.us");
+  });
+  it("positivo prevalece depois de uma falha e a pré-consulta é reutilizada no envio", async () => {
+    const client = { checkContactExists: vi.fn().mockRejectedValueOnce(Error("rede")).mockResolvedValueOnce({ numberExists: true, chatId: "1234567890@lid" }) };
+    expect(await numeroTemContaNoWhatsapp(client as never, "s", "5532984793302")).toBe(true);
+    expect(await resolveCanonicalCusChatId(client as never, "s", "5532984793302@c.us")).toBe("1234567890@lid");
+    expect(client.checkContactExists).toHaveBeenCalledTimes(2);
+  });
+  it("resposta ilegível e entrada sem grafia não viram inexistência definitiva", async () => {
+    const client = { checkContactExists: vi.fn().mockResolvedValue({}) };
+    expect(await numeroTemContaNoWhatsapp(client as never, "s", "12025550123")).toBeNull();
+    expect(await numeroTemContaNoWhatsapp(client as never, "s", "")).toBeNull();
   });
 });

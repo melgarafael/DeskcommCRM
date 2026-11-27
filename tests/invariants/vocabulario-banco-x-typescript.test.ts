@@ -55,6 +55,12 @@ const PARES: Array<{
     simbolo: "ApiDeConversaoGoogle",
   },
   {
+    tabela: "ad_conversion_dispatches",
+    coluna: "google_api",
+    arquivo: "lib/plataformas-de-anuncio/types.ts",
+    simbolo: "ApiDeConversaoGoogle",
+  },
+  {
     tabela: "extension_operations",
     coluna: "kind",
     // O recibo das extensões (0271). Quatro cópias no TypeScript viraram uma; um kind

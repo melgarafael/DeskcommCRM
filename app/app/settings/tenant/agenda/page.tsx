@@ -13,6 +13,8 @@ import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-respons
 import { rotuloDoResponsavel } from "@/lib/agenda/identidade-do-responsavel";
 import { modelosQueOLembreteEnvia } from "@/lib/agenda/lembrete-por-modelo";
 import { COLUNAS_DO_TIPO_DE_AGENDAMENTO } from "@/lib/agenda/consulta";
+import { microsoftEstaConfigurada } from "@/lib/agenda/microsoft/config";
+import { PROVEDOR_MICROSOFT } from "@/lib/agenda/tipos";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
 
@@ -51,6 +53,15 @@ export default async function TiposDeAgendamentoPage() {
     (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
+  const outlookConfigurado = await microsoftEstaConfigurada();
+  const { data: contasDoOutlook } = await supabase
+    .from("calendar_connections")
+    .select("id")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("user_id", user.id)
+    .eq("provider", PROVEDOR_MICROSOFT)
+    .neq("status", "disconnected")
+    .limit(1);
   // ⚠️ O `error` NÃO é descartável, e descartá-lo já mentiu para quem opera.
   //
   // Medido em 2026-09-16: esta consulta pedia `reminder_extra_offsets_minutes`,
@@ -141,6 +152,9 @@ export default async function TiposDeAgendamentoPage() {
         }))}
         usuarioAtualId={user.id}
         podeConfigurarGoogle={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
+        outlook={
+          outlookConfigurado || contasDoOutlook?.length ? { configurado: outlookConfigurado } : undefined
+        }
         podeEditar={podeEditar}
         clientePelaAgendaLigado={clientePelaAgendaLigado(org?.settings)}
         // A OPÇÃO DA AGENDA (migration 0343, issue #978): LIGADA por padrão, e a

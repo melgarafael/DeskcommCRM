@@ -29,6 +29,7 @@ import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
 import { nomeDaIntegracaoDaMensagem } from "@/lib/messaging/nome-da-integracao";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -388,6 +389,7 @@ export function MessageBubble({
   // controle decorativo — a tela oferecendo uma distinção que o motor não fazia.
   // O carimbo vive em `origemDaMensagem` (`app/api/v1/messages/_handler.ts`) e o
   // par é vigiado nas duas direções por tests/unit/rotulo-de-origem-tem-emissor.
+  const mensagemInstitucional = ehMensagemInstitucional(message.metadata);
   const senderLabel = (() => {
     if (!isOutbound) return null;
     // #1613: a autoria "em nome de" sobe a MESA. Quem apertou foi o token, mas
@@ -434,7 +436,8 @@ export function MessageBubble({
     // "Integração" passa por `t()`; o nome do token sai como cadastrado (#1046).
     if (message.sent_via === "system") {
       const nome = nomeDaIntegracaoDaMensagem(message.metadata);
-      return nome ? `${t("Integração")} · ${nome}` : t("Integração");
+      const prefixo = mensagemInstitucional ? t("Aviso institucional") : t("Integração");
+      return nome ? `${prefixo} · ${nome}` : prefixo;
     }
     if (message.sent_via === "external_device") return "Celular";
     if (message.sent_via === "user" || message.sent_via === "crm") {
@@ -536,6 +539,7 @@ export function MessageBubble({
         // classe utilitária entrava na conta — foi assim que o painel flutuante
         // fez a spec achar que havia mensagem onde não havia (issue #1318).
         data-testid="message-bubble"
+        data-dispatch-mode={mensagemInstitucional ? "institutional" : undefined}
         className={cn(
           "relative max-w-[75%] min-w-0 text-sm",
           isBareSticker

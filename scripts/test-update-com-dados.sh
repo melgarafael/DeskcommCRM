@@ -222,6 +222,28 @@ insert into public.ai_models
   (provider, model_id, display_name, input_price_per_million_cents, output_price_per_million_cents)
 values ('openrouter', 'anthropic/claude-haiku-4-5', 'Claude Haiku 4.5 (OpenRouter)', 99, 500)
 on conflict (provider, model_id) do nothing;
+
+-- Duas contas na MESMA etapa e no MESMO evento. O bloco histórico 0436 não
+-- pode recriar seus índices antigos antes de chegar ao apêndice do destino.
+insert into public.crm_pipelines (id,organization_id,name,slug) values
+  ('44444444-0000-4000-8000-000000000001','22222222-0000-4000-8000-00000000000a','Google update','google-update');
+insert into public.crm_stages (id,organization_id,pipeline_id,name,slug,position) values
+  ('44444444-0000-4000-8000-000000000002','22222222-0000-4000-8000-00000000000a',
+   '44444444-0000-4000-8000-000000000001','Contato atendido','contato-atendido',1000);
+insert into public.crm_leads (id,organization_id,pipeline_id,stage_id,title) values
+  ('44444444-0000-4000-8000-000000000003','22222222-0000-4000-8000-00000000000a',
+   '44444444-0000-4000-8000-000000000001','44444444-0000-4000-8000-000000000002','Google update sintético');
+insert into public.google_ads_conversion_rules
+  (organization_id,stage_id,event_name,label,google_action_id,google_customer_id,configured_at)
+values
+  ('22222222-0000-4000-8000-00000000000a','44444444-0000-4000-8000-000000000002','QualifiedLead','Conta A','41','1111111111','2020-01-01'),
+  ('22222222-0000-4000-8000-00000000000a','44444444-0000-4000-8000-000000000002','QualifiedLead','Conta B','42','2222222222','2020-01-01');
+insert into public.ad_conversion_dispatches
+  (organization_id,lead_id,platform,event_name,status,remote_request_id,event_occurred_at,google_action_id,
+   google_customer_id,google_login_customer_id,google_api,google_destination_explicit)
+values
+  ('22222222-0000-4000-8000-00000000000a','44444444-0000-4000-8000-000000000003','google_ads','QualifiedLead','skipped',
+   'protocolo-sintetico-update','2020-01-02','41','1111111111',null,'data_manager',true);
 SQL
 linhas=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
   select (select count(*) from public.organizations)
@@ -229,6 +251,23 @@ linhas=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
        + (select count(*) from public.calendar_appointments)
        + (select count(*) from public.calendar_event_types);")
 echo "    ✓ $linhas linhas semeadas (event_types vêm do trigger da 0185)"
+
+destinos_google() {
+  docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "
+    select jsonb_build_object(
+      'regras', (select jsonb_agg(jsonb_build_array(google_customer_id,event_name,google_action_id,configured_at)
+                   order by google_customer_id) from public.google_ads_conversion_rules
+                  where stage_id='44444444-0000-4000-8000-000000000002'),
+      'recibo', (select jsonb_build_array(remote_request_id,event_occurred_at,google_action_id,
+                    google_customer_id,google_login_customer_id,google_api,google_destination_explicit)
+                  from public.ad_conversion_dispatches
+                 where lead_id='44444444-0000-4000-8000-000000000003' and event_name='QualifiedLead'));"
+}
+destinos_google_antes=$(destinos_google)
+[ "$(docker exec "$CONTAINER" psql -U postgres -d postgres -tAc "select count(*) from public.google_ads_conversion_rules where stage_id='44444444-0000-4000-8000-000000000002';")" = 2 ] || {
+  echo "FATAL: o seed Google não criou duas contas na mesma etapa." >&2
+  exit 1
+}
 
 # Guarda de vacuidade: um seed que falhasse em silêncio faria o passo seguinte
 # medir exatamente o que o test:db já mede — um banco vazio.
@@ -481,5 +520,11 @@ if [ "$oid_antes" != "$oid_depois" ]; then
   exit 1
 fi
 echo "    ✓ OID $oid_depois, estável na passada seguinte"
+
+[ "$(destinos_google)" = "$destinos_google_antes" ] || {
+  echo "FATAL: o update mudou regras Google, carimbos ou o retrato do protocolo existente." >&2
+  exit 1
+}
+echo "    ✓ duas contas na mesma etapa, identidade do evento e destino do protocolo preservados"
 
 echo "==> update-com-dados verde"

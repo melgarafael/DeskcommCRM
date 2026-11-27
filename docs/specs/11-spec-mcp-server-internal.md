@@ -306,7 +306,8 @@ inputSchema: z.object({
   media_url: z.string().url().optional(),
   media_storage_path: z.string().optional(),   // #5034
   media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
-  media_mime: z.string().optional()
+  media_mime: z.string().optional(),
+  dispatch_mode: z.enum(['operational', 'institutional']).optional() // #5284: apenas token de integração com messages:institutional (bloqueado para ai_agent)
 })
 // Precisa de body, media_url ou media_storage_path.
 ```

@@ -74,6 +74,7 @@ export const RECURSOS_DO_CRON = [
   "historico",
   "agenda_google",
   "agenda_google_push",
+  "agenda_microsoft",
   "webhook_replay",
   "followup",
   "followup_silencio",
@@ -247,6 +248,10 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
+  exists (
+    select 1 from calendar_connections
+     where status = 'healthy' and provider = 'microsoft_calendar'
+  ) as agenda_microsoft,
   (
     exists (
       select 1 from webhook_events_log

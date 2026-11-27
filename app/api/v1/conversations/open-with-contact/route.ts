@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { ApiErrorCodes } from "@/lib/api/errors";
+import { FRASES_DE_FALHA } from "@/lib/channels/frases-de-falha";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
@@ -141,6 +143,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     return ok(result, { requestId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "open_failed";
+    if (msg === ApiErrorCodes.numero_sem_whatsapp) {
+      return fail(ApiErrorCodes.numero_sem_whatsapp, t(FRASES_DE_FALHA.numero_sem_whatsapp!), 422, {
+        requestId,
+      });
+    }
     if (msg === "contact_not_found") {
       return fail("not_found", t("Contato não encontrado."), 404, { requestId });
     }
