@@ -1,5 +1,5 @@
 ---
-impacto: nada_mudou
+impacto: capacidade_nova
 secao: adicionado
 titulo: A meta de vendas pode ser de um funil
 ---

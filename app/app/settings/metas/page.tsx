@@ -40,18 +40,30 @@ export default async function MetaDeVendasPage() {
 
   const mes = mesLocal();
   const supabase = await createClient();
-  // Todas as metas do MÊS (empresa, vendedor, funil): o formulário mostra a que
-  // já existe para a combinação escolhida em vez de fingir campo vazio.
+  // As metas da organização (empresa, vendedor, funil), com o MÊS de cada uma: o
+  // formulário mostra a que já existe para a combinação escolhida — mês
+  // incluído — em vez de fingir campo vazio. Ler só o mês corrente fazia a meta
+  // deste mês aparecer (e ser salva) no mês que a pessoa escolheu (#4796).
+  // Do ano passado em diante: é o que o seletor de mês alcança no uso normal.
   const { data } = await supabase
     .from("crm_metas")
-    .select("indicador, vendedor_id, pipeline_id, alvo")
+    .select("periodo, indicador, vendedor_id, pipeline_id, alvo")
     .eq("organization_id", activeOrg.orgId)
-    .eq("periodo", `${mes}-01`);
+    .gte("periodo", `${Number(mes.slice(0, 4)) - 1}-01-01`)
+    .order("periodo", { ascending: false })
+    .limit(2000);
   const metas = (
-    (data ?? []) as Array<{ indicador: string; vendedor_id: string | null; pipeline_id: string | null; alvo: number }>
+    (data ?? []) as Array<{
+      periodo: string;
+      indicador: string;
+      vendedor_id: string | null;
+      pipeline_id: string | null;
+      alvo: number;
+    }>
   )
     .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
     .map((m) => ({
+      periodo: String(m.periodo).slice(0, 7),
       indicador: m.indicador as "vendas_ganhas" | "valor_vendido",
       vendedor_id: m.vendedor_id ?? null,
       pipeline_id: m.pipeline_id ?? null,

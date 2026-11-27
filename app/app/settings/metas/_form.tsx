@@ -67,6 +67,8 @@ export type IndicadorDaMeta = "vendas_ganhas" | "valor_vendido";
 
 /** A meta já gravada, como a página entrega para o formulário. */
 export interface MetaGravada {
+  /** 'YYYY-MM' da meta; ausente = o mês que a página abriu (`mes`). */
+  periodo?: string;
   indicador: IndicadorDaMeta;
   vendedor_id: string | null;
   /** Funil da meta (#4796); ausente nas metas de empresa e de vendedor. */
@@ -135,6 +137,7 @@ export function FormularioDaMeta({
   useEffect(() => {
     const existente = metas.find(
       (m) =>
+        (m.periodo ?? mes) === periodo &&
         m.indicador === indicador &&
         (m.vendedor_id ?? null) === vendedorId &&
         (m.pipeline_id ?? null) === pipelineId,
@@ -146,7 +149,7 @@ export function FormularioDaMeta({
     setAlvo(
       indicador === "valor_vendido" ? (existente.alvo / 100).toFixed(2) : String(existente.alvo),
     );
-  }, [periodo, indicador, vendedorId, pipelineId, metas]);
+  }, [mes, periodo, indicador, vendedorId, pipelineId, metas]);
 
   const numero = indicador === "valor_vendido" ? Number(alvo.replace(",", ".")) : Number(alvo);
   const alvoEmUnidade = Math.round(numero * (indicador === "valor_vendido" ? 100 : 1));

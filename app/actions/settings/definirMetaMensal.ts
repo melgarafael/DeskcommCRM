@@ -178,17 +178,20 @@ export async function definirMetaMensal(
   // A linha do mês, na organização ativa, pela MESMA chave do índice único
   // parcial que vale para o dono: empresa (funil e vendedor nulos), vendedor ou
   // funil — mês + indicador + dono.
-  let consulta = supabase
-    .from("crm_metas")
-    .select("id, alvo")
-    .eq("organization_id", orgId)
-    .eq("periodo", primeiroDia)
-    .eq("indicador", indicador);
-  consulta = pipelineId ? consulta.eq("pipeline_id", pipelineId) : consulta.is("pipeline_id", null);
-  consulta = vendedorId
-    ? consulta.eq("vendedor_id", vendedorId)
-    : consulta.is("vendedor_id", null);
-  const { data: existente, error: erroLeitura } = await consulta.maybeSingle();
+  const lerMeta = () => {
+    let consulta = supabase
+      .from("crm_metas")
+      .select("id, alvo")
+      .eq("organization_id", orgId)
+      .eq("periodo", primeiroDia)
+      .eq("indicador", indicador);
+    consulta = pipelineId ? consulta.eq("pipeline_id", pipelineId) : consulta.is("pipeline_id", null);
+    consulta = vendedorId
+      ? consulta.eq("vendedor_id", vendedorId)
+      : consulta.is("vendedor_id", null);
+    return consulta.maybeSingle();
+  };
+  const { data: existente, error: erroLeitura } = await lerMeta();
   if (erroLeitura) return { ok: false, error: "erro_ao_gravar", details: erroLeitura.message };
 
   const alvoAnterior = ((existente as { alvo?: number } | null)?.alvo ?? null) as number | null;
@@ -210,7 +213,23 @@ export async function definirMetaMensal(
       alvo,
       created_by: authUser.id,
     });
-    if (error) return { ok: false, error: "erro_ao_gravar", details: error.message };
+    // Duas pessoas salvando a PRIMEIRA meta da mesma chave ao mesmo tempo: as
+    // duas leram "não existe", e o índice único barra a segunda. Ela não é um
+    // erro de quem salvou — é a correção da meta que acabou de nascer.
+    if (error && (error as { code?: string }).code === "23505") {
+      const { data: nascida, error: erroReleitura } = await lerMeta();
+      if (erroReleitura || !nascida) {
+        return { ok: false, error: "erro_ao_gravar", details: erroReleitura?.message ?? error.message };
+      }
+      const { error: erroCorrecao } = await supabase
+        .from("crm_metas")
+        .update({ alvo, updated_at: new Date().toISOString() })
+        .eq("id", (nascida as { id: string }).id)
+        .eq("organization_id", orgId);
+      if (erroCorrecao) return { ok: false, error: "erro_ao_gravar", details: erroCorrecao.message };
+    } else if (error) {
+      return { ok: false, error: "erro_ao_gravar", details: error.message };
+    }
   }
 
   const hdrs = await headers();

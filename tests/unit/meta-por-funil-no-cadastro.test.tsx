@@ -37,6 +37,8 @@ const h = vi.hoisted(() => ({
   filtrosDaMeta: [] as Array<[string, string, unknown]>,
   tabelasLidas: [] as string[],
   auditadas: [] as Array<Record<string, unknown>>,
+  /** A outra pessoa gravou a MESMA chave entre a leitura e o insert desta. */
+  conflito: false,
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -83,6 +85,11 @@ function cadeia(tabela: string) {
       return { data: h.existente, error: null };
     },
     insert: async (linha: Record<string, unknown>) => {
+      if (h.conflito) {
+        h.conflito = false;
+        h.existente = { id: "meta-da-outra-pessoa", alvo: 8 };
+        return { error: { code: "23505", message: "duplicate key value violates unique constraint" } };
+      }
       h.inseridas.push(linha);
       return { error: null };
     },
@@ -128,6 +135,7 @@ beforeEach(() => {
   h.filtrosDaMeta.length = 0;
   h.tabelasLidas.length = 0;
   h.auditadas.length = 0;
+  h.conflito = false;
   form.definir.mockClear();
   form.resposta = { ok: true };
 });
@@ -153,6 +161,13 @@ describe("#4796 — a action grava a meta do funil", () => {
     expect(r).toEqual({ ok: true });
     expect(h.inseridas).toEqual([]);
     expect(h.atualizadas).toEqual([expect.objectContaining({ alvo: 20 })]);
+  });
+
+  it("a primeira meta salva ao mesmo tempo por outra pessoa vira correção, não erro", async () => {
+    h.conflito = true;
+    const r = await definirMetaMensal({ periodo: "2026-11", alvo: 15, pipeline_id: FUNIL } as never);
+    expect(r).toEqual({ ok: true });
+    expect(h.atualizadas).toEqual([expect.objectContaining({ alvo: 15 })]);
   });
 
   it("funil e vendedor juntos é recusado antes do banco", async () => {
@@ -213,6 +228,20 @@ describe("#4796 — o formulário oferece o funil", () => {
     expect(form.definir).toHaveBeenCalledWith(
       expect.objectContaining({ pipeline_id: FUNIL, vendedor_id: null, alvo: 8 }),
     );
+  });
+
+  it("trocar o mês mostra a meta DAQUELE mês, não a deste", async () => {
+    await montar([
+      { periodo: "2026-11", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: FUNIL, alvo: 9 },
+      { periodo: "2026-12", indicador: "vendas_ganhas", vendedor_id: null, pipeline_id: FUNIL, alvo: 30 },
+    ]);
+    await escolher("Funil · Vendas B2B");
+    const alvo = document.getElementById("alvo") as HTMLInputElement;
+    await waitFor(() => expect(alvo.value).toBe("9"));
+    fireEvent.change(document.getElementById("periodo")!, { target: { value: "2026-12" } });
+    await waitFor(() => expect(alvo.value).toBe("30"));
+    fireEvent.change(document.getElementById("periodo")!, { target: { value: "2027-01" } });
+    await waitFor(() => expect(alvo.value).toBe(""));
   });
 
   it("a meta já gravada do funil aparece ao escolher o funil", async () => {
