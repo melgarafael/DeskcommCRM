@@ -112,6 +112,8 @@ const visiveis = () =>
 
 /** O que o editor faz depois de salvar: a rota passa a devolver o novo, e o cache é relido. */
 async function editorSalvou(pipelineId: string, etapas: { id: string; name: string }[]) {
+  // Salvar só existe depois de o editor ter lido as etapas uma vez.
+  await waitFor(() => expect(qc.getQueryState(["agent-mapping", pipelineId])?.status).toBe("success"));
   h.etapas[pipelineId] = etapas;
   await act(async () => {
     await qc.invalidateQueries({ queryKey: ["agent-mapping", pipelineId] });
