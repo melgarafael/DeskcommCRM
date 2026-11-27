@@ -597,6 +597,77 @@ describe("qualificação por etapa", () => {
     expect(mocks.enviar).not.toHaveBeenCalled();
   });
 
+  // Revisão do @webtecnica no #5286 (achado 1): na etapa mista, o clique de uma
+  // terceira conta cai na regra global em `selecionarRegraGoogle`. Quem recusa é o
+  // envio (`motivoDeContaDaEtapaGoogle`), não a seleção — este caso prova isso.
+  it("etapa mista: clique de uma terceira conta não sai pela global e fica registrado", async () => {
+    regrasExtras = [
+      { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    origemDoNegocio.google_customer_id = "5556667777";
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({
+      status: "skipped",
+      detail: "conta_google_do_clique_divergente",
+    });
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      status: "skipped",
+      reason: "conta_google_do_clique_divergente",
+      google_destination_explicit: false,
+    });
+  });
+
+  it("etapa mista: o clique da própria conta da conexão segue saindo pela global", async () => {
+    regrasExtras = [
+      { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+    ];
+    expect(await conversaoDeQualificacaoHandler.handle(row)).toMatchObject({ status: "ok" });
+    expect(mocks.enviar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        google: expect.objectContaining({ customerId: "1234567890", conversionActionId: "42" }),
+      }),
+      expect.anything(),
+    );
+    expect(registros["lead:QualifiedLead"]).toMatchObject({
+      status: "sent",
+      google_destination_explicit: false,
+    });
+  });
+
+  // Achado 2 da mesma revisão: a etapa só com a global também não envia nem grava
+  // linha para negócio sem clique ou vindo da Meta (`envio.handler.ts`, "Sai sem
+  // linha no livro-razão"). Ganhar uma regra explícita não pode mudar isso.
+  it.each([
+    {
+      caso: "sem atribuição",
+      origem: { source: "whatsapp", source_metadata: {} },
+      motivo: "sem_atribuicao",
+    },
+    {
+      caso: "vindo da Meta",
+      origem: {
+        source: "meta_ads",
+        source_metadata: { ad_platform: "meta_ads", ad_source_id: "ctwa" },
+      },
+      motivo: "qualificacao_sem_origem_google",
+    },
+  ])(
+    "negócio $caso: a etapa mista tem o mesmo desfecho da etapa só com a global",
+    async ({ origem, motivo }) => {
+      origensDosNegocios.lead = origem;
+      origemDoContato = { ...origem.source_metadata };
+      const soGlobal = await conversaoDeQualificacaoHandler.handle(row);
+      regrasExtras = [
+        { ...config!, id: "segunda", google_customer_id: "1112223333", google_action_id: "77" },
+      ];
+      const mista = await conversaoDeQualificacaoHandler.handle(row);
+      expect(soGlobal).toMatchObject({ status: "skipped", detail: motivo });
+      expect(mista).toMatchObject({ status: "skipped", detail: motivo });
+      expect(mocks.enviar).not.toHaveBeenCalled();
+      expect(registros).toEqual({});
+    },
+  );
+
   it.each([undefined, "1112223333"])(
     "pausar a conta B não torna seu clique ou a conta ausente elegível para a global A (%s)",
     async (conta) => {
