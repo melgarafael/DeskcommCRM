@@ -9,7 +9,9 @@
     "agentes_ia",
     "catalogo",
     "configuracao",
-    "analise"
+    "analise",
+    "tarefas",
+    "financeiro"
   ],
   "permissoes": [
     "area.agenda.escrita",
@@ -26,10 +28,14 @@
     "area.contatos.leitura",
     "area.conversas.escrita",
     "area.conversas.leitura",
+    "area.financeiro.escrita",
+    "area.financeiro.leitura",
     "area.funis.escrita",
     "area.funis.leitura",
     "area.negocios.escrita",
-    "area.negocios.leitura"
+    "area.negocios.leitura",
+    "area.tarefas.escrita",
+    "area.tarefas.leitura"
   ],
   "rotas": {
     "agenda": [
@@ -336,6 +342,7 @@
       "POST /api/v1/messages/[id]/hide",
       "PUT /api/v1/conversations/[id]/sector"
     ],
+    "financeiro": [],
     "funis": [
       "DELETE /api/v1/pipelines/[id]",
       "DELETE /api/v1/pipelines/[id]/stages/[id]",
@@ -411,7 +418,8 @@
       "POST /api/v1/proposals/[id]/decide",
       "POST /api/v1/proposals/[id]/preencher-com-conversa",
       "POST /api/v1/proposals/[id]/revise"
-    ]
+    ],
+    "tarefas": []
   },
   "formatos": {
     "/api/v1/agenda/agendamentos": {

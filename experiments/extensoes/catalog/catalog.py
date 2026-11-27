@@ -66,6 +66,10 @@ PERMISSOES = [
     "area.configuracao.escrita",
     "area.analise.leitura",
     "area.analise.escrita",
+    "area.tarefas.leitura",
+    "area.tarefas.escrita",
+    "area.financeiro.leitura",
+    "area.financeiro.escrita",
 ]
 CAPACIDADES = [
     "tasks.open",
