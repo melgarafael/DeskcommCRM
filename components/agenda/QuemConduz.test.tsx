@@ -4,14 +4,15 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { QuemConduz } from "./QuemConduz";
+import type { Pessoa } from "./tipos";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 
-const A = { id: "a-111", nome: "Ana" };
-const B = { id: "b-222", nome: "Bruno" };
-const C = { id: "c-333", nome: "Carla" };
+const A: Pessoa = { id: "a-111", nome: "Ana", trilha: 1 };
+const B: Pessoa = { id: "b-222", nome: "Bruno", trilha: 2 };
+const C: Pessoa = { id: "c-333", nome: "Carla", trilha: 3 };
 
-function renderizar(pessoas: { id: string; nome: string }[], principalId: string | null, selecionados: string[]) {
+function renderizar(pessoas: Pessoa[], principalId: string | null, selecionados: string[]) {
   const onChange = vi.fn();
   render(<QuemConduz pessoas={pessoas} principalId={principalId} selecionados={selecionados} onChange={onChange} />);
   return onChange;
@@ -48,7 +49,7 @@ describe("QuemConduz (#3067)", () => {
   });
 
   it("com 9 adicionais o seletor some (11 pessoas) e o contador mostra '10 de 10'", () => {
-    const outros = Array.from({ length: 10 }, (_, i) => ({ id: `p-${i}`, nome: `Pessoa ${i}` }));
+    const outros = Array.from({ length: 10 }, (_, i) => ({ id: `p-${i}`, nome: `Pessoa ${i}`, trilha: 1 as const }));
     const pessoas = [A, ...outros];
     const selecionados = pessoas.slice(1, 10).map((p) => p.id); // 9 adicionais
     renderizar(pessoas, A.id, selecionados);

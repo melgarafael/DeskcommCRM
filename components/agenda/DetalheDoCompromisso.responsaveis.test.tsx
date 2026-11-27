@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Locale } from "date-fns";
 
 import { DetalheDoCompromisso } from "./DetalheDoCompromisso";
+import type { Pessoa } from "./tipos";
 
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
@@ -32,7 +33,7 @@ const get = vi.mocked(apiClient.get);
 const patch = vi.mocked(apiClient.patch);
 const pessoasHook = vi.mocked(usePessoasDaAgenda);
 
-const PESSOAS = [
+const PESSOAS: Pessoa[] = [
   { id: "p-1", nome: "Ana", trilha: 1 },
   { id: "p-2", nome: "Bruno", trilha: 2 },
   { id: "p-3", nome: "Carla", trilha: 3 },
@@ -60,13 +61,14 @@ const DETALHE = {
   evidence_messages: [],
   principal_user_id: "p-1",
   responsaveis: ["p-2"],
+  equipe_travada: false,
 };
 
 afterEach(cleanup);
 
 function renderizar(detalhe = DETALHE, pessoas = PESSOAS, podeEditar = true) {
   get.mockResolvedValue({ data: detalhe });
-  pessoasHook.mockReturnValue({ data: pessoas });
+  pessoasHook.mockReturnValue({ data: pessoas } as unknown as ReturnType<typeof usePessoasDaAgenda>);
   const qc = new QueryClient();
   qc.setQueryData(["agenda", "pessoas"], PESSOAS);
   return render(

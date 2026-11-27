@@ -206,7 +206,7 @@ describe("Quem conduz ao marcar (#3067)", () => {
     fireEvent.click(screen.getByTestId("confirmar-marcacao"));
 
     await waitFor(() => expect(corposDoPost).toHaveLength(1));
-    expect(corposDoPost[0].responsible_user_ids).toBeUndefined();
+    expect(corposDoPost[0]!.responsible_user_ids).toBeUndefined();
   });
 
   it("escolher um adicional → responsible_user_ids só com ele (sem o principal)", async () => {
