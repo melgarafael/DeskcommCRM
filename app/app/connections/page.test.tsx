@@ -25,7 +25,7 @@ vi.mock("@/lib/channels/webchat/modulo", () => ({ chatNoSiteLigado: async () => 
 vi.mock("@/lib/channels/bot/connect", () => ({ ROTULO_DO_CANAL: "Telegram" }));
 vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({
   canalGraphParceiroLigado: () => false,
-  GRAPH_PARTNER_LABEL: "Datafy",
+  GRAPH_PARTNER_LABEL: "Parceiro",
 }));
 vi.mock("@/lib/impersonate/support", () => ({ supportWriteError: () => null }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
