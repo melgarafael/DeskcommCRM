@@ -1700,9 +1700,8 @@ VIGIA_JANELA_SEGUNDOS=$((2 * 60 * 60))
 #     release, não um solavanco do Docker.
 VIGIA_FALHAS_SEGUIDAS=2
 
-# A marca que autoriza a volta automática. Chamada pelo `update.sh` no único
-# ponto em que a atualização já se comprometeu (preflight passou) — antes
-# disso nada foi tocado e não há o que desfazer.
+# The updater arms automatic recovery after the backup step and release
+# checkout, just before it starts changing running services.
 #
 # Só arma com nome de VERSÃO PUBLICADA: instalação fora de release não tem tag
 # para onde voltar, e `update.sh --to <sha>` tentaria puxar uma imagem com o
