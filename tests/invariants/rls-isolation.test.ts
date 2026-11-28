@@ -686,6 +686,24 @@ beforeAll(() => {
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
 
+        -- migrations 9352 (#4023) e 9420 (#4026): a nota de satisfacao e a linha de
+        -- quarentena. Semeio uma de cada por organizacao -- a ultima fechada
+        -- como 'sem_nota' e a outra 'em_quarentena', os dois estados que mais
+        -- erram na mao. A quarentena exige message_id unico: o id sai do
+        -- proprio uuid, entao as duas organizacoes nao colidem.
+        if not exists (select 1 from public.satisfacao_do_atendimento where organization_id = v_org) then
+          insert into public.satisfacao_do_atendimento
+            (organization_id, conversation_id, contact_id, status, expira_em)
+          values (v_org, v_conv, v_contact, 'sem_nota', now() + interval '1 day');
+        end if;
+
+        if not exists (select 1 from public.quarentena_de_entrada where organization_id = v_org) then
+          insert into public.quarentena_de_entrada
+            (organization_id, conversation_id, contact_id, message_id, veredito, confianca, sinais)
+          values (v_org, v_conv, v_contact, gen_random_uuid(), 'suspeito', 0.85,
+                  '["numero_estrangeiro_no_texto"]'::jsonb);
+        end if;
+
         -- migration 9312 (#3509, degrau 1) -- o recebimento do cliente final
         -- registrado na conversa. A semente usa v_conv (a policy de leitura confere
         -- o par conversa/organizacao) e o estado 'pendente', unico que nao exige
@@ -978,6 +996,16 @@ export const TABLES = [
   // organização; a escrita exige `agent` (mesmo piso da 9043), e o eixo do
   // `viewer` é medido em `identidades-do-contato.test.ts`.
   "contact_identities",
+  // migration 9420 (#4026) — a fila de quarentena do filtro de spam. Vazar a
+  // linha conta ao vizinho que mensagem foi retida, com que confianca e por
+  // quais sinais. Mesmo desenho: leitura org-scoped, escrita do motor.
+  "quarentena_de_entrada",
+  // ⚠️ `satisfacao_do_atendimento` (migration 9352, #4023) NÃO entra nesta lista:
+  // a policy de leitura é só `manager`+ (`satisfacao_so_quem_gerencia_select`),
+  // e o usuário semeado aqui é `agent` — o controle positivo falharia por
+  // ACERTO. A prova vive em `tests/invariants/satisfacao-e-quarentena.test.ts`
+  // ("só manager lê a nota — agent e vizinho leem ZERO linhas"), que cobre a
+  // empresa dona E o vizinho.
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
