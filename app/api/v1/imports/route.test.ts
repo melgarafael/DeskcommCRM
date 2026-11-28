@@ -17,6 +17,12 @@ const h = vi.hoisted(() => ({
   from: vi.fn(),
   classificadas: [] as LinhaClassificada[],
   processar: vi.fn(),
+  carteira: vi.fn(),
+  papel: "manager" as string | undefined,
+  /** O que o cliente de serviço devolve para "o dono escolhido é membro ativo?". */
+  membro: { data: { user_id: "x" }, error: null } as { data: unknown; error: unknown },
+  filtrosDoMembro: [] as Array<[string, ...unknown[]]>,
+  ator: { type: "user", id: "11111111-1111-4111-8111-111111111111" } as { type: string; id: string },
 }));
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
@@ -30,8 +36,9 @@ vi.mock("@/lib/api/auth-dual", () => ({
     ok: true,
     supabase: { from: h.from },
     organizationId: "22222222-2222-4222-8222-222222222222",
-    actor: { type: "user", id: "11111111-1111-4111-8111-111111111111" },
-    apiTokenId: null,
+    actor: h.ator,
+    apiTokenId: h.ator.type === "user" ? null : "tok-1",
+    ...(h.ator.type === "user" && h.papel ? { papelDaSessao: h.papel } : {}),
     idioma: "pt-BR",
   })),
   tetoDeEscritaDoToken: vi.fn(async () => null),
@@ -42,6 +49,23 @@ vi.mock("@/lib/crm-b2b/import-previa", async (original) => ({
 }));
 vi.mock("@/lib/crm-b2b/import-process", () => ({
   processCompaniesPeopleImport: (...args: unknown[]) => h.processar(...args),
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => {
+    // Cadeia que registra cada filtro: o teste cobra o MESMO predicado da função do banco.
+    const cadeia: Record<string, unknown> = { admin: true };
+    for (const metodo of ["from", "select", "eq", "is", "not", "in"]) {
+      cadeia[metodo] = (...args: unknown[]) => {
+        h.filtrosDoMembro.push([metodo, ...args]);
+        return cadeia;
+      };
+    }
+    cadeia.maybeSingle = async () => h.membro;
+    return cadeia;
+  },
+}));
+vi.mock("@/lib/crm-b2b/import-carteira", () => ({
+  definirCarteiraDoLote: (...args: unknown[]) => h.carteira(...args),
 }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({
   nomesDosAtendentes: vi.fn(async () => new Map([["u-dono", "Carla Dono"]])),
@@ -60,6 +84,12 @@ function pedido(extra: Record<string, string> = {}): Request {
 
 beforeEach(() => {
   h.from.mockReset();
+  h.carteira.mockReset();
+  h.carteira.mockResolvedValue({ definidos: 1, falhas: 0 });
+  h.papel = "manager";
+  h.membro = { data: { user_id: "x" }, error: null };
+  h.filtrosDoMembro = [];
+  h.ator = { type: "user", id: "11111111-1111-4111-8111-111111111111" };
   h.processar.mockReset();
   h.processar.mockResolvedValue({ successful_rows: 1, failed_rows: 1, conflict_rows: 1, processed_rows: 3 });
   h.classificadas = [
@@ -124,11 +154,19 @@ describe("POST /api/v1/imports com previa=true", () => {
   });
 });
 
+const ATOR = "11111111-1111-4111-8111-111111111111";
+const OUTRO = "99999999-9999-4999-8999-999999999999";
+
+/** `from` do dublê: só o lote — o papel agora vem de `papelDaSessao`, sem segunda consulta. */
+function bancoDoLote() {
+  h.from.mockImplementation(() => ({
+    insert: () => ({ select: () => ({ single: async () => ({ data: { id: "lote-1" }, error: null }) }) }),
+  }));
+}
+
 describe("POST /api/v1/imports sem previa", () => {
   it("cria o lote e passa o veredito ao processador, que grava só as novas", async () => {
-    h.from.mockReturnValue({
-      insert: () => ({ select: () => ({ single: async () => ({ data: { id: "lote-1" }, error: null }) }) }),
-    });
+    bancoDoLote();
 
     const res = await POST(pedido() as never);
 
@@ -138,4 +176,125 @@ describe("POST /api/v1/imports sem previa", () => {
     expect([...opcoes.classificacao.keys()]).toEqual([2, 3, 4]);
     expect(opcoes.classificacao.get(3)?.status).toBe("ja_existe");
   });
+
+  it("o dono da carteira é quem importa, quando ninguém escolhe outro", async () => {
+    bancoDoLote();
+    const res = await POST(pedido() as never);
+    const corpo = (await res.json()) as { data: { carteira: { dono_user_id: string; definidos: number } } };
+
+    expect(res.status).toBe(201);
+    expect(h.carteira).toHaveBeenCalledWith(
+      expect.objectContaining({ admin: true }),
+      expect.objectContaining({ batchId: "lote-1", atorId: ATOR, donoId: ATOR }),
+    );
+    expect(corpo.data.carteira).toMatchObject({ dono_user_id: ATOR, definidos: 1 });
+  });
+
+  it("gerente escolhe outro dono: a escolha vai para a carteira", async () => {
+    bancoDoLote();
+    await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(h.carteira).toHaveBeenCalledWith(expect.objectContaining({ admin: true }), expect.objectContaining({ atorId: ATOR, donoId: OUTRO }));
+  });
+
+  it("atendente que pede OUTRO dono recebe 403 e nenhum lote é criado", async () => {
+    h.papel = "agent";
+    bancoDoLote();
+
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+
+    expect(res.status).toBe(403);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.processar).not.toHaveBeenCalled();
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("papel ausente com outro dono pedido: falha FECHADA (403), nada gravado", async () => {
+    h.papel = undefined;
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(res.status).toBe(403);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("atendente pede outro dono na PRÉVIA: a prévia segue (nada é gravado)", async () => {
+    h.papel = "agent";
+    const res = await POST(pedido({ dono_user_id: OUTRO, previa: "true" }) as never);
+    expect(res.status).toBe(200);
+    expect(h.from).not.toHaveBeenCalled();
+  });
+
+  it("gerente escolhe quem não é membro ativo: 422 dono_invalido e NENHUM lote criado", async () => {
+    h.membro = { data: null, error: null };
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    const corpo = (await res.json()) as { error: { code: string } };
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("dono_invalido");
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.processar).not.toHaveBeenCalled();
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("a conferência do dono usa o predicado da função do banco (aceito, não revogado, papel com carteira)", async () => {
+    bancoDoLote();
+    await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(h.filtrosDoMembro).toEqual(
+      expect.arrayContaining([
+        ["eq", "user_id", OUTRO],
+        ["is", "revoked_at", null],
+        ["not", "accepted_at", "is", null],
+        ["in", "role", ["agent", "manager", "admin"]],
+      ]),
+    );
+  });
+
+  it("erro ao conferir o dono: 500 e nada gravado (não segue como se estivesse tudo certo)", async () => {
+    h.membro = { data: null, error: { message: "boom" } };
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    expect(res.status).toBe(500);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+  });
+
+  it("dono = quem importa não precisa da conferência de membro", async () => {
+    bancoDoLote();
+    await POST(pedido({ dono_user_id: ATOR }) as never);
+    expect(h.filtrosDoMembro).toEqual([]);
+  });
+
+  it("atendente sendo dono dele mesmo passa", async () => {
+    h.papel = "agent";
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: ATOR }) as never);
+    expect(res.status).toBe(201);
+    expect(h.carteira).toHaveBeenCalledWith(expect.objectContaining({ admin: true }), expect.objectContaining({ donoId: ATOR }));
+  });
 });
+
+describe("POST /api/v1/imports: dono_user_id e token", () => {
+  it("dono_user_id que não é UUID recebe 422 e nenhum lote é criado", async () => {
+    bancoDoLote();
+    const res = await POST(pedido({ dono_user_id: "nao-e-uuid" }) as never);
+    expect(res.status).toBe(422);
+    expect(h.from).not.toHaveBeenCalledWith("import_batches");
+    expect(h.processar).not.toHaveBeenCalled();
+    expect(h.carteira).not.toHaveBeenCalled();
+  });
+
+  it("por token (sem pessoa) o lote grava, mas a carteira NÃO é definida, nem com dono_user_id no corpo", async () => {
+    h.ator = { type: "token", id: "tok-1" };
+    bancoDoLote();
+
+    const res = await POST(pedido({ dono_user_id: OUTRO }) as never);
+    const corpo = (await res.json()) as { data: { batch_id: string; carteira?: unknown } };
+
+    expect(res.status).toBe(201);
+    expect(corpo.data.batch_id).toBe("lote-1");
+    expect(corpo.data.carteira).toBeUndefined();
+    expect(h.carteira).not.toHaveBeenCalled();
+    // o ator da gravação segue nulo: o id do token não existe em auth.users
+    expect(h.processar.mock.calls[0]?.[1]).toMatchObject({ userId: null });
+  });
+});
+

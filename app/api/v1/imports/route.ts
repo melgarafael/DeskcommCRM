@@ -6,7 +6,9 @@ import { audit } from "@/lib/audit";
 import { processCompaniesPeopleImport } from "@/lib/crm-b2b/import-process";
 import { previaDaImportacao, totaisDaPrevia, type LinhaClassificada } from "@/lib/crm-b2b/import-previa";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
-import { importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
+import { definirCarteiraDoLote } from "@/lib/crm-b2b/import-carteira";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { donoDaImportacaoSchema, importColumnMappingSchema } from "@/lib/crm-b2b/schemas";
 import {
   IMPORT_MAX_BYTES,
   isCsvFilename,
@@ -31,7 +33,7 @@ export const dynamic = "force-dynamic";
  * POST /api/v1/imports — upload CSV/XLSX + processa companies/people/contacts.
  *
  * Sessão OU token de servidor `dsk_…` (Spec 33, R3): `mcp:read` no GET (piso
- * viewer) e `mcp:write` no POST (piso manager). A organização vem da sessão ou
+ * viewer) e `mcp:write` no POST (piso agent, A23 parte 2). A organização vem da sessão ou
  * da LINHA do token, nunca do corpo. Pelo token não há pessoa: as colunas de
  * autor (`created_by`, `created_by_user_id`) ficam nulas e o audit grava o id do
  * token em `actor_api_token_id`.
@@ -40,6 +42,16 @@ export const dynamic = "force-dynamic";
  * por veredito e as linhas que ficariam de fora, com o motivo e de quem é o que já
  * existe. Sem `previa`, o servidor classifica DE NOVO (a base pode ter mudado desde
  * a prévia) e grava só as linhas `nova`; as demais ficam no lote com o motivo.
+ *
+ * DONO DA CARTEIRA (A23 parte 2): `dono_user_id` escolhe quem recebe os contatos
+ * criados pelo lote (origem `importacao`); sem ele, quem importa. O Atendente só é
+ * dono dele mesmo (403 `fora_da_posse` antes de gravar qualquer coisa); gerente e
+ * admin escolhem qualquer membro ativo (422 `dono_invalido` se não for: convite pendente,
+ * revogado ou de outra organização). `dono_user_id` passa pelo Zod (UUID; 422 se
+ * não for). Por token não há pessoa: o ator da checagem NUNCA vem do `dono_user_id`
+ * do corpo, e sem pessoa por trás a carteira não é definida (o lote grava, os contatos
+ * ficam sem dono) — e, por isso, um `dono_user_id` enviado por token é validado como UUID e
+ * depois IGNORADO: a resposta é `201` sem o bloco `carteira`, sem erro.
  *
  * O importador histórico de contatos (`/api/v1/contacts/import`) permanece.
  */
@@ -83,7 +95,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "imports",
-    role: "manager",
+    role: "agent",
     scope: "mcp:write",
   });
   if (!authz.ok) return authz.response;
@@ -137,6 +149,57 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     const supabase = authz.supabase;
 
+    // A23 parte 2: o dono da carteira. Decidido ANTES de gravar qualquer coisa — o
+    // Atendente que pede outro dono recebe a recusa sem lote criado.
+    const donoBruto = form.get("dono_user_id");
+    let donoPedido: string | null = null;
+    if (typeof donoBruto === "string" && donoBruto.trim()) {
+      const dono = donoDaImportacaoSchema.safeParse(donoBruto);
+      if (!dono.success) {
+        return fail("validation_failed", "dono_user_id precisa ser um UUID.", 422, { requestId });
+      }
+      donoPedido = dono.data;
+    }
+    const donoId = donoPedido ?? autorId;
+    if (autorId && donoPedido && donoPedido !== autorId && form.get("previa") !== "true") {
+      // O papel vem de `authz.papelDaSessao` (`fn_user_role_in_org`, a MESMA função das
+      // policies): nada de segunda consulta que falha aberta, e a regra é POSITIVA —
+      // só gerente e admin escolhem outro dono; papel ausente ou outro cai em 403.
+      const papel = authz.papelDaSessao;
+      if (papel !== "manager" && papel !== "admin") {
+        return fail(
+          "fora_da_posse",
+          "O atendente só pode ser dono dos contatos que ele mesmo importa.",
+          403,
+          { requestId },
+        );
+      }
+      // O dono escolhido tem de ser membro ATIVO (convite aceito, não revogado, papel que
+      // pode ter carteira): o mesmo predicado da função do banco. Sem isto o lote inteiro
+      // gravava e cada contato era recusado depois, em silêncio. O cliente de serviço lê a
+      // tabela porque a RLS só mostra ao atendente o próprio vínculo.
+      const { data: membro, error: membroErr } = await createAdminClient()
+        .from("user_organizations")
+        .select("user_id")
+        .eq("organization_id", authz.organizationId)
+        .eq("user_id", donoPedido)
+        .is("revoked_at", null)
+        .not("accepted_at", "is", null)
+        .in("role", ["agent", "manager", "admin"])
+        .maybeSingle();
+      if (membroErr) {
+        return fail("internal_error", "Não foi possível conferir o dono escolhido.", 500, { requestId });
+      }
+      if (!membro) {
+        return fail(
+          "dono_invalido",
+          "O dono escolhido não é um membro ativo desta organização.",
+          422,
+          { requestId },
+        );
+      }
+    }
+
     // A23: a classificação vale para a prévia E para a gravação.
     const classificadas = await previaDaImportacao(supabase, {
       organizationId: authz.organizationId,
@@ -189,6 +252,19 @@ export async function POST(req: NextRequest): Promise<Response> {
       classificacao: new Map(classificadas.map((l) => [l.rowNumber, l])),
     });
 
+    // A23 parte 2: os contatos que o lote criou entram na carteira do dono. Só com
+    // PESSOA por trás (`autorId`): o ator é quem importa, nunca o dono pedido no corpo.
+    // Por token (sem pessoa) o lote grava e a carteira não é definida.
+    const carteira =
+      autorId && donoId && summary.successful_rows > 0
+        ? await definirCarteiraDoLote(createAdminClient(), {
+            organizationId: authz.organizationId,
+            batchId: batch.id,
+            atorId: autorId,
+            donoId,
+          })
+        : null;
+
     await audit({
       organizationId: authz.organizationId,
       actorUserId: autorId,
@@ -197,7 +273,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       resourceType: "import_batches",
       resourceId: batch.id,
       requestId,
-      metadata: summary as unknown as Record<string, unknown>,
+      metadata: { ...summary, ...(carteira ? { carteira_dono: donoId, carteira } : {}) } as unknown as Record<string, unknown>,
     });
 
     return ok(
@@ -205,6 +281,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         batch_id: batch.id,
         suggested_mapping: suggestColumnMapping(parsed.sheet.headers),
         headers: parsed.sheet.headers,
+        ...(carteira ? { carteira: { dono_user_id: donoId, ...carteira } } : {}),
         ...summary,
       },
       { requestId, status: 201 },

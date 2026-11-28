@@ -45,6 +45,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select("user_id, role")
     .eq("organization_id", orgId)
     .is("revoked_at", null)
+    // Convite ainda não aceito não é membro ativo: não recebe conversa, tarefa nem carteira.
+    // Mesma régua da função `fn_definir_carteira_do_cliente` e de `/team/[user_id]/interface`.
+    .not("accepted_at", "is", null)
     .neq("role", "viewer")
     .order("created_at", { ascending: true });
 
