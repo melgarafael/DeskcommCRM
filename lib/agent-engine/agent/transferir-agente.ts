@@ -67,6 +67,10 @@ import type pg from 'pg';
 import { z } from 'zod';
 
 import { logger } from '@/lib/logger';
+import {
+  trocaPedeAvisoAoCliente,
+  type DestinoDaTroca,
+} from '@/lib/escalacao/aviso-ao-lead';
 
 import { tool } from '../edge/llm/run-model-call';
 import { loadPublishedAgentConfigById } from './agent-config';
@@ -348,6 +352,43 @@ export async function transferirAgenteDaConversa(
 }
 
 /**
+ * O que a ferramenta manda o modelo fazer com o CLIENTE na passagem (#5328).
+ *
+ * A regra é a mesma de qualquer troca (`trocaPedeAvisoAoCliente`), e o destino
+ * sobe por PARÂMETRO: o `transfer_to_agent` só alcança membros do roteador —
+ * outro agente de IA —, então aqui a instrução é NÃO anunciar. Quem passa a
+ * conversa para uma PESSOA continua avisando (`aviso-ao-lead`,
+ * `textoDoAviso`): a frase não sai do catálogo, só deixa de ser pedida numa
+ * troca em que nada muda para o cliente.
+ */
+export function instrucaoDeAvisoDaPassagem(destino: DestinoDaTroca): string {
+  return trocaPedeAvisoAoCliente(destino)
+    ? 'Avise o cliente antes: ele vai passar a falar com uma pessoa da equipe.'
+    : 'NÃO anuncie a troca ao cliente: o destino é outro agente de IA deste mesmo número — ' +
+        'não diga que vai transferir e não prometa falar com uma pessoa; continue o atendimento.';
+}
+
+/** A descrição da ferramenta, com a instrução acima e os destinos válidos. */
+export function descricaoDaFerramentaDePassagem(
+  destinos: readonly { intentName: string; intentDescription: string }[],
+): string {
+  return (
+    'Passa esta conversa para outro agente de IA deste número. A partir da próxima mensagem do ' +
+    'cliente, quem responde é o agente escolhido. Use só quando o assunto é claramente de outro ' +
+    `agente da lista. ${instrucaoDeAvisoDaPassagem('agente_de_ia')} Agentes disponíveis:\n` +
+    destinos.map((m) => `- ${m.intentName}: ${m.intentDescription}`).join('\n')
+  );
+}
+
+/** O retorno da ferramenta — a última coisa que o modelo lê antes de encerrar. */
+export function mensagemDoResultadoDaPassagem(destino: string): string {
+  return (
+    `Conversa passada para o agente "${destino}", que responde a partir da próxima mensagem ` +
+    `do cliente. ${instrucaoDeAvisoDaPassagem('agente_de_ia')} Encerre o turno.`
+  );
+}
+
+/**
  * A ferramenta `transfer_to_agent` do agente em turno — o consumidor da ação
  * com motivo `pedido_do_agente`.
  *
@@ -380,11 +421,7 @@ export async function ferramentaDePassagemEntreAgentes(
   const porIntencao = new Map<string, RouterMember>(destinos.map((m) => [m.intentName, m]));
 
   return tool({
-    description:
-      'Passa esta conversa para outro agente de IA deste número. A partir da próxima mensagem do ' +
-      'cliente, quem responde é o agente escolhido. Use só quando o assunto é claramente de outro ' +
-      'agente da lista, e avise o cliente antes. Agentes disponíveis:\n' +
-      destinos.map((m) => `- ${m.intentName}: ${m.intentDescription}`).join('\n'),
+    description: descricaoDaFerramentaDePassagem(destinos),
     inputSchema: z.object({
       destino: z.enum([primeiro, ...demais]).describe('a intenção do agente que deve assumir a conversa'),
     }),
@@ -405,9 +442,7 @@ export async function ferramentaDePassagemEntreAgentes(
         return {
           ok: true,
           status: 'transferida',
-          message:
-            `Conversa passada para o agente "${destino}", que responde a partir da próxima mensagem ` +
-            'do cliente. Se ainda não avisou o cliente, avise agora e encerre o turno.',
+          message: mensagemDoResultadoDaPassagem(destino),
         };
       } catch (err) {
         if (err instanceof TransferenciaDeAgenteRecusada) {
