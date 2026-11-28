@@ -61,6 +61,14 @@ describe("política por canal HTTP",()=>{
   rpc.mockResolvedValueOnce({data:{mode:"restricted_empty",user_ids:[]},error:null}).mockResolvedValueOnce({data:null,error:{code:"22023"}});
   expect((await PATCH(req({channel_session_id:channel,user_ids:[],ai_wait_minutes:60}))).status).toBe(422);
  });
+ it("reset de gestor não mexe na espera: a resposta é a regra preservada pela RPC (#5381)",async()=>{
+  rpc.mockResolvedValue({data:{mode:"legacy_unconfigured",user_ids:[],distribution_mode:null,has_manager_rule:false,ai_wait_minutes:60},error:null});
+  const r=await PATCH(req({channel_session_id:channel,user_ids:[],reset:true,ai_wait_minutes:60}));
+  expect(r.status).toBe(200);
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith("fn_set_channel_routing",{p_org:org,p_channel:channel,p_users:[],p_reset:true,p_mode:null,p_default_assignee:null});
+  expect((await r.json()).data).toMatchObject({has_manager_rule:false,ai_wait_minutes:60});
+ });
  it("setor de entrada OMITIDO segue pela RPC de sempre e não consulta o módulo (#5374)",async()=>{
   expect((await PATCH(req())).status).toBe(200);
   expect(rpc.mock.calls.map((c)=>c[0])).toEqual(["fn_set_channel_routing"]);

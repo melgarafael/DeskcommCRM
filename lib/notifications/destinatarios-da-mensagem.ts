@@ -484,12 +484,14 @@ async function responsaveisDoCanal(
   if (!channelSessionId) return null;
   const policy = await (db
     .from("channel_routing_policies")
-    .select("id")
+    .select("id, has_manager_rule")
     .eq("organization_id", organizationId)
     .eq("channel_session_id", channelSessionId)
-    .maybeSingle() as Resultado<{ id: string }>);
+    .maybeSingle() as Resultado<{ id: string; has_manager_rule?: boolean }>);
   if (policy.error) throw new Error(policy.error.message);
-  if (!policy.data) return null;
+  // (#5381) Linha que sobrou do reset do gestor só guarda a regra de admin: não é
+  // lista de responsáveis, e a mensagem volta a avisar quem a organização escala.
+  if (!policy.data || policy.data.has_manager_rule === false) return null;
   const resp = await (db
     .from("channel_routing_responsibles")
     .select("user_id")

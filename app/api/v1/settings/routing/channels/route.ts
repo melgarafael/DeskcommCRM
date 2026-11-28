@@ -95,8 +95,10 @@ export async function PATCH(req: Request): Promise<Response> {
   // NÚMERO, desligada de fábrica. Gravada por RPC própria, DEPOIS da regra do
   // número (ela precisa existir), e só quando o corpo traz o campo — omitir
   // preserva o que valia, para a tela antiga não desligar ninguém por omissão.
-  // O reset já apagou a regra inteira, e a espera foi junto.
-  const ai_wait_minutes = parsed.data.reset ? null : parsed.data.ai_wait_minutes;
+  // (#5381) O reset NÃO mexe na espera: ela é de admin, e o reset de gestor a
+  // preserva no banco. Deixar de mandar o campo mantém a resposta fiel ao que
+  // ficou gravado — é o `data` da própria RPC que volta.
+  const ai_wait_minutes = parsed.data.reset ? undefined : parsed.data.ai_wait_minutes;
   if (!parsed.data.reset && ai_wait_minutes !== undefined) {
     const { error: esperaErr } = await db.rpc("fn_set_channel_ai_wait", {
       p_org: auth.org.orgId, p_channel: parsed.data.channel_session_id, p_minutes: ai_wait_minutes,
