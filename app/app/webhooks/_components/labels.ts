@@ -81,6 +81,13 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
   // atendeu — essa não é perdida, e não dispara este gatilho.
   "voice_call.missed": "Quando uma ligação recebida não for atendida",
+  // #4900 — o CASO da Central. A frase diz o FATO que o operador conhece ("um
+  // caso"), e não "escalação" nem "agent_case": quem monta a regra vê o caso na
+  // tela de atendimento. O desfecho (resolvido, cancelado, passado adiante) não
+  // entra na frase porque é CONDIÇÃO (`event.status`), e a mesma regra serve aos
+  // três se o operador não filtrar.
+  "ai.case_opened": "Quando a Central abrir um caso",
+  "ai.case_closed": "Quando a Central encerrar um caso",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

@@ -13,11 +13,19 @@ import { describe, expect, it } from "vitest";
 
 import { automationRulesHandler } from "./engine.handler";
 import { gatilhoDaTransicao } from "@/lib/agenda/laco";
-import { ENTIDADE_ESPERADA_POR_GATILHO, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import {
+  ENTIDADE_ESPERADA_POR_GATILHO,
+  EVENTOS_DOS_GATILHOS,
+  TRIGGER_EVENTS,
+} from "@/lib/schemas/webhooks";
 
 describe("gatilhos de automação", () => {
   it("o handler assina exatamente o que a tela deixa escolher", () => {
+    // O nome do gatilho É o nome do evento (#4900): a lista do handler e a do
+    // seletor voltaram a ser idênticas, e não só do mesmo tamanho. Um gatilho a
+    // mais aqui é evento sem regra; um a menos é regra que nunca roda.
     expect([...automationRulesHandler.events].sort()).toEqual([...TRIGGER_EVENTS].sort());
+    expect(EVENTOS_DOS_GATILHOS).toEqual([...TRIGGER_EVENTS]);
   });
 
   it("todo gatilho declara a entidade que o guard do motor espera", () => {
