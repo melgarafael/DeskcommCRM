@@ -16589,6 +16589,42 @@ export const DICIONARIO: Traducoes = {
     es: "Solo se muestra ahora, justo después de guardar. La contraseña no se guarda en texto plano, así que este bloque completo no se puede reconstruir después.",
   },
 
+  // ─── app/app/settings/pagamentos (gateway de pagamento por organização, #4058) ───
+  "Gateway de pagamento": { es: "Pasarela de pago" },
+  "Com qual provedor esta organização cobra o cliente dela. A chave é conferida no provedor antes de ser gravada, fica cifrada e nunca volta para a tela — só os quatro últimos caracteres, e apenas os da chave desta organização.":
+    {
+      es: "Con qué proveedor cobra esta organización a su cliente. La clave se verifica en el proveedor antes de guardarse, queda cifrada y nunca vuelve a la pantalla: solo los cuatro últimos caracteres, y únicamente los de la clave de esta organización.",
+    },
+  "Com qual provedor (Stripe ou Asaas) esta empresa cobra o cliente dela.": {
+    es: "Con qué proveedor (Stripe o Asaas) esta empresa cobra a su cliente.",
+  },
+  "Gateway em vigor": { es: "Pasarela vigente" },
+  "Consultando o gateway em vigor…": { es: "Consultando la pasarela vigente…" },
+  "Nenhum gateway ligado nesta organização. Sem ele, esta organização não cobra.": {
+    es: "Ninguna pasarela activa en esta organización. Sin ella, esta organización no cobra.",
+  },
+  "Configurado por esta organização.": { es: "Configurado por esta organización." },
+  "A configuração própria desta organização está desligada; enquanto isso, ela não cobra.": {
+    es: "La configuración propia de esta organización está desactivada; mientras tanto, no cobra.",
+  },
+  "Não foi possível ler a configuração do gateway agora. Recarregue a página.": {
+    es: "No fue posible leer la configuración de la pasarela ahora. Recarga la página.",
+  },
+  "Configuração desta organização": { es: "Configuración de esta organización" },
+  "Escolha o provedor": { es: "Elige el proveedor" },
+  "Chave do provedor": { es: "Clave del proveedor" },
+  Stripe: { es: "Stripe" },
+  "O modo (teste ou produção) vem da própria chave — não há campo para escolher. A chave desaparece desta tela assim que for salva.":
+    {
+      es: "El modo (prueba o producción) viene de la propia clave: no hay campo para elegirlo. La clave desaparece de esta pantalla en cuanto se guarda.",
+    },
+  "O gateway não foi salvo.": { es: "La pasarela no se guardó." },
+  "O gateway não foi desligado.": { es: "La pasarela no se desactivó." },
+  "Desligando...": { es: "Desactivando..." },
+  "Só administradores da organização alteram o gateway de pagamento.": {
+    es: "Solo los administradores de la organización cambian la pasarela de pago.",
+  },
+
   // ─── components/ai/AgentEditor.tsx (aba Voz do agente) ───
   Voz: { es: "Voz" },
   "Este agente fala pela Realtime API da OpenAI -- o modelo de voz se escolhe na aba Voz, não aqui.": {
