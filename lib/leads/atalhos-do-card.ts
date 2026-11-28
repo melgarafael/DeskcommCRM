@@ -460,28 +460,123 @@ export function montarHref(
 }
 
 /**
- * O que a tela desenha: só atalho válido E com TODOS os marcadores resolvidos.
+ * POR QUE um atalho configurado não abre.
  *
- * A lista vem do `settings` de um funil, que é jsonb — pode estar suja. Cada
- * item é julgado SOZINHO, de propósito: um atalho quebrado não derruba os
- * outros, e é o mesmo critério de `motivosComCategoriaDoFunil`.
+ * `endereco` = o modelo é recusado pela régua (esquema proibido, sem destino,
+ * marcador no domínio); `dado` = o modelo é bom, mas algum marcador está sem
+ * valor no negócio/contato.
+ *
+ * A distinção não é cosmética: são dois consertos diferentes. `endereco` se
+ * conserta em Configurações › Funis, por quem configura; `dado` se conserta no
+ * card, por quem atende — e é a diferença entre "o atalho está errado" e "falta
+ * preencher o cadastro".
+ */
+export type MotivoDaIndisponibilidade = "endereco" | "dado";
+
+/** Um atalho que NÃO abre — o botão fica, desabilitado, com o motivo. */
+export interface AtalhoIndisponivel {
+  rotulo: string;
+  icone: IconeDeAtalho;
+  motivo: MotivoDaIndisponibilidade;
+  /** Os marcadores do modelo que ficaram sem valor. Vazio quando `endereco`. */
+  faltando: string[];
+}
+
+/**
+ * O que a faixa desenha, na ORDEM gravada: link pronto ou botão explicado.
+ *
+ * Antes desta união a faixa só conhecia `AtalhoExibivel`, e o atalho sem dado
+ * simplesmente não existia na tela. A issue #3487 pede o contrário — "variável
+ * sem valor deixa o botão desabilitado, com a dica 'falta o campo X'" —, e o
+ * produto já tem essa régua em `AbrirConversaDoLead` ("desabilitado E
+ * explicado"): sumir faz o operador achar que o atalho nunca foi configurado.
+ * O que NÃO se faz continua igual: nenhum `<a href>` nasce sem todos os
+ * marcadores resolvidos.
+ */
+export type ItemDoAtalho =
+  | ({ disponivel: true } & AtalhoExibivel)
+  | ({ disponivel: false } & AtalhoIndisponivel);
+
+/**
+ * Os marcadores do modelo que o dado NÃO resolve, em minúsculas e na ordem do
+ * modelo. Lista vazia = todos resolvem (o que não quer dizer que o endereço
+ * passa na régua — isso é `modeloAceito`).
+ *
+ * Existe separada de `montarHref` para a faixa poder DIZER o que falta: o href
+ * `null` responde "não abre", não responde "falta o campo erp_id".
+ */
+export function marcadoresFaltantes(
+  modelo: string | null | undefined,
+  dados: DadosDoAtalho,
+  opcoes: OpcoesDoAtalho = {},
+): string[] {
+  return marcadoresDoModelo(modelo).filter(
+    (chave) => valorDoMarcador(chave, dados, opcoes) === null,
+  );
+}
+
+/**
+ * A faixa INTEIRA, com o motivo de cada atalho que não abre.
+ *
+ * Cada item é julgado SOZINHO, de propósito: um atalho quebrado não derruba os
+ * outros, e é o mesmo critério de `motivosComCategoriaDoFunil`. Item sem forma
+ * de atalho (`lerAtalho` devolve `null`) continua fora: rótulo vazio ou ícone
+ * inventado são jsonb sujo, não atalho que alguém configurou — e não há o que
+ * dizer na tela sobre um botão sem nome.
+ */
+export function itensDoAtalho(
+  atalhos: unknown,
+  dados: DadosDoAtalho,
+): ItemDoAtalho[] {
+  const lista = Array.isArray(atalhos) ? atalhos : [];
+  const saida: ItemDoAtalho[] = [];
+  for (const item of lista.slice(0, MAX_ATALHOS)) {
+    const atalho = lerAtalho(item);
+    if (!atalho) continue;
+    const opcoes = { discagem: atalho.discagem };
+    const href = montarHref(atalho.url, dados, opcoes);
+    if (href) {
+      saida.push({
+        disponivel: true,
+        rotulo: atalho.rotulo,
+        icone: atalho.icone,
+        href,
+        externo: !href.startsWith("tel:"),
+      });
+      continue;
+    }
+    // Endereço recusado não ganha "falta o campo": não há campo que conserte
+    // `javascript:` — quem conserta é quem configura o funil.
+    const endereco = modeloAceito(atalho.url);
+    saida.push({
+      disponivel: false,
+      rotulo: atalho.rotulo,
+      icone: atalho.icone,
+      motivo: endereco ? "dado" : "endereco",
+      faltando: endereco ? marcadoresFaltantes(atalho.url, dados, opcoes) : [],
+    });
+  }
+  return saida;
+}
+
+/**
+ * Só o que abre — o recorte que o código antigo consumia.
+ *
+ * Continua existindo porque é a resposta de "tem o que desenhar?" que outros
+ * pontos fazem sem querer explicar nada (a rota do resumo, por exemplo).
  */
 export function atalhosParaExibir(
   atalhos: unknown,
   dados: DadosDoAtalho,
 ): AtalhoExibivel[] {
-  const lista = Array.isArray(atalhos) ? atalhos : [];
   const saida: AtalhoExibivel[] = [];
-  for (const item of lista.slice(0, MAX_ATALHOS)) {
-    const atalho = lerAtalho(item);
-    if (!atalho) continue;
-    const href = montarHref(atalho.url, dados, { discagem: atalho.discagem });
-    if (!href) continue;
+  for (const item of itensDoAtalho(atalhos, dados)) {
+    if (!item.disponivel) continue;
     saida.push({
-      rotulo: atalho.rotulo,
-      icone: atalho.icone,
-      href,
-      externo: !href.startsWith("tel:"),
+      rotulo: item.rotulo,
+      icone: item.icone,
+      href: item.href,
+      externo: item.externo,
     });
   }
   return saida;
