@@ -99,6 +99,32 @@ export function motivoDoAviso(reason: string): MotivoDoAviso {
 }
 
 /**
+ * Quem recebe a conversa quando ela troca de mãos (#5328).
+ *
+ * A distinção é um PARÂMETRO, nunca uma leitura do texto: quem sabe o destino é
+ * quem está passando a conversa, e adivinhar por palavra ("pessoa", "time") é
+ * como o aviso de humano acabou saindo numa troca entre dois agentes de IA.
+ */
+export type DestinoDaTroca = "humano" | "agente_de_ia";
+
+/**
+ * A troca merece aviso ao cliente? SÓ quando ele passa a falar com uma PESSOA.
+ *
+ * Entre dois agentes de IA do mesmo número nada muda para o cliente: ele
+ * continua sendo atendido pelo mesmo WhatsApp, segundos depois. Anunciar
+ * "vou te passar para quem cuida desse assunto" ali promete uma transferência
+ * para gente que não vai acontecer — e o cliente descobre isso na pergunta
+ * seguinte do outro agente (#5328, medido em 26/11/2026).
+ *
+ * A frase de passagem para humano NÃO sai do catálogo por causa disto: ela
+ * continua em `textoDoAviso` e continua sendo enviada quando o destino é
+ * `humano`; o que muda é só a troca IA→IA deixar de pedir o anúncio.
+ */
+export function trocaPedeAvisoAoCliente(destino: DestinoDaTroca): boolean {
+  return destino === "humano";
+}
+
+/**
  * ═══ POR QUE HÁ VARIANTES, E POR QUE ELAS SÃO SORTEADAS PELO LEAD ═══
  *
  * Porque um texto FIXO se veta sozinho. O `spinningGate` da cadeia de envio
