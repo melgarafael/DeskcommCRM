@@ -48,6 +48,13 @@
  * `lead_notes` (#1957, Art. 18 II): o que a cascata apaga a pedido dele é o que
  * se entrega a pedido dele. A diferença nos dois arquivos é só a linha
  * `"lead_attachments": []`; o resto segue byte a byte.
+ *
+ * Sétima exceção, regravando `data-*.json` (#4058, cobrança avulsa do negócio):
+ * a seção `cobrancas_avulsas`. Vale a MESMA regra do Art. 18 II acima — a
+ * anonimização redige a `descricao` a pedido do titular, então o acesso entrega
+ * a linha (valor, moeda, vencimento, estado e vínculo ficam: registro
+ * financeiro). A diferença nos dois arquivos é só a linha
+ * `"cobrancas_avulsas": []`; o resto segue byte a byte.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
