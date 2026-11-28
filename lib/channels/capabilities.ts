@@ -277,6 +277,55 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     reportaConversao: false,
     marcaLidasPorMensagem: false,
   },
+  // Canal de chat da OLX (issue #2927, fatia 1). O que a documentação do
+  // vendedor mostra é um chat de TEXTO: sem mídia e sem definição aprovada, o
+  // que dá `requiresTemplates: false` e `canManageTemplates: false`.
+  //
+  // `freeformOutsideWindow: true` é a leitura da doc, não um default herdado: a
+  // OLX não publica janela de 24h para o chat, então não há relógio a respeitar
+  // — o mesmo perfil auto-restrito do canal por QR, sem o anti-ban (a OLX não
+  // documenta risco de banimento por volume). `banRisk: false` mantém as duas
+  // famílias de restrição mutuamente exclusivas, como a doutrina exige.
+  //
+  // `costPerMessage: false` e `groups: "none"` também vêm da doc: não há
+  // cobrança por mensagem nem grupos neste chat. E `voiceNote: "none"` é a
+  // MESMA leitura, não um default: o chat é de texto, o adapter não manda áudio
+  // e `server-convert` afirmaria que o canal fala. A matriz de voz
+  // (`voz-em-canal-sem-nota-de-voz`) exige que quem não entrega declare `none`,
+  // como o bot do Telegram.
+  olx: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    voiceNote: "none",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
+    // Só texto nos dois sentidos (resposta da OLX na #2927): não há reação, e
+    // não há envio em lista — o chat só existe na thread que o comprador abriu.
+    podeReagir: false,
+    transmissao: false,
+    // O chat da OLX não publica Status e não fala com aparelho pareado: o campo
+    // que a main acrescentou ao tipo entra aqui como `false`, a mesma leitura
+    // do canal oficial, em vez de ficar com o valor implícito.
+    statusUpdates: false,
+    // E não devolve venda a plataforma de anuncio nenhuma: o chat da OLX nao
+    // tem a ponte de conversoes da Meta, e o adapter nao implementa
+    // `reportConversion` (a matriz e o adapter sao conferidos um contra o outro).
+    reportaConversao: false,
+    // O visto azul por id de mensagem (#5015) NÃO existe neste canal: a API
+    // pública do chat (`developers.olx.com.br/chat`) publica o webhook de
+    // entrada e o `POST /autoservice/v1/chat/send`, e nenhum endpoint de
+    // leitura/recibo — o adapter (`lib/channels/adapters/olx.ts`) só traduz e
+    // envia. `true` faria o envio caçar histórico por ids de leitura que a OLX
+    // nunca manda: trabalho jogado fora no caminho da resposta.
+    marcaLidasPorMensagem: false,
+  },
 };
 
 /**
@@ -308,6 +357,8 @@ export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Chat da OLX (issue #2927) — canal de mensagem por thread própria, só texto. */
+export const CHANNEL_PROVIDER_OLX: ChannelProvider = "olx";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 /** Bot do Telegram (Bot API, #3440) — canal de mensagem sem telefone. */
@@ -380,6 +431,10 @@ export const PROVIDERS_DE_MENSAGEM = [
   // fala com quem o iniciou. `PROVIDERS_DE_TELEFONE` fica de fora de propósito,
   // e o motivo está lá embaixo.
   "telegram",
+  // Chat do vendedor da OLX (#2927): sem definição aprovada e sem janela de 24 h.
+  // Também fora de `PROVIDERS_DE_TELEFONE`: endereça por thread/conta, não por
+  // telefone. Ver `PROVIDERS_SEM_CAMPANHA` — livre na conversa, sem campanha.
+  "olx",
   // Chat no site (Spec 36): texto livre na conversa aberta pelo visitante. Sem
   // telefone, pela mesma razão do Telegram.
   "webchat",
@@ -500,10 +555,15 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * não num `false` falso na capability de janela: mentir na janela mudaria o
  * que o atendimento pode fazer só para esconder a campanha.
  *
+ * O chat da OLX (#2927) entra pelo mesmo motivo, com uma volta a mais: ele só
+ * existe dentro da thread que o comprador abriu num anúncio, então não há para
+ * quem iniciar contato em lista. Texto livre fora da janela é verdade para a
+ * resposta, não para a campanha.
+ *
  * O chat no site (Spec 36) pelo mesmo motivo: só responde a quem está na página
  * e abriu a conversa; não há a quem disparar em massa.
  */
-const PROVIDERS_SEM_CAMPANHA = ["telegram", "webchat"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS_SEM_CAMPANHA = ["telegram", "olx", "webchat"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).

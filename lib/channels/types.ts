@@ -31,6 +31,12 @@ export type ChannelProvider =
    */
   | "telegram"
   /**
+   * Chat do vendedor da OLX (#2927). Também entra com o TIPO: a OLX endereça por
+   * thread/conta de vendedor (`olx_seller_id`), não por telefone nem por
+   * `chat_id`. Canal opcional da instalação — nasce desligado.
+   */
+  | "olx"
+  /**
    * Chat no site (Spec 36): o widget que o visitante abre no próprio site da
    * empresa. Sem telefone e sem rede por trás — o endereço é o `visitante_id` da
    * conversa. Ver `./adapters/webchat.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.

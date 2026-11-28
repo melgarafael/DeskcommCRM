@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { CANAIS_DE_CONVERSA } from "@/lib/channels/canais-de-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { SOCIAL_NETWORKS } from "@/lib/channels/social/catalog";
 import { parseDialablePhone } from "@/lib/messaging/contact-card";
 
 /**
@@ -26,15 +26,28 @@ export const AI_TEST_PHONE_NUMBERS_KEY = "ai_test_phone_numbers" as const;
 export const AI_TEST_SOCIAL_IDENTITIES_KEY = "ai_test_social_identities" as const;
 
 /**
- * As redes cuja identidade pode ser testadora: as de `CANAIS_DE_CONVERSA` que
- * entram pelo intermediário social. `whatsapp` tem a lista de telefones, e o
- * `telegram` (bot nativo) grava outra forma de identidade — a do robô, não a
- * de uma conta de 24 dígitos hexadecimais. O `webchat` (Spec 36) grava a
- * identidade do visitante do site, e fica de fora pelo mesmo motivo.
+ * As redes cuja identidade pode ser testadora: as redes de ATENDIMENTO no
+ * intermediário social — as que o catálogo declara com `inbox`, e cuja
+ * ingestão é a única que grava `contacts.social_identity` na forma
+ * `<rede>:<conta conectada>:<participante>`.
+ *
+ * A lista é DERIVADA do catálogo, nunca uma exclusão sobre o vocabulário de
+ * canais de conversa. A diferença é o defeito que a exclusão tinha: um canal de
+ * conversa entra naquele vocabulário por outros motivos (transporte próprio,
+ * endereço por telefone ou por thread) e passava a ser "rede social testadora"
+ * só porque o vocabulário cresceu. A pergunta aqui é sobre a FORMA da
+ * identidade — quem responde é quem declara a ingestão, não quem lista canais
+ * (doutrina `restricao-de-canal`, invariante 1: a feature pede a capacidade e
+ * não o nome do transporte).
+ *
+ * Por construção ficam de fora o `whatsapp` (lista de telefones), o bot do
+ * `telegram` (identidade do robô) e o `webchat` (Spec 36, sem rede social por
+ * trás): nenhum deles é rede do catálogo com `inbox`, então não há nome de
+ * provider a excluir à mão aqui.
  */
-export const REDES_COM_TESTADOR_SOCIAL: readonly string[] = CANAIS_DE_CONVERSA.filter(
-  (canal) => canal !== "whatsapp" && canal !== "telegram" && canal !== "webchat",
-);
+export const REDES_COM_TESTADOR_SOCIAL: readonly string[] = SOCIAL_NETWORKS.filter(
+  (rede) => rede.inbox,
+).map((rede) => rede.id);
 
 /** Teto da lista por canal — é lista de teste, não de público. O mesmo teto vive na RPC. */
 export const MAX_TESTADORES_SOCIAIS = 50;

@@ -65,6 +65,20 @@ const DIR_MIGRATIONS = path.join(process.cwd(), "supabase", "migrations");
  * dado existente faz o `update.sh` de um clone quebrar no meio.
  */
 const REMOCOES_DELIBERADAS: Record<string, { valores: string[]; porque: string }> = {
+  "20261124190725_9471_canal_chat_no_site.sql::conversations_channel_check": {
+    valores: ["olx"],
+    porque:
+      "NÃO é remoção de propósito: é o ENCONTRO de duas branches represadas, " +
+      "mecanicamente igual à 0312 acima. A 9471 (chat no site, Spec 36) reconstruiu " +
+      "`conversations_channel_check` a partir do estado que a `main` enxergava, sem o " +
+      "`olx` que a 9422 (#2927) acrescentou no ramo do canal da OLX. Na `main` sozinha " +
+      "a 9471 não remove nada; o buraco só existe na árvore em que as duas se " +
+      "encontram. A forward-fix é a 9513 " +
+      "(`canal_olx_e_chat_no_site_no_vocabulario`), que reafirma a UNIÃO medida: os " +
+      "seis canais, com `olx` e `webchat`. O estado FINAL da cadeia tem o valor de " +
+      "volta, então nenhum clone fica sem ele — e editar a 9471 é proibido, porque já " +
+      "foi aplicada. Coberto pelo teste de banco do vocabulário de canal das conversas.",
+  },
   "20260918231000_0312_aviso_de_followup_sem_agente.sql::agent_inbox_items_kind_check": {
     valores: ["aviso_de_caso_nao_entregue"],
     porque:
