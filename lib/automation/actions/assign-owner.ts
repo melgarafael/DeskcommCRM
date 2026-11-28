@@ -206,6 +206,9 @@ async function passarACarteira(ctx: ActionCtx, contatoId: string, userId: string
  * Conversa SEM dono fica onde está: é fila ou IA atendendo, e `transfer`
  * silencia o bot. (Com `contato` ligado, a carteira já levou as sem dono que a
  * IA não atende — #3642.)
+ *
+ * A ÚNICA exceção é a que o handoff deixou sem dono (#5328) — ver
+ * `passarAsConversasQueOHandoffDeixouSemDono`.
  */
 async function passarAsConversas(
   ctx: ActionCtx,
@@ -218,7 +221,77 @@ async function passarAsConversas(
     p_dono: userId,
   });
   if (error) return { erro: error.message };
-  return { movidas: typeof data === "number" ? data : 0 };
+  const movidasPelaFuncao = typeof data === "number" ? data : 0;
+
+  const doHandoff = await passarAsConversasQueOHandoffDeixouSemDono(ctx, contatoId, userId);
+  if ("erro" in doHandoff) return doHandoff;
+  return { movidas: movidasPelaFuncao + doHandoff.movidas };
+}
+
+/** Os status que a passagem considera conversa viva — a MESMA lista da função do banco. */
+const STATUS_DE_CONVERSA_ABERTA = ["open", "pending", "claimed", "ai_handling"] as const;
+
+/**
+ * #5328 — a conversa que o `request_human_handoff` deixou SEM DONO.
+ *
+ * A função do banco (acima) só move conversa que está com OUTRA pessoa. Quando o
+ * handoff cai no mesmo minuto que esta regra, `assign_owner` roda primeiro (a
+ * conversa ainda é da IA, sem dono), o handoff a devolve para a fila humana — e
+ * ela fica aberta, sem dono, na Fila, às vezes por horas: nenhuma das duas
+ * execuções a atribui, porque quando a regra rodou ainda não havia handoff e
+ * quando o handoff rodou a regra já tinha passado.
+ *
+ * O que separa "sem dono que veio de handoff" de "sem dono em fila comum" são
+ * dois fatos que a linha JÁ tem, sem coluna nova:
+ *
+ *   · `last_handoff_at` preenchido — houve handoff, e ele não foi desfeito (a
+ *     retomada pela IA zera a marca, `lib/escalacao/retomada.ts`);
+ *   · `active_ai_agent_id` nulo — a IA não está atendendo esta conversa agora
+ *     (o handoff também zera esse campo). Com a IA no comando, a conversa é
+ *     dela, e tirá-la seria o mesmo roubo que a passagem evita.
+ *
+ * Quem tem dono não entra (a primeira passagem já cuidou), e conversa que nunca
+ * passou por handoff continua na fila — é o caso que a regra NÃO pode capturar:
+ * fila comum não é sobra de handoff.
+ *
+ * A escrita vai pela MESMA porta da transferência (`fn_conversation_assign`,
+ * `reason = 'transfer'`, sem negócio de outro dono), com CAS em "ainda sem
+ * dono": se alguém assumiu no meio do caminho, a função não devolve linha e a
+ * conversa não é roubada. A contagem é a das linhas que a atribuição gravou,
+ * como na função do banco.
+ */
+async function passarAsConversasQueOHandoffDeixouSemDono(
+  ctx: ActionCtx,
+  contatoId: string,
+  userId: string,
+): Promise<{ movidas: number } | { erro: string }> {
+  const { data, error } = await ctx.admin
+    .from("conversations")
+    .select("id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("contact_id", contatoId)
+    .in("status", [...STATUS_DE_CONVERSA_ABERTA])
+    .is("assigned_to_user_id", null)
+    .not("last_handoff_at", "is", null)
+    .is("active_ai_agent_id", null);
+  if (error) return { erro: error.message };
+
+  let movidas = 0;
+  for (const conversa of (data ?? []) as Array<{ id: string }>) {
+    const { data: gravadas, error: erroDaAtribuicao } = await ctx.admin.rpc("fn_conversation_assign", {
+      p_organization_id: ctx.organizationId,
+      p_conversation_id: conversa.id,
+      p_to_user_id: userId,
+      p_reason: "transfer",
+      p_expected_assignee: null,
+      p_enforce_expected: true,
+      p_negocio_so_sem_dono: true,
+    });
+    if (erroDaAtribuicao) return { erro: erroDaAtribuicao.message };
+    const linhas = Array.isArray(gravadas) ? gravadas : gravadas ? [gravadas] : [];
+    movidas += linhas.length;
+  }
+  return { movidas };
 }
 
 /**
