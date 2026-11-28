@@ -27,10 +27,7 @@ import {
   seedGov,
 } from "./gov-helpers";
 
-const pool = new Pool({
-  connectionString: `postgresql://postgres:***@127.0.0.1:${process.env.TEST_DB_PORT}/postgres`,
-  max: 5,
-});
+const pool = new Pool({ connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT}/postgres`, max: 5 });
 const query = (text: string, args: unknown[] = []) => pool.query(text, args);
 
 async function asUser(user: string, text: string, args: unknown[] = [], aal = "aal1") {
@@ -84,6 +81,8 @@ afterAll(() => pool.end());
 beforeEach(async () => {
   await query("delete from channel_routing_responsibles where organization_id=$1", [org]);
   await query("delete from channel_routing_policies where organization_id=$1", [org]);
+  // A fila do caso é criada por teste; nome único por organização no schema.
+  await query("delete from attendant_sectors where organization_id=$1", [org]);
   await query("update conversations set assigned_to_user_id=null,assignee_kind=null,status='open' where organization_id=$1", [org]);
   await query(
     "insert into attendant_availability(organization_id,user_id,is_available,capacity,schedule) values($1,$2,true,1,'{}') on conflict(organization_id,user_id) do update set is_available=true,capacity=1,schedule='{}'",
