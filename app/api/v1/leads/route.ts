@@ -7,7 +7,9 @@ import { traduzir } from "@/lib/i18n/dicionario";
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
+import { chaveDaRequisicao, comIdempotencia, type DesfechoIdempotente } from "@/lib/api/idempotency";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
@@ -25,6 +27,15 @@ import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createLeadHandler } from "./_handler";
 
 export const dynamic = "force-dynamic";
+
+/** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
+const ENDPOINT = "/api/v1/leads";
+
+/** O que o efeito devolve: o lead criado e o aviso do #1751, se houver. */
+type CriacaoDeLead = {
+  lead: Awaited<ReturnType<typeof createLeadHandler>>;
+  negocioExistente: Awaited<ReturnType<typeof negocioAbertoExistente>>;
+};
 
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -143,25 +154,42 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = authz.supabase;
 
-  // ─── AVISO DE NEGÓCIO ABERTO DUPLICADO (issue #1751) ───────────────────────
+  // ─── IDEMPOTÊNCIA DO POST (issue #5338) ────────────────────────────────────
   //
-  // Antes do INSERT, porque o aviso descreve o mundo em que a pessoa pediu a
-  // criação — consultado depois, o negócio NOVO entraria na própria contagem.
+  // O `apiClient` carimba `Idempotency-Key` em todo POST (`lib/api/client.ts`),
+  // então uma retentativa de rede ou um duplo clique chegam aqui com a MESMA
+  // chave. Até aqui esta rota não lia o cabeçalho e o INSERT era incondicional:
+  // as duas requisições criavam negócio, e o "Novo Lead" virava dois cartões
+  // para o mesmo contato no mesmo funil.
   //
-  // A consulta nunca recusa: a migration 0256 decidiu que um cliente PODE ter
-  // dois negócios abertos, então o segundo nasce e a resposta traz
-  // `meta.avisos: ["negocio_aberto_existente"]` com o negócio que já existe,
-  // para a tela mostrar o aviso com link. Sem contato não há o que perguntar —
-  // lead órfão é caminho legítimo (#852).
-  const negocioExistente = input.contact_id
-    ? await negocioAbertoExistente(supabase, {
-        organizationId,
-        contactId: input.contact_id,
-        pipelineId: input.pipeline_id,
-      })
-    : null;
+  // O caminho é o do resto do repositório (`lib/api/idempotency.ts`): a chave é
+  // por ORGANIZAÇÃO + endpoint (`ENDPOINT`), reservada ANTES do efeito, e a
+  // repetição devolve o recibo do primeiro request — o MESMO lead, com o mesmo
+  // `meta`. Sem chave, o caminho é o de sempre: uma chave só existe quando quem
+  // chama quer retentativa segura, e é isso que mantém todo chamador atual de
+  // pé. Chave, quando vem, é UUID, como nas outras rotas de escrita.
+  const chave = chaveDaRequisicao(req);
+  if (chave !== null && !z.string().uuid().safeParse(chave).success) {
+    return fail("validation_error", "Idempotency-Key deve ser UUID.", 400, { requestId });
+  }
 
-  try {
+  // ─── O EFEITO: aviso de negócio aberto + criação ───────────────────────────
+  //
+  // O aviso (#1751) mora DENTRO do efeito de propósito: ele descreve o mundo em
+  // que a pessoa pediu a criação. Lido no replay, o negócio NOVO — criado pela
+  // primeira requisição — entraria na própria contagem; e lido fora do efeito,
+  // a resposta repetida perderia o `meta` que a primeira devolveu. A consulta
+  // nunca recusa: a migration 0256 decidiu que um cliente PODE ter dois
+  // negócios abertos, então o segundo nasce e a resposta avisa.
+  const criar = async (): Promise<CriacaoDeLead> => {
+    const negocioExistente = input.contact_id
+      ? await negocioAbertoExistente(supabase, {
+          organizationId,
+          contactId: input.contact_id,
+          pipelineId: input.pipeline_id,
+        })
+      : null;
+
     const lead = await createLeadHandler(
       supabase,
       {
@@ -172,6 +200,47 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       input as CreateLeadInput,
     );
+    return { lead, negocioExistente };
+  };
+
+  try {
+    const desfecho: DesfechoIdempotente<CriacaoDeLead> =
+      chave === null
+        ? { tipo: "executou", resposta: await criar(), status: 201 }
+        : await comIdempotencia({
+            db: supabase,
+            organizationId,
+            endpoint: ENDPOINT,
+            chave,
+            // O corpo VALIDADO define a identidade da operação: mesmo pedido +
+            // mesma chave = replay; mesma chave com corpo diferente = 409.
+            corpo: input,
+            executar: async () => ({ resposta: await criar(), status: 201 }),
+          });
+
+    if (desfecho.tipo === "conflito")
+      return fail(
+        "idempotency_conflict",
+        t("Esta chave de idempotência já foi usada com outro conteúdo."),
+        409,
+        { requestId },
+      );
+
+    // Mesma chave, MESMO corpo, e a primeira execução ainda está em curso: a
+    // chave está reservada (migration 0321) e a resposta ainda não existe — não
+    // há o que devolver, e reexecutar duplicaria a criação. Código próprio e
+    // não `idempotency_conflict`: aqui a chave está CERTA, retentar resolve.
+    if (desfecho.tipo === "em_curso")
+      return fail(
+        "idempotency_in_progress",
+        t("A mesma requisição ainda está em curso. Tente de novo em instantes."),
+        409,
+        { requestId },
+      );
+
+    // 201 também no replay: é o status que o recibo guarda (a criação termina
+    // sempre em 201), então é ele que a repetição devolve.
+    const { lead, negocioExistente } = desfecho.resposta;
     return ok(lead, {
       requestId,
       status: 201,
