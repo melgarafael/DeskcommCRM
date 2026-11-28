@@ -42,6 +42,12 @@ import { defsDoPadraoDoFunil } from "@/lib/leads/padrao-do-campo";
 export const MENSAGEM_DE_FORA_DA_LISTA =
   "O valor não é uma das opções cadastradas neste campo.";
 
+/** A frase que diz o TIPO do que veio no lugar do texto (#5328). */
+export const TEXTO_DO_TIPO_RECEBIDO = {
+  numero: "O valor veio como número; as opções deste campo são texto.",
+  booleano: "O valor veio como booleano; as opções deste campo são texto.",
+} as const;
+
 /** 422: o valor não é nenhuma das opções do campo de seleção do funil. */
 export function erroForaDaLista(
   recusas: readonly RecusaDeOpcao[],
@@ -54,12 +60,18 @@ export function erroForaDaLista(
   // isto o modelo leria "o valor não é uma opção" sem saber de que campo.
   const primeira = recusas[0];
   const onde = primeira ? ` Campo "${primeira.campo}", valor "${primeira.valor}".` : "";
+  // #5328 — número/booleano recusado não é "valor esquisito": é o TIPO errado
+  // para uma lista de texto. Dizer isso evita o turno que mostra `4` (que está
+  // na lista) e conclui que a opção não existe.
+  const tipo = primeira?.tipoRecebido
+    ? ` ${traduzir(TEXTO_DO_TIPO_RECEBIDO[primeira.tipoRecebido], idioma)}`
+    : "";
   return new ApiError(
     422,
     "custom_field_value_not_in_list",
     { recusas },
     requestId,
-    `${traduzir(MENSAGEM_DE_FORA_DA_LISTA, idioma)}${onde}`,
+    `${traduzir(MENSAGEM_DE_FORA_DA_LISTA, idioma)}${onde}${tipo}`,
   );
 }
 
