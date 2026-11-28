@@ -1,0 +1,93 @@
+{
+  "id": "1234567890123456789",
+  "creation_date": 12345678,
+  "event": "PURCHASE_APPROVED",
+  "version": "2.0.0",
+  "data": {
+    "product": {
+      "id": 213344,
+      "ucode": "2e9c43a9-0aeb-48ed-9464-630f845c23af",
+      "name": "Curso de Exemplo",
+      "has_co_production": false,
+      "warranty_date": "2026-12-27T00:00:00Z",
+      "support_email": "suporte@exemplo.com.br",
+      "is_physical_product": false,
+      "sku": "PROD-SKU-001",
+      "external_id": "EXTERNAL_PROD_001"
+    },
+    "affiliates": [
+      {
+        "affiliate_code": "Q00000000J",
+        "name": "Afiliado de Exemplo"
+      }
+    ],
+    "buyer": {
+      "ucode": "f6ebb124-863f-4a94-a843-5c57c0b1b607",
+      "email": "comprador.teste@exemplo.com.br",
+      "name": "Comprador De Teste",
+      "first_name": "Comprador",
+      "last_name": "De Teste",
+      "checkout_phone": "999999999",
+      "checkout_phone_code": "31",
+      "address": {
+        "zipcode": "30150101",
+        "country": "Brasil",
+        "number": "499",
+        "address": "Avenida de Exemplo",
+        "city": "Belo Horizonte",
+        "state": "MG",
+        "neighborhood": "Floresta",
+        "complement": "sem complemento",
+        "country_iso": "BR"
+      }
+    },
+    "producer": {
+      "name": "Produtor de Exemplo",
+      "legal_nature": "Pessoa Física"
+    },
+    "commissions": [
+      {
+        "value": 0.65,
+        "currency_value": "BRL",
+        "source": "MARKETPLACE"
+      }
+    ],
+    "purchase": {
+      "approved_date": 1231241434453,
+      "full_price": {
+        "value": 134.0,
+        "currency_value": "BRL"
+      },
+      "original_offer_price": {
+        "currency_value": "BRL",
+        "value": 150.6
+      },
+      "price": {
+        "value": 150.6,
+        "currency_value": "BRL"
+      },
+      "offer": {
+        "code": "n82b9jqz",
+        "coupon_code": "EXEMPLO",
+        "name": "Oferta de Exemplo",
+        "description": "Oferta de exemplo do fixture"
+      },
+      "recurrence_number": 1,
+      "subscription_anticipation_purchase": false,
+      "checkout_country": {
+        "name": "Brasil",
+        "iso": "BR"
+      },
+      "origin": {
+        "xcod": "xcod_exemplo"
+      },
+      "order_date": "123243546",
+      "status": "APPROVED",
+      "transaction": "HP00000000000001",
+      "payment": {
+        "installments_number": 2,
+        "type": "CREDIT_CARD"
+      }
+    }
+  }
+}
