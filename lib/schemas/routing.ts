@@ -404,6 +404,7 @@ export const ESPERA_PELA_IA_MIN_MINUTOS = 15;
 export const ESPERA_PELA_IA_MAX_MINUTOS = 10_080;
 
 export const channelRoutingPatchSchema = z.object({
+  sector_id: z.string().uuid().nullable().optional(),
   channel_session_id: z.string().uuid(),
   user_ids: z.array(z.string().uuid()).max(1000),
   reset: z.boolean().default(false),

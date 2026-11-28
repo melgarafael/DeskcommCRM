@@ -9,7 +9,7 @@ import { ESPERA_PELA_IA_MAX_MINUTOS, ESPERA_PELA_IA_MIN_MINUTOS, ROUTING_MODES, 
 import type { ChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { MODO_COPY } from "./_form";
 
-export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSettings }) {
+export function ChannelRoutingForm({ initial, setores }: { initial: ChannelRoutingSettings; setores?: { id: string; name: string }[] }) {
   const t = useT(); const router = useRouter();
   const [channels, setChannels] = useState(initial.channels);
   const [busy, setBusy] = useState<string | null>(null);
@@ -26,12 +26,14 @@ export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSetting
           distribution_mode: alvo?.distribution_mode ?? null,
           default_assignee_user_id: alvo?.default_assignee_user_id ?? null,
           // #3966: `undefined` some do JSON e a rota preserva o que valia.
-          ai_wait_minutes: alvo?.ai_wait_minutes }) });
+          ai_wait_minutes: alvo?.ai_wait_minutes,
+          sector_id: setores ? alvo?.sector_id ?? null : undefined }) });
       const result = await response.json();
       if (!response.ok) { setFeedback(t(result.error?.message ?? "Não foi possível salvar. Tente novamente.")); return; }
       setChannels((current) => current.map((c) => c.id === id ? { ...c, mode: result.data.mode, user_ids: result.data.user_ids,
         distribution_mode: result.data.distribution_mode ?? null,
         default_assignee_user_id: result.data.default_assignee_user_id ?? null,
+        sector_id: reset ? null : result.data.sector_id === undefined ? c.sector_id : result.data.sector_id,
         ai_wait_minutes: result.data.ai_wait_minutes === undefined ? c.ai_wait_minutes : result.data.ai_wait_minutes } : c));
       setFeedback(t("Responsáveis salvos.")); router.refresh();
     } catch { setFeedback(t("Não foi possível salvar. Tente novamente.")); } finally { setBusy(null); }
@@ -53,6 +55,18 @@ export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSetting
     {channels.map((channel) => <fieldset key={channel.id} className="rounded-lg border p-4 space-y-3" disabled={busy !== null}>
       <legend className="px-2 font-medium">{t(nomeDoCanal(channel))}</legend>
       <p className="text-sm" data-testid="channel-routing-state">{t(channel.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : channel.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
+      {setores && <div className="space-y-1">
+        <label className="block text-sm font-medium" htmlFor={`setor-${channel.id}`}>{t("Setor de entrada")}</label>
+        <select id={`setor-${channel.id}`} className="w-full rounded-md border bg-background p-2 text-sm"
+          value={channel.sector_id ?? ""}
+          onChange={(e) => {
+            const sectorId = e.target.value || null;
+            setChannels((current) => current.map((c) => c.id === channel.id ? { ...c, sector_id: sectorId } : c));
+          }}>
+          <option value="">{t("Sem setor de entrada")}</option>
+          {setores.map((setor) => <option key={setor.id} value={setor.id}>{setor.name}</option>)}
+        </select>
+      </div>}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="block text-sm font-medium" htmlFor={`modo-${channel.id}`}>{t("Como este número distribui")}</label>
