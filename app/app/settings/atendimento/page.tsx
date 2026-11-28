@@ -97,7 +97,10 @@ export default async function AtendimentoSettingsPage() {
   const satisfacao = lerOpcaoDaSatisfacao(data?.settings);
   const admin = createAdminClient();
   const setoresLigado = await moduloLigado(admin, "setores");
-  const setores = setoresLigado
+  // Fila de entrada do número (ADR-0008): o seletor só existe com o módulo
+  // ligado e para quem pode defini-la (admin). Sem ele, a tela não manda o
+  // campo e a rota preserva a fila que já estava gravada.
+  const setores = setoresLigado && podeAdministrarEmpresa(user, activeOrg)
     ? await supabase.from("attendant_sectors").select("id, name").eq("organization_id", activeOrg.orgId).order("name")
     : null;
   let resumoDaPesquisa: ResumoDaSatisfacao | null = null;

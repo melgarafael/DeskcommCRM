@@ -5243,6 +5243,7 @@ export type Database = {
           distribution_mode: string | null;
           id: string;
           organization_id: string;
+          sector_id: string | null;
           updated_at: string;
         };
         ComputedFields: never;
@@ -5254,6 +5255,7 @@ export type Database = {
           distribution_mode?: string | null;
           id?: string;
           organization_id: string;
+          sector_id?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -5264,6 +5266,7 @@ export type Database = {
           distribution_mode?: string | null;
           id?: string;
           organization_id?: string;
+          sector_id?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -5287,6 +5290,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "organizations";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "channel_routing_policies_sector_fkey";
+            columns: ["organization_id", "sector_id"];
+            isOneToOne: false;
+            referencedRelation: "attendant_sectors";
+            referencedColumns: ["organization_id", "id"];
           },
         ];
       };
@@ -17177,6 +17187,17 @@ export type Database = {
           p_mode?: string;
           p_org: string;
           p_reset?: boolean;
+          p_users: string[];
+        };
+        Returns: Json;
+      };
+      fn_set_channel_routing_with_sector: {
+        Args: {
+          p_channel: string;
+          p_default_assignee: string | null;
+          p_mode: string | null;
+          p_org: string;
+          p_sector: string | null;
           p_users: string[];
         };
         Returns: Json;
