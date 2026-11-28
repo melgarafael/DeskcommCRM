@@ -62,6 +62,9 @@ describe("lista do Inbox — etiqueta comprida numa linha só (#5364)", () => {
     // O texto não pode voltar a quebrar por uma classe de quebra explícita.
     expect(el.className).not.toContain("whitespace-normal");
     expect(el.className).not.toContain("break-words");
+    // Container flex não desenha reticências: o chip tem de ser de bloco.
+    expect(el.className).toContain("inline-block");
+    expect(el.className).not.toMatch(/\binline-flex\b/);
   });
 
   it("a altura da linha não muda: o chip continua `h-4`", () => {
