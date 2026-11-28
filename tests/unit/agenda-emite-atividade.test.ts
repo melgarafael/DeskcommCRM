@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
+
 import { ALVO_DE_VINCULO_DO_AGENDAMENTO, VINCULO_DE_AGENDAMENTO } from "@/lib/agenda/tipos";
 import type { ResultadoDaConsulta } from "@/lib/agenda/consulta";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -116,6 +118,7 @@ interface Banco {
   criado: Linha | null;
   erroAoGravar: Record<string, string>;
   inserido: Record<string, Linha[]>;
+  upserts?: Array<{ tabela: string; linha: Linha; opcoes?: { onConflict?: string; ignoreDuplicates?: boolean } }>;
   rpc: Array<{ fn: string; args: Linha }>;
 }
 
@@ -187,6 +190,19 @@ function cliente(): SupabaseClient {
     from: (tabela: string) => ({
       select: () => leitura(tabela),
       insert: (linha: Linha) => {
+        const erro = banco.erroAoGravar[tabela];
+        if (!erro) (banco.inserido[tabela] ??= []).push(linha);
+        const resposta = {
+          data: erro ? null : (banco.criado ?? linha),
+          error: erro ? { message: erro } : null,
+        };
+        return {
+          select: () => ({ single: async () => resposta, maybeSingle: async () => resposta }),
+          then: (r: (v: unknown) => unknown) => r(resposta),
+        };
+      },
+      upsert: (linha: Linha, opcoes?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+        (banco.upserts ??= []).push({ tabela, linha, opcoes });
         const erro = banco.erroAoGravar[tabela];
         if (!erro) (banco.inserido[tabela] ??= []).push(linha);
         const resposta = {
@@ -368,6 +384,53 @@ describe("a agenda grava na timeline", () => {
       target_id: AGENDAMENTO,
       link_kind: VINCULO_DE_AGENDAMENTO,
     });
+  });
+
+  it("vincular compromisso ao negócio usa upsert com ignoreDuplicates para evitar duplicate key (#5373)", async () => {
+    await marcarAgendamentoHandler(cliente(), ctx, {
+      event_type_id: TIPO,
+      starts_at: HORARIO,
+      contact_id: CONTATO,
+    });
+
+    const upsertLinks = banco.upserts?.filter((u) => u.tabela === "crm_lead_links") ?? [];
+    expect(
+      upsertLinks,
+      "o compromisso não foi inserido via upsert em crm_lead_links",
+    ).toHaveLength(1);
+    expect(upsertLinks[0]?.opcoes).toEqual({
+      onConflict: "lead_id,target_kind,target_id,link_kind",
+      ignoreDuplicates: true,
+    });
+    expect(upsertLinks[0]?.linha).toMatchObject({
+      organization_id: ORG,
+      lead_id: NEGOCIO,
+      target_kind: ALVO_DE_VINCULO_DO_AGENDAMENTO,
+      target_id: AGENDAMENTO,
+      link_kind: VINCULO_DE_AGENDAMENTO,
+    });
+  });
+
+  it("falha no vínculo de crm_lead_links não derruba o fluxo principal e registra no logger (#5373)", async () => {
+    const loggerSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    banco.erroAoGravar["crm_lead_links"] = "duplicate key value violates unique constraint";
+
+    const criado = await marcarAgendamentoHandler(cliente(), ctx, {
+      event_type_id: TIPO,
+      starts_at: HORARIO,
+      contact_id: CONTATO,
+    });
+
+    expect(criado.id).toBe(AGENDAMENTO);
+    expect(loggerSpy).toHaveBeenCalledWith(
+      "[agenda] falha ao vincular compromisso ao negócio",
+      expect.objectContaining({
+        appointment_id: AGENDAMENTO,
+        lead_id: NEGOCIO,
+        organization_id: ORG,
+        error: "duplicate key value violates unique constraint",
+      }),
+    );
   });
 
   it("marcar SEM contato não inventa atividade — o par que prova que a sonda enxerga", async () => {
