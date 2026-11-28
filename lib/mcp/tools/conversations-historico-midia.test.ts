@@ -229,7 +229,7 @@ describe("crm_get_conversation_history", () => {
       ],
       cursor: null,
       has_more: false,
-    } as any);
+    } as never);
     const out = (await crmGetConversationHistory.handler(
       { conversation_id: CONVERSATION_ID, limit: 20 } as never,
       ctx,

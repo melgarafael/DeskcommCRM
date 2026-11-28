@@ -1,5 +1,5 @@
 ---
-impacto: aditivo
+impacto: nada_mudou
 secao: corrigido
 titulo: MCP crm_get_conversation_history devolve media_status "failed" para mídias cujo download falhou definitivamente
 ---
