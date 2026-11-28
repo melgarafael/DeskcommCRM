@@ -134,6 +134,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "interlocutor_automatico",
+    rotulo: "Reconhecer atendimento automático do outro lado",
+    oQueProtege:
+      "Quando as mensagens recebidas têm cara de robô (menu numerado repetido, a mesma mensagem repetida três vezes, sempre o mesmo molde ou respostas em segundos), a IA não responde e a conversa é silenciada, com aviso na Central para uma pessoa conferir. É a outra metade do caso de 216 respostas em uma hora: o teto corta a contagem, esta conferência reconhece o robô.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O que se ajusta é o contato na conversa — \"Devolver ao automático\" desfaz o silêncio quando do outro lado era um cliente.",
+     camada: null,
+  },
+  {
     nome: "spinning",
     rotulo: "Variar o texto das mensagens iguais",
     oQueProtege:
@@ -322,6 +332,7 @@ export const NUNCA_FAZ: Readonly<Record<string, string>> = {
   pacing: "Disparar mensagens sem espaçar o envio",
   messaging_window: "Furar a janela de 24 horas do WhatsApp",
   teto_de_respostas: "Responder sem parar a conversa que virou pingue-pongue",
+  interlocutor_automatico: "Conversar com robô como se fosse cliente",
   spinning: "Repetir o texto idêntico para todo mundo",
   promise: "Prometer preço ou prazo por conta própria",
   concessao_sem_lastro: "Confirmar condição que só o cliente citou",

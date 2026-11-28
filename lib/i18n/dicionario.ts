@@ -11245,6 +11245,7 @@ export const DICIONARIO: Traducoes = {
   "Disparar mensagens sem espaçar o envio": { es: "Enviar mensajes sin espaciar el envío" },
   "Furar a janela de 24 horas do WhatsApp": { es: "Saltarse la ventana de 24 horas de WhatsApp" },
   "Responder sem parar a conversa que virou pingue-pongue": { es: "Responder sin parar en la conversación que se volvió un ping-pong" },
+  "Conversar com robô como se fosse cliente": { es: "Conversar con un robot como si fuera un cliente" },
   "Repetir o texto idêntico para todo mundo": { es: "Repetir el mismo texto para todos" },
   "Prometer preço ou prazo por conta própria": { es: "Prometer precio o plazo por cuenta propia" },
   "Confirmar condição que só o cliente citou": { es: "Confirmar una condición que solo citó el cliente" },
