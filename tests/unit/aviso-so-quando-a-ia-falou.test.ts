@@ -35,6 +35,14 @@ vi.mock("@/lib/escalacao/atendentes", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+/**
+ * A janela de horário (#4797) mora fora deste arquivo: aqui ela está ABERTA,
+ * para que os casos de 2026-09-27 continuem medindo o que mediam. Quem mede a
+ * janela fechada é `aviso-so-com-mensagem-nova.test.ts`.
+ */
+vi.mock("@/lib/automation/janela-do-canal", () => ({
+  adiarAteAJanelaAbrir: vi.fn(async () => null),
+}));
 
 import { avisarLeadDoCrm } from "@/lib/ai/handoff/aviso-ao-lead";
 
@@ -49,23 +57,54 @@ let filtros: [string, unknown][] = [];
 /**
  * Cliente supabase-js de mentira. `messages` devolve as falas dadas (ou o erro);
  * `organizations` devolve o idioma — o resto do caminho é o de sempre.
+ *
+ * A guarda 3 (#4797/#4804) pergunta ao BANCO duas coisas: qual é a última
+ * mensagem do CLIENTE (`conversations.last_inbound_at`) e se uma PESSOA já
+ * respondeu depois dela (`messages`, `sent_via in ('user','crm','external_device')`).
+ * A conversa de mentira está com o cliente ESPERANDO (entrada de 2 h atrás) e
+ * NINGUÉM da equipe respondeu — é a precondição para o aviso sair, e é o caso
+ * que estes testes medem. Quem mede a espera já respondida é
+ * `aviso-so-com-mensagem-nova.test.ts`.
  */
 function banco(falas: Fala[] | { erro: string }) {
   filtros = [];
   return {
     from(tabela: string) {
       if (tabela === "messages") {
+        let filtroDeGente = false;
         const cadeia: Record<string, unknown> = {
           select: () => cadeia,
           eq: (coluna: string, valor: unknown) => {
             filtros.push([coluna, valor]);
             return cadeia;
           },
+          /** `sent_via in (...)`: a resposta de uma PESSOA, que nestes casos não existe. */
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
+            return cadeia;
+          },
+          gt: () => cadeia,
           order: () => cadeia,
-          limit: async () =>
-            Array.isArray(falas)
-              ? { data: falas, error: null }
-              : { data: null, error: { message: falas.erro } },
+          limit: async (n: number) =>
+            !Array.isArray(falas)
+              ? { data: null, error: { message: falas.erro } }
+              : filtroDeGente
+                ? { data: [], error: null }
+                : { data: falas.slice(0, n), error: null },
+        };
+        return cadeia;
+      }
+      if (tabela === "conversations") {
+        const cadeia: Record<string, unknown> = {
+          select: () => cadeia,
+          eq: () => cadeia,
+          maybeSingle: async () => ({
+            data: {
+              last_inbound_at: horasAtras(2),
+              channel_session_id: null,
+            },
+            error: null,
+          }),
         };
         return cadeia;
       }

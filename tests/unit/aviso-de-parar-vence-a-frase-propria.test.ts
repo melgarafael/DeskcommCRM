@@ -93,10 +93,16 @@ describe("emissor do CRM (`avisarLeadDoCrm`)", () => {
       from(tabela: string) {
         const cadeia: Record<string, unknown> = {};
         let direcao = "";
+        /** A leitura da resposta de GENTE (guarda 3, `sent_via in (...)`) — aqui, ninguém da equipe falou. */
+        let filtroDeGente = false;
         Object.assign(cadeia, {
           select: () => cadeia,
           eq: (coluna: string, valor: unknown) => {
             if (coluna === "direction") direcao = String(valor);
+            return cadeia;
+          },
+          in: (coluna: string) => {
+            if (coluna === "sent_via") filtroDeGente = true;
             return cadeia;
           },
           order: () => cadeia,
@@ -104,16 +110,29 @@ describe("emissor do CRM (`avisarLeadDoCrm`)", () => {
             Object.assign(
               Promise.resolve({
                 data:
-                  direcao === "outbound"
+                  direcao === "outbound" && !filtroDeGente
                     ? [{ metadata: null, created_at: new Date().toISOString(), status: "sent" }]
-                    : null,
+                    : direcao === "outbound"
+                      ? []
+                      : null,
                 error: null,
               }),
               { maybeSingle: async () => ({ data: null, error: null }) },
             ),
           maybeSingle: async () => {
             if (tabela === "organizations") return { data: { locale: "pt-BR" }, error: null };
-            if (tabela === "conversations") return { data: { active_ai_agent_id: AGENTE }, error: null };
+            if (tabela === "conversations")
+              return {
+                data: {
+                  active_ai_agent_id: AGENTE,
+                  // Guarda 3 (#4797): o cliente escreveu e ninguém respondeu —
+                  // a precondição para o emissor falar.
+                  last_inbound_at: new Date().toISOString(),
+                  last_outbound_at: new Date(Date.now() - 60_000).toISOString(),
+                  channel_session_id: null,
+                },
+                error: null,
+              };
             if (tabela === "ai_agents") return { data: { config: { aviso_de_handoff: FRASE } }, error: null };
             throw new Error(`tabela inesperada: ${tabela}`);
           },
