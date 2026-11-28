@@ -83,6 +83,7 @@ function bancoFalso(estado: EstadoDoBanco = {}) {
         const vazio = {
           select: () => vazio,
           eq: () => vazio,
+          neq: () => vazio,
           is: () => vazio,
           not: () => vazio,
           in: () => vazio,

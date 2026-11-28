@@ -60,10 +60,12 @@ type ConversaFalsa = {
   assigned_to_user_id?: string | null;
   last_handoff_at?: string | null;
   active_ai_agent_id?: string | null;
+  /** O campo calculado do PostgREST (`comando_da_conversa(conversations)`). */
+  comando_da_conversa?: "humano" | "encerrada" | "aguardando" | "automatico";
 };
 
 /**
- * Um pedaço de PostgREST que FILTRA de verdade: `eq`/`is`/`not is`/`in`, e o
+ * Um pedaço de PostgREST que FILTRA de verdade: `eq`/`neq`/`is`/`not is`/`in`, e o
  * `await` devolve só as linhas que passaram por todos os filtros. Um dublê que
  * devolvesse tudo faria o teste da fila comum passar pelo motivo errado.
  */
@@ -74,6 +76,10 @@ function consultaDeConversas(linhas: ConversaFalsa[]) {
     select: () => b,
     eq: (nome: string, valor: unknown) => {
       filtros.push((c) => coluna(c, nome) === valor);
+      return b;
+    },
+    neq: (nome: string, valor: unknown) => {
+      filtros.push((c) => coluna(c, nome) !== valor);
       return b;
     },
     is: (nome: string, valor: unknown) => {
@@ -276,7 +282,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
 
   it("a conversa que o handoff deixou SEM DONO recebe o dono (janela 13:21:41 × 13:21:59)", async () => {
     // O que o banco tem 18 s depois do handoff: a IA devolveu a conversa
-    // (`active_ai_agent_id` nulo, `last_handoff_at` gravado), ninguém assumiu.
+    // (`last_handoff_at` gravado, automático fora do comando), ninguém assumiu.
     // A função das conversas devolve 0 — ela só move conversa com OUTRA pessoa.
     const banco = bancoFalso({
       movidas: 0,
@@ -289,6 +295,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
           assigned_to_user_id: null,
           last_handoff_at: "2026-11-26T16:21:41Z",
           active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
         },
       ],
     });
@@ -330,6 +337,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
           assigned_to_user_id: null,
           last_handoff_at: null,
           active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
         },
       ],
     });
@@ -341,7 +349,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
 
   it("a conversa que o handoff deixou sem dono mas a IA voltou a atender NÃO é tirada da IA", async () => {
     // `last_handoff_at` pode continuar gravado com a IA no comando; o segundo
-    // sinal (`active_ai_agent_id` nulo) é o que diz que ninguém está atendendo.
+    // sinal (`comando_da_conversa`) é o que diz quem está atendendo.
     const banco = bancoFalso({
       movidas: 0,
       conversas: [
@@ -353,6 +361,32 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
           assigned_to_user_id: null,
           last_handoff_at: "2026-11-26T16:21:41Z",
           active_ai_agent_id: "agente-1",
+          comando_da_conversa: "automatico",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(banco.rpcs.map((c) => c.nome)).toEqual(["fn_passar_conversas_do_contato"]);
+    expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 0 } });
+  });
+
+  it("a pausa curta do celular que VENCEU num número sem roteador não vira handoff", async () => {
+    // A pausa do celular grava `last_handoff_at` e nunca o zera quando vence; e
+    // `active_ai_agent_id` só é gravado com roteador. Vencida a pausa, a conversa
+    // voltou ao automático — tirá-la daqui a calaria sem prazo.
+    const banco = bancoFalso({
+      movidas: 0,
+      conversas: [
+        {
+          id: "conv-pausa-vencida",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "open",
+          assigned_to_user_id: null,
+          last_handoff_at: "2026-11-26T15:00:00Z",
+          active_ai_agent_id: null,
+          comando_da_conversa: "automatico",
         },
       ],
     });
@@ -374,6 +408,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
           assigned_to_user_id: NOVO_DONO,
           last_handoff_at: "2026-11-26T16:21:41Z",
           active_ai_agent_id: null,
+          comando_da_conversa: "humano",
         },
       ],
     });
@@ -395,6 +430,7 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
           assigned_to_user_id: null,
           last_handoff_at: "2026-11-26T16:21:41Z",
           active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
         },
       ],
       erroDaAtribuicao: "assignee_not_eligible_member",

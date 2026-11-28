@@ -234,21 +234,26 @@ const STATUS_DE_CONVERSA_ABERTA = ["open", "pending", "claimed", "ai_handling"] 
 /**
  * #5328 — a conversa que o `request_human_handoff` deixou SEM DONO.
  *
- * A função do banco (acima) só move conversa que está com OUTRA pessoa. Quando o
- * handoff cai no mesmo minuto que esta regra, `assign_owner` roda primeiro (a
- * conversa ainda é da IA, sem dono), o handoff a devolve para a fila humana — e
- * ela fica aberta, sem dono, na Fila, às vezes por horas: nenhuma das duas
- * execuções a atribui, porque quando a regra rodou ainda não havia handoff e
- * quando o handoff rodou a regra já tinha passado.
+ * A função do banco (acima) só move conversa que está com OUTRA pessoa. Quando a
+ * regra roda segundos DEPOIS do handoff (#5328: handoff 13:21:41 → regra
+ * 13:21:59; 14:43:48 → 14:44:01), o handoff já devolveu a conversa à fila
+ * humana sem dono, a função a pula — e ela ficava aberta, sem dono, na Fila, às
+ * vezes por horas. Esta passada é a que a leva.
+ *
+ * Não cobre a regra que roda ANTES do handoff (11:09:32 × 11:09:36): ali a
+ * conversa ainda é da IA quando a regra passa, e o handoff só a solta depois.
  *
  * O que separa "sem dono que veio de handoff" de "sem dono em fila comum" são
  * dois fatos que a linha JÁ tem, sem coluna nova:
  *
  *   · `last_handoff_at` preenchido — houve handoff, e ele não foi desfeito (a
  *     retomada pela IA zera a marca, `lib/escalacao/retomada.ts`);
- *   · `active_ai_agent_id` nulo — a IA não está atendendo esta conversa agora
- *     (o handoff também zera esse campo). Com a IA no comando, a conversa é
- *     dela, e tirá-la seria o mesmo roubo que a passagem evita.
+ *   · `comando_da_conversa` diferente de `automatico` — o automático não está no
+ *     comando agora (o handoff grava `force_human` e silencia o bot). É o mesmo
+ *     campo calculado da Fila e da própria `fn_conversation_assign`. Não serve
+ *     `active_ai_agent_id`: ele só é gravado com roteador, e `last_handoff_at`
+ *     também sobra da pausa curta do celular depois que ela vence — sem este
+ *     filtro, a conversa que voltou ao automático seria calada sem prazo.
  *
  * Quem tem dono não entra (a primeira passagem já cuidou), e conversa que nunca
  * passou por handoff continua na fila — é o caso que a regra NÃO pode capturar:
@@ -273,7 +278,7 @@ async function passarAsConversasQueOHandoffDeixouSemDono(
     .in("status", [...STATUS_DE_CONVERSA_ABERTA])
     .is("assigned_to_user_id", null)
     .not("last_handoff_at", "is", null)
-    .is("active_ai_agent_id", null);
+    .neq("comando_da_conversa", "automatico");
   if (error) return { erro: error.message };
 
   let movidas = 0;
