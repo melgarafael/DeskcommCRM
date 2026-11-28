@@ -44,7 +44,10 @@
  * unitário. O I/O fica em quem chama.
  */
 import { PROVEDORES } from "./provedores";
-import type { DecisaoDeTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
+import {
+  PROVEDOR_DE_SERVICO_COMPATIVEL,
+  type DecisaoDeTranscricao,
+} from "@/lib/messaging/media/escada-de-transcricao";
 import { PONTO_POR_ID, type PontoDeIa } from "./registro";
 
 /** De onde a escolha efetiva veio — vai para a tela e para o log. */
@@ -133,6 +136,11 @@ export interface LinhaDeBinding {
   credential_id: string | null;
   model_id: string;
   base_url: string | null;
+  /**
+   * Idioma da ESCUTA deste ponto (#4713). Só o ponto de transcrição lê a
+   * coluna; opcional aqui para quem monta a linha em teste não precisar dela.
+   */
+  languages?: string[] | null;
   is_enabled: boolean;
 }
 
@@ -193,6 +201,12 @@ export interface DecisaoDeBinding {
    * existir voltaria a ser uma falha muda.
    */
   avisos: string[];
+  /**
+   * Idiomas configurados no PONTO (#4713) — hoje só o serviço compatível com
+   * OpenAI do ponto de transcrição tem este campo. `null` = nenhum, e o
+   * serviço detecta sozinho.
+   */
+  languages?: string[] | null;
   /**
    * O que valeria SEM a economia — só quando `origem` é
    * `economico_do_provedor`. O seam tenta este modelo se o econômico falhar:
@@ -515,11 +529,21 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
         avisos,
       };
     }
+    // O ENDEREÇO e o IDIOMA do ponto (#4713) voltam para a tela quando o
+    // degrau anunciado é o serviço da própria organização: é neles que o
+    // operador edita o que já está gravado. Nos demais degraus não há o que
+    // editar aqui, e devolver um `base_url` de linha antiga deixaria o cartão
+    // mostrando um endereço que ninguém vai usar.
+    const doServicoDaOrganizacao =
+      entrada.binding?.is_enabled === true &&
+      entrada.binding.provider === escada.anuncio.provider &&
+      entrada.binding.provider === PROVEDOR_DE_SERVICO_COMPATIVEL;
     return {
       provider: escada.anuncio.provider,
       modelId: escada.anuncio.modelId,
-      credentialId: null,
-      baseUrl: null,
+      credentialId: doServicoDaOrganizacao ? entrada.binding!.credential_id : null,
+      baseUrl: doServicoDaOrganizacao ? entrada.binding!.base_url : null,
+      languages: doServicoDaOrganizacao ? (entrada.binding!.languages ?? null) : null,
       origem: "fixo_do_produto",
       motivo: escada.motivo,
       avisos,

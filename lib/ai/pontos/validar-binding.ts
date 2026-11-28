@@ -66,8 +66,13 @@ export function validarBinding(entrada: {
     // Ponto fixo COM menu: não é a catraca de ferramentas/visão abaixo (que
     // pressupõe modelo de CONVERSA) — é "este par está no menu, ou não está".
     if (ponto.fixo.opcoes !== undefined) {
-      const noMenu = ponto.fixo.opcoes.some(
-        (o) => o.provider === entrada.provider && o.modelId === entrada.modelo.model_id,
+      const noMenu = ponto.fixo.opcoes.some((o) =>
+        // `modeloLivre` (#4713): a opção aceita qualquer modelo do provedor —
+        // o serviço compatível com OpenAI é apontado por endereço, e o modelo
+        // de um gateway não está no catálogo daqui para ser conferido.
+        o.modeloLivre === true
+          ? o.provider === entrada.provider
+          : o.provider === entrada.provider && o.modelId === entrada.modelo.model_id,
       );
       if (!noMenu) {
         return {

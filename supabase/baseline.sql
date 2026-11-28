@@ -11501,6 +11501,9 @@ create table if not exists public.ai_purpose_bindings (
   credential_id uuid references public.ai_provider_credentials(id) on delete cascade,
   model_id text not null,
   base_url text,
+  -- Idioma da ESCUTA deste ponto (#4713): só o serviço compatível com OpenAI
+  -- escolhido pela organização o lê. Nulo/vazio = o serviço detecta sozinho.
+  languages text[],
   is_enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

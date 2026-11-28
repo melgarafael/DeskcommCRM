@@ -61,7 +61,7 @@ interface Ponto {
   fixo: {
     razao: string;
     /** Menu fechado de serviços — ver o cabeçalho de `fixo` em registro.ts. */
-    opcoes?: { provider: string; modelId: string; rotulo: string }[];
+    opcoes?: { provider: string; modelId: string; rotulo: string; modeloLivre?: boolean }[];
   } | null;
   mandadoPeloAgente: boolean;
   efetivo: {
@@ -69,6 +69,8 @@ interface Ponto {
     modelId: string | null;
     credentialId: string | null;
     baseUrl: string | null;
+    /** Idioma do ponto (#4713) — só o serviço compatível com OpenAI usa. */
+    languages?: string[] | null;
     origem: string;
     porQue: string;
   };
@@ -741,13 +743,25 @@ function CartaoDoPonto({
   // opção, a padrão do ponto. Só o estado inicial; nada é gravado sem Salvar.
   const opcaoInicial = ponto.fixo?.opcoes?.length
     ? (ponto.fixo.opcoes.find(
-        (o) => o.provider === ponto.efetivo.provider && o.modelId === ponto.efetivo.modelId,
+        (o) =>
+          o.provider === ponto.efetivo.provider &&
+          // `modeloLivre` (#4713): a opção aceita qualquer modelo do provedor, e
+          // o `modelId` dela é só o valor inicial — casar pelo par exato faria
+          // a tela abrir em "Automático" para quem gravou `whisper-large-v3`.
+          (o.modeloLivre === true || o.modelId === ponto.efetivo.modelId),
       ) ?? ponto.fixo.opcoes[0])
     : undefined;
   const [provider, setProvider] = useState(opcaoInicial?.provider ?? ponto.efetivo.provider);
-  const [modelId, setModelId] = useState(opcaoInicial?.modelId ?? ponto.efetivo.modelId ?? "");
+  const [modelId, setModelId] = useState(
+    opcaoInicial?.modeloLivre === true && ponto.efetivo.provider === opcaoInicial.provider
+      ? (ponto.efetivo.modelId ?? opcaoInicial.modelId)
+      : (opcaoInicial?.modelId ?? ponto.efetivo.modelId ?? ""),
+  );
   const [credentialId, setCredentialId] = useState(ponto.efetivo.credentialId ?? "");
   const [baseUrl, setBaseUrl] = useState(ponto.efetivo.baseUrl ?? "");
+  // Idioma do ponto (#4713), como o operador digita: "pt" ou "es, pt". Vazio =
+  // o serviço detecta sozinho.
+  const [idiomas, setIdiomas] = useState((ponto.efetivo.languages ?? []).join(", "));
   const [salvando, setSalvando] = useState(false);
 
   const modelosDoProvider = semAposentados(
@@ -772,6 +786,19 @@ function CartaoDoPonto({
   const opcoesFixas = ponto.fixo?.opcoes;
   const temMenuFixo = (opcoesFixas?.length ?? 0) > 0;
   const editavelComoMenu = dados.podeEditar && temMenuFixo;
+  // A opção escolhida AGORA na tela (não a gravada): é ela que decide se o
+  // cartão pede endereço, modelo e idioma (#4713).
+  const opcaoNaTela = opcoesFixas?.find(
+    (o) => o.provider === provider && (o.modeloLivre === true || o.modelId === modelId),
+  );
+  const modeloLivre = opcaoNaTela?.modeloLivre === true;
+  const idiomasDigitados = idiomas
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => /^[a-z]{2,3}$/.test(x));
+  // A escolha incompleta não sai daqui: a porta de escrita recusa (422) e a
+  // escada cairia para o degrau seguinte — o cartão evita os dois.
+  const faltouEndereco = modeloLivre && baseUrl.trim() === "";
 
   async function salvar() {
     setSalvando(true);
@@ -790,6 +817,9 @@ function CartaoDoPonto({
           // local) só conseguia pela API. Configuração sem superfície é
           // capacidade que ninguém alcança.
           base_url: aceitaEndpointProprio && baseUrl.trim() !== "" ? baseUrl.trim() : null,
+          // Idioma do ponto (#4713). Só o serviço compatível com OpenAI o lê —
+          // nos outros degraus a coluna fica nula, e o corpo não a manda.
+          languages: modeloLivre ? idiomasDigitados : null,
         }),
       });
       const json = await res.json();
@@ -953,15 +983,67 @@ function CartaoDoPonto({
             </Select>
           </div>
 
+          {/* #4713 · O serviço compatível com OpenAI precisa de endereço,
+              modelo e (opcionalmente) idioma. O menu só oferece o PAR; aqui os
+              três campos que o degrau 0b lê do binding aparecem. */}
+          {modeloLivre && (
+            <>
+              <div className="sm:col-span-2">
+                <Label className="text-xs">{t("Endereço do serviço (base URL)")}</Label>
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://seu-gateway.exemplo/v1"
+                  data-testid={`base-url-${ponto.id}`}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t(
+                    "O endereço que fala a API de transcrição da OpenAI — o gateway da sua empresa, um LiteLLM, um Whisper próprio. A chave sai da credencial escolhida acima.",
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs">{t("Modelo do serviço")}</Label>
+                <Input
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  placeholder="whisper-large-v3"
+                  data-testid={`modelo-servico-${ponto.id}`}
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">{t("Idioma do áudio (opcional)")}</Label>
+                <Input
+                  value={idiomas}
+                  onChange={(e) => setIdiomas(e.target.value)}
+                  placeholder="pt"
+                  data-testid={`idiomas-${ponto.id}`}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t(
+                    "Os idiomas que chegam nos áudios desta organização, como pt ou es, pt. Em branco, o serviço detecta sozinho — o idioma desta instalação não vale para cá.",
+                  )}
+                </p>
+              </div>
+            </>
+          )}
+
           <div className="sm:col-span-2">
             <Button
               size="sm"
-              disabled={salvando || !modelId}
+              disabled={salvando || !modelId || faltouEndereco}
               onClick={() => void salvar()}
               data-testid={`salvar-${ponto.id}`}
             >
               {salvando ? t("Salvando…") : t("Salvar")}
             </Button>
+            {faltouEndereco && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-500">
+                {t("Informe o endereço do serviço para salvar esta escolha.")}
+              </p>
+            )}
           </div>
         </div>
       )}

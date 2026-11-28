@@ -34,13 +34,16 @@ import {
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type LinhaDeBinding,
 } from "@/lib/ai/pontos/resolver";
-import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
+import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID, PONTO_TRANSCRICAO_DE_AUDIO } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
 import { ehProvedorDeServicoSuportado } from "@/lib/ai/pontos/provedores-de-servico";
 import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
-import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
+import {
+  PROVEDOR_DE_SERVICO_COMPATIVEL,
+  decidirTranscricao,
+} from "@/lib/messaging/media/escada-de-transcricao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -84,7 +87,7 @@ export async function GET(): Promise<Response> {
   const [bindingsRes, credsRes, modelosRes, orgRes, agenteRes] = await Promise.all([
     db
       .from("ai_purpose_bindings")
-      .select("purpose, provider, credential_id, model_id, base_url, is_enabled")
+      .select("purpose, provider, credential_id, model_id, base_url, languages, is_enabled")
       .eq("organization_id", org.orgId),
     db
       .from("ai_provider_credentials")
@@ -205,6 +208,22 @@ export async function GET(): Promise<Response> {
         ? { apiKey: "chave-existente", modelId: b.model_id ?? "scribe_v1" }
         : null;
     },
+    // Degrau 0b (#4713): o serviço compatível com OpenAI que a organização
+    // escolheu. Aqui a tela só precisa saber QUAL degrau vale — a chave é um
+    // marcador, como no Scribe acima, e a escada recusa a escolha incompleta
+    // com a frase que o cartão mostra. Sem chave `custom` utilizável, o degrau
+    // não existe e o anúncio diz o degrau que o worker de fato roda.
+    servicoCompativelEscolhido: async () => {
+      const b = bindings.get("transcricao_de_audio");
+      if (!b?.is_enabled || b.provider !== PROVEDOR_DE_SERVICO_COMPATIVEL) return null;
+      if (!chaveExiste(PROVEDOR_DE_SERVICO_COMPATIVEL)) return null;
+      return {
+        apiKey: "chave-existente",
+        baseUrl: b.base_url,
+        modelId: b.model_id,
+        languages: b.languages ?? null,
+      };
+    },
   });
 
   const pontos = PONTOS_DE_IA.map((ponto) => {
@@ -288,6 +307,9 @@ export async function GET(): Promise<Response> {
         modelId: decisao.modelId,
         credentialId: decisao.credentialId,
         baseUrl: decisao.baseUrl,
+        // Idioma do ponto (#4713): o cartão só mostra o campo no serviço
+        // compatível com OpenAI, e edita o que já está gravado.
+        languages: decisao.languages ?? null,
         origem: decisao.origem,
         // O motivo ESCOLHIDO, quando a origem tem um (a escada devolve o do
         // degrau escolhido): "por que este áudio vai para aquele lugar", que a
@@ -296,6 +318,10 @@ export async function GET(): Promise<Response> {
       },
       avisos: [
         ...decisao.avisos,
+        // A escolha que não pôde ser cumprida (#4713) aparece no cartão, e não
+        // só no log do worker: quem gravou a linha sem endereço precisa ler na
+        // tela por que o áudio continua caindo no serviço da instalação.
+        ...(ponto.id === PONTO_TRANSCRICAO_DE_AUDIO ? transcricao.recusas : []),
         // O aviso de capacidade é recalculado aqui porque só o servidor tem o
         // catálogo; o resolvedor puro não consulta banco.
         ...(capacidade && ponto.exige.tools === true && !capacidade.supports_tools
@@ -357,6 +383,16 @@ const corpoDoPut = z.object({
   model_id: z.string().min(1),
   credential_id: z.string().uuid().nullable().optional(),
   base_url: z.string().url().nullable().optional(),
+  /**
+   * Idioma da ESCUTA deste ponto (#4713), opcional. Mesma forma tolerante de
+   * `TRANSCRIPTION_LANGUAGES`: ISO-639-1 (2 a 3 letras). Vazio/nulo = o
+   * serviço detecta sozinho.
+   */
+  languages: z
+    .array(z.string().trim().regex(/^[a-z]{2,3}$/i, "use o código do idioma, como pt, es ou en"))
+    .max(6)
+    .nullable()
+    .optional(),
   is_enabled: z.boolean().optional(),
 });
 
@@ -452,6 +488,23 @@ export async function PUT(req: NextRequest): Promise<Response> {
     }
   }
 
+  // #4713 · A ESCOLHA INCOMPLETA NÃO É GRAVADA. Aqui há alguém olhando a tela
+  // para ler o motivo; na hora da chamada há um cliente esperando resposta. A
+  // escada também recusa (e cai para o próximo degrau), mas o lugar de avisar
+  // quem configurou é a porta de escrita.
+  const opcaoEscolhida = ponto.fixo?.opcoes?.find(
+    (o) => o.provider === corpo.provider && (o.modeloLivre === true || o.modelId === corpo.model_id),
+  );
+  if (opcaoEscolhida?.modeloLivre === true && !corpo.base_url) {
+    return fail(
+      "escolha_incompleta",
+      t(
+        "o serviço compatível com OpenAI precisa do endereço (base URL) para onde o áudio vai — sem ele a escolha não pode ser cumprida e o áudio continua no serviço desta instalação",
+      ),
+      422,
+    );
+  }
+
   const { data: gravado, error } = await db
     .from("ai_purpose_bindings")
     .upsert(
@@ -462,11 +515,14 @@ export async function PUT(req: NextRequest): Promise<Response> {
         model_id: corpo.model_id,
         credential_id: corpo.credential_id ?? null,
         base_url: corpo.base_url ?? null,
+        // Só o ponto de transcrição lê esta coluna hoje; gravar nula nos outros
+        // mantém a linha honesta (o mesmo lugar que a lê é o único que a usa).
+        languages: corpo.purpose === PONTO_TRANSCRICAO_DE_AUDIO ? (corpo.languages ?? null) : null,
         is_enabled: corpo.is_enabled ?? true,
       },
       { onConflict: "organization_id,purpose" },
     )
-    .select("id, purpose, provider, model_id, credential_id, base_url, is_enabled")
+    .select("id, purpose, provider, model_id, credential_id, base_url, languages, is_enabled")
     .maybeSingle();
 
   if (error) return fail("save_failed", error.message, 500);
