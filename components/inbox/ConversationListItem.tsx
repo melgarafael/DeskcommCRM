@@ -492,8 +492,23 @@ export function ConversationListItem({
                 {t("Exemplo para a IA")}
               </Badge>
             )}
+            {/* #5364: a etiqueta leva o teto de largura do badge de canal logo
+                abaixo (#2383) — `min-w-0` + `max-w` + `truncate`. Sem ele, um
+                nome comprido quebrava dentro do chip de altura fixa (`h-4`) e o
+                texto vazava por cima do chip vizinho; com as quatro etiquetas
+                que a faixa aceita desde a #5212 o defeito aparece mais.
+                `inline-block` no lugar do `inline-flex` do Badge: num container
+                flex, `text-overflow: ellipsis` não desenha as reticências (o
+                badge de canal só as mostra porque tem um `<span truncate>`
+                dentro). `leading-none` centra os 10px de texto no `h-4`. O
+                `title` devolve o nome inteiro para quem passa o mouse. */}
             {visibleTags.map((t) => (
-              <ChipDeEtiqueta key={t} tag={t} className="h-4 px-1.5 text-[10px]" />
+              <ChipDeEtiqueta
+                key={t}
+                tag={t}
+                title={t}
+                className="h-4 min-w-0 max-w-[9rem] inline-block truncate px-1.5 text-[10px] leading-none"
+              />
             ))}
             {overflow > 0 && (
               <span className="text-[10px] text-text-muted" title={hiddenTags.join(", ")}>+{overflow}</span>
