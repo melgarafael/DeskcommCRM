@@ -492,8 +492,20 @@ export function ConversationListItem({
                 {t("Exemplo para a IA")}
               </Badge>
             )}
+            {/* #5364: a etiqueta leva o MESMO tratamento do badge de canal logo
+                abaixo (#2383) — `min-w-0` + `max-w` + `truncate`. Sem o teto de
+                largura, um nome comprido quebrava dentro do chip de altura fixa
+                (`h-4`) e o texto vazava por cima do chip vizinho; com as quatro
+                etiquetas que a faixa aceita desde a #5212 o defeito aparece
+                mais. A ALTURA da linha não muda — o corte é na largura, e o
+                `title` devolve o nome inteiro para quem passa o mouse. */}
             {visibleTags.map((t) => (
-              <ChipDeEtiqueta key={t} tag={t} className="h-4 px-1.5 text-[10px]" />
+              <ChipDeEtiqueta
+                key={t}
+                tag={t}
+                title={t}
+                className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
+              />
             ))}
             {overflow > 0 && (
               <span className="text-[10px] text-text-muted" title={hiddenTags.join(", ")}>+{overflow}</span>
