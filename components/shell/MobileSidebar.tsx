@@ -60,7 +60,15 @@ export function GavetaDeNavegacao({ comoAba = false }: { comoAba?: boolean }) {
                 "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-muted-foreground"
               : // Como hambúrguer: 44px de alvo, e só no celular — acima de `md`
                 // a barra lateral já está na tela.
-                "h-11 w-11 md:hidden",
+                //
+                // `w-11` sozinho NÃO garante os 44px (medido na issue #5332):
+                // dentro do flex do grupo da esquerda o botão é um item
+                // encolhível, e em 320px a sobra negativa do cabeçalho o
+                // comprimia a 40px de largura — 4px abaixo do alvo de toque.
+                // `shrink-0` proíbe a compressão e `min-w-11` deixa o piso
+                // escrito na classe, para o dia em que outro vizinho aparecer.
+                // A altura não muda: 44px de altura já cabiam.
+                "h-11 w-11 min-w-11 shrink-0 md:hidden",
           )}
           // Como aba, o nome acessível é o rótulo visível "Mais". Herdar
           // "Abrir navegação" deixava DOIS controles com o mesmo nome na tela de
