@@ -318,6 +318,13 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // tem a ponte de conversoes da Meta, e o adapter nao implementa
     // `reportConversion` (a matriz e o adapter sao conferidos um contra o outro).
     reportaConversao: false,
+    // O visto azul por id de mensagem (#5015) NÃO existe neste canal: a API
+    // pública do chat (`developers.olx.com.br/chat`) publica o webhook de
+    // entrada e o `POST /autoservice/v1/chat/send`, e nenhum endpoint de
+    // leitura/recibo — o adapter (`lib/channels/adapters/olx.ts`) só traduz e
+    // envia. `true` faria o envio caçar histórico por ids de leitura que a OLX
+    // nunca manda: trabalho jogado fora no caminho da resposta.
+    marcaLidasPorMensagem: false,
   },
 };
 
