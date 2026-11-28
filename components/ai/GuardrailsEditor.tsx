@@ -83,8 +83,12 @@ export function GuardrailsEditor({ value, onChange, disabled }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* `min-w-0` no filho `flex-1` e `shrink-0` no botão: em flex o item tem
+          `min-width: auto` e não encolhe abaixo do próprio conteúdo, então o
+          seletor empurrava «Adicionar guardrail» para fora da tela a 375 px
+          (#5221). O seletor é o que cede; o botão mantém o tamanho. */}
       <div className="flex items-end gap-2">
-        <div className="flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <Label className="text-xs">{t("Tipo do novo guardrail")}</Label>
           <Select
             value={pendingKind}
@@ -103,7 +107,7 @@ export function GuardrailsEditor({ value, onChange, disabled }: Props) {
             </SelectContent>
           </Select>
         </div>
-        <Button type="button" onClick={add} disabled={disabled}>
+        <Button type="button" onClick={add} disabled={disabled} className="shrink-0">
           {t("Adicionar guardrail")}
         </Button>
       </div>

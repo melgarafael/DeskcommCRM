@@ -1538,6 +1538,7 @@ jobs:
         fotos-skills-e-peso-da-memoria-pela-tela.spec.ts
         capacidades-do-agente.spec.ts
         equipe-no-celular.spec.ts
+        guardrails-cabem-na-tela.spec.ts
         extensoes-versao.spec.ts
         ia-no-celular.spec.ts
         inbox-mensagem-por-modelo.spec.ts
