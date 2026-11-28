@@ -87,8 +87,18 @@ test("CONTROLE: com dois caracteres a busca VAI ao servidor", async ({ page }) =
     .toBeGreaterThan(0);
 });
 
-test("o placeholder promete o que a busca faz — a ÚLTIMA mensagem", async ({ page }) => {
+test("o placeholder promete o que a busca faz — o TEXTO das mensagens", async ({ page }) => {
+  // CONTRATO ATUALIZADO no mesmo commit que mudou a promessa — de propósito, não
+  // de passagem: a busca passou a alcançar o texto de TODAS as mensagens
+  // carregadas, e não só o da última (#1355). O caso guarda a MESMA propriedade
+  // de antes (o placeholder não promete nem mais nem menos do que a busca
+  // entrega) e por isso ele também NEGA a promessa antiga: se alguém voltar a
+  // anunciar "última mensagem" com a busca ampla, este caso fica vermelho.
   await expect(page.getByLabel(CAMPO_DE_BUSCA)).toHaveAttribute(
+    "placeholder",
+    /texto das mensagens/i,
+  );
+  await expect(page.getByLabel(CAMPO_DE_BUSCA)).not.toHaveAttribute(
     "placeholder",
     /última mensagem/i,
   );

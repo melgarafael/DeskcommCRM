@@ -96,8 +96,31 @@ export interface Conversation {
    * aparece com `true`, porque afirmar o contrário seria pior.
    */
   usable_for_rag?: boolean;
+  /**
+   * O TRECHO QUE CASOU A BUSCA NO TEXTO DE UMA MENSAGEM (issue #1355, fatia 1).
+   *
+   * Só vem quando `?search=` casou o CORPO de alguma mensagem da conversa — e
+   * só nas linhas da página devolvida (a consulta que o produz é limitada ao
+   * teto de conversas). É o que permite a linha dizer *por que* apareceu, em vez
+   * de devolver um nome de cliente e deixar a explicação para quem abrir o fio.
+   *
+   * Ausente = a busca não achou nada no texto das mensagens desta conversa (ou
+   * não havia busca). Nunca confundir com "não tem mensagem".
+   */
+  busca_em_mensagem?: TrechoDeBusca | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * O casamento da busca no corpo de uma mensagem — `message_id` e `sent_at` são a
+ * âncora para abrir o fio no ponto certo; `trecho` é o texto em volta, cortado
+ * para a tela (ver `trechoCasado` em `lib/inbox/busca-em-mensagens`).
+ */
+export interface TrechoDeBusca {
+  message_id: string;
+  sent_at: string;
+  trecho: string;
 }
 
 /**
