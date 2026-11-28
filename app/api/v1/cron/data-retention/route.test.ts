@@ -48,7 +48,7 @@ function dbZerado(): { db: PodaDb; chamadasRpc: string[] } {
 }
 
 function drenoVazio(): ResultadoDoDrenoDaAbordagem {
-  return { organizacoes: 0, removidos: 0, bytes_removidos: 0, caminhos: [], falhas: [] };
+  return { organizacoes: 0, removidos: 0, bytes_removidos: 0, caminhos: [], caminhos_omitidos: 0, falhas: [] };
 }
 
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -141,6 +141,7 @@ describe("o dreno devolve o formato que o relatório espera", () => {
       removidos: 0,
       bytes_removidos: 0,
       caminhos: [],
+      caminhos_omitidos: 0,
       falhas: [],
     });
   });

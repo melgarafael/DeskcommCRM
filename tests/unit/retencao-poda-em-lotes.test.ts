@@ -658,6 +658,8 @@ describe("houveEfeito — as duas direções", () => {
     arquivos_orfaos_da_abordagem_removidos: 0,
     arquivos_orfaos_da_abordagem_bytes: 0,
     arquivos_orfaos_da_abordagem_trilha: [] as Array<{ caminho: string; bytes: number | null }>,
+    // #5331: quantos caminhos não couberam na trilha (aqui, nenhum).
+    arquivos_orfaos_da_abordagem_caminhos_omitidos: 0,
     avisos: [] as string[],
     falhas: [] as string[],
   };
