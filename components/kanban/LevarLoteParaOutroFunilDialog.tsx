@@ -119,7 +119,11 @@ export function LevarLoteParaOutroFunilDialog({
       await qc.invalidateQueries({ queryKey: ["board", destinoId] });
     }
     if (r.levados.length > 0) {
-      toast.success(`${r.levados.length} ${t("levados para")} ${destino?.name ?? ""}`.trim());
+      // Mesmo mecanismo de plural do rótulo da barra (#5235): a contagem manda,
+      // a palavra vai na forma certa — "1 levado", "2 levados".
+      toast.success(
+        `${r.levados.length} ${t(r.levados.length === 1 ? "levado para" : "levados para")} ${destino?.name ?? ""}`.trim(),
+      );
     }
   }
 
