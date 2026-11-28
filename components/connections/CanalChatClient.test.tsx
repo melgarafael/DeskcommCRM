@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ApiError } from "@/lib/api/types";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { makeQueryClient } from "@/lib/query/client";
 import { CanalChatClient } from "./CanalChatClient";
 
@@ -138,6 +141,28 @@ it("salvar coleta leva a coleta inteira, porque o servidor troca o objeto de uma
       config: { coleta: { nome: "obrigatorio", telefone: "opcional", email: "oculto" } },
     }),
   );
+});
+
+it("salvar teto_anonimo manda o número para o servidor; fora de 1 a 200 não envia", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  await screen.findByLabelText("Quantas respostas da IA por conversa");
+
+  const teto = screen.getByLabelText("Quantas respostas da IA por conversa") as HTMLInputElement;
+
+  // Valor válido: digita 5 e salva.
+  fireEvent.change(teto, { target: { value: "5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar teto" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 5 } }),
+  );
+
+  // Valor inválido: não envia e mostra erro.
+  fireEvent.change(teto, { target: { value: "201" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar teto" }));
+  expect(screen.getByText(/Use um número inteiro de 1 a 200./)).toBeTruthy();
+  expect(h.patch).not.toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 201 } });
 });
 
 it("salvar domínios manda só a lista; cor fora do formato #rrggbb não sai", async () => {
@@ -615,4 +640,28 @@ it("apagar o avatar manda avatar_url vazio, e não um PATCH vazio que diz 'salvo
   fireEvent.change(screen.getByLabelText("Avatar"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Salvar ajustes" }));
   await waitFor(() => expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { avatar_url: "" } }));
+});
+
+it("teto_anonimo aceita 150 (entre 100 e 200) e em branco não envia nada", async () => {
+  h.get.mockResolvedValue({ data: comConexao });
+  h.patch.mockResolvedValue({ data: { id: "conexao-1" } });
+  mount();
+  const teto = (await screen.findByLabelText("Quantas respostas da IA por conversa")) as HTMLInputElement;
+
+  // Nunca salvo e em branco: o botão está desligado (vale o padrão 20, nada a enviar).
+  expect(teto.value).toBe("");
+  expect((screen.getByRole("button", { name: "Salvar teto" }) as HTMLButtonElement).disabled).toBe(true);
+
+  fireEvent.change(teto, { target: { value: "150" } });
+  fireEvent.click(screen.getByRole("button", { name: "Salvar teto" }));
+  await waitFor(() =>
+    expect(h.patch).toHaveBeenCalledWith(ROTA, { config: { teto_anonimo: 150 } }),
+  );
+});
+
+it("o exemplo do campo de respostas rápidas passa por t() e tem tradução em espanhol", () => {
+  const fonte = readFileSync(resolve(__dirname, "CanalChatClient.tsx"), "utf8");
+  expect(fonte).not.toMatch(/placeholder="Ex\.: Sim"/);
+  expect(fonte).toMatch(/placeholder=\{t\("Ex\.: Sim"\)\}/);
+  expect(DICIONARIO["Ex.: Sim"]?.es).toBe("Ej.: Sí");
 });

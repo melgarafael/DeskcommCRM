@@ -851,6 +851,7 @@ async function runRetomadaAoDevolver(
     `select direction, sent_via, type, body, media_url, media_storage_path, media_derived_text
        from messages
       where organization_id = $1 and conversation_id = $2
+        and coalesce(metadata->>'dispatch_mode', '') <> 'institutional'
       order by coalesce(sent_at, created_at) desc, created_at desc, id desc
       limit $3`,
     [target.tenantId, target.conversationId, FALAS_DA_EQUIPE_LIDAS],
@@ -1217,6 +1218,22 @@ async function runFlowDrivenTurn(
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
+      historicoDoFollowup: {
+        jobId: job.id,
+        async registrar(fase, candidata) {
+          try {
+            await pool.query("select public.fn_followup_registrar_envio($1,$2,$3,$4,$5)", [
+              job.organization_id,
+              job.id,
+              fase === "gerada" ? "followup_message_generated" : "followup_send_partial",
+              `${job.id}:${job.attempts}:${candidata}`,
+              { candidata },
+            ]);
+          } catch {
+            runLog.warn("falha ao registrar a etapa de envio no dossiê", { fase });
+          }
+        },
+      },
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
         const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
         return buildFlowStepOpeningMessage(

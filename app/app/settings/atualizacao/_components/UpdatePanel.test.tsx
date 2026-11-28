@@ -832,3 +832,74 @@ describe("pedido que espera a janela de manutenção (#4334)", () => {
     expect(screen.queryByTestId("atualizacao-agendada")).toBeNull();
   });
 });
+
+/**
+ * #5165 — O ESTADO "NÃO SEI DIZER COMO TERMINOU" NÃO TINHA TESTE.
+ *
+ * `unknown` não é status gravado: a rota o DERIVA de um run `dispatched` que
+ * passou do prazo (`isRunStale`) — um agente morto não consegue anunciar a
+ * própria morte. A tela tem ramo próprio para ele, e nenhum teste o
+ * exercitava; sem isto, trocar o texto do título, o comando manual ou a regra
+ * do botão passaria verde.
+ *
+ * O que este bloco protege, na ordem da issue:
+ *
+ *   (a) o título que dá nome ao estado aparece;
+ *   (b) o comando manual continua na tela — é o caminho de quem confere pelo
+ *       servidor quando a tela não sabe;
+ *   (c) a regra do botão: `update_available` manda. Com versão nova, o botão
+ *       fica (é a saída de um clique); sem ela, não fica — oferecer instalar
+ *       uma versão que não existe derrubaria o sistema à toa.
+ */
+describe("tela de atualização — o estado 'não sei dizer como terminou' (#5165)", () => {
+  /** O run que a rota transforma em `unknown`: pedido enviado, agente sumido. */
+  function incerto(overrides: Partial<SystemVersion> = {}): SystemVersion {
+    return {
+      current_version: "1.4.2",
+      is_owner: true,
+      latest_version: "1.5.0",
+      update_available: true,
+      agent_online: true,
+      notes: null,
+      run: {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        status: "unknown",
+        last_step: "banco",
+        from_version: "1.4.2",
+        to_version: "1.5.0",
+        log_tail: "a atualização parou no passo do banco e o servidor não voltou",
+        dispatched_at: "2026-11-23T02:00:00.000Z",
+      },
+      ...overrides,
+    };
+  }
+
+  it("⭐ (a) o título diz que não sabe como terminou", () => {
+    renderTela(incerto());
+
+    expect(
+      screen.getByRole("heading", { name: "Não sei dizer como terminou" }),
+    ).toBeInTheDocument();
+  });
+
+  it("⭐ (b) o comando manual continua na tela — é o caminho de conferir pelo servidor", () => {
+    renderTela(incerto());
+
+    expect(screen.getByText("bash hostgator-setup-kit/update.sh")).toBeInTheDocument();
+    expect(
+      screen.getByText("Para conferir pelo servidor, quem tem acesso pode rodar:"),
+    ).toBeInTheDocument();
+  });
+
+  it("⭐ (c) com versão nova anunciada, o botão de atualizar fica", () => {
+    renderTela(incerto({ update_available: true }));
+
+    expect(screen.getByRole("button", { name: "Atualizar agora" })).toBeInTheDocument();
+  });
+
+  it("⭐ (c) CONTROLE — sem versão nova, o botão NÃO aparece", () => {
+    renderTela(incerto({ update_available: false }));
+
+    expect(screen.queryByRole("button", { name: "Atualizar agora" })).toBeNull();
+  });
+});

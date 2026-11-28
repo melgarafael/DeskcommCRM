@@ -43,6 +43,16 @@ export const AUDIT_ACTIONS = [
   "auth.login_failed",
   /** Teto de tentativas barrou antes de chegar ao provedor (issue #64). */
   "auth.login_rate_limited",
+  /**
+   * Bloqueio progressivo por conta (issue #4743) — um evento por DEGRAU, porque
+   * "a conta está travada" não diz o que se deve fazer: 5 min é ruído de quem
+   * errou a senha, 30 min (10 falhas no dia) já é insistência. Um evento quando
+   * o degrau NASCE; a tentativa barrada segue em `auth.login_rate_limited`.
+   */
+  "auth.login_bloqueio_5min",
+  "auth.login_bloqueio_30min",
+  /** A senha foi redefinida pelo e-mail e o castigo caiu (issue #4743). */
+  "auth.login_bloqueio_removido",
   "auth.logout",
   "auth.mfa_enrolled",
   "auth.mfa_success",
@@ -667,6 +677,7 @@ export const AUDIT_ACTIONS = [
   // handler o consumiria; evento sem consumer é o anti-pattern nº 3).
   "platform.internal_destinations_updated",
   "platform_google_oauth.updated",
+  "platform_microsoft_oauth.updated",
   "platform_smtp_settings.updated",
   // A credencial do APP da Meta da INSTALAÇÃO (migration 0257): o App Secret que
   // assina a entrega do webhook e o verify token que responde ao handshake.
@@ -816,6 +827,10 @@ export const AUDIT_ACTIONS = [
   "agenda.google.conexao_falhou",
   "agenda.google.conexao_concluida",
   "agenda.google.conexao_desconectada",
+  "agenda.microsoft.conexao_iniciada",
+  "agenda.microsoft.conexao_falhou",
+  "agenda.microsoft.conexao_concluida",
+  "agenda.microsoft.conexao_desconectada",
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
   "agenda.tipo_criado",
@@ -907,6 +922,8 @@ export const AUDIT_ACTIONS = [
   // `nossos_ignorados` de propósito: é o número que prova o anti-eco
   // funcionando — sem ele, esses eventos teriam virado compromisso fantasma.
   "agenda.google.sync_executado",
+  "agenda.microsoft.sync_executado",
+  "agenda.microsoft.selecao_atualizada",
   "agenda.google_selection_updated",
   "agenda.google_catalog_updated",
   "agenda.meet_action_requested",
@@ -925,6 +942,8 @@ export const AUDIT_ACTIONS = [
   "agenda.endereco_salvo",
   "agenda.appointment_rescheduled",
   "agenda.appointment_cancelled",
+  // Lista de responsáveis adicionais da consulta mudou (só audita quando mudou de fato).
+  "agenda.appointment_responsibles_changed",
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
   // de fora chama. Só audita quando alguma tarefa mexeu em dado.
   "relogio.tick_run",

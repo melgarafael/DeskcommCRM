@@ -28,10 +28,18 @@ const UPLOAD_DE_NOTA = {
 };
 
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({
+    mutate: sendMock,
+    mutateAsync: async (payload: unknown) => sendMock(payload),
+    isPending: false,
+  }),
 }));
 vi.mock("@/hooks/inbox/useCreateNote", () => ({
-  useCreateNote: () => ({ mutate: createNoteMock, isPending: false }),
+  useCreateNote: () => ({
+    mutate: createNoteMock,
+    mutateAsync: async (payload: unknown) => createNoteMock(payload),
+    isPending: false,
+  }),
 }));
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
@@ -148,7 +156,6 @@ describe("Composer + modo nota interna", () => {
             media_size_bytes: 3,
           },
         }),
-        expect.anything(),
       ),
     );
     // A asserção que importa: nada saiu pelo caminho de mensagem.
@@ -175,7 +182,6 @@ describe("Composer + modo nota interna", () => {
           body: "olha isso",
           media_storage_path: "org-1/conv-1/note-abc.png",
         }),
-        expect.anything(),
       ),
     );
     expect(createNoteMock).not.toHaveBeenCalled();

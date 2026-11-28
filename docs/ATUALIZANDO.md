@@ -4,6 +4,17 @@ Saiu uma versão nova? Atualizar é **um comando só**. Você não precisa saber
 novidade é no código, no banco de dados ou nos dois — o comando cuida de tudo, na
 ordem certa e com backup automático antes de mexer em qualquer coisa.
 
+## Pela tela (sem SSH)
+
+Quando existe versão nova, o rodapé do menu lateral acende **"Nova versão"** — só para o
+dono do servidor — e **Configurações › Atualização** mostra o que muda, faz backup do banco e
+acompanha cada fase até o CRM voltar. A tela só **registra o pedido**; quem executa é o agente
+que o instalador deixou no servidor. E se o `.env` da instalação (o mesmo arquivo da instalação,
+na raiz do projeto) tiver uma janela de manutenção — `SYSTEM_UPDATE_WINDOW`, por exemplo
+`*/5 2-5 * * *`, lida no fuso `SYSTEM_UPDATE_WINDOW_TZ` —, o pedido feito fora dela **espera**:
+a tela avisa **"Atualização agendada para 02h00"**, o pedido fica pendente e roda sozinho quando
+a janela abrir. Ele não se perde, e não precisa ser pedido de novo.
+
 ## O que fazer
 
 Entre no seu servidor (o mesmo acesso SSH que você usou pra instalar), vá até a pasta

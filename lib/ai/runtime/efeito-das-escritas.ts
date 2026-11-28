@@ -54,7 +54,11 @@
  */
 
 /** O que aconteceu com UMA escrita. Só `produziu_efeito` autoriza a fala a afirmar sucesso. */
-import { extrairRecibosDeAgendamento, type ReciboDeAgendamento } from "./recibos-de-agendamento";
+import {
+  extrairRecibosDeAgendamento,
+  MAXIMO_DE_RESERVAS_NA_REVISAO,
+  type ReciboDeAgendamento,
+} from "./recibos-de-agendamento";
 
 export type DesfechoDaEscrita = "produziu_efeito" | "falhou" | "incerto";
 
@@ -72,10 +76,23 @@ export interface EfeitoDasEscrituras {
   desfechoDe(ferramenta: string): LeituraDoEfeito;
   /** O predicado ÚNICO: `true` só quando a escrita de fato produziu efeito neste turno. */
   produziuEfeito(ferramenta: string): boolean;
-  /** Invalida o comprovante anterior ANTES de uma nova mutação da agenda. */
+  /**
+   * Invalida o comprovante anterior ANTES de uma nova mutação da agenda.
+   * Limpa SOMENTE os confirmados; recibos `cancelled` acumulam no turno, nunca são limpos.
+   */
   iniciarAgendamento(): number;
-  /** A ponte publica somente o resultado real; uma chamada antiga não repõe o recibo. */
+  /**
+   * A ponte publica somente o resultado real. `confirmed` exige a geração atual e
+   * substitui os confirmados; `cancelled` é guardado mesmo se a geração já avançou
+   * (chamadas paralelas no mesmo passo). Um cancelamento velho é barrado depois
+   * pela conferência no banco (status + revisão). `geracaoDeAgendamento()` não muda aqui.
+   */
   registrarRecibosDeAgendamento(geracao: number, resultado: unknown): void;
+  /**
+   * `confirmed` primeiro, depois `cancelled` do mais recente para o mais antigo;
+   * sem `id` repetido (para um mesmo id vence o de maior `revision`), no máximo
+   * `MAXIMO_DE_RESERVAS_NA_REVISAO` após deduplicar, devolvendo cópias.
+   */
   recibosDeAgendamento(): ReciboDeAgendamento[];
   geracaoDeAgendamento(): number;
 }
@@ -99,15 +116,32 @@ export function criarEfeitoDasEscrituras(): EfeitoDasEscrituras {
       return desfechos.get(ferramenta) === "produziu_efeito";
     },
     iniciarAgendamento(): number {
-      recibos = [];
+      // Limpa só os confirmados; cancelados acumulam no turno.
+      recibos = recibos.filter((r) => r.status === "cancelled");
       return ++geracaoDaAgenda;
     },
     registrarRecibosDeAgendamento(geracao: number, resultado: unknown): void {
-      if (geracao !== geracaoDaAgenda) return;
-      recibos = extrairRecibosDeAgendamento(resultado);
+      const extraidos = extrairRecibosDeAgendamento(resultado);
+      const cancelados = extraidos.filter((r) => r.status === "cancelled");
+      const confirmados = extraidos.filter((r) => r.status === "confirmed");
+      if (geracao === geracaoDaAgenda) {
+        // confirmed exige geração atual e substitui os confirmados; cancelados preservados.
+        recibos = [...recibos.filter((r) => r.status === "cancelled"), ...confirmados];
+      }
+      // cancelled é guardado mesmo se a geração já avançou (chamadas paralelas no mesmo passo).
+      recibos = [...recibos, ...cancelados];
     },
     recibosDeAgendamento(): ReciboDeAgendamento[] {
-      return recibos.map((r) => ({ ...r }));
+      const porId = new Map<string, ReciboDeAgendamento>();
+      for (const r of recibos) {
+        const atual = porId.get(r.id);
+        if (!atual || r.revision > atual.revision) porId.set(r.id, r);
+      }
+      const todos = [...porId.values()];
+      // confirmed primeiro; cancelled do mais recente para o mais antigo; corte em 20 após dedup.
+      const confirmados = todos.filter((r) => r.status === "confirmed");
+      const cancelados = todos.filter((r) => r.status === "cancelled").reverse();
+      return [...confirmados, ...cancelados].slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).map((r) => ({ ...r }));
     },
     geracaoDeAgendamento(): number {
       return geracaoDaAgenda;

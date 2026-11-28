@@ -153,13 +153,16 @@ no audit. Nasce a variante `module` em `Actor`, para a auditoria dizer qual mód
 É a decisão D4 da ADR, aplicada num ponto só, `resolveAuthDual`.
 
 **Consentimento por área.** A tela de ativação lista as áreas em frases legíveis, e a organização
-pode aceitar menos do que o pacote pede. São **9 áreas**: `contatos`, `negocios`, `conversas`, `agenda`, `funis`, `agentes_ia`, `catalogo`,
-`configuracao` e `analise`. Cada área tem leitura e escrita separadas (18
+pode aceitar menos do que o pacote pede. São **11 áreas**: `contatos`, `negocios`, `conversas`, `agenda`, `funis`, `agentes_ia`, `catalogo`,
+`configuracao`, `analise`, `tarefas` e `financeiro`. Cada área tem leitura e escrita separadas (22
 permissões `area.<área>.<leitura|escrita>`). Toda rota convertida declara sua área. Rota sem área
 recusa token de módulo, e um teste varre isso.
 
-**Tarefas, etiquetas e financeiro não nascem agora** (decisão do mantenedor, #4142 item 4); as rotas
-correspondentes ficam sem área e recusam módulo até nova decisão. Não existe área `etiquetas`: não há
+**Tarefas e financeiro nascem só no vocabulário** (doc 425 do mantenedor, 27/11/2026, que responde o
+#4142 item 4 e o doc 326): as duas áreas existem e podem ser consentidas, mas nenhuma rota as declara
+ainda, então consentir hoje não abre nada. Cada rota entra numa fatia própria, e a escrita no financeiro
+espera o ok do doc 376. `etiquetas` continua sem nascer: as rotas correspondentes ficam sem área e
+recusam módulo até nova decisão. Não existe área `etiquetas`: não há
 rota de escrita de etiqueta, e anunciar escrita que não existe é proibido. `contact-tags` (GET) vive em
 `contatos` e `conversation-tags` (GET) em `conversas`. A leitura de `financeiro/catalogo/[tipo]` continua em
 `catalogo`, e a de `financeiro/lancamentos` e de `honorarios/*` continua em `analise`; a escrita de
@@ -453,10 +456,10 @@ o motivo. Cada uma vale até a revisão do PR que a implementa, e o mantenedor p
 4. **Depois da revogação, por 30 dias, vale um token que só lê eventos.** Sem ele, um módulo desativado
    nunca fica sabendo de uma anonimização. A outra saída seria o módulo apagar tudo da organização ao
    ser desativado, o que perde dado numa desativação por engano.
-5. **`configuracao` e `agentes_ia` só podem ser consentidas por quem administra a
+5. **`configuracao`, `agentes_ia` e `financeiro` só podem ser consentidas por quem administra a
    organização,** e a doutrina de extensões registra isso. Essas áreas mudam operação do núcleo (ou o
-   dinheiro dela), mesmo com credencial, acesso de pessoas e envio fora. A área `financeiro` não nasce
-   agora (#4142, item 4).
+   dinheiro dela), mesmo com credencial, acesso de pessoas e envio fora. A área `financeiro` entrou em
+   27/11/2026 (doc 425) já como sensível.
 6. **A prova de aceite da O2 é um serviço de exemplo no repositório,** rodando no CI. A ADR pede "um
    módulo de pagamento real", mas o pagamento está indo para o núcleo: a #3509 é uma issue aberta, e
    o PR #3590 está em andamento.

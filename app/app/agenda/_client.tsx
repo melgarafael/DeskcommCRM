@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { EntradaDaAgenda } from "@/components/agenda/EntradaDaAgenda";
 import { EnderecoDaMarcacao } from "@/components/agenda/EnderecoDaMarcacao";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
+import { QuemConduz } from "@/components/agenda/QuemConduz";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -15,6 +16,7 @@ import * as React from "react";
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
 import { CamadaDatasDosNegocios } from "./_components/CamadaDatasDosNegocios";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
+import { CartaoDaConexaoOutlook } from "./_components/CartaoDaConexaoOutlook";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import { PainelDoDia } from "@/components/agenda/PainelDoDia";
@@ -30,6 +32,7 @@ import {
   estaNaAgendaDe,
 } from "@/lib/agenda/convidados-da-equipe";
 import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
+import { erroComNomeDoResponsavel } from "@/lib/agenda/erro-de-responsavel";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
@@ -99,6 +102,7 @@ export function AgendaClient({
   hojeNaOrganizacao,
   usuarioId,
   googleConfigurado,
+  outlook,
   contaConectada,
   enderecoDeRetorno,
   faltaNoGoogle,
@@ -125,6 +129,7 @@ export function AgendaClient({
   /** Id de quem está logado — a única fonte para o rótulo "Você". */
   usuarioId: string;
   googleConfigurado: boolean;
+  outlook?: { configurado: boolean; conta: string | null; precisaReconectar: boolean };
   contaConectada?: string | null;
   enderecoDeRetorno?: string;
   faltaNoGoogle: string[];
@@ -242,6 +247,8 @@ export function AgendaClient({
    * escolhida é a própria diferença.
    */
   const [equipeAoAbrir, setEquipeAoAbrir] = React.useState<string[]>([]);
+  /** Responsáveis ADICIONAIS escolhidos na marcação nova (#3067). */
+  const [responsaveis, setResponsaveis] = React.useState<string[]>([]);
   /** Abrir o painel do zero: o vínculo volta a ser o da rota, nunca o da vez anterior. */
   const abrirMarcacao = React.useCallback(() => {
     reiniciarVinculo();
@@ -250,6 +257,7 @@ export function AgendaClient({
     // convidados sem ninguém ter escolhido (#4006).
     setConvidadosDaEquipe([]);
     setEquipeAoAbrir([]);
+    setResponsaveis([]);
     setMarcando(true);
   }, [reiniciarVinculo]);
   /**
@@ -729,6 +737,11 @@ export function AgendaClient({
         contaConectada={contaConectada}
         enderecoDeRetorno={enderecoDeRetorno}
       />
+      {outlook && (
+        <React.Suspense fallback={null}>
+          <CartaoDaConexaoOutlook {...outlook} />
+        </React.Suspense>
+      )}
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
@@ -1069,6 +1082,21 @@ export function AgendaClient({
                 </div>
               </div>
             )}
+            {!remarcandoId && tipo ? (
+              <div className="lg:col-span-2">
+                <QuemConduz
+                  pessoas={pessoas}
+                  principalId={donoDaMarcacao ?? tipo.donoId ?? null}
+                  selecionados={responsaveis}
+                  onChange={setResponsaveis}
+                  aviso={
+                    tipo.servicoColetivo
+                      ? t("Sessão coletiva: quem abre a sessão define a equipe; quem entra depois fica com a mesma.")
+                      : undefined
+                  }
+                />
+              </div>
+            ) : null}
             {!remarcandoId ? (
               /*
                 O TÍTULO LIVRE (#3766) — opcional, e por isso vem ANTES dos
@@ -1132,7 +1160,7 @@ export function AgendaClient({
                   // contorno que o modo de alto contraste do sistema usa.
                   "mt-1 w-full rounded-md border bg-surface p-2 outline-hidden",
                   emailConvidadoInvalido
-                    ? "border-danger focus:border-danger"
+                    ? "border-destructive focus:border-destructive"
                     : "border-border focus:border-border-strong",
                 )}
                 placeholder={t("cliente@empresa.com")}
@@ -1399,6 +1427,13 @@ export function AgendaClient({
                         convidadosDaEquipe.length && !tipo.servico
                           ? convidadosDaEquipe
                           : undefined,
+                      // O principal nunca vai na lista (o banco recusa). Vazio fica
+                      // FORA do corpo: é o caminho de sempre.
+                      responsible_user_ids: (() => {
+                        const principal = donoDaMarcacao ?? tipo.donoId ?? null;
+                        const lista = responsaveis.filter((id) => id !== principal);
+                        return lista.length ? lista : undefined;
+                      })(),
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
                       // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
@@ -1414,9 +1449,18 @@ export function AgendaClient({
                       setEnderecoEditado(null);
                       setObservacao("");
                       setTituloLivre("");
+                      setResponsaveis([]);
                       // Guardado para o fechamento saber para onde levar a grade.
                       setMarcadoEm(instante);
                       return r;
+                    })
+                    .catch((err: unknown) => {
+                      // O banco diz QUEM está ocupado; a frase na tela diz o nome.
+                      throw erroComNomeDoResponsavel(
+                        err,
+                        pessoas,
+                        t("{nome} não está disponível neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
+                      );
                     });
                 }}
                 // "VER NA AGENDA" — o botão que não fazia nada.

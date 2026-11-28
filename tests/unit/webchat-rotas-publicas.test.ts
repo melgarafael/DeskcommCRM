@@ -18,6 +18,13 @@ const h = vi.hoisted(() => ({
   contador: new Map<string, number>(),
   consultas: 0,
   ingerir: vi.fn(),
+  atendimento: vi.fn(
+    async (..._args: unknown[]): Promise<{ estado: string; abreEm: string | null; aviso: string | null }> => ({
+      estado: "aberto",
+      abreEm: null,
+      aviso: null,
+    }),
+  ),
   logErro: vi.fn(),
 }));
 
@@ -34,6 +41,9 @@ vi.mock("@/lib/webhooks/url-publica", () => ({ enderecoDaPropriaMaquina: () => f
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco }));
 vi.mock("@/lib/http/ip-do-cliente", () => ({ ipDoCliente: () => "203.0.113.7" }));
 vi.mock("@/lib/channels/webchat/modulo", () => ({ chatNoSiteLigado: async () => h.moduloLigado }));
+vi.mock("@/lib/channels/webchat/atendimento", () => ({
+  carregarAtendimento: (...args: unknown[]) => h.atendimento(...args),
+}));
 vi.mock("@/lib/channels/webchat/ingest", () => ({
   ingerirMensagemDoChat: (...args: unknown[]) => h.ingerir(...args),
 }));
@@ -132,7 +142,40 @@ describe("POST /api/v1/webchat/sessao", () => {
     h.contador.clear();
     h.consultas = 0;
     h.logErro.mockClear();
+    h.atendimento.mockClear();
     cenario("ok");
+  });
+
+  it("devolve data.atendimento em snake_case (estado, abre_em, aviso) com o horário do agente", async () => {
+    h.atendimento.mockResolvedValueOnce({
+      estado: "fechado",
+      abreEm: "2026-11-25T11:00:00.000Z",
+      aviso: "Voltamos amanhã.",
+    });
+    const r = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
+    expect(r.status).toBe(200);
+    expect((r.body as { data: { atendimento: unknown } }).data.atendimento).toEqual({
+      estado: "fechado",
+      abre_em: "2026-11-25T11:00:00.000Z",
+      aviso: "Voltamos amanhã.",
+    });
+  });
+
+  it("se a leitura do horário lança, a sessão segue 200 com atendimento aberto", async () => {
+    h.atendimento.mockRejectedValueOnce(new Error("falha de teste"));
+    const r = await resposta(await sessao(pedido("sessao", { chave: CHAVE })));
+    expect(r.status).toBe(200);
+    expect((r.body as { data: { atendimento: unknown } }).data.atendimento).toEqual({
+      estado: "aberto",
+      abre_em: null,
+      aviso: null,
+    });
+    expect((r.body as { data: { token: unknown } }).data.token).toEqual(expect.any(String));
+  });
+
+  it("o horário é lido com a organização e a conexão da linha da chave, nunca do corpo", async () => {
+    await sessao(pedido("sessao", { chave: CHAVE }));
+    expect(h.atendimento).toHaveBeenCalledWith(expect.anything(), ORG, CS, expect.any(Date));
   });
 
   it("o 31º pedido do mesmo IP, com chaves diferentes, dá 429 e não consulta o banco", async () => {
@@ -522,5 +565,61 @@ describe("POST /api/v1/webchat/mensagens", () => {
       ),
     );
     expect(r.status).toBe(201);
+  });
+
+  it("contexto válido (página, referrer e UTM) chega à ingestão", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        {
+          mensagem_id: randomUUID(),
+          texto: "oi",
+          contexto: {
+            href: "https://loja.example/produto",
+            referrer: "https://busca.example/",
+            utm: { utm_source: "ig" },
+          },
+        },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(201);
+    expect(h.ingerir.mock.calls[0]![1]).toMatchObject({
+      contexto: {
+        href: "https://loja.example/produto",
+        referrer: "https://busca.example/",
+        utm: { utm_source: "ig" },
+      },
+    });
+  });
+
+  it("contexto com campo fora do schema dá 422 e nada é ingerido", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", contexto: { href: "https://loja.example/", cookie: "x" } },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(422);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("href com 201 caracteres dá 422 e nada é ingerido", async () => {
+    const r = await mensagens(
+      pedido(
+        "mensagens",
+        { mensagem_id: randomUUID(), texto: "oi", contexto: { href: `https://x.example/${"a".repeat(201)}` } },
+        tokenDeVisitante(),
+      ),
+    );
+    expect(r.status).toBe(422);
+    expect(h.ingerir).not.toHaveBeenCalled();
+  });
+
+  it("sem contexto, a ingestão não recebe o campo e nada muda", async () => {
+    const r = await mensagens(pedido("mensagens", { mensagem_id: randomUUID(), texto: "oi" }, tokenDeVisitante()));
+    expect(r.status).toBe(201);
+    expect(h.ingerir.mock.calls[0]![1]).not.toHaveProperty("contexto");
   });
 });

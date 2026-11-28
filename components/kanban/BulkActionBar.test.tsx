@@ -29,6 +29,13 @@ vi.mock("@/hooks/i18n/useT", async () => {
   const { traduzir } = await import("@/lib/i18n/dicionario");
   return { useT: () => (chave: string) => traduzir(chave, idioma.atual) };
 });
+// #5232: a barra consulta `useIdioma` (do provider, como as outras telas) para
+// saber se deve baixar a inicial do substantivo no meio da frase. Sem este mock
+// o hook responderia pt-BR enquanto o `t` acima responde espanhol.
+vi.mock("@/lib/i18n/IdiomaProvider", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  useIdioma: () => idioma.atual,
+}));
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, warning: vi.fn(), error: vi.fn() } }));
 // #5024: o papel da organização ativa é trocável por caso — a opção "Outro
 // funil…" depende dele, e o padrão continua sendo o mesmo de antes.
@@ -183,7 +190,7 @@ describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
     get.mockResolvedValue({ data: [] });
   });
 
-  it("tela em espanhol, funil com o padrão neutro: '1 Negocio', nunca o português cru", async () => {
+  it("tela em espanhol, funil com o padrão neutro: '1 negocio', nunca o português cru nem a maiúscula de rótulo", async () => {
     idioma.atual = "es";
     const user = userEvent.setup();
     render(
@@ -196,11 +203,15 @@ describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
         vocabulary={null}
       />,
     );
-    expect(screen.getByText(/^1 Negocio /)).toBeInTheDocument();
+    // #5232: o substantivo do funil é um RÓTULO ("Negocio", com maiúscula, para
+    // ficar sozinho na tela). No meio da frase em espanhol ele não se
+    // capitaliza: "1 negocio seleccionado". O pt-BR continua com maiúscula.
+    expect(screen.getByText(/^1 negocio /)).toBeInTheDocument();
+    expect(screen.queryByText(/1 Negocio /)).not.toBeInTheDocument();
     expect(screen.queryByText(/Negócio/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Eliminar" }));
-    expect(await screen.findByText(/ 1 Negocio\?$/)).toBeInTheDocument();
+    expect(await screen.findByText(/ 1 negocio\?$/)).toBeInTheDocument();
   });
 
   it("sem vocabulário: '1 Negócio selecionado', nunca o nome da pessoa", () => {
@@ -240,7 +251,7 @@ describe("BulkActionBar — \"Outro funil…\" só para quem a rota aceita (#502
     get.mockResolvedValue({ data: [] });
   });
 
-  async function abrirMenuDoMover() {
+  async function montar() {
     const user = userEvent.setup();
     render(
       <BulkActionBar
@@ -251,14 +262,23 @@ describe("BulkActionBar — \"Outro funil…\" só para quem a rota aceita (#502
         onClear={vi.fn()}
       />,
     );
+    return user;
+  }
+
+  async function abrirMenuDoMover() {
+    const user = await montar();
     await user.click(screen.getByRole("button", { name: "Mover para…" }));
     return user;
   }
 
-  it("viewer: a opção não aparece no menu", async () => {
+  it("viewer: nem o menu do Mover existe — o gate agora é o da escrita em lote (#5232)", async () => {
     papelDaOrg.atual = "viewer";
-    await abrirMenuDoMover();
+    await montar();
 
+    // Antes (#5024) o menu abria e só a opção sumia. Agora ele nem abre: o
+    // `viewer` não vê "Mover para…", "Tag…", "Marcar como perdido…" nem
+    // "Excluir", então "Outro funil…" — que mora dentro do menu — some junto.
+    expect(screen.queryByRole("button", { name: "Mover para…" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("lote-outro-funil")).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Outro funil…" })).not.toBeInTheDocument();
   });

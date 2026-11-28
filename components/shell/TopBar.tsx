@@ -15,7 +15,20 @@ export function TopBar() {
           <MobileSidebar />
           <TenantSwitcher />
         </div>
-        <div className="flex min-w-0 flex-1 justify-center md:max-w-md">
+        {/*
+          A BUSCA NUNCA FICA COM 0 px DE COLUNA.
+
+          Em 320px o grupo da direita (avisos + menu do usuário) ocupa 200px
+          fixos e o da esquerda 92px: sobravam 0px para esta coluna, e o botão
+          de 42px transbordava 13px sobre o seletor de organização e 13px
+          sobre o sino (medido com `getBoundingClientRect`, issue #5096).
+          `min-w-11` só abaixo de 360px: é o piso de largura que o botão
+          precisa, e o desenho de 360px para cima continua idêntico.
+        */}
+        <div
+          className="flex min-w-0 flex-1 justify-center max-[359px]:min-w-11 md:max-w-md"
+          data-testid="topo-busca"
+        >
           <SearchTrigger />
         </div>
         <div className="flex shrink-0 items-center gap-2">

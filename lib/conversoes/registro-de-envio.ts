@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import type { NomeDoEvento, PlataformaDeAnuncio } from "@/lib/plataformas-de-anuncio/types";
+import type { ApiDeConversaoGoogle } from "@/lib/plataformas-de-anuncio/types";
 
 export type StatusDeEnvio = "sent" | "skipped" | "error";
 
@@ -42,6 +43,10 @@ export interface RegistroDeEnvio {
   solicitadoEm?: string | null;
   ocorridoEm?: string;
   googleActionId?: string;
+  googleCustomerId?: string;
+  googleLoginCustomerId?: string | null;
+  googleApi?: ApiDeConversaoGoogle;
+  googleDestinationExplicit?: boolean;
   /** Retrato do evento de etapa da Meta (0524): o nome que sai no fio. */
   metaEventName?: string;
 }
@@ -56,7 +61,7 @@ export async function lerRegistro(
   const { data, error } = await admin
     .from("ad_conversion_dispatches")
     .select(
-      "status, platform, value_cents, currency, remote_request_id, remote_requested_at, event_occurred_at, google_action_id, meta_event_name",
+      "status, platform, value_cents, currency, remote_request_id, remote_requested_at, event_occurred_at, google_action_id, google_customer_id, google_login_customer_id, google_api, google_destination_explicit, meta_event_name",
     )
     .eq("organization_id", organizationId)
     .eq("lead_id", leadId)
@@ -72,6 +77,10 @@ export async function lerRegistro(
     remote_requested_at?: string | null;
     event_occurred_at?: string | null;
     google_action_id?: string | null;
+    google_customer_id?: string | null;
+    google_login_customer_id?: string | null;
+    google_api?: ApiDeConversaoGoogle | null;
+    google_destination_explicit?: boolean | null;
     meta_event_name?: string | null;
   } | null;
 }
@@ -111,6 +120,14 @@ export async function registraEnvio(
         : {}),
       ...(registro.ocorridoEm ? { event_occurred_at: registro.ocorridoEm } : {}),
       ...(registro.googleActionId ? { google_action_id: registro.googleActionId } : {}),
+      ...(registro.googleCustomerId && registro.googleDestinationExplicit !== undefined
+        ? {
+            google_customer_id: registro.googleCustomerId,
+            google_login_customer_id: registro.googleLoginCustomerId ?? null,
+            google_api: registro.googleApi ?? null,
+            google_destination_explicit: registro.googleDestinationExplicit,
+          }
+        : {}),
       ...(registro.metaEventName ? { meta_event_name: registro.metaEventName } : {}),
       attempted_at: new Date().toISOString(),
     },

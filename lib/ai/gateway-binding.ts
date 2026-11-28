@@ -26,7 +26,12 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
-import { DEEPSEEK_ENDPOINT, REQUESTY_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  AIMLAPI_ENDPOINT,
+  DEEPSEEK_ENDPOINT,
+  fetchDoProvedor,
+  REQUESTY_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
 import { fetchParaDestinoDaOrganizacao } from "@/lib/automation/destinos-internos-autorizados";
 import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
@@ -397,7 +402,7 @@ async function lerBinding(
  * de modelo: quem já está dentro do provedor recebe só o nome, e é o que
  * `resolveLanguageModel` faz ao rotear pelo prefixo. A OpenRouter é a exceção
  * porque é agregadora — lá o prefixo é parte do endereço e vai inteiro.
- * A Requesty também é agregadora, e segue a mesma regra.
+ * A Requesty e a AI/ML API também são agregadoras, e seguem a mesma regra.
  *
  * O `null` é o freio do PR #151: id de outro provedor não vira chamada com a
  * chave da organização, vira queda para `resolveLanguageModel`, que sabe achar
@@ -406,7 +411,12 @@ async function lerBinding(
 function idParaOProvider(provider: string, id: string): string | null {
   // Os roteadores levam o prefixo inteiro — inclusive o provedor personalizado
   // (#1642), que serve id de QUALQUER fabricante atrás do próprio endpoint.
-  if (provider === "openrouter" || provider === "requesty" || provider === "custom")
+  if (
+    provider === "openrouter" ||
+    provider === "requesty" ||
+    provider === "aimlapi" ||
+    provider === "custom"
+  )
     return id;
   if (!id.includes("/")) return id;
   if (id.startsWith(`${provider}/`)) return id.slice(provider.length + 1);
@@ -591,6 +601,7 @@ async function padraoDaOrganizacao(
   const modelId =
     llm.provider === "openrouter" ||
     llm.provider === "requesty" ||
+    llm.provider === "aimlapi" ||
     llm.provider === "custom" ||
     defaultModel.startsWith(`${llm.provider}/`)
       ? defaultModel
@@ -866,6 +877,14 @@ function instanciar(
       return createOpenAI({ apiKey, baseURL: baseUrl ?? DEEPSEEK_ENDPOINT })(modelId);
     case "requesty":
       return createOpenAI({ apiKey, baseURL: baseUrl ?? REQUESTY_ENDPOINT }).chat(modelId); // ver providers.ts
+    // AI/ML API: endpoint fixo (sem `baseUrl`), e a chave só sai para
+    // `api.aimlapi.com`, inclusive em redirect. Ver providers.ts.
+    case "aimlapi":
+      return createOpenAI({
+        apiKey,
+        baseURL: AIMLAPI_ENDPOINT,
+        fetch: fetchDoProvedor(AIMLAPI_ENDPOINT),
+      }).chat(modelId);
     // Provedor personalizado (#1642): endpoint do operador. Sem `baseUrl` não
     // há onde ir — `null` deixa o chamador cair no padrão COM AVISO, que é o
     // contrato deste switch; inventar um endpoint seria mandar a chave do

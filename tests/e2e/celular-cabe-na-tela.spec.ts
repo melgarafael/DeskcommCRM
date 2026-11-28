@@ -411,8 +411,8 @@ async function tabelasQueRolamNaPropriaCaixa(page: Page): Promise<string[]> {
 
 /**
  * O ranking por atendente e o "Por canal" (os dois semeados, então SEMPRE
- * presentes) viram cartão a 390px: o cabeçalho some. O texto procurado vale em
- * português e em espanhol.
+ * presentes) viram cartão a 390px: o cabeçalho some. A coluna Canal identifica
+ * o quadro nos dois idiomas.
  */
 async function conferirOsCartoesDoPainel(page: Page): Promise<void> {
   const ranking = page.locator("main table", { has: page.locator("th", { hasText: /mediana/ }) });
@@ -423,7 +423,7 @@ async function conferirOsCartoesDoPainel(page: Page): Promise<void> {
   ).toBe("none");
 
   const canais = page.locator("main table", {
-    has: page.locator("th", { hasText: /Sem resposta|Sin respuesta/ }),
+    has: page.locator("th", { hasText: /^Canal$/ }),
   });
   await expect(canais, "o Por canal semeado não apareceu no painel").toHaveCount(1);
   expect(

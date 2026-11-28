@@ -29,6 +29,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { estamparOrigemDaPagina, normalizarUtm } from "@/lib/leads/origem-do-site";
 import { logger } from "@/lib/logger";
 
 import { marcarConversaComMensagem } from "../marcar-conversa";
@@ -69,6 +70,11 @@ export interface IngerirMensagemDoChatInput {
   aceite?: AceiteDoVisitante | undefined;
   contato?: DadosDoContatoDoVisitante | undefined;
   coleta?: ColetaDoChat | undefined;
+  /**
+   * Página e UTM de onde o visitante veio. Só a primeira mensagem usa; nas seguintes é ignorado.
+   * Rótulo de origem, não permissão: as UTM passam por `normalizarUtm` antes de qualquer gravação.
+   */
+  contexto?: { href?: string | undefined; referrer?: string | undefined; utm?: Record<string, string> | undefined } | undefined;
 }
 
 /** Por que a primeira mensagem não entrou. Não diz ao visitante qual campo falta. */
@@ -123,6 +129,7 @@ export async function ingerirMensagemDoChat(
     });
   }
 
+  const metadata = primeira ? metadataDaPrimeira(p) : undefined;
   const inserted = await insertMessage(admin, {
     organizationId: p.organizationId,
     conversationId,
@@ -131,11 +138,11 @@ export async function ingerirMensagemDoChat(
     externalId,
     texto: p.texto,
     sentAt: p.agora,
-    ...(primeira && p.aceite
-      ? { metadata: { webchat_aceite: { versao: p.aceite.versao, em: p.aceite.em } } }
-      : {}),
+    ...(metadata ? { metadata } : {}),
   });
   if (inserted === "duplicate") return { status: "duplicate", conversationId, messageId: null };
+
+  if (primeira) await estamparOrigemDaPrimeira(admin, p, contactId);
 
   await marcarConversaComMensagem(admin, {
     organizationId: p.organizationId,
@@ -159,6 +166,46 @@ export async function ingerirMensagemDoChat(
   });
 
   return { status: "ingested", conversationId, messageId: inserted };
+}
+
+/**
+ * O `metadata` da primeira mensagem: o aceite e a página de origem, só o que veio.
+ * Sem nenhum dos dois, `undefined` — a mensagem sai sem metadata, como antes.
+ */
+function metadataDaPrimeira(p: IngerirMensagemDoChatInput): Record<string, unknown> | undefined {
+  const metadata: Record<string, unknown> = {};
+  if (p.aceite) metadata.webchat_aceite = { versao: p.aceite.versao, em: p.aceite.em };
+  const pagina: Record<string, string> = {};
+  if (p.contexto?.href) pagina.href = p.contexto.href;
+  if (p.contexto?.referrer) pagina.referrer = p.contexto.referrer;
+  if (Object.keys(pagina).length > 0) metadata.webchat_pagina = pagina;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+/**
+ * Estampa a origem da página (UTM) no contato, pela mesma função do WhatsApp. Sem UTM válida não
+ * chama nada. A mensagem JÁ está gravada: exceção ou recusa viram aviso, nunca erro para o widget.
+ */
+async function estamparOrigemDaPrimeira(
+  admin: SupabaseClient,
+  p: IngerirMensagemDoChatInput,
+  contactId: string,
+): Promise<void> {
+  const utm = normalizarUtm(p.contexto?.utm);
+  if (Object.keys(utm).length === 0) return;
+  try {
+    const gravou = await estamparOrigemDaPagina(admin, p.organizationId, contactId, {
+      utm,
+      capturadaEm: p.agora.toISOString(),
+    });
+    if (!gravou) {
+      logger.warn("webchat: origem da página NÃO gravada (a mensagem entra assim mesmo)", { rota: "webchat_ingest" });
+    }
+  } catch {
+    logger.warn("webchat: origem da página NÃO gravada por exceção (a mensagem entra assim mesmo)", {
+      rota: "webchat_ingest",
+    });
+  }
 }
 
 /** O texto aparado do campo, ou `null` quando veio vazio ou ausente. */

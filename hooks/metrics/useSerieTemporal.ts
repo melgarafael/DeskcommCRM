@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { parametrosDaJanela, type JanelaDeMetricas } from "@/lib/metrics/periodo-do-desempenho";
 import type { BaldeDeGanhos, Granularidade } from "@/lib/metrics/serie-temporal";
 
 /** O funil de um recorte, como a rota devolve — o id e o nome que o card mostra. */
@@ -42,14 +43,16 @@ export interface SerieTemporal {
  * misturava ticket resolvido com venda. Sem ele, o pedido é o de antes — mesmo
  * número, e a chave do cache diz qual dos dois está em cache.
  */
-export function useSerieTemporal(granularidade: Granularidade, funilId: string | null = null) {
+export function useSerieTemporal(granularidade: Granularidade, funilId: string | null, janela: JanelaDeMetricas) {
   return useQuery({
-    queryKey: ["metrics", "serie", granularidade, funilId],
+    queryKey: ["metrics", "serie", granularidade, funilId, janela],
     queryFn: async () => {
-      const busca = new URLSearchParams({ granularidade });
+      const busca = parametrosDaJanela(janela);
+      busca.set("granularidade", granularidade);
       if (funilId) busca.set("pipeline_id", funilId);
       return apiClient.get<{ data: SerieTemporal }>(`/api/v1/metrics/serie?${busca.toString()}`);
     },
     staleTime: 30_000,
+    enabled: janela !== undefined,
   });
 }

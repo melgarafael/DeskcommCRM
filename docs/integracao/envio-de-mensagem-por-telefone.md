@@ -35,7 +35,9 @@ de quem é a mensagem.
 | `phone_number` | um dos dois | o número do destinatário, E.164 com `+` ou só dígitos. |
 | `body` | sim¹ | texto da mensagem, 1 a 4096 caracteres. |
 | `type` | não | `text` (padrão), `template`, `image`, `audio`… — o mesmo vocabulário da rota. |
+| `dispatch_mode` | não | `"operational"` (padrão) ou `"institutional"` (exige escopo `messages:institutional` e só aceita `conversation_id`, sem efeitos no atendimento). |
 | `metadata` | não | objeto livre, gravado com a mensagem. |
+| `channel_session_id` | não | uuid da sessão de canal por onde a mensagem sai. Vale só com `phone_number`; com `conversation_id` é inerte, porque a conversa já fixa o canal. |
 
 ¹ ou mídia (`media_url` / `media_storage_path`), ou cartão de contato — a
 mensagem precisa levar alguma coisa.
@@ -68,13 +70,19 @@ O telefone não é convertido pela rota, e sim pelo **mesmo caminho** que o bot�
 2. `encontrarContatoPorTelefone` procura a ficha **da organização do token**,
    pelas grafias do número (com e sem o nono dígito) e também nos telefones
    extras da ficha.
-3. Não achou? `fn_upsert_wa_contact` cria o contato **nesta** organização. É o
-   mesmo upsert das outras portas de entrada.
+3. Não achou? `openSharedContactConversation` cria o contato **nesta**
+   organização (o `organization_id` do token, nunca do corpo), com
+   `phone_whatsapp = 'nao_sei'`: quem abre por token não sabe ainda se o número
+   tem WhatsApp. Ele vira `sim` quando chega a primeira mensagem RECEBIDA pelo
+   WhatsApp (o upsert do webhook, `fn_upsert_wa_contact`). A rota
+   `open-with-contact` e a tool MCP aceitam `phone_whatsapp` (`sim`, `nao` ou
+   `nao_sei`) para a ficha que criarem; ficha que já existe não é alterada.
 4. `openSharedContactConversation` (o mesmo ponto único do botão e da tool MCP)
    abre a conversa 1:1 — ou **reaproveita** a que já existe, inclusive reabrindo
-   uma fechada — na sessão de canal escolhida por `escolherSessaoParaEnvio` com
-   `preferirTelefone`: canal que disca número, degradando para qualquer um não
-   arquivado.
+   uma fechada — na sessão escolhida por quem chama (`channel_session_id`, que
+   precisa ser da organização do token e estar conectada) ou, sem ela, na
+   escolhida por `escolherSessaoParaEnvio` com `preferirTelefone`: canal que
+   disca número, degradando para qualquer um não arquivado.
 
 Uma conversa por contato: repetir o pedido não abre uma segunda.
 
@@ -90,6 +98,7 @@ recibo) e vale **24 h**. O hash sai do **corpo que chegou**, validado — nunca 
 | mesma chave, corpo diferente | `409 idempotency_conflict` |
 | mesma chave, primeira execução ainda em curso | `409 idempotency_in_progress` — a chave está certa; retentar resolve |
 | mesma chave, um corpo por telefone e outro por conversa | `409 idempotency_conflict`: são dois jeitos de pedir, não um pedido |
+| mesma chave, outro `channel_session_id` | `409 idempotency_conflict`: escolher outro número é outro pedido |
 
 A chave cobre o **par** abrir-conversa + enviar: o replay não cria contato nem
 conversa duplicados.
@@ -100,12 +109,16 @@ conversa duplicados.
 |---|---|---|
 | 401 | `unauthenticated` | token ausente, inválido, revogado ou expirado |
 | 403 | `forbidden` / `forbidden_role` | token sem `mcp:write`; `on_behalf_of_user_id` sem o escopo `messages:on_behalf`; contato marcado como pessoal; papel abaixo de atendente |
-| 404 | `not_found` | não há sessão de canal que possa enviar |
-| 409 | `state_conflict` | canal desligado ou fora do ar (`session_unavailable`) — retentar depois |
+| 403 | `forbidden` | `dispatch_mode: "institutional"` sem o escopo `messages:institutional`, por sessão de navegador ou por agente de IA |
+| 404 | `not_found` | sem `channel_session_id`: não há sessão de canal que possa enviar |
+| 409 | `state_conflict` | sem `channel_session_id`: canal desligado ou fora do ar (`session_unavailable`) — retentar depois |
 | 409 | `idempotency_conflict` | ver a §4 |
 | 409 | `idempotency_in_progress` | ver a §4 |
+| 409 | `state_conflict` | `dispatch_mode: "institutional"` numa conversa encerrada, resolvida ou arquivada (`details.conversation_status`); também quando ela é encerrada entre a leitura e o envio — a mensagem fica `failed` com `error_code = conversation_closed` |
 | 422 | `ambiguous_target` | `conversation_id` **e** `phone_number` no mesmo corpo |
-| 422 | `validation_error` | corpo inválido, telefone inválido, nenhum identificador |
+| 422 | `validation_error` | corpo inválido, telefone inválido, nenhum identificador; `channel_session_id` inexistente, de outra organização ou fora do ar — resposta única, com `details.campo: "channel_session_id"`, que não diz se a sessão existe em outra organização |
+| 422 | `validation_failed` | `dispatch_mode: "institutional"` com `phone_number`, sem `conversation_id` ou com `on_behalf_of_user_id` |
+| 422 | `numero_sem_whatsapp` | `phone_number` sem conta de WhatsApp em nenhuma grafia consultada — recusa definitiva, não adianta retentar (#5298) |
 | 429 | `rate_limited` | teto por token ou por organização; `details.retry_after_seconds` |
 | 500 | `internal_error` | falha ao abrir a conversa deste telefone |
 
@@ -130,11 +143,6 @@ recibo. O id que o conector guarda é `data.id`; o da conversa é
 
 ## 7. O que este contrato NÃO faz
 
-- **Não aceita canal explícito.** Este guia documenta o que existe: a sessão é
-  escolhida pelo CRM (canal que disca número primeiro). Exigir
-  `channel_session_id` no corpo é decisão de produto em aberto na issue #4513,
-  e quem precisar disso hoje usa
-  `POST /api/v1/conversations/open-with-contact`, que já aceita o campo.
 - **Não recusa número que é ficha de OUTRA organização.** A busca só olha a
   organização do token; o número de outra organização **não é alcançado** (nada
   dela é lido nem usado), e a ficha nasce nesta organização pelo upsert. Recusar
@@ -142,6 +150,10 @@ recibo. O id que o conector guarda é `data.id`; o da conversa é
   organização" são indistinguíveis sem consultar as outras organizações.
 - **Não muda o conector do DeskVoice.** Ele vive em outro repositório
   (`packages/tools/src/connectors/deskcomm.ts`); este lado entrega a porta.
+- **Não envia modo institucional por telefone.** `dispatch_mode: "institutional"`
+  exige `conversation_id` explícito de uma conversa não encerrada e token com o
+  escopo `messages:institutional` (além de `mcp:write`); combinar com
+  `phone_number` ou `on_behalf_of_user_id` devolve `422 validation_failed`.
 
 ## 8. Uma nota de operação
 

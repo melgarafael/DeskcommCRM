@@ -290,8 +290,9 @@ export function paradaVizinha(paradas: readonly number[], atual: number, direcao
  *
  * A mesma ordem de `razaoDoBloco` (passado antes de ocupado), e as mesmas
  * frases, para a grade falar uma língua só. "Ocupado" aqui é o que o servidor
- * recusaria (`exigeSemSobreposicao`): só o MESMO responsável, e quem faltou ou
- * cancelou não ocupa (`LIBERAM_O_HORARIO` em `lib/agenda/ocupados.ts`).
+ * recusaria (`exigeSemSobreposicao`): alguém que conduz os dois, principal ou
+ * adicional, e quem faltou ou cancelou não ocupa (`LIBERAM_O_HORARIO` em
+ * `lib/agenda/ocupados.ts`).
  */
 export function razaoDoFim(entrada: { passado: boolean; ocupado: boolean }): string {
   if (entrada.passado) return "este horário já passou";

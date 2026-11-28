@@ -46,6 +46,7 @@ import { apiClient } from "@/lib/api/client";
 import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { decideMotivoDaPerda } from "@/lib/leads/motivo-da-perda";
+import { motivosDeGanhoDoFunil } from "@/lib/leads/motivo-do-ganho-do-funil";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import type { Lead } from "@/lib/types/leads";
 
@@ -172,6 +173,7 @@ export function PaginaDoNegocio({
         }}
         recusa={recusa}
         isPending={moveCard.isPending}
+        wonReasons={motivosDeGanhoDoFunil(funil.settings ?? null)}
         onConfirmar={({ customFields, wonReason }) => {
           if (!recusa) return;
           const { args } = recusa;

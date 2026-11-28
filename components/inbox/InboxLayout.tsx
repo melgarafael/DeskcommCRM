@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import { useSectors } from "@/hooks/team/useSectors";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -24,12 +25,12 @@ import {
 } from "@/hooks/inbox/useConversationsRealtime";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { useParticipantesDaConversa } from "@/hooks/inbox/useParticipantesDaConversa";
-import { useParticipacoesRealtime } from "@/hooks/inbox/useParticipacoesRealtime";
+import { filtrarListaProtegida, useRecuperacaoDaConversa } from "@/hooks/inbox/useRecuperacaoDaConversa";
 import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
-import { Composer, type ComposerHandle } from "./Composer";
+import { Composer, type ComposerHandle, type RascunhoDoComposer } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
@@ -308,7 +309,12 @@ interface InboxLayoutProps {
   abasDaInbox?: AbaDaPessoa[];
 }
 
-export function InboxLayout({
+export function InboxLayout(props: InboxLayoutProps = {}) {
+  const { user, activeOrg } = useAuth();
+  return <InboxNoEscopo key={JSON.stringify([user.id, activeOrg?.orgId, user.support?.id, user.support?.access_mode])} {...props} />;
+}
+
+function InboxNoEscopo({
   initialSelectedId = null,
   rascunho = null,
   painelRecolhidoInicial = false,
@@ -327,7 +333,6 @@ export function InboxLayout({
    */
   const setoresLigados = (activeOrg?.modulos_ligados ?? []).includes("setores");
   const { data: filasDaOrganizacao } = useSectors(setoresLigados);
-  useParticipacoesRealtime(user.id, activeOrg?.orgId ?? null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
 
@@ -482,14 +487,6 @@ export function InboxLayout({
   const [rascunhoVivo, setRascunhoVivo] = useState(rascunho);
   if (rascunhoVivo && selectedId !== rascunhoVivo.conversationId) setRascunhoVivo(null);
 
-  useEffect(() => {
-    if (ultimoIdNaUrl.current === idNaUrl) return;
-    ultimoIdNaUrl.current = idNaUrl;
-    // O histórico do navegador também troca a conversa, sem carregar a página inteira.
-    setSelectedId(idNaUrl);
-    setRespondendo(null);
-    setEncaminhando(null);
-  }, [idNaUrl]);
 
   /**
    * A ORG tem automático de pé? Sobe para cá porque agora é a ABA que precisa —
@@ -525,6 +522,12 @@ export function InboxLayout({
     }
   }, []);
   const composerRef = useRef<ComposerHandle | null>(null);
+  const respostaComFoco = useRef<string | null>(null);
+  // Só a Inbox desta identidade pode manter rascunhos separados por conversa.
+  const rascunhosPorConversa = useRef(new Map<string, RascunhoDoComposer>());
+  const [editor, setEditor] = useState<{ versao: number; id: string | null; rascunho: RascunhoDoComposer | null }>({
+    versao: 0, id: null, rascunho: null,
+  });
 
   const filters: ConversationsFilters = useMemo(
     () => ({
@@ -592,11 +595,42 @@ export function InboxLayout({
 
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
-  const listQ = useConversationsRealtime(filters, orgId, !filaEsperaOFatoDaOrg);
+  const listaBruta = useConversationsRealtime(filters, orgId, !filaEsperaOFatoDaOrg);
+  const conversaRef = useRef<HTMLDivElement | null>(null);
+  const guardarAncora = useCallback(() => {
+    const scroller = conversaRef.current?.querySelector<HTMLElement>("[data-paginas-do-historico]");
+    if (!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 120) return null;
+    const topo = scroller.getBoundingClientRect().top;
+    const mensagem = Array.from(scroller.querySelectorAll<HTMLElement>("[data-message-id]"))
+      .find((elemento) => elemento.getBoundingClientRect().bottom > topo);
+    if (!mensagem?.dataset.messageId) return null;
+    return {
+      id: mensagem.dataset.messageId,
+      deslocamento: mensagem.getBoundingClientRect().top - topo,
+      paginas: Number(scroller.dataset.paginasDoHistorico) || 1,
+    };
+  }, []);
+  const fecharAcoes = useCallback(() => {
+    if (composerRef.current?.estaEditando?.()) respostaComFoco.current = selectedId;
+    setBusca(null);
+    setRespondendo(null);
+    setEncaminhando(null);
+    setFichaAberta(false);
+  }, [selectedId]);
+  const recuperacao = useRecuperacaoDaConversa({
+    id: selectedId, orgId, userId: user.id, lista: listaBruta.data, guardarAncora, fecharAcoes,
+  });
+  const { estado, linhaPermitida, podeAgir, registrarFalha, temRodada } = recuperacao;
+  const dadosDaLista = useMemo(() => filtrarListaProtegida(listaBruta.data, linhaPermitida),
+    [listaBruta.data, linhaPermitida]);
+  const listQ = { ...listaBruta, data: dadosDaLista };
+  const recuperando = estado === "verificando" || estado === "falhou";
+  const acessoEncerrado = estado === "sem-acesso" || estado === "sessao-expirada";
+  if (acessoEncerrado && rascunhoVivo) setRascunhoVivo(null);
   const inList = useMemo(() => {
-    const all = listQ.data?.pages.flatMap((p) => p.data) ?? [];
+    const all = dadosDaLista?.pages.flatMap((p) => p.data) ?? [];
     return all.find((c) => c.id === selectedId) ?? null;
-  }, [listQ.data, selectedId]);
+  }, [dadosDaLista, selectedId]);
 
   // Deep-link para conversa fora do filtro atual (ou fora do escopo do agent):
   // busca única RLS-scoped. 404/vazio ⇒ inacessível ⇒ estado vazio claro (GAP D),
@@ -629,17 +663,63 @@ export function InboxLayout({
   // requisição extra por deep-link cuja conversa acabe aparecendo na lista —
   // clicar numa conversa da lista já carregada continua sem pedir nada, porque
   // aí `inList` já a tem no primeiro render.
-  const needsFetch = !!selectedId && !inList;
-  const single = useConversation(selectedId, needsFetch);
-  const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
+  const needsFetch = !!selectedId && !recuperando && !acessoEncerrado && (!inList || estado === "confirmada");
+  const single = useConversation(selectedId, needsFetch, orgId ?? undefined);
+  const selectedConversation: ConversationWithContact | null = recuperando || acessoEncerrado
+    ? null
+    : estado === "confirmada" ? single.data ?? null : inList ?? single.data ?? null;
+  useEffect(() => {
+    if (estado === "confirmada" && single.error) registrarFalha(single.error);
+  }, [estado, single.error, registrarFalha]);
+  const conversaDoComposer = selectedConversation?.id ?? (recuperando ? selectedId : null);
+  const trocarSelecao = useCallback((proxima: string | null) => {
+    if (proxima === selectedId) return;
+    if (temRodada(selectedId) || temRodada(proxima)) {
+      const rascunho = composerRef.current?.guardarRascunho?.();
+      if (selectedId && rascunho && !acessoEncerrado &&
+        (rascunho.texto || rascunho.arquivos.length || rascunho.modo === "note" || rascunho.sugestaoUsada)) {
+        rascunhosPorConversa.current.set(selectedId, rascunho);
+      }
+      const guardado = proxima ? rascunhosPorConversa.current.get(proxima) ?? null : null;
+      // O editor passa a ser dono do rascunho restaurado.
+      if (proxima) rascunhosPorConversa.current.delete(proxima);
+      setEditor((anterior) => ({ versao: anterior.versao + 1, id: proxima, rascunho: guardado }));
+    }
+    setSelectedId(proxima);
+    setRespondendo(null);
+    setEncaminhando(null);
+  }, [selectedId, temRodada, acessoEncerrado]);
+
+  useEffect(() => {
+    if (ultimoIdNaUrl.current === idNaUrl) return;
+    ultimoIdNaUrl.current = idNaUrl;
+    trocarSelecao(idNaUrl);
+  }, [idNaUrl, trocarSelecao]);
+
+  useLayoutEffect(() => {
+    if (estado === "sessao-expirada") rascunhosPorConversa.current.clear();
+    else if (estado === "sem-acesso" && selectedId) rascunhosPorConversa.current.delete(selectedId);
+  }, [estado, selectedId]);
+  useEffect(() => {
+    if (!editor.rascunho || (editor.id !== conversaDoComposer && !acessoEncerrado)) return;
+    setEditor((atual) => atual === editor ? { ...atual, rascunho: null } : atual);
+  }, [editor, conversaDoComposer, acessoEncerrado]);
+
+  useLayoutEffect(() => {
+    if (respostaComFoco.current !== selectedId || acessoEncerrado) {
+      respostaComFoco.current = null;
+    } else if (estado === "confirmada" && selectedConversation) {
+      respostaComFoco.current = null;
+      if (document.activeElement === document.body) composerRef.current?.focus();
+    }
+  }, [estado, selectedConversation, selectedId, acessoEncerrado]);
   const participantes = useParticipantesDaConversa(selectedConversation?.id ?? "");
   const participaDoAtendimento = participantes.data?.some((p) => p.user_id === user.id) === true;
   const selectionNotFound =
-    needsFetch && !single.isPending && !single.data && isNotFound(single.error);
+    estado === "sem-acesso" || (needsFetch && !single.isPending && !single.data && isNotFound(single.error));
 
-  const colunas = colunasDoCelular(Boolean(selectedId));
+  const colunas = colunasDoCelular(Boolean(selectedId) || estado === "sessao-expirada");
   // O teclado do celular, medido só com conversa aberta (ver `colunasDoCelular`).
-  const conversaRef = useRef<HTMLDivElement | null>(null);
   const tecladoAberto = useAlturaVisivel(conversaRef, Boolean(selectedId));
   const listaRef = useRef<HTMLDivElement | null>(null);
   // Depois de pintar: só então a lista já está `invisible` (ver `soltarFocoEscondido`).
@@ -654,8 +734,8 @@ export function InboxLayout({
   const encaminhar = useEncaminharMensagem();
   // As conversas já carregadas são o universo de destinos — sem busca nova.
   const conversasDaLista = useMemo(
-    () => listQ.data?.pages.flatMap((p) => p.data) ?? [],
-    [listQ.data],
+    () => dadosDaLista?.pages.flatMap((p) => p.data) ?? [],
+    [dadosDaLista],
   );
 
   // LOTE (#2484, F1): a seleção múltipla e a barra de ações da Inbox. A
@@ -672,7 +752,7 @@ export function InboxLayout({
 
   const rodarLote = useCallback(
     (action: AcaoEmLote, toUserId?: string, reason?: string) => {
-      const ids = Array.from(selecao.selecionados);
+      const ids = Array.from(selecao.selecionados).filter(podeAgir);
       if (ids.length === 0) return;
       lote.mutate(
         { ids, action, to_user_id: toUserId, reason },
@@ -685,7 +765,7 @@ export function InboxLayout({
         },
       );
     },
-    [lote, selecao],
+    [lote, selecao, podeAgir],
   );
 
   // A leitura da conversa aberta é do upstream e fica: sem ela o contador de
@@ -700,13 +780,7 @@ export function InboxLayout({
   // `null`, e sem isso o botão de voltar não teria o que chamar.
   //
   const handleSelect = useCallback((id: string | null) => {
-    if (id === selectedId) return;
-    // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
-    // a citação junto — e a resposta sairia citando mensagem de outro cliente.
-    setRespondendo(null);
-    // O mesmo vale para o encaminhamento: o destino não pode sobreviver à
-    // troca de conversa.
-    setEncaminhando(null);
+    if (id === selectedId || (id && !linhaPermitida(id))) return;
     // ?id= é o formato já usado pelos atalhos do CRM. A History API mantém a
     // seleção instantânea sem pedir um novo Server Component a cada clique.
     const params = new URLSearchParams(searchParams.toString());
@@ -717,9 +791,9 @@ export function InboxLayout({
     const query = params.toString();
     // Voltar pela história deixa a troca para o `popstate` (efeito de `idNaUrl`).
     if (navegarNoInbox(query ? `${pathname}?${query}` : pathname, selectedId, id) === "trocou") {
-      setSelectedId(id);
+      trocarSelecao(id);
     }
-  }, [selectedId, searchParams, pathname]);
+  }, [selectedId, searchParams, pathname, linhaPermitida, trocarSelecao]);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -1095,6 +1169,7 @@ export function InboxLayout({
             selectedId={selectedId}
             onSelect={handleSelect}
             onVisibleChange={handleVisibleChange}
+            podeAgirNaLinha={podeAgir}
             onLimparFiltros={limparFiltrosAuxiliares}
             selecionados={selecao.selecionados}
             onAlternarSelecao={podeAgirEmLote ? selecao.alternar : undefined}
@@ -1102,7 +1177,7 @@ export function InboxLayout({
               podeAgirEmLote
                 ? () =>
                     selecao.selecionarTodos(
-                      (listQ.data?.pages.flatMap((p) => p.data) ?? []).map((c) => c.id),
+                      (dadosDaLista?.pages.flatMap((p) => p.data) ?? []).map((c) => c.id).filter(podeAgir),
                     )
                 : undefined
             }
@@ -1245,6 +1320,9 @@ export function InboxLayout({
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread
                 conversationId={selectedConversation.id}
+                ancoraDaRecuperacao={recuperacao.ancora}
+                onRestaurarAncora={recuperacao.soltarAncora}
+                onFalhaDaLeitura={registrarFalha}
                 searchTerm={buscaAberta ? busca.termo : ""}
                 provider={selectedConversation.channel_sessions?.provider ?? null}
                 onResponder={setRespondendo}
@@ -1279,55 +1357,25 @@ export function InboxLayout({
                 motivo={motivoDaJanela}
               />
             )}
-            <Composer
-              // Trocar a chave quando o rascunho sai REMONTA o composer: o texto
-              // nasce de `useState(initialDraft)`, e só a prop mudar não o limparia.
-              // Sem rascunho a chave é fixa e a troca de conversa segue como antes.
-              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : "composer"}
-              ref={composerRef}
-              conversationId={selectedConversation.id}
-              agendamentoLigado={
-                Boolean(selectedConversation.contacts?.id && selectedConversation.channel_session_id) && !supportReadonly
-              }
-              blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
-              janelaFechada={motivoDaJanela}
-              disabled={selectedConversation.status === "closed"}
-              // A CAIXA TRAVADA ATÉ ASSUMIR (#3012) — a opção é da ORGANIZAÇÃO e
-              // chega pela mesma preferência que o menu (`interface_settings` em
-              // `useAuth`). Desligada (o padrão) ninguém vê diferença: com ela
-              // fora, a expressão é `false` em todo estado. Assumir a conversa
-              // muda `assigned_to_user_id` e o compositor libera sozinho, porque
-              // a decisão é recalculada a cada render sobre a conversa atual.
-              aguardandoAssumir={composerBloqueadoAteAssumir({
-                ligada: activeOrg?.interface_settings?.bloquearAteAssumir === true,
-                donoDaConversa: selectedConversation.assigned_to_user_id,
-                atendenteId: user.id,
-                participanteAtivo: participaDoAtendimento,
-              })}
-              contactName={selectedConversation.contacts?.name ?? null}
-              contactDisplayName={selectedConversation.contacts?.display_name}
-              respondendo={respondendo}
-              onCancelarResposta={() => setRespondendo(null)}
-              currentContactId={selectedConversation.contact_id}
-              // A barra de recursos lembra o recolhimento POR usuário (#3282);
-              // o id vem do `AuthProvider` daqui, não de dentro do compositor.
-              usuarioId={user.id}
-              // #3732: a recusa do envio pode dizer que a conversa continua em
-              // outra conversa do MESMO contato, no número de quem responde —
-              // e o botão da faixa abre essa conversa. É a mesma seleção que a
-              // faixa do número fora do ar e o cabeçalho já usam.
-              onAbrirConversa={handleSelect}
-              // O microfone some no canal que recusa a nota de voz que ele grava
-              // (Instagram/Facebook): a pergunta é à capability, nunca ao provider.
-              recusaNotaDeVoz={recusaNotaDeVoz(selectedConversation.channel_sessions?.provider)}
-              // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
-              // não pode deixar um texto sugerido no campo de outra pessoa.
-              rascunho={rascunhoVivo}
-              initialDraft={
-                rascunhoVivo?.leitura.estado === "sugerido" ? rascunhoVivo.leitura.texto : ""
-              }
-            />
           </>
+        ) : recuperando || estado === "sessao-expirada" ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground" role="status">
+            {estado === "sessao-expirada" ? (
+              <>
+                <p>{t("Sua sessão expirou. Entre de novo.")}</p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/login?next=${encodeURIComponent(`${pathname}?${searchParams}`)}`}>{t("Entrar")}</Link>
+                </Button>
+              </>
+            ) : estado === "falhou" ? (
+              <>
+                <p>{t("Não foi possível recuperar a conversa agora.")}</p>
+                <Button variant="outline" size="sm" onClick={recuperacao.tentarDeNovo}>{t("Tentar novamente")}</Button>
+              </>
+            ) : (
+              <p>{t("Verificando o acesso à conversa…")}</p>
+            )}
+          </div>
         ) : selectionNotFound ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
             {t("Conversa não encontrada ou fora do seu acesso.")}
@@ -1339,15 +1387,64 @@ export function InboxLayout({
             <p className="text-xs text-text-muted">{t("Ou navegue com J e K")}</p>
           </div>
         )}
+        {conversaDoComposer && (
+            <Composer
+              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : `composer:${editor.versao}`}
+              ref={composerRef}
+              conversationId={conversaDoComposer}
+              suspenso={recuperando}
+              rascunhoGuardado={editor.id === conversaDoComposer ? editor.rascunho : null}
+              agendamentoLigado={
+                Boolean(selectedConversation?.contacts?.id && selectedConversation?.channel_session_id) && !supportReadonly
+              }
+              blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
+              janelaFechada={motivoDaJanela}
+              disabled={selectedConversation?.status === "closed"}
+              // A CAIXA TRAVADA ATÉ ASSUMIR (#3012) — a opção é da ORGANIZAÇÃO e
+              // chega pela mesma preferência que o menu (`interface_settings` em
+              // `useAuth`). Desligada (o padrão) ninguém vê diferença: com ela
+              // fora, a expressão é `false` em todo estado. Assumir a conversa
+              // muda `assigned_to_user_id` e o compositor libera sozinho, porque
+              // a decisão é recalculada a cada render sobre a conversa atual.
+              aguardandoAssumir={composerBloqueadoAteAssumir({
+                ligada: activeOrg?.interface_settings?.bloquearAteAssumir === true,
+                donoDaConversa: selectedConversation?.assigned_to_user_id ?? null,
+                atendenteId: user.id,
+                participanteAtivo: participaDoAtendimento,
+              })}
+              contactName={selectedConversation?.contacts?.name ?? null}
+              contactDisplayName={selectedConversation?.contacts?.display_name}
+              respondendo={respondendo}
+              onCancelarResposta={() => setRespondendo(null)}
+              currentContactId={selectedConversation?.contact_id}
+              // A barra de recursos lembra o recolhimento POR usuário (#3282);
+              // o id vem do `AuthProvider` daqui, não de dentro do compositor.
+              usuarioId={user.id}
+              // #3732: a recusa do envio pode dizer que a conversa continua em
+              // outra conversa do MESMO contato, no número de quem responde —
+              // e o botão da faixa abre essa conversa. É a mesma seleção que a
+              // faixa do número fora do ar e o cabeçalho já usam.
+              onAbrirConversa={handleSelect}
+              // O microfone some no canal que recusa a nota de voz que ele grava
+              // (Instagram/Facebook): a pergunta é à capability, nunca ao provider.
+              recusaNotaDeVoz={recusaNotaDeVoz(selectedConversation?.channel_sessions?.provider)}
+              // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
+              // não pode deixar um texto sugerido no campo de outra pessoa.
+              rascunho={rascunhoVivo}
+              initialDraft={
+                rascunhoVivo?.leitura.estado === "sugerido" ? rascunhoVivo.leitura.texto : ""
+              }
+            />
+        )}
       </div>
 
       <div data-testid="ficha-em-coluna" className="hidden h-full min-h-0 min-w-0 xl:block">
-        <CRMSidePanel
+        {!recuperando && <CRMSidePanel
           conversation={selectedConversation}
           recolhido={painelRecolhido}
           onAlternarRecolhido={alternarPainelDoContato}
           modulosIniciais={modulosDaLateral}
-        />
+        />}
       </div>
 
       {/*
@@ -1410,7 +1507,7 @@ export function InboxLayout({
         </>
       )}
 
-      <InboxKeyboardShortcuts
+      {!recuperando && estado !== "sessao-expirada" && <InboxKeyboardShortcuts
         visibleIds={visibleIds}
         selectedId={selectedId}
         onSelect={handleSelect}
@@ -1418,10 +1515,10 @@ export function InboxLayout({
         onClaim={supportReadonly ? () => {} : handleClaim}
         onClose={supportReadonly ? () => {} : handleClose}
         onToggleHelp={() => setHelpOpen((v) => !v)}
-      />
+      />}
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       <EncaminharDialog
-        open={encaminhando !== null}
+        open={!!selectedConversation && encaminhando !== null}
         onOpenChange={(aberto) => {
           if (!aberto) {
             setEncaminhando(null);
@@ -1434,7 +1531,7 @@ export function InboxLayout({
         conversationIdAtual={selectedConversation?.id ?? null}
         enviando={encaminhar.isPending}
         onEscolher={(destino) => {
-          if (!encaminhando) return;
+          if (!encaminhando || !selectedConversation || !podeAgir(destino)) return;
           encaminhar.mutate(
             { id: encaminhando.id, conversationIdDestino: destino },
             { onSuccess: () => setEncaminhando(null) },

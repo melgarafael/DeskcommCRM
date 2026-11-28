@@ -22,6 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { sePropostasDesligadas } from "@/lib/propostas/porta";
 import { resolverAvisoDeRevisaoSeProntaOuEncerrada } from "@/lib/propostas/aviso-de-revisao";
+import { gravarValorDaPropostaNoNegocio } from "@/lib/propostas/valor-do-negocio";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
@@ -364,19 +365,24 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const totalDoLead = propostaAlvo.total_cents;
   const valorAntes = lead?.value_cents ?? null;
   if (proposta.lead_id) {
-    await admin.from("crm_leads").update({ value_cents: totalDoLead }).eq("organization_id", authz.org.orgId).eq("id", proposta.lead_id);
+    // Com venda registrada o valor é a soma das vendas, e o envio não o troca (#5254).
+    const valorMudou = await gravarValorDaPropostaNoNegocio(admin, {
+      organizationId: authz.org.orgId, leadId: proposta.lead_id, totalCents: totalDoLead,
+    });
     await emitLeadActivity(admin, {
       organizationId: authz.org.orgId, leadId: proposta.lead_id, contactId: proposta.contact_id,
       type: "proposal_sent", sourceModule: "proposals", sourceId: propostaAlvo.id,
       actor: { type: "user", id: authz.user.id },
       reason: `Proposta ${numeroEAno.numero}/${numeroEAno.ano} enviada ao cliente`,
     });
-    await emitLeadActivity(admin, {
-      organizationId: authz.org.orgId, leadId: proposta.lead_id, contactId: proposta.contact_id,
-      type: "proposal_value_changed", sourceModule: "proposals", sourceId: propostaAlvo.id,
-      actor: { type: "user", id: authz.user.id },
-      reason: `Valor do negócio atualizado de ${valorAntes ?? "—"} para ${totalDoLead} centavos (proposta enviada)`,
-    });
+    if (valorMudou) {
+      await emitLeadActivity(admin, {
+        organizationId: authz.org.orgId, leadId: proposta.lead_id, contactId: proposta.contact_id,
+        type: "proposal_value_changed", sourceModule: "proposals", sourceId: propostaAlvo.id,
+        actor: { type: "user", id: authz.user.id },
+        reason: `Valor do negócio atualizado de ${valorAntes ?? "—"} para ${totalDoLead} centavos (proposta enviada)`,
+      });
+    }
 
     // N2 — ao enviar, agenda o retorno automático (nunca bloqueia o envio:
     // qualquer recusa/erro do agendamento é fire-and-forget).

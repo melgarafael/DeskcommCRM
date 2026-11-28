@@ -110,7 +110,12 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   // o silêncio do bot), nunca escrita no cadastro nem no negócio.
   crm_pause_ai: { conversation_id: "conversa" },
   crm_resume_ai: { conversation_id: "conversa" },
-  crm_close_conversation: { conversation_id: "conversa" },
+  crm_close_conversation: {
+    conversation_id: "conversa",
+    expected_last_inbound_message_id: "configuracao",
+    expected_assigned_to_user_id: "configuracao",
+    expected_sector_id: "configuracao",
+  },
   crm_reopen_conversation: { conversation_id: "conversa" },
   // #4517 — a ficha editada. `contact_id` é o próprio alvo da escrita.
   crm_update_contact: { contact_id: "contato" },

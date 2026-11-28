@@ -52,6 +52,7 @@ export interface LinhaDoHistorico {
   eventoId: string | null;
   protocolo: string | null;
   acaoGoogle: string | null;
+  googleCustomerId?: string | null;
   valorCentavos: number | null;
   moeda: string | null;
   ocorridoEm: string | null;
@@ -116,7 +117,7 @@ export async function lerHistorico(
   let q = admin
     .from("ad_conversion_dispatches")
     .select(
-      "id, lead_id, platform, event_name, status, reason, detail, event_id, remote_request_id, google_action_id, value_cents, currency, event_occurred_at, attempted_at, crm_leads!inner(title)",
+      "id, lead_id, platform, event_name, status, reason, detail, event_id, remote_request_id, google_action_id, google_customer_id, value_cents, currency, event_occurred_at, attempted_at, crm_leads!inner(title)",
       { count: "exact" },
     )
     .eq("organization_id", organizationId);
@@ -163,6 +164,7 @@ export async function lerHistorico(
       event_id: string | null;
       remote_request_id: string | null;
       google_action_id: string | null;
+      google_customer_id?: string | null;
       value_cents: number | null;
       currency: string | null;
       event_occurred_at: string | null;
@@ -182,6 +184,7 @@ export async function lerHistorico(
       eventoId: l.event_id,
       protocolo: l.remote_request_id,
       acaoGoogle: l.google_action_id,
+      googleCustomerId: l.google_customer_id ?? null,
       valorCentavos: l.value_cents,
       moeda: l.currency,
       ocorridoEm: l.event_occurred_at,
@@ -344,7 +347,7 @@ export async function lerDiagnosticoGoogle(
         : "Todos os envios já têm resposta.",
   });
 
-  const ligadas = (regras ?? []).filter((r) => r.enabled).length;
+  const ligadas = new Set((regras ?? []).filter((r) => r.enabled).map((r) => r.stageId)).size;
   const cobertas = ligadas + (entrada.temAcaoDeVenda ? 1 : 0);
   const totalDeMomentos = entrada.etapasAbertas + 1;
   itens.push({

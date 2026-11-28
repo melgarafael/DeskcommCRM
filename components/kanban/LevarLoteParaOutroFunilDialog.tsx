@@ -139,7 +139,16 @@ export function LevarLoteParaOutroFunilDialog({
           <div className="space-y-2 text-sm" data-testid="resultado-do-lote">
             <p>
               {resultado.levados.length} {t("de")}{" "}
-              {resultado.levados.length + resultado.recusados.length} {t("negócios levados.")}
+              {resultado.levados.length + resultado.recusados.length}{" "}
+              {/* Com um só, "1 de 1 negócios levados." é plural em cima de um
+                  número ímpar (#5232). A contagem continua dizendo tudo: muda
+                  só a palavra, e o par singular mora no dicionário — nada de
+                  plural por heurística sobre palavra livre. */}
+              {t(
+                resultado.levados.length + resultado.recusados.length === 1
+                  ? "negócio levado."
+                  : "negócios levados.",
+              )}
             </p>
             {resultado.recusados.length > 0 ? (
               <div>

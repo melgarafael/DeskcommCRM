@@ -66,6 +66,21 @@ describe("o guia do envio por telefone descreve o que a rota faz", () => {
     prometeNoGuia("32");
   });
 
+  it("o canal escolhido documentado é o que o schema aceita (#5028)", () => {
+    // Opcional e uuid NO schema por telefone — outros schemas do arquivo já
+    // têm o campo, então a busca é só no bloco dele. O guia promete o campo, e
+    // a §7 deixou de dizer que a porta não aceita canal explícito.
+    const schema = ler(SCHEMA);
+    const inicio = schema.indexOf("export const sendMessagePorTelefoneSchema");
+    expect(inicio).toBeGreaterThanOrEqual(0);
+    const fim = schema.indexOf("\nexport const ", inicio + 1);
+    expect(schema.slice(inicio, fim === -1 ? undefined : fim)).toMatch(
+      /channel_session_id:\s*z\.string\(\)\.uuid\(\)\.optional\(\)/,
+    );
+    prometeNoGuia("channel_session_id");
+    expect(ler(GUIA)).not.toContain("Não aceita canal explícito");
+  });
+
   it("a ambiguidade tem o código de erro que o guia manda tratar", () => {
     contemNoCodigo(ROTA, '"ambiguous_target"');
     prometeNoGuia("ambiguous_target");
@@ -94,9 +109,11 @@ describe("o guia do envio por telefone descreve o que a rota faz", () => {
   it("a resolução da conversa é a função que o guia cita — não uma segunda regra", () => {
     contemNoCodigo(ABERTURA, "export async function openSharedContactConversation");
     prometeNoGuia("openSharedContactConversation");
-    // Quem grava contato novo é esta RPC, e o guia diz isso porque é ela que
-    // explica por que o isolamento vem do `organization_id` da consulta.
-    contemNoCodigo(ABERTURA, 'admin.rpc(\n    "fn_upsert_wa_contact"');
+    // Quem grava contato novo é esta função, com a organização da consulta e
+    // `nao_sei` no WhatsApp (DES-1950): o guia promete as duas coisas.
+    contemNoCodigo(ABERTURA, "organization_id: orgId,");
+    contemNoCodigo(ABERTURA, 'phone_whatsapp: input.phone_whatsapp ?? "nao_sei"');
+    prometeNoGuia("nao_sei");
     prometeNoGuia("fn_upsert_wa_contact");
   });
 

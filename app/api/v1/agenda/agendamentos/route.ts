@@ -19,6 +19,7 @@ import { z } from "zod";
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
 import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE } from "@/lib/agenda/convidados-da-equipe";
 import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-escolhida";
+import { TETO_ADICIONAIS } from "@/lib/agenda/responsaveis";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
@@ -162,6 +163,13 @@ const marcarSchema = z.object({
   space_id: z.string().uuid().optional(),
   party_size: z.number().int().min(1).max(100000).optional(),
   expected_service_revision: z.number().int().positive().optional(),
+  /**
+   * Responsáveis adicionais que CONDUZEM junto com o principal e ocupam a
+   * agenda: até 9 (teto de 10 conduzindo, contando o principal). São membros
+   * ativos da organização, livres no horário; o agente não os escolhe. A
+   * validação de organização e teto vem do banco; aqui só a forma.
+   */
+  responsible_user_ids: z.array(z.string().uuid()).max(TETO_ADICIONAIS).optional(),
 });
 
 const alterarSchema = z
@@ -195,6 +203,7 @@ const alterarSchema = z
      * confere de novo porque a ferramenta MCP o chama sem passar por aqui.
      */
     duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
+    responsible_user_ids: z.array(z.string().uuid()).max(TETO_ADICIONAIS).optional(),
   })
   .refine(
     (c) =>
@@ -205,7 +214,8 @@ const alterarSchema = z
       c.guest_email !== undefined ||
       c.team_guest_user_ids !== undefined ||
       c.title !== undefined ||
-      c.duration_minutes !== undefined,
+      c.duration_minutes !== undefined ||
+      c.responsible_user_ids !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },

@@ -40,6 +40,7 @@ export class FalhaDeEnvioDoCanal extends Error {
     message: string,
     public readonly natureza: NaturezaDaFalha,
     public readonly statusHttp?: number,
+    public readonly codigo?: string,
   ) {
     super(message);
     this.name = "FalhaDeEnvioDoCanal";
@@ -64,7 +65,10 @@ export function naturezaDoStatusHttp(status: number): NaturezaDaFalha {
 }
 
 /** O que o adapter lançou, lido como natureza. Desconhecido = transitória (o de sempre). */
-export function naturezaDaFalhaDeEnvio(err: unknown): { natureza: NaturezaDaFalha; statusHttp?: number } {
+export function naturezaDaFalhaDeEnvio(err: unknown): {
+  natureza: NaturezaDaFalha;
+  statusHttp?: number;
+} {
   if (err instanceof FalhaDeEnvioDoCanal) {
     return err.statusHttp === undefined
       ? { natureza: err.natureza }
@@ -105,4 +109,9 @@ export function falhaPermanenteNaMensagem(metadata: unknown): boolean {
   const registro = (metadata as Record<string, unknown>)[CHAVE_DA_FALHA_DE_ENVIO];
   if (!registro || typeof registro !== "object") return false;
   return (registro as { natureza?: unknown }).natureza === "permanente";
+}
+
+/** Código classificado pelo canal; sem classificação, preserva o fallback do handler. */
+export function codigoDaFalhaDeEnvio(err: unknown, fallback: string): string {
+  return err instanceof FalhaDeEnvioDoCanal && err.codigo ? err.codigo : fallback;
 }

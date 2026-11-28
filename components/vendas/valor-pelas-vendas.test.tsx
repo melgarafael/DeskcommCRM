@@ -16,6 +16,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { EditLeadDialog } from "@/components/kanban/EditLeadDialog";
 import { LeadFieldsForm } from "@/components/kanban/LeadFieldsForm";
 import type { Lead } from "@/lib/types/leads";
 
@@ -40,6 +41,18 @@ vi.mock("@/hooks/kanban/useUpdateLead", () => ({
   useEditLead: () => ({ mutateAsync: estado.editarLead, isPending: false }),
 }));
 vi.mock("@/components/inbox/ContactTagsEditor", () => ({ ContactTagsEditor: () => null }));
+// O "Contato do negócio" do EditLeadDialog (#4978) lê o contato vinculado e
+// busca os existentes; aqui os dois hooks são dublês, sem QueryClient.
+const CONTATO_NOVO = "55555555-5555-4555-8555-555555555555";
+vi.mock("@/hooks/contacts/useContact", () => ({
+  useContact: (id: string) => ({ data: id ? { data: { id, name: "Ana Vinculada" } } : undefined }),
+}));
+vi.mock("@/hooks/contacts/useContactList", () => ({
+  useContactList: () => ({
+    data: { pages: [{ data: [{ id: CONTATO_NOVO, name: "Bia Nova", phone_number: "+5511999990000" }] }] },
+    isLoading: false,
+  }),
+}));
 
 const negocio: Lead = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -137,5 +150,70 @@ describe("o Valor do negócio e as vendas registradas", () => {
 
     expect(screen.getByTestId("valor-pelas-vendas")).toBeTruthy();
     expect(screen.queryByTestId("valor-registrar-venda")).toBeNull();
+  });
+
+  it("EditLeadDialog com vendas: Valor fica em leitura com a soma e Salvar não manda value_cents", async () => {
+    estado.vendas = [{ id: "v1", valor_cents: 10_000, currency: "BRL" }];
+    render(
+      <EditLeadDialog
+        open
+        onOpenChange={() => {}}
+        lead={{ ...negocio, value_cents: 10_000, valor_pelas_vendas: true }}
+        pipelineId={negocio.pipeline_id}
+      />,
+    );
+
+    const campo = screen.getByTestId("valor-pelas-vendas") as HTMLInputElement;
+    expect(campo.readOnly).toBe(true);
+    expect(campo.value).toMatch(/R\$.100,00/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
+    expect(estado.editarLead.mock.calls[0]![0].patch).not.toHaveProperty("value_cents");
+  });
+
+  it("EditLeadDialog sem vendas: Valor é editável e Salvar manda value_cents", async () => {
+    estado.vendas = [];
+    render(
+      <EditLeadDialog
+        open
+        onOpenChange={() => {}}
+        lead={{ ...negocio, value_cents: 10_000, valor_pelas_vendas: false }}
+        pipelineId={negocio.pipeline_id}
+      />,
+    );
+
+    const campo = screen.getByLabelText(/^Valor \(/) as HTMLInputElement;
+    expect(campo.readOnly).toBe(false);
+
+    fireEvent.change(campo, { target: { value: "50,00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
+    expect(estado.editarLead.mock.calls[0]![0].patch.value_cents).toBe(5_000);
+  });
+
+  it("EditLeadDialog com vendas: trocar o contato não reabre o Valor nem manda value_cents", async () => {
+    estado.vendas = [{ id: "v1", valor_cents: 10_000, currency: "BRL" }];
+    render(
+      <EditLeadDialog
+        open
+        onOpenChange={() => {}}
+        lead={{ ...negocio, value_cents: 10_000, valor_pelas_vendas: true }}
+        pipelineId={negocio.pipeline_id}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Trocar contato" }));
+    fireEvent.click(screen.getByRole("button", { name: "Usar" }));
+    expect((screen.getByTestId("valor-pelas-vendas") as HTMLInputElement).readOnly).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(estado.editarLead).toHaveBeenCalled());
+    const patch = estado.editarLead.mock.calls[0]![0].patch;
+    expect(patch.contact_id).toBe(CONTATO_NOVO);
+    expect(patch).not.toHaveProperty("value_cents");
   });
 });

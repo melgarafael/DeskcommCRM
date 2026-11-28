@@ -47,6 +47,11 @@ import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Conversation } from "@/lib/types/messaging";
+import {
+  fecharConversaComSeguranca,
+  usaEncerramentoSeguro,
+  type OpcoesEncerramentoSeguro,
+} from "@/lib/conversations/encerramento-seguro";
 
 /** O mesmo literal do handoff: `bot_silenced_until > now()` é sempre verdadeiro. */
 export const SILENCIO_DURAVEL = "infinity";
@@ -399,10 +404,17 @@ export interface ResultadoDoFechamento {
   conversation: Conversation;
   /** `null` = ninguém pediu devolução (é o caso do token, por padrão). */
   devolucao: DesfechoDaDevolucao | null;
+  /** Presentes quando o encerramento condicional (`safe_close`) é utilizado. */
+  already_closed?: boolean;
+  idempotent_replay?: boolean;
 }
 
 /**
  * Fecha a conversa pelo `fn_service_status` — a MESMA transição da tela.
+ *
+ * Quando `opcoes` ativa o modo condicional seguro (`safeClose` ou pré-condições),
+ * delega à RPC atômica `fn_safe_close_conversation`, que valida sob lock todas as
+ * condições antes de transicionar via `fn_service_status`.
  *
  * A ordem é o conserto do CR #3323 e não pode ser trocada: devolver ANTES,
  * fechar DEPOIS. O `release` do `fn_conversation_assign` grava `status='open'`, e
@@ -414,13 +426,86 @@ export async function fecharConversaHandler(
   supabase: SupabaseClient,
   ctx: CtxDoComando,
   conversationId: string,
-  opcoes: { expectedRevision?: number; devolverAoAutomatico?: boolean } = {},
+  opcoes: OpcoesEncerramentoSeguro & { devolverAoAutomatico?: boolean } = {},
 ): Promise<ResultadoDoFechamento> {
   const conv = await lerConversa(supabase, ctx, conversationId);
 
   // O convite amplia leitura e resposta, não a autoridade sobre o atendimento.
   // Para token/agente a função é no-op (não são "user").
   await exigirControleDaConversa(supabase, ctx, conv);
+
+  const modoSeguro = usaEncerramentoSeguro(opcoes);
+
+  if (modoSeguro) {
+    if (ctx.actor.type === "ai_agent") {
+      throw new ApiError(
+        403,
+        "forbidden",
+        undefined,
+        ctx.requestId,
+        "Agentes de IA não têm autorização para encerrar conversas diretamente.",
+      );
+    }
+    const resultado = await fecharConversaComSeguranca(createAdminClient(), {
+      organizationId: conv.organization_id,
+      conversationId,
+      requestId: ctx.requestId,
+      opcoes,
+    });
+
+    if (resultado.already_closed || resultado.idempotent_replay) {
+      return {
+        conversation: resultado.conversation,
+        devolucao: null,
+        already_closed: resultado.already_closed,
+        idempotent_replay: resultado.idempotent_replay,
+      };
+    }
+
+    const autor = autorDoAudit(ctx);
+    await audit({
+      action: ctx.actor.type === "user" ? "conversation.closed" : "conversation.closed_by_token",
+      actorUserId: autor.actorUserId,
+      actorApiTokenId: autor.actorApiTokenId,
+      organizationId: conv.organization_id,
+      resourceType: "conversation",
+      resourceId: conversationId,
+      requestId: ctx.requestId,
+      metadata: {
+        safe_close: true,
+        ...(opcoes.idempotencyKey ? { idempotency_key: opcoes.idempotencyKey } : {}),
+      },
+    });
+
+    const pesquisa = await pedirSatisfacaoAoEncerrar(createAdminClient(), {
+      organizationId: conv.organization_id,
+      conversationId,
+      contactId: conv.contact_id,
+      channelSessionId: conv.channel_session_id,
+    });
+    if (pesquisa.pedida) {
+      logger.info("[conversations.close] pesquisa de satisfação enviada", {
+        conversation_id: conversationId,
+        organization_id: conv.organization_id,
+        pedido_id: pesquisa.pedidoId,
+        requestId: ctx.requestId,
+      });
+    } else if (pesquisa.motivo === "falha_ao_enviar" || pesquisa.motivo === "erro") {
+      logger.warn("[conversations.close] pesquisa de satisfação não saiu", {
+        conversation_id: conversationId,
+        organization_id: conv.organization_id,
+        motivo: pesquisa.motivo,
+        requestId: ctx.requestId,
+      });
+    }
+
+    return {
+      conversation: resultado.conversation,
+      devolucao: null,
+      already_closed: false,
+      idempotent_replay: false,
+    };
+  }
 
   const revisaoEsperada = opcoes.expectedRevision ?? conv.service_revision;
   if (revisaoEsperada !== conv.service_revision) {

@@ -41,6 +41,8 @@ export interface NovoAgendamento {
    * e passa a ver o compromisso na própria agenda. `[]` limpa; ausente não mexe.
    */
   team_guest_user_ids?: string[];
+  /** Responsáveis adicionais (#3067): conduzem junto com o principal e ocupam a agenda. Até 9. */
+  responsible_user_ids?: string[];
 }
 
 /**
