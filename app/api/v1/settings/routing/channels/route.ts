@@ -65,13 +65,18 @@ export async function PATCH(req: Request): Promise<Response> {
   // (herda a organização), que é o que a tela antiga fazia.
   const distribution_mode = parsed.data.distribution_mode ?? null;
   const default_assignee_user_id = parsed.data.default_assignee_user_id ?? null;
-  const { data, error } = await db.rpc("fn_set_channel_routing", {
+  const args = {
     p_org: auth.org.orgId, p_channel: parsed.data.channel_session_id,
-    p_users: parsed.data.user_ids, p_reset: parsed.data.reset,
+    p_users: parsed.data.user_ids,
     p_mode: distribution_mode, p_default_assignee: default_assignee_user_id,
-  });
+  };
+  const sector_id = parsed.data.reset ? null : parsed.data.sector_id;
+  const { data, error } = !parsed.data.reset && sector_id !== undefined
+    ? await (db as SupabaseClient).rpc("fn_set_channel_routing_with_sector", { ...args, p_sector: sector_id })
+    : await db.rpc("fn_set_channel_routing", { ...args, p_reset: parsed.data.reset });
   if (error) {
     if (error.code === "P0002") return fail("not_found", "Canal não encontrado.", 404, { requestId });
+    if (error.code === "22023" && error.message === "routing_invalid_sector") return fail("validation_failed", "Selecione um setor desta organização.", 422, { requestId });
     if (error.code === "22023") return fail("validation_failed", "A equipe mudou. Atualize a página e selecione novamente.", 422, { requestId });
     if (error.code === "42501") return fail("forbidden", "Esta sessão não pode alterar os responsáveis.", 403, { requestId });
     return fail("internal_error", "Não foi possível salvar. Tente novamente.", 500, { requestId });
@@ -96,6 +101,7 @@ export async function PATCH(req: Request): Promise<Response> {
     resourceType: "channel_session", resourceId: parsed.data.channel_session_id, requestId,
     metadata: { user_ids: parsed.data.user_ids, reset: parsed.data.reset,
       distribution_mode, default_assignee_user_id,
+      ...(sector_id !== undefined ? { sector_id } : {}),
       ...(ai_wait_minutes !== undefined ? { ai_wait_minutes } : {}) } });
   return ok(ai_wait_minutes !== undefined && data && typeof data === "object"
     ? { ...(data as Record<string, unknown>), ai_wait_minutes } : data, { requestId });

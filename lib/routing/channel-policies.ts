@@ -17,6 +17,7 @@ export interface ChannelRoutingSettings {
      * minutos. null/ausente = opção desligada, que é o padrão de fábrica.
      */
     ai_wait_minutes?: number | null;
+    sector_id?: string | null;
   }>;
   members: Array<{ id: string; name: string }>;
 }
@@ -24,7 +25,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
   const results = await Promise.all([
     db.from("channel_sessions").select("id, display_name, phone_number").eq("organization_id", org).is("archived_at", null).in("provider", [...PROVIDERS_DE_MENSAGEM]).order("created_at"),
     db.from("user_organizations").select("user_id").eq("organization_id", org).is("revoked_at", null).in("role", ["agent", "manager", "admin"]),
-    db.from("channel_routing_policies").select("id, channel_session_id, distribution_mode, default_assignee_user_id, ai_wait_minutes").eq("organization_id", org),
+    db.from("channel_routing_policies").select("id, channel_session_id, distribution_mode, default_assignee_user_id, ai_wait_minutes, sector_id").eq("organization_id", org),
     db.from("channel_routing_responsibles").select("policy_id, user_id").eq("organization_id", org),
   ]);
   for (const result of results) if (result.error) throw new Error(result.error.message);
@@ -43,6 +44,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
       return { id: c.id, display_name: c.display_name, phone_number: c.phone_number, user_ids,
         mode: !policy ? "legacy_unconfigured" : user_ids.length ? "restricted" : "restricted_empty",
         distribution_mode, default_assignee_user_id,
+        sector_id: policy?.sector_id ?? null,
         ai_wait_minutes: (policy as { ai_wait_minutes?: number | null } | undefined)?.ai_wait_minutes ?? null };
     }),
     members: ids.map((id) => ({ id, name: rotuloDoMembro({ full_name: names.get(id), user_id: id }) })),
