@@ -76,12 +76,55 @@ const zernioMessageSchema = z.looseObject({
   attachments: z.unknown().optional(),
 });
 
+/**
+ * O comentário de um post (#4075).
+ *
+ * Tipado pelo mesmo motivo dos irmãos: quem lê o envelope JÁ validado
+ * (`./ingest-comentario.ts`) confia na forma. As grafias alternativas
+ * (`post_id`/`post`/`media`, `content`/`body`) são as da Meta — o leitor as
+ * aceita porque o fio do comentário não foi medido contra o provedor; ver o
+ * cabeçalho de `./comentario.ts`.
+ */
+const zernioCommentSchema = z.looseObject({
+  id: texto,
+  commentId: texto,
+  platformCommentId: texto,
+  postId: texto,
+  post_id: texto,
+  post: z.looseObject({ id: texto }).nullish(),
+  media: z.looseObject({ id: texto }).nullish(),
+  mediaId: texto,
+  platform: texto,
+  text: texto,
+  content: texto,
+  body: texto,
+  createdAt: texto,
+  created_at: texto,
+  timestamp: texto,
+  authorId: texto,
+  from: zernioSenderSchema.extend({ isSelf: z.boolean().nullish() }).nullish(),
+  sender: z.looseObject({ id: texto, username: texto, name: texto }).nullish(),
+  author: z.looseObject({ id: texto, username: texto, name: texto }).nullish(),
+});
+
 export const zernioEnvelopeSchema = z.looseObject({
   event: texto,
   accountId: texto,
   /** Detalhe do aviso de número, quando a plataforma o manda solto. */
   reason: texto,
-  account: z.looseObject({ id: texto, accountId: texto }).nullish(),
+  account: z
+    .looseObject({
+      id: texto,
+      accountId: texto,
+      /** Identidade do PRÓPRIO perfil (`selfId`/`platformId`/`instagramId`) — o que marca o comentário do próprio perfil. */
+      selfId: texto,
+      platformId: texto,
+      instagramId: texto,
+      username: texto,
+      platform: texto,
+    })
+    .nullish(),
+  comment: zernioCommentSchema.nullish(),
   conversation: z.looseObject({ participantId: texto, participantName: texto }).nullish(),
   template: z.looseObject({ name: texto, status: texto, reason: texto }).nullish(),
   /** `phoneNumber` decide se o evento de número é DESTA sessão (ver `zernioInbound`). */
