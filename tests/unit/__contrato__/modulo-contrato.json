@@ -1837,7 +1837,7 @@
         {
           "nome": "channelRoutingPatchSchema",
           "origem": "@/lib/schemas/routing",
-          "hash": "42fba74672aad920"
+          "hash": "c90495b58f433d80"
         }
       ],
       "resposta": []

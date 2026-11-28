@@ -2166,6 +2166,8 @@ export const DICIONARIO: Traducoes = {
   "Salvar responsáveis": { es: "Guardar responsables" },
   "Voltar ao padrão da organização": { es: "Volver al valor predeterminado de la organización" },
   "Responsáveis salvos.": { es: "Responsables guardados." },
+  "Setor de entrada": { es: "Sector de entrada" },
+  "Sem setor de entrada": { es: "Sin sector de entrada" },
   // ─── Regras de atendimento POR NÚMERO (#2331) ───
   "Como este número distribui": { es: "Cómo distribuye este número" },
   "Usar o padrão da organização": { es: "Usar el valor predeterminado de la organización" },

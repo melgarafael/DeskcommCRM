@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { extractBearer } from "@/lib/mcp/auth";
 import { requireRole } from "@/lib/auth/require-role";
@@ -65,13 +66,27 @@ export async function PATCH(req: Request): Promise<Response> {
   // (herda a organização), que é o que a tela antiga fazia.
   const distribution_mode = parsed.data.distribution_mode ?? null;
   const default_assignee_user_id = parsed.data.default_assignee_user_id ?? null;
-  const { data, error } = await db.rpc("fn_set_channel_routing", {
+  const args = {
     p_org: auth.org.orgId, p_channel: parsed.data.channel_session_id,
-    p_users: parsed.data.user_ids, p_reset: parsed.data.reset,
+    p_users: parsed.data.user_ids,
     p_mode: distribution_mode, p_default_assignee: default_assignee_user_id,
-  });
+  };
+  // Fila de entrada do número (ADR-0008, D1): só viaja quando a tela manda o
+  // campo. Com o módulo `setores` desligado o campo não existe — 404, como em
+  // toda rota de setor. Quem pode gravá-lo (admin) e a fila sem atendente são
+  // recusados na própria RPC, na mesma transação da regra do número.
+  const sector_id = parsed.data.reset ? undefined : parsed.data.sector_id;
+  if (sector_id !== undefined) {
+    const desligado = await seSetoresDesligado(requestId);
+    if (desligado) return desligado;
+  }
+  const { data, error } = sector_id !== undefined
+    ? await db.rpc("fn_set_channel_routing_with_sector", { ...args, p_sector: sector_id })
+    : await db.rpc("fn_set_channel_routing", { ...args, p_reset: parsed.data.reset });
   if (error) {
     if (error.code === "P0002") return fail("not_found", "Canal não encontrado.", 404, { requestId });
+    if (error.code === "22023" && error.message === "routing_invalid_sector") return fail("validation_failed", "Selecione um setor desta organização.", 422, { requestId });
+    if (error.code === "22023" && error.message === "routing_sector_without_members") return fail("validation_failed", "Esta fila ainda não tem atendentes.", 422, { requestId });
     if (error.code === "22023") return fail("validation_failed", "A equipe mudou. Atualize a página e selecione novamente.", 422, { requestId });
     if (error.code === "42501") return fail("forbidden", "Esta sessão não pode alterar os responsáveis.", 403, { requestId });
     return fail("internal_error", "Não foi possível salvar. Tente novamente.", 500, { requestId });
@@ -96,6 +111,7 @@ export async function PATCH(req: Request): Promise<Response> {
     resourceType: "channel_session", resourceId: parsed.data.channel_session_id, requestId,
     metadata: { user_ids: parsed.data.user_ids, reset: parsed.data.reset,
       distribution_mode, default_assignee_user_id,
+      ...(sector_id !== undefined ? { sector_id } : {}),
       ...(ai_wait_minutes !== undefined ? { ai_wait_minutes } : {}) } });
   return ok(ai_wait_minutes !== undefined && data && typeof data === "object"
     ? { ...(data as Record<string, unknown>), ai_wait_minutes } : data, { requestId });

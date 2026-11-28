@@ -96,6 +96,13 @@ export default async function AtendimentoSettingsPage() {
   // `/api/v1/metrics/satisfacao`, com a varredura de vencidos antes.
   const satisfacao = lerOpcaoDaSatisfacao(data?.settings);
   const admin = createAdminClient();
+  const setoresLigado = await moduloLigado(admin, "setores");
+  // Fila de entrada do número (ADR-0008): o seletor só existe com o módulo
+  // ligado e para quem pode defini-la (admin). Sem ele, a tela não manda o
+  // campo e a rota preserva a fila que já estava gravada.
+  const setores = setoresLigado && podeAdministrarEmpresa(user, activeOrg)
+    ? await supabase.from("attendant_sectors").select("id, name").eq("organization_id", activeOrg.orgId).order("name")
+    : null;
   let resumoDaPesquisa: ResumoDaSatisfacao | null = null;
   try {
     await fecharPedidosVencidos(admin, activeOrg.orgId);
@@ -122,9 +129,9 @@ export default async function AtendimentoSettingsPage() {
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
-        setoresLigado={await moduloLigado(admin, "setores")}
+        setoresLigado={setoresLigado}
       />
-      <ChannelRoutingForm initial={channels} />
+      <ChannelRoutingForm initial={channels} setores={setores?.data ?? undefined} />
       <AssinaturaForm initial={assinaturaInicial} />
       <NomeInformado ligada={nomeInformadoLigado({ crm: settings.crm })} idioma={idioma} podeMudar={podeAdministrarEmpresa(user, activeOrg)} />
       <TelefoneDeFichaVazia
