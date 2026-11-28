@@ -878,4 +878,59 @@ describe("baseline.sql não reconstrói o que ele mesmo derruba ou substitui", (
     const janela = linhas.slice(Math.max(0, par!.linhaDaCriacao - 8), par!.linhaDaCriacao).join("\n");
     expect(janela).toMatch(/if not exists \(\s*select 1 from pg_constraint\s+where conname = 'ai_models_unique'/);
   });
+
+  /**
+   * A CATRACA NOMINAL DO #881 — e a guarda do outro lado da mesma moeda.
+   *
+   * Os dois índices únicos do acervo POR AGENTE (`ai_kbv_one_active_per_agent`,
+   * `ai_knowledge_sources_unique_per_agent`) nasceram no corpo do dump e eram
+   * derrubados pelo apêndice da 0181. Saíram do corpo no #997 (`f0ccfe8d0`),
+   * quando o modelo passou a contar versão POR MATERIAL: num agente com dois
+   * materiais do mesmo tipo, cada um com a sua versão 1, o `CREATE UNIQUE INDEX`
+   * do dump falha — medido em pg17 com esta fixture, `could not create unique
+   * index`.
+   *
+   * A regra de classe acima já pega a volta deles, mas ela lê uma LISTA de formas
+   * e o cabeçalho declara que `execute format(…)` montado por concatenação fica
+   * fora. Este caso não depende de forma nenhuma: pergunta pelo NOME, e por isso
+   * continua de pé mesmo que o dump seja regerado com outra grafia.
+   *
+   * O outro lado: o `drop index if exists` do apêndice NÃO é sobra. Recriados os
+   * dois índices à mão — o estado de um clone anterior à 0181 — e reaplicado o
+   * baseline inteiro em pg17, eles somem: 2 antes, 0 depois. Quem apagasse o drop
+   * como "órfão" deixaria esse clone com o índice do modelo antigo, e o segundo
+   * material do mesmo tipo colidiria. Nenhuma regra deste arquivo sente falta de
+   * um drop sem `create` anterior — esta sente.
+   */
+  it("os dois índices do #881 não voltam ao dump, e os drops que os removem seguem no apêndice", () => {
+    const NOMES_DA_0181 = ["ai_kbv_one_active_per_agent", "ai_knowledge_sources_unique_per_agent"];
+
+    const criacoes = NOMES_DA_0181.flatMap((nome) =>
+      [...SQL.matchAll(new RegExp(`create\\s+(?:unique\\s+)?index[^;]*\\b${nome}\\b`, "gi"))].map(
+        (m) => `${nome}: criado na linha ${linhaDe(SQL, m.index!)}`,
+      ),
+    );
+    expect(
+      criacoes,
+      "Índice do modelo antigo de acervo voltou ao baseline. Ele é derrubado pelo apêndice da 0181 e, " +
+        "num clone com dois materiais do mesmo tipo, o CREATE UNIQUE INDEX falha no meio do update.\n",
+    ).toEqual([]);
+
+    const drops = Object.fromEntries(
+      NOMES_DA_0181.map((nome) => [
+        nome,
+        [...SQL.matchAll(new RegExp(`drop\\s+index\\s+if\\s+exists\\s+(?:public\\.)?"?${nome}"?\\s*;`, "gi"))].map(
+          (m) => linhaDe(SQL, m.index!),
+        ),
+      ]),
+    );
+    expect(
+      drops,
+      "O `drop index if exists` do apêndice é carga útil, não sobra: é ele que limpa o índice do modelo " +
+        "antigo num clone anterior à 0181 (medido em pg17: 2 índices antes do update, 0 depois).\n",
+    ).toEqual({
+      ai_kbv_one_active_per_agent: [expect.any(Number)],
+      ai_knowledge_sources_unique_per_agent: [expect.any(Number)],
+    });
+  });
 });
