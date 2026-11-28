@@ -927,6 +927,12 @@
    bloco — não precisa do `colorMode` do React Flow (que no SSR nasceria
    `light` e divergiria do `data-theme` já pintado pelo script do layout). */
 .react-flow {
+  /* O @xyflow 13 aplica `color-scheme: dark` sob `[data-theme='dark']`, e os
+     `light-dark()` padrão dele passam a resolver para o lado escuro: o fundo saía
+     #141414 e os pontos #555, fora dos tokens (prova pela tela do #5121). Na v12
+     o fundo ficava transparente sobre o `bg-background` do canvas. */
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--color-border-strong);
   --xy-controls-button-background-color: var(--color-surface);
   --xy-controls-button-background-color-hover: var(--color-surface-elevated);
   --xy-controls-button-color: var(--color-text);

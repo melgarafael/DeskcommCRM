@@ -307,7 +307,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
       }),
     );
     window.setTimeout(() => {
-      void fitView({ padding: 0.2, duration: 200 });
+      // @xyflow 13 lê número em pixels (0.2 → 0 px); "8%" é a folga que a v12 dava com 0.2.
+      void fitView({ padding: "8%", duration: 200 });
     }, 0);
   }, [nodes, liveGraph, setNodes, fitView]);
 
