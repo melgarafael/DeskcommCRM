@@ -17,6 +17,7 @@ import {
 import { meetVideoUrl } from "@/lib/agenda/google/meet";
 import { textoDoCompromisso, type MotivoDaEntrega } from "@/lib/agenda/texto-do-compromisso";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+import { notificarGestorLinkMeet } from "./notificar-gestor-meet";
 
 export function createMeetDeliveryHandler(deps: {
   crmCfg: CrmEdgeConfig;
@@ -65,9 +66,11 @@ export function createMeetDeliveryHandler(deps: {
             archived_at: string | null;
             contact_locale: string | null;
             organization_locale: string;
+            authorized_agent_id: string | null;
           }
         >(
-          `select a.meeting_url,a.location_kind,a.starts_at,a.time_zone,c.source,c.consent,c.is_anonymized,c.locale as contact_locale,o.locale as organization_locale,v.channel_session_id,s.daily_message_limit,to_jsonb(s)->>'archived_at' as archived_at
+          `select a.meeting_url,a.location_kind,a.starts_at,a.time_zone,c.source,c.consent,c.is_anonymized,c.locale as contact_locale,o.locale as organization_locale,v.channel_session_id,s.daily_message_limit,to_jsonb(s)->>'archived_at' as archived_at,
+                  case when a.meeting_delivery->'authorized_by'->>'kind'='ai_agent' then a.meeting_delivery->'authorized_by'->>'id' else null end as authorized_agent_id
            from calendar_appointments a join contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
            join organizations o on o.id=a.organization_id
            join conversations v on v.organization_id=a.organization_id and v.contact_id=c.id and v.id=$3
@@ -96,7 +99,7 @@ export function createMeetDeliveryHandler(deps: {
           deps.channel?.(pool) ??
           createRuntimeSendChannel(pool, {
             ...deps.crmCfg,
-            agentActorId: "agent-engine:meet-delivery",
+            agentActorId: row.authorized_agent_id?.trim() || "agent-engine:meet-delivery",
           });
         const result = await runBeforeSend({
           pool,
@@ -142,6 +145,21 @@ export function createMeetDeliveryHandler(deps: {
         }
         switch (result.outcome.kind) {
           case "sent":
+            await settle("sent");
+            if (ehMeet && url) {
+              await notificarGestorLinkMeet({
+                pool,
+                organizationId: job.organization_id,
+                appointmentId: String(job.payload.appointment_id),
+                conversationId: boundary.conversation_id,
+                contactId: job.contact_id,
+                startsAt: row.starts_at,
+                timeZone: row.time_zone,
+                url,
+                log: deps.log,
+              });
+            }
+            break;
           case "already_sent":
             await settle("sent");
             break;

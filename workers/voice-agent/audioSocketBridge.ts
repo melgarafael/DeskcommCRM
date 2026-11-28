@@ -248,6 +248,11 @@ export interface AudioSocketCallContext {
    */
   knowledgeSourceIdsPromise: Promise<string[]>;
   /**
+   * Contexto resumido do contato (nome, negócios em aberto, últimas mensagens).
+   * Dispara em paralelo com o WebSocket em `index.ts`; ausente ou vazio = sem bloco extra.
+   */
+  contactContextPromise?: Promise<string>;
+  /**
    * Busca na base de conhecimento da org (mesmo acervo do agente de texto).
    * Sempre fornecida — quem decide OFERECER a tool ao modelo ou não é o
    * tools[] montado em setupRealtime a partir de knowledgeSourceIdsPromise,
@@ -364,6 +369,9 @@ export class AudioSocketCallBridge {
   // tempo certo sozinho; AudioSocket é só bytes crus, o pacing é nosso.
   private outboundQueue = Buffer.alloc(0);
   private pacerTimer: NodeJS.Timeout | null = null;
+  private responseInProgress = false;
+  /** Descarta deltas atrasados em trânsito após barge-in até o próximo `response.created`. */
+  private ignorarAudioAteNovaResposta = false;
 
   private readonly realtimeModel: string;
 
@@ -470,7 +478,10 @@ export class AudioSocketCallBridge {
       // Roda em paralelo com o handshake deste WS (index.ts dispara os dois
       // ao mesmo tempo) — só espera aqui, no momento em que já precisamos
       // saber se oferece a tool de RAG ou não.
-      const knowledgeSourceIds = await this.ctx.knowledgeSourceIdsPromise;
+      const [knowledgeSourceIds, contactContext] = await Promise.all([
+        this.ctx.knowledgeSourceIdsPromise,
+        this.ctx.contactContextPromise?.catch(() => "") ?? Promise.resolve(""),
+      ]);
 
       console.info(`[realtime] call=${this.ctx.callId} websocket aberto, enviando session.update`);
       this.realtimeWs.send(
@@ -482,6 +493,7 @@ export class AudioSocketCallBridge {
             output_modalities: ["audio"],
             instructions:
               this.ctx.agentInstructions +
+              (contactContext ? `\n\n${contactContext}` : "") +
               INSTRUCAO_ENCERRAR_CHAMADA +
               (this.ctx.agenda ? INSTRUCAO_AGENDA : "") +
               (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : ""),
@@ -578,9 +590,22 @@ export class AudioSocketCallBridge {
       switch (event.type) {
         case "response.created":
           this.isTalkspurtStart = true;
+          this.responseInProgress = true;
+          this.ignorarAudioAteNovaResposta = false;
           break;
         case "response.output_audio.delta":
+          if (this.ignorarAudioAteNovaResposta) break;
           this.sendAudioToAsterisk(Buffer.from(event.delta, "base64"));
+          break;
+        case "input_audio_buffer.speech_started":
+          if (!this.endCallRequested && (this.outboundQueue.length > 0 || this.responseInProgress)) {
+            console.info(`[realtime] call=${this.ctx.callId} barge-in: cliente interrompeu, limpando fila de áudio`);
+            this.outboundQueue = Buffer.alloc(0);
+            this.ignorarAudioAteNovaResposta = true;
+            if (this.responseInProgress && this.realtimeWs.readyState === WebSocket.OPEN) {
+              this.realtimeWs.send(JSON.stringify({ type: "response.cancel" }));
+            }
+          }
           break;
         case "response.output_audio_transcript.done": {
           // Visto ao vivo em 17/09: o modelo às vezes NARRA a function em vez
@@ -637,6 +662,7 @@ export class AudioSocketCallBridge {
           break;
         }
         case "response.done": {
+          this.responseInProgress = false;
           this.uso = somarUsoDaResposta(this.uso, event.response?.usage);
           const output = (event.response?.output ?? []) as Array<{ type?: string; name?: string }>;
           const pediuEncerrar = output.some(

@@ -81,24 +81,29 @@ export async function compromissosDoContato(
  * O bloco em texto. Vazio quando não há nada — um bloco dizendo "nenhum" custaria
  * tokens em toda conversa para informar ausência que o modelo não precisa saber.
  */
+function formatarLinhaBase(c: CompromissoDoContato): string {
+  const titulo = (c.title ?? "").trim() || "compromisso";
+  const fuso = c.time_zone && fusoValido(c.time_zone) ? c.time_zone : FUSO_PADRAO;
+  const inicio = new Date(c.starts_at);
+  const fim = c.ends_at ? ` até ${isoLocalComOffset(new Date(c.ends_at), fuso)}` : "";
+  // O revisor confere o local: sem ele aqui, o agente teria de adivinhar o que será cobrado.
+  const local = rotuloDoLocal(c.location_kind, c.location_details);
+  // O driver pg devolve Date; interpolá-la mostrava a hora do PROCESSO (UTC).
+  // A hora de parede e o ISO com offset representam o mesmo instante, no fuso
+  // da reserva. Nunca aplicar um deslocamento fixo de três horas.
+  return `- ${rotuloLocal(inicio, fuso)} (${fuso}; início: ${isoLocalComOffset(inicio, fuso)})${fim} — ${titulo} (${c.status})${local ? ` — ${local}` : ""}`;
+}
+
 export function renderCompromissos(linhas: readonly CompromissoDoContato[]): string {
   if (linhas.length === 0) return "";
 
   const cabem = linhas.slice(0, MAXIMO_DE_COMPROMISSOS_NO_BLOCO);
   const truncou = linhas.length > MAXIMO_DE_COMPROMISSOS_NO_BLOCO;
 
-  const itens = cabem.map((c) => {
-    const titulo = (c.title ?? "").trim() || "compromisso";
-    const fuso = c.time_zone && fusoValido(c.time_zone) ? c.time_zone : FUSO_PADRAO;
-    const inicio = new Date(c.starts_at);
-    const fim = c.ends_at ? ` até ${isoLocalComOffset(new Date(c.ends_at), fuso)}` : "";
-    // O revisor confere o local: sem ele aqui, o agente teria de adivinhar o que será cobrado.
-    const local = rotuloDoLocal(c.location_kind, c.location_details);
-    // O driver pg devolve Date; interpolá-la mostrava a hora do PROCESSO (UTC).
-    // A hora de parede e o ISO com offset representam o mesmo instante, no fuso
-    // da reserva. Nunca aplicar um deslocamento fixo de três horas.
-    return `- ${rotuloLocal(inicio, fuso)} (${fuso}; início: ${isoLocalComOffset(inicio, fuso)})${fim} — ${titulo} (${c.status})${local ? ` — ${local}` : ""}${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
-  });
+  const itens = cabem.map(
+    (c) =>
+      `${formatarLinhaBase(c)}${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`,
+  );
 
   // Truncar em silêncio faria o modelo afirmar que o cliente só tem estes — a
   // mesma classe de erro que a busca do catálogo cometia (#480).
@@ -111,11 +116,56 @@ export function renderCompromissos(linhas: readonly CompromissoDoContato[]): str
   return itens.join("\n");
 }
 
+const JANELA_PASSADO_SEM_DESFECHO_MS = 30 * 24 * 60 * 60 * 1000;
+const MAXIMO_PASSADOS_NO_BLOCO = 3;
+
+/**
+ * Compromissos recentes já vencidos que não foram cancelados nem receberam
+ * desfecho (`completed` / `no_show`). Sem isto, quando muda a demanda ou passam
+ * dias, a IA esquece que houve um horário marcado que não se concretizou.
+ */
+export async function compromissosPassadosSemDesfecho(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  agora: Date,
+): Promise<CompromissoDoContato[]> {
+  const limiteInferior = new Date(agora.getTime() - JANELA_PASSADO_SEM_DESFECHO_MS);
+  const { rows } = await db.query<CompromissoDoContato>(
+    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url,
+            location_kind, location_details
+       from calendar_appointments
+      where organization_id = $1
+        and contact_id = $2
+        and status in ('pending', 'confirmed')
+        and ends_at < $3
+        and ends_at >= $4
+        and outcome_recorded_at is null
+      order by starts_at desc
+      limit $5`,
+    [organizationId, contactId, agora.toISOString(), limiteInferior.toISOString(), MAXIMO_PASSADOS_NO_BLOCO],
+  );
+  return rows;
+}
+
+export function renderCompromissosPassados(linhas: readonly CompromissoDoContato[]): string {
+  if (linhas.length === 0) return "";
+  const itens = linhas.map(
+    (c) =>
+      `${formatarLinhaBase(c)} — [DATA JÁ PASSOU E SEM DESFECHO REGISTRADO${c.location_kind === "google_meet" && !c.meeting_url ? "; link do Meet não foi gerado" : ""}]`,
+  );
+  return `Compromissos anteriores pendentes de realização/remarcação:\n${itens.join("\n")}`;
+}
+
 export async function buildCompromissosBlock(
   db: Queryable,
   organizationId: string,
   contactId: string,
   agora: Date,
 ): Promise<string> {
-  return renderCompromissos(await compromissosDoContato(db, organizationId, contactId, agora));
+  const [futuros, passados] = await Promise.all([
+    compromissosDoContato(db, organizationId, contactId, agora),
+    compromissosPassadosSemDesfecho(db, organizationId, contactId, agora),
+  ]);
+  return [renderCompromissos(futuros), renderCompromissosPassados(passados)].filter(Boolean).join("\n");
 }
