@@ -1,3 +1,5 @@
+import { consultarFonteObrigatoria, textoAutorizadoPelaFonte, blocoDaFonte, RESPOSTA_SEM_DADOS, type FonteVerificada } from '@/lib/mcp/servidor-externo/consulta-obrigatoria';
+import { limitarFerramentasDaFonte } from '@/lib/mcp/servidor-externo/efeitos-da-fonte';
 import { contemAssuntoComercialNaSaida, contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
@@ -3215,6 +3217,17 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog, jev: deps.jev });
   const agentConfig = routed.config;
+  let registrarFonteConsultada: (fonte: FonteVerificada | null) => void = () => undefined;
+  const consultarDadosAtuais = async () => {
+    const fonte = agentConfig?.consultaObrigatoriaTool
+      ? await consultarFonteObrigatoria(deps.crmCfg.supabase, {
+        organizationId: tenantId, contactId: leadId || null, conversationId: input.conversationId,
+      }, agentConfig)
+      : null;
+    registrarFonteConsultada(fonte);
+    return fonte;
+  };
+  const fonteObrigatoriaInicial = agentConfig?.consultaObrigatoriaTool ? await consultarDadosAtuais() : null;
   // O traço grava o agente que o turno RESOLVEU: follow-up e resposta de caso
   // não passam `resolvedAgent`, e sem isto a linha ficaria sem agente nem fontes.
   if (input.tracoDoTurno !== undefined) input.tracoDoTurno.desfecho.config = agentConfig;
@@ -3671,7 +3684,7 @@ async function executarTurnoDoAgente(
   // voz de verdade (e `agent_preview` nem está no menu de `send_message`
   // real; é cinto e suspensório, não redundância morta).
   const vozParaEsteTurno =
-    !preview && agentConfig?.vozEnabled
+    !preview && !agentConfig?.consultaObrigatoriaTool && agentConfig?.vozEnabled
       ? await resolverVozDoTurno({
           pool,
           tenantId,
@@ -4464,6 +4477,16 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  // A consulta feita PELO EXECUTOR também sustenta o relato do registro no
+  // revisor de promessa. Continua sendo dado externo, nunca política comercial;
+  // os gates e a comparação exata com a fonte fresca permanecem na cadeia.
+  registrarFonteConsultada = (fonte) => {
+    if (fonte && agentConfig?.consultaObrigatoriaTool)
+      evidenciasComerciais.registrarLeituraRemota(agentConfig.consultaObrigatoriaTool, {
+        dados: [...fonte.respostas_permitidas, RESPOSTA_SEM_DADOS],
+      });
+  };
+  registrarFonteConsultada(fonteObrigatoriaInicial);
   // `imagem_url` só vale para endereço que uma ferramenta de dados devolveu neste turno.
   const procedenciaDeImagens = criarProcedenciaDeImagens();
   const efeitosDoTurno = criarEfeitoDasEscrituras();
@@ -5016,6 +5039,9 @@ async function executarTurnoDoAgente(
           };
         }
 
+        if (agentConfig?.consultaObrigatoriaTool) return { ok: false, error: {
+          code: 'fonte_obrigatoria', message: 'A fonte obrigatória não autoriza templates. Use uma frase autorizada da consulta atual.',
+        } };
         const rendered = renderTemplateBody(linha.components, values, {
           name: template_name,
           language,
@@ -5178,6 +5204,11 @@ async function executarTurnoDoAgente(
         if (input.historicoDoFollowup && !semConteudoVisivel(body)) {
           await input.historicoDoFollowup.registrar("gerada", numeroDaCandidata);
         }
+        if (agentConfig?.consultaObrigatoriaTool && (
+          !textoAutorizadoPelaFonte(body, await consultarDadosAtuais()) || produto_codigo || imagem_url || material_id
+        )) return { ok: false, error: { code: 'fonte_obrigatoria', message:
+          'Texto sem comprovação na fonte atual. Use exatamente: ' + RESPOSTA_SEM_DADOS,
+        } };
         // Segundo texto com preço depois de um veto comercial sem cliente esperando:
         // nem chama a cadeia — o agente já foi avisado e insistir só gasta o turno.
         if (vetosComerciaisSemPendencia >= 2 && contemAssuntoComercialNaSaida(body)) {
@@ -5779,6 +5810,11 @@ async function executarTurnoDoAgente(
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
+                if (agentConfig?.consultaObrigatoriaTool &&
+                    (media || !textoAutorizadoPelaFonte(corpo, await consultarDadosAtuais()))) {
+                  runLog.warn('envio vetado pela fonte obrigatória após formatação');
+                  return { kind: 'unavailable', reason: 'fonte_obrigatoria' } as const;
+                }
                 if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 seq += 1;
                 return liveChannel().send({
@@ -5795,7 +5831,7 @@ async function executarTurnoDoAgente(
                   // Só a bolha QUE CARREGA o arquivo leva o id do material: é o
                   // metadata que faz os freios de reenvio contarem uma vez.
                   ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
-                });
+                  });
               };
               // O histórico do follow-up fica fora da guarda, para ela seguir em uma linha.
               const enviar = async (
@@ -5827,7 +5863,7 @@ async function executarTurnoDoAgente(
                       enviarTexto: (texto) =>
                         enviarVoz(texto, seqDoEnvio) ??
                         sendInBubbles(texto, {
-                          enabled: agentConfig?.splitMessages ?? false,
+                          enabled: !agentConfig?.consultaObrigatoriaTool && (agentConfig?.splitMessages ?? false),
                           maxChars: agentConfig?.splitMaxChars ?? 600,
                           // O teto do turno vale para as bolhas: o que passa dele vai
                           // junto na última.
@@ -6709,7 +6745,7 @@ async function executarTurnoDoAgente(
   // abaixo). Calculado aqui, antes da ponte MCP, porque a ponte precisa saber quais
   // nativas FICAM: a do catálogo coberta por uma nativa (COBERTA_PELA_NATIVA) só sai
   // quando essa nativa está no turno — senão o Conversador perderia as duas.
-  const entregues = capacidadesEntreguesAoOperador({
+    const entregues = capacidadesEntreguesAoOperador({
     operadorLigado: agentConfig?.operatorEnabled ?? false,
     ferramentasDoOperador: agentConfig?.operatorToolIds ?? [],
   });
@@ -7017,6 +7053,10 @@ async function executarTurnoDoAgente(
 
     // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
     // entre runs por construção (mesma garantia de isolamento do resto do run).
+    if (agentConfig?.consultaObrigatoriaTool) {
+      const permitidas = limitarFerramentasDaFonte(rawTools, agentConfig.consultaObrigatoriaTool);
+      for (const nome of Object.keys(rawTools)) if (!(nome in permitidas)) delete rawTools[nome];
+    }
     if (preview && rawTools.get_lead_note)
       rawTools.get_lead_note = {
         ...rawTools.get_lead_note,
@@ -7112,6 +7152,9 @@ async function executarTurnoDoAgente(
                 canal: canalDoTurno,
                 clientePediu: true,
               }),
+            agentConfig?.consultaObrigatoriaTool
+              ? async (body) => textoAutorizadoPelaFonte(formatarParaWhatsApp(body), await consultarDadosAtuais())
+              : undefined,
           )
         : rawTools;
     const breakerTools = wrapToolsWithBreaker(previewTools, {
@@ -7456,6 +7499,7 @@ async function executarTurnoDoAgente(
     );
     const openingSuffixes = [
       agoraBlock,
+      agentConfig?.consultaObrigatoriaTool ? blocoDaFonte(fonteObrigatoriaInicial) : "",
       feriadoBlock,
       matchedSkillsBlock,
       stageHintBlock,
@@ -7987,6 +8031,7 @@ async function executarTurnoDoAgente(
             // de mensagens físicas do turno (F2-15b).
             if (falhaPermanenteNoTurno) return false; // o canal já recusou neste turno
             if (!perguntaDoRoteiroPodeSair({ turnoDescartado, seq, maxSendsPerTurn })) return false;
+            if (agentConfig?.consultaObrigatoriaTool && !textoAutorizadoPelaFonte(texto, await consultarDadosAtuais())) return false;
             const chain = await runBeforeSend({
               pool,
               log: runLog,

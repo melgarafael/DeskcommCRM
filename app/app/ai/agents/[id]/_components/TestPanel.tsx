@@ -1,4 +1,7 @@
 "use client";
+import { ContatoDoTeste } from "./ContatoDoTeste";
+import type { ContatoAutorizadoDoTeste } from "@/lib/ai/agents/contato-do-teste";
+import { escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
 /**
  * TestPanel — dry-run de uma version (S-13.12).
  *
@@ -222,6 +225,8 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
   const [message, setMessage] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
+  const [contatoReal, setContatoReal] = React.useState<ContatoAutorizadoDoTeste | null>(null);
+  const [fonteDoTeste, setFonteDoTeste] = React.useState("");
   // Etiquetas SIMULADAS da conversa (spec 27): texto separado por vírgula; o servidor normaliza.
   const [contactTags, setContactTags] = React.useState("");
   const [pending, setPending] = React.useState(false);
@@ -243,8 +248,7 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
    * editá-la (administrador). `readOnly` falso e canal em modo de teste com
    * lista é a única combinação que pede a lista.
    */
-  const canalDaVersao =
-    channelSessions?.find((c) => c.id === target?.channel_session_id) ?? null;
+  const canalDaVersao = channelSessions?.find((c) => c.id === target?.channel_session_id) ?? null;
   const acessoDoCanal = canalDaVersao?.acessoDaAi ?? null;
   const lerNumeros =
     !readOnly && canalEmModoDeTeste(acessoDoCanal) && (acessoDoCanal?.testNumbersCount ?? 0) > 0;
@@ -252,7 +256,7 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
   const avisoDoNumero = decidirAvisoDoModoDeTeste({
     acesso: acessoDoCanal,
     numerosDeTeste: listaAutorizada.acesso?.test_phone_numbers ?? null,
-    numeroEmTeste: contactPhone,
+    numeroEmTeste: contatoReal?.phone_number ?? contactPhone,
   });
 
   if (!target) {
@@ -283,7 +287,10 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
       // nem volta ao preço. O recorte respeita o teto que a rota impõe.
       const history = historicoDaConversa(turnos);
       if (history.length > 0) body.history = history;
-      if (contactName.trim() || contactPhone.trim()) {
+      if (contatoReal) {
+        body.contact_id = contatoReal.id;
+        if (fonteDoTeste) body.required_source_tool = fonteDoTeste;
+      } else if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
           ...(contactName.trim() ? { name: contactName.trim() } : {}),
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
@@ -366,6 +373,46 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
           />
         </div>
 
+        <ContatoDoTeste
+          value={contatoReal}
+          disabled={pending || readOnly}
+          onChange={(c) => {
+            setContatoReal(c);
+            setFonteDoTeste("");
+            setTurnos([]);
+          }}
+        />
+        {contatoReal && escolhasRemotas(target.tool_ids).some((c) => c.leitura) ? (
+          <div className="space-y-2">
+            <Label htmlFor="test-required-source">
+              {t("Consulta obrigatória apenas neste teste")}
+            </Label>
+            <select
+              id="test-required-source"
+              value={fonteDoTeste}
+              disabled={pending || readOnly}
+              onChange={(e) => {
+                setFonteDoTeste(e.target.value);
+                setTurnos([]);
+              }}
+              className="w-full rounded-md border border-border bg-background p-2"
+            >
+              <option value="">{t("Usar a configuração atual do agente")}</option>
+              {escolhasRemotas(target.tool_ids)
+                .filter((c) => c.leitura)
+                .map((c) => (
+                  <option key={c.nome} value={c.nome}>
+                    {c.nome}
+                  </option>
+                ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Simula a consulta e a proteção da resposta neste teste. Não liga essa regra no atendimento publicado.",
+              )}
+            </p>
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-2">
             <Label htmlFor="test-name">{t("Nome (opcional)")}</Label>
@@ -374,7 +421,7 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}
               placeholder="Maria"
-              disabled={pending || readOnly}
+              disabled={pending || readOnly || !!contatoReal}
             />
           </div>
           <div className="space-y-2">
@@ -384,7 +431,7 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
               value={contactPhone}
               onChange={(e) => setContactPhone(e.target.value)}
               placeholder={telefoneExemplo}
-              disabled={pending || readOnly}
+              disabled={pending || readOnly || !!contatoReal}
             />
           </div>
         </div>
@@ -409,7 +456,11 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
 
         <div className="flex items-center gap-2">
           <Button onClick={handleRun} disabled={pending || readOnly}>
-            {pending ? t("Executando…") : turnos.length > 0 ? t("Enviar mensagem") : t("Executar teste")}
+            {pending
+              ? t("Executando…")
+              : turnos.length > 0
+                ? t("Enviar mensagem")
+                : t("Executar teste")}
           </Button>
           {turnos.length > 0 ? (
             <Button variant="outline" onClick={handleRestart} disabled={pending || readOnly}>
@@ -459,8 +510,8 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
                 {typeof result.latency_ms === "number" ? `${result.latency_ms}ms` : "—"}
               </Cell>
               <Cell label={t("Tokens in/out")}>
-                {result.tokens_in?.toLocaleString()??"—"} /{" "}
-                {result.tokens_out?.toLocaleString()??"—"}
+                {result.tokens_in?.toLocaleString() ?? "—"} /{" "}
+                {result.tokens_out?.toLocaleString() ?? "—"}
               </Cell>
               <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
             </div>

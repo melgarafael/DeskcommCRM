@@ -422,6 +422,11 @@ export const testeHistoryMessageSchema = z
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    contact_id: UUID.optional(),
+    required_source_tool: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/)
+      .optional(),
     history: z
       .array(testeHistoryMessageSchema)
       .max(LIMITE_DO_HISTORICO_EM_MENSAGENS)
@@ -440,7 +445,15 @@ export const testRunSchema = z
       .transform((tags) => normalizarTags(tags))
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ contact_id, sample_contact }) => !contact_id || !sample_contact, {
+    path: ["sample_contact"],
+    message: "Escolha um contato cadastrado ou simulado.",
+  })
+  .refine(({ contact_id, required_source_tool }) => !required_source_tool || !!contact_id, {
+    path: ["required_source_tool"],
+    message: "Escolha um contato cadastrado para testar a fonte.",
+  });
 
 export const runsListQuerySchema = z
   .object({

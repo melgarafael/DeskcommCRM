@@ -23549,6 +23549,22 @@ export const DICIONARIO: Traducoes = {
   "é o destinatário responsável por este atendimento.": { es: "es el destinatario responsable de esta atención." },
   "é o paciente correto e que": { es: "es el paciente correcto y que" },
   "Chegou": { es: "Llegó" },
+  "Neste modo, só são permitidas respostas verificadas e casos internos para a equipe. As demais ações automáticas do agente ficam bloqueadas.": { es: "En este modo, solo se permiten respuestas verificadas y casos internos para el equipo. Las demás acciones automáticas del agente quedan bloqueadas." },
+  "Consultar um contato cadastrado (opcional)": { es: "Consultar un contacto registrado (opcional)" },
+  "Ao selecionar, este teste pode ler os dados desse contato. Nenhuma mensagem é enviada. Nome e telefone de amostra não autorizam essa consulta.": { es: "Al seleccionarlo, esta prueba puede leer los datos de ese contacto. No se envía ningún mensaje. El nombre y teléfono de ejemplo no autorizan esta consulta." },
+  "Remover contato do teste": { es: "Quitar contacto de la prueba" },
+  "Digite pelo menos três caracteres para buscar": { es: "Escribe al menos tres caracteres para buscar" },
+  "Buscando contatos…": { es: "Buscando contactos…" },
+  "Não foi possível buscar os contatos. Tente novamente.": { es: "No se pudieron buscar los contactos. Inténtalo de nuevo." },
+  "Consulta obrigatória atualizada.": { es: "Consulta obligatoria actualizada." },
+  "Consulta obrigatória antes de responder": { es: "Consulta obligatoria antes de responder" },
+  "Sem consulta obrigatória": { es: "Sin consulta obligatoria" },
+  "não selecionada nesta versão": { es: "no seleccionada en esta versión" },
+  "Esta regra vale imediatamente para o agente em atendimento. Teste primeiro no rascunho. Sem contato ou fonte confirmada, a resposta não pode informar dados ou links.": { es: "Esta regla se aplica de inmediato al agente que atiende. Pruébala primero en el borrador. Sin contacto o fuente confirmada, la respuesta no puede incluir datos ni enlaces." },
+  "Salvar consulta obrigatória": { es: "Guardar consulta obligatoria" },
+  "Consulta obrigatória apenas neste teste": { es: "Consulta obligatoria solo en esta prueba" },
+  "Usar a configuração atual do agente": { es: "Usar la configuración actual del agente" },
+  "Simula a consulta e a proteção da resposta neste teste. Não liga essa regra no atendimento publicado.": { es: "Simula la consulta y la protección de la respuesta en esta prueba. No activa esta regla en la atención publicada." },
   // #4864 — tela inicial (Configurações › Empresa › Menu lateral, e a interface
   // do membro em Equipe). O nome da porta NÃO entra aqui: vem do catálogo e é
   // traduzido por `entradaDoCatalogo`, que já tem espanhol para toda porta.

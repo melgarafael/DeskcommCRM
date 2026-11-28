@@ -672,7 +672,7 @@
         {
           "nome": "testRunSchema",
           "origem": "@/lib/ai/agents/validation",
-          "hash": "41e23329e62f2637"
+          "hash": "585f660e494c6b9d"
         }
       ],
       "resposta": []

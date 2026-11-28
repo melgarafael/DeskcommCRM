@@ -203,6 +203,7 @@ export interface PublishedAgentConfig {
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
    */
   mcpExternoNoAtendimento?: boolean;
+  consultaObrigatoriaTool?: string | null;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -333,6 +334,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    consulta_obrigatoria_tool?: unknown;
     voz_voice_id?: unknown;
     aviso_de_handoff?: unknown;
     aviso_de_passagem?: unknown;
@@ -401,7 +403,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? false` cobre o clone que ainda não aplicou a 0111: coluna ausente vem
     // como null/undefined, e a direção segura é o papel DESLIGADO — nunca gastar
     // modelo por causa de um schema desatualizado.
-    operatorEnabled: r.operator_enabled ?? false,
+    operatorEnabled: (r.operator_enabled ?? false) && !(typeof cfg.consulta_obrigatoria_tool === 'string' && cfg.consulta_obrigatoria_tool.trim()),
     operatorModel: r.operator_model,
     // `?? []` cobre o clone sem a 0112: sem coluna, o papel roda sem mão em vez
     // de herdar a lista do Conversador — a direção segura é agir de menos.
@@ -421,6 +423,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     naoAtenderEmFeriadoNacional: lerFechadoEmFeriadoNacional(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
+    consultaObrigatoriaTool:
+      typeof cfg.consulta_obrigatoria_tool === 'string' && cfg.consulta_obrigatoria_tool.trim()
+        ? cfg.consulta_obrigatoria_tool.trim() : null,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
     // (sem filtro ⇒ entra em tudo), nunca uma mordaça acidental (#2679).
     filtroDePalavraChave: lerFiltroDePalavraChave(r.trigger_config),

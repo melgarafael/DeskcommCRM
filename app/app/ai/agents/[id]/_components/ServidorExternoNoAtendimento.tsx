@@ -72,6 +72,7 @@ interface Props {
   agentId: string;
   /** `ai_agents.config.mcp_externo_no_atendimento` como está no banco (pode ser undefined). */
   inicial: unknown;
+  consultaInicial?: unknown;
   /** O `tool_ids` da versão em edição — onde a ESCOLHA mora (item 6). */
   toolIds: readonly string[];
   onChangeToolIds: (ids: string[]) => void;
@@ -79,10 +80,7 @@ interface Props {
 }
 
 /** A frase de cada recusa da action, em português (a chave é o texto). */
-const MENSAGEM_DA_RECUSA: Record<
-  Extract<ResultadoDaListagem, { ok: false }>["error"],
-  string
-> = {
+const MENSAGEM_DA_RECUSA: Record<Extract<ResultadoDaListagem, { ok: false }>["error"], string> = {
   unauthenticated: "Sua sessão expirou. Entre de novo para continuar.",
   forbidden_role: "Só o dono da instalação vê as ferramentas do servidor externo.",
   forbidden_tenant: "Não foi possível identificar a empresa ativa desta sessão.",
@@ -95,6 +93,7 @@ const MENSAGEM_DA_RECUSA: Record<
 export function ServidorExternoNoAtendimento({
   agentId,
   inicial,
+  consultaInicial,
   toolIds,
   onChangeToolIds,
   disabled,
@@ -102,6 +101,9 @@ export function ServidorExternoNoAtendimento({
   const t = useT();
   const [ligado, setLigado] = useState<boolean>(inicial === true);
   const [salvando, setSalvando] = useState(false);
+  const [consulta, setConsulta] = useState(
+    typeof consultaInicial === "string" ? consultaInicial : "",
+  );
   const [carregando, setCarregando] = useState(false);
   /** O que o servidor anunciou — `null` antes da primeira listagem bem-sucedida. */
   const [ferramentas, setFerramentas] = useState<readonly OpcaoRemotaParaOEditor[] | null>(null);
@@ -163,6 +165,20 @@ export function ServidorExternoNoAtendimento({
     }
   }
 
+  async function salvarConsulta() {
+    setSalvando(true);
+    try {
+      await apiClient.patch(`/api/v1/ai/agents/${agentId}`, {
+        config: { consulta_obrigatoria_tool: consulta || null },
+      });
+      toast.success(t("Consulta obrigatória atualizada."));
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   function alternarFerramenta(opcao: OpcaoRemotaParaOEditor, marcada: boolean) {
     setRecusa(null);
     if (!marcada) {
@@ -205,6 +221,48 @@ export function ServidorExternoNoAtendimento({
         )}
       </p>
 
+      <div className="space-y-2 border-t border-border pt-3">
+        <Label htmlFor="consulta-obrigatoria">{t("Consulta obrigatória antes de responder")}</Label>
+        <select
+          id="consulta-obrigatoria"
+          value={consulta}
+          onChange={(e) => setConsulta(e.target.value)}
+          disabled={disabled || salvando}
+          className="w-full rounded-md border border-border bg-background p-2"
+        >
+          <option value="">{t("Sem consulta obrigatória")}</option>
+          {escolhidas
+            .filter((c) => c.leitura)
+            .map((c) => (
+              <option key={c.nome} value={c.nome}>
+                {c.nome}
+              </option>
+            ))}
+          {consulta && !escolhidas.some((c) => c.leitura && c.nome === consulta) ? (
+            <option value={consulta}>
+              {consulta} ({t("não selecionada nesta versão")})
+            </option>
+          ) : null}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Esta regra vale imediatamente para o agente em atendimento. Teste primeiro no rascunho. Sem contato ou fonte confirmada, a resposta não pode informar dados ou links.",
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Neste modo, só são permitidas respostas verificadas e casos internos para a equipe. As demais ações automáticas do agente ficam bloqueadas.",
+          )}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void salvarConsulta()}
+          disabled={disabled || salvando}
+        >
+          {t("Salvar consulta obrigatória")}
+        </Button>
+      </div>
       {ligado ? (
         <div className="space-y-2 border-t border-border pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

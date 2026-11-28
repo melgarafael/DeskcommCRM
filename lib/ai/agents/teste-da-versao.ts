@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 
 import { audit } from "@/lib/audit";
+import { resolverContatoDoTeste } from "@/lib/ai/agents/contato-do-teste";
 import { perguntaDoTeste, respostaDoTeste } from "@/lib/ai/agents/texto-do-teste";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
@@ -165,6 +166,12 @@ export async function testarVersaoDoAgente(
 
   if (!version) return { ok: false, codigo: "not_found", mensagem: "Version não encontrada.", traduzivel: true, status: 404 };
 
+  const contatoDoTeste = pedido.contact_id
+    ? await resolverContatoDoTeste(admin, organizationId, pedido.contact_id)
+    : null;
+  if (pedido.contact_id && !contatoDoTeste)
+    return { ok: false, codigo: "not_found", mensagem: "Contato não disponível para este teste.", traduzivel: true, status: 404 };
+
   const startedAt = new Date();
 
   const { data: runRow, error: runErr } = await admin
@@ -174,7 +181,7 @@ export async function testarVersaoDoAgente(
       agent_id: id,
       agent_version_id: vid,
       conversation_id: null,
-      contact_id: null,
+      contact_id: contatoDoTeste?.id ?? null,
       channel_session_id: version.channel_session_id,
       inbound_message_id: null,
       outbound_message_id: null,
@@ -207,6 +214,8 @@ export async function testarVersaoDoAgente(
       sampleMessage: pedido.sample_message,
       history: pedido.history,
       sampleContact: pedido.sample_contact,
+      authorizedContact: contatoDoTeste ?? undefined,
+      requiredSourceTool: pedido.required_source_tool,
       sampleTags: pedido.sample_tags,
       channelId: version.channel_session_id,
     });
@@ -334,7 +343,12 @@ export async function testarVersaoDoAgente(
     resourceType: "ai_agent_version",
     resourceId: vid,
     requestId,
-    metadata: { run_id: runRow.id, dry_run: true },
+    metadata: {
+      run_id: runRow.id,
+      dry_run: true,
+      contact_id: contatoDoTeste?.id ?? null,
+      required_source_tool: pedido.required_source_tool ?? null,
+    },
   });
 
   return { ok: true, data: resultPayload };

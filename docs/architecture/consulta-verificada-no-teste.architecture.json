@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Consulta verificada no teste do agente",
+    "subtitle": "Identidade escopada, fonte fresca e nenhum envio",
+    "output": "consulta-verificada-no-teste.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "ui", "label": "Administrador" },
+    { "id": "core", "label": "Executor" },
+    { "id": "data", "label": "Fontes" }
+  ],
+  "mainPath": ["teste", "guard", "preview", "fonte"],
+  "nodes": [
+    {
+      "id": "teste",
+      "lane": "ui",
+      "col": 1,
+      "type": "service",
+      "label": "TestPanel: contato e fonte escolhidos"
+    },
+    {
+      "id": "guard",
+      "lane": "core",
+      "col": 2,
+      "type": "service",
+      "label": "Admin + Zod + organização da sessão"
+    },
+    {
+      "id": "contato",
+      "lane": "data",
+      "col": 3,
+      "type": "service",
+      "label": "contacts: id e organização; sem amostra como identidade"
+    },
+    {
+      "id": "preview",
+      "lane": "core",
+      "col": 4,
+      "type": "service",
+      "label": "Sandbox e mesma consulta obrigatória do atendimento"
+    },
+    {
+      "id": "fonte",
+      "lane": "data",
+      "col": 5,
+      "type": "service",
+      "label": "MCP externo: identidade do executor e frases autorizadas"
+    },
+    {
+      "id": "revisor",
+      "lane": "core",
+      "col": 6,
+      "type": "service",
+      "label": "Revisor de promessa: registro externo consultado"
+    },
+    {
+      "id": "resultado",
+      "lane": "ui",
+      "col": 7,
+      "type": "service",
+      "label": "Candidato ou impedimento; aviso da simulação e auditoria"
+    }
+  ],
+  "edges": [
+    { "from": "teste", "to": "guard", "label": "Mensagem e seleção explícita" },
+    { "from": "guard", "to": "contato", "label": "Relê pelo id e organização confiável" },
+    {
+      "from": "contato",
+      "to": "preview",
+      "label": "Só contato autorizado; nenhuma escrita no cadastro"
+    },
+    { "from": "preview", "to": "fonte", "label": "Consulta inicial e antes de cada candidato" },
+    { "from": "fonte", "to": "preview", "label": "Frases frescas ou falha fechada" },
+    { "from": "fonte", "to": "revisor", "label": "Consulta do executor também vira evidência externa" },
+    { "from": "revisor", "to": "preview", "label": "Julga o relato; não autoriza condição comercial nova" },
+    {
+      "from": "preview",
+      "to": "resultado",
+      "label": "Nenhum envio; outras ações bloqueadas, casos propostos"
+    },
+    {
+      "from": "resultado",
+      "to": "teste",
+      "label": "Administrador corrige o rascunho e repete o mesmo caso"
+    }
+  ],
+  "cards": [
+    {
+      "title": "Laço de retorno",
+      "body": "Fonte ausente ou texto divergente gera impedimento; a próxima tentativa relê a fonte. A publicação do prompt e a ativação no atendimento são separadas da simulação."
+    }
+  ]
+}
