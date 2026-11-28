@@ -41,8 +41,13 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
       const user_ids = policy ? responsibles.filter((r) => r.policy_id === policy.id && ids.includes(r.user_id)).map((r) => String(r.user_id)) : [];
       const distribution_mode = (policy?.distribution_mode ?? null) as RoutingMode | null;
       const default_assignee_user_id = policy?.default_assignee_user_id ? String(policy.default_assignee_user_id) : null;
+      // (#5381) A linha que sobrou do reset do gestor guarda só o que é de admin
+      // (`ai_wait_minutes`, `sector_id`): ela não é regra de ninguém, e o número
+      // voltou a usar a organização. `!== false` mantém a leitura de sempre para
+      // quem instalou antes da coluna existir.
+      const temRegraDoGestor = (policy as { has_manager_rule?: boolean } | undefined)?.has_manager_rule !== false;
       return { id: c.id, display_name: c.display_name, phone_number: c.phone_number, user_ids,
-        mode: !policy ? "legacy_unconfigured" : user_ids.length ? "restricted" : "restricted_empty",
+        mode: !temRegraDoGestor ? "legacy_unconfigured" : user_ids.length ? "restricted" : "restricted_empty",
         distribution_mode, default_assignee_user_id,
         sector_id: policy?.sector_id ?? null,
         ai_wait_minutes: (policy as { ai_wait_minutes?: number | null } | undefined)?.ai_wait_minutes ?? null };

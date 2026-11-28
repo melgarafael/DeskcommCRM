@@ -5241,6 +5241,7 @@ export type Database = {
           created_at: string;
           default_assignee_user_id: string | null;
           distribution_mode: string | null;
+          has_manager_rule: boolean;
           id: string;
           organization_id: string;
           sector_id: string | null;
@@ -5253,6 +5254,7 @@ export type Database = {
           created_at?: string;
           default_assignee_user_id?: string | null;
           distribution_mode?: string | null;
+          has_manager_rule?: boolean;
           id?: string;
           organization_id: string;
           sector_id?: string | null;
@@ -5264,6 +5266,7 @@ export type Database = {
           created_at?: string;
           default_assignee_user_id?: string | null;
           distribution_mode?: string | null;
+          has_manager_rule?: boolean;
           id?: string;
           organization_id?: string;
           sector_id?: string | null;

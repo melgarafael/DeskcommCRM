@@ -78,9 +78,12 @@ export async function loadEligibleAttendants(
     if (channelError) throw new Error(channelError.message);
     if (!channel) throw new InvalidRoutingChannel();
     const { data: policy, error: policyError } = await supabase.from("channel_routing_policies")
-      .select("id").eq("organization_id", organizationId).eq("channel_session_id", channelSessionId).maybeSingle();
+      .select("id, has_manager_rule").eq("organization_id", organizationId).eq("channel_session_id", channelSessionId).maybeSingle();
     if (policyError) throw new Error(policyError.message);
-    if (policy) {
+    // (#5381) Linha sem regra de gestor é a que sobrou do reset dele: carrega só
+    // `ai_wait_minutes`/`sector_id`, de admin, e não restringe ninguém. `!== false`
+    // preserva a leitura de quem instalou antes de a coluna existir.
+    if (policy && (policy as { has_manager_rule?: boolean }).has_manager_rule !== false) {
       const { data: responsibles, error } = await supabase.from("channel_routing_responsibles")
         .select("user_id").eq("organization_id", organizationId).eq("policy_id", policy.id);
       if (error) throw new Error(error.message);
