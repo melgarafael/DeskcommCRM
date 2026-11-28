@@ -42,6 +42,63 @@ interface EstadoDoBanco {
   erroDasConversas?: string;
   /** contato do negócio quando o contexto não o traz (fallback da consulta). */
   contatoDoNegocio?: string | null;
+  /**
+   * As conversas do contato, como estão no banco quando a ação roda (#5328).
+   * O dublê APLICA os filtros da consulta: é isso que faz o caso da fila comum
+   * discriminar — sem o filtro de `last_handoff_at`, ela também seria levada.
+   */
+  conversas?: ConversaFalsa[];
+  /** A atribuição por conversa recusa. */
+  erroDaAtribuicao?: string;
+}
+
+type ConversaFalsa = {
+  id: string;
+  organization_id?: string;
+  contact_id?: string;
+  status?: string;
+  assigned_to_user_id?: string | null;
+  last_handoff_at?: string | null;
+  active_ai_agent_id?: string | null;
+  /** O campo calculado do PostgREST (`comando_da_conversa(conversations)`). */
+  comando_da_conversa?: "humano" | "encerrada" | "aguardando" | "automatico";
+};
+
+/**
+ * Um pedaço de PostgREST que FILTRA de verdade: `eq`/`neq`/`is`/`not is`/`in`, e o
+ * `await` devolve só as linhas que passaram por todos os filtros. Um dublê que
+ * devolvesse tudo faria o teste da fila comum passar pelo motivo errado.
+ */
+function consultaDeConversas(linhas: ConversaFalsa[]) {
+  const filtros: Array<(c: ConversaFalsa) => boolean> = [];
+  const coluna = (c: ConversaFalsa, nome: string) => (c as Record<string, unknown>)[nome] ?? null;
+  const b = {
+    select: () => b,
+    eq: (nome: string, valor: unknown) => {
+      filtros.push((c) => coluna(c, nome) === valor);
+      return b;
+    },
+    neq: (nome: string, valor: unknown) => {
+      filtros.push((c) => coluna(c, nome) !== valor);
+      return b;
+    },
+    is: (nome: string, valor: unknown) => {
+      filtros.push((c) => coluna(c, nome) === valor);
+      return b;
+    },
+    not: (nome: string, operador: string, valor: unknown) => {
+      if (operador !== "is") throw new Error(`filtro não suportado no dublê: not ${operador}`);
+      filtros.push((c) => coluna(c, nome) !== valor);
+      return b;
+    },
+    in: (nome: string, valores: unknown[]) => {
+      filtros.push((c) => valores.includes(coluna(c, nome)));
+      return b;
+    },
+    then: (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: linhas.filter((c) => filtros.every((f) => f(c))), error: null }).then(ok, falha),
+  };
+  return b;
 }
 
 /**
@@ -67,9 +124,17 @@ function bancoFalso(estado: EstadoDoBanco = {}) {
           ? { data: null, error: { message: estado.erroDasConversas } }
           : { data: estado.movidas ?? 0, error: null };
       }
+      if (nome === "fn_conversation_assign") {
+        return estado.erroDaAtribuicao
+          ? { data: null, error: { message: estado.erroDaAtribuicao } }
+          : { data: [{ id: args.p_conversation_id }], error: null };
+      }
       return { data: null, error: null };
     }),
     from: vi.fn((tabela: string) => {
+      if (tabela === "conversations") {
+        return consultaDeConversas(estado.conversas ?? []);
+      }
       if (tabela === "crm_leads") {
         return {
           update: (valores: Record<string, unknown>) => ({
@@ -213,6 +278,172 @@ describe("assign_owner — a passagem SDR → Closer (#3514)", () => {
     const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
     expect(r.status).toBe("success");
     expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 0 } });
+  });
+
+  it("a conversa que o handoff deixou SEM DONO recebe o dono (janela 13:21:41 × 13:21:59)", async () => {
+    // O que o banco tem 18 s depois do handoff: a IA devolveu a conversa
+    // (`last_handoff_at` gravado, automático fora do comando), ninguém assumiu.
+    // A função das conversas devolve 0 — ela só move conversa com OUTRA pessoa.
+    const banco = bancoFalso({
+      movidas: 0,
+      conversas: [
+        {
+          id: "conv-do-handoff",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "pending",
+          assigned_to_user_id: null,
+          last_handoff_at: "2026-11-26T16:21:41Z",
+          active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(banco.rpcs.map((c) => c.nome)).toEqual([
+      "fn_passar_conversas_do_contato",
+      "fn_conversation_assign",
+    ]);
+    // A MESMA porta da transferência, com CAS em "ainda sem dono": quem assumiu
+    // no meio do caminho não perde a conversa.
+    expect(banco.rpcs[1]?.args).toEqual({
+      p_organization_id: "org-1",
+      p_conversation_id: "conv-do-handoff",
+      p_to_user_id: NOVO_DONO,
+      p_reason: "transfer",
+      p_expected_assignee: null,
+      p_enforce_expected: true,
+      p_negocio_so_sem_dono: true,
+    });
+    expect(r).toEqual({
+      type: "assign_owner",
+      status: "success",
+      detail: { user_id: NOVO_DONO, conversas: { movidas: 1 } },
+    });
+  });
+
+  it("a conversa sem dono em FILA COMUM (nunca passou por handoff) fica onde está", async () => {
+    // O caso que a regra não pode capturar: fila é fila, e levar daqui seria
+    // roubar conversa de quem ainda nem foi chamado.
+    const banco = bancoFalso({
+      movidas: 0,
+      conversas: [
+        {
+          id: "conv-da-fila",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "open",
+          assigned_to_user_id: null,
+          last_handoff_at: null,
+          active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(banco.rpcs.map((c) => c.nome)).toEqual(["fn_passar_conversas_do_contato"]);
+    expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 0 } });
+  });
+
+  it("a conversa que o handoff deixou sem dono mas a IA voltou a atender NÃO é tirada da IA", async () => {
+    // `last_handoff_at` pode continuar gravado com a IA no comando; o segundo
+    // sinal (`comando_da_conversa`) é o que diz quem está atendendo.
+    const banco = bancoFalso({
+      movidas: 0,
+      conversas: [
+        {
+          id: "conv-da-ia",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "ai_handling",
+          assigned_to_user_id: null,
+          last_handoff_at: "2026-11-26T16:21:41Z",
+          active_ai_agent_id: "agente-1",
+          comando_da_conversa: "automatico",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(banco.rpcs.map((c) => c.nome)).toEqual(["fn_passar_conversas_do_contato"]);
+    expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 0 } });
+  });
+
+  it("a pausa curta do celular que VENCEU num número sem roteador não vira handoff", async () => {
+    // A pausa do celular grava `last_handoff_at` e nunca o zera quando vence; e
+    // `active_ai_agent_id` só é gravado com roteador. Vencida a pausa, a conversa
+    // voltou ao automático — tirá-la daqui a calaria sem prazo.
+    const banco = bancoFalso({
+      movidas: 0,
+      conversas: [
+        {
+          id: "conv-pausa-vencida",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "open",
+          assigned_to_user_id: null,
+          last_handoff_at: "2026-11-26T15:00:00Z",
+          active_ai_agent_id: null,
+          comando_da_conversa: "automatico",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(banco.rpcs.map((c) => c.nome)).toEqual(["fn_passar_conversas_do_contato"]);
+    expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 0 } });
+  });
+
+  it("a conversa que o handoff deixou sem dono mas JÁ tem dono não é tocada de novo", async () => {
+    const banco = bancoFalso({
+      movidas: 1,
+      conversas: [
+        {
+          id: "conv-com-dono",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "claimed",
+          assigned_to_user_id: NOVO_DONO,
+          last_handoff_at: "2026-11-26T16:21:41Z",
+          active_ai_agent_id: null,
+          comando_da_conversa: "humano",
+        },
+      ],
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    // A contagem é a da função do banco: 1, não 2.
+    expect(banco.rpcs.map((c) => c.nome)).toEqual(["fn_passar_conversas_do_contato"]);
+    expect(r.detail).toEqual({ user_id: NOVO_DONO, conversas: { movidas: 1 } });
+  });
+
+  it("se a atribuição da conversa do handoff falha, a ação não diz que a passagem inteira deu certo", async () => {
+    const banco = bancoFalso({
+      conversas: [
+        {
+          id: "conv-do-handoff",
+          organization_id: "org-1",
+          contact_id: CONTATO,
+          status: "pending",
+          assigned_to_user_id: null,
+          last_handoff_at: "2026-11-26T16:21:41Z",
+          active_ai_agent_id: null,
+          comando_da_conversa: "aguardando",
+        },
+      ],
+      erroDaAtribuicao: "assignee_not_eligible_member",
+    });
+    const r = await getAction("assign_owner")!.execute(ctx(banco.admin), { ...soONegocio, conversas: true });
+
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe("conversas_nao_passaram");
+    expect(r.detail).toEqual({
+      user_id: NOVO_DONO,
+      conversas: "falhou",
+      erro: "assignee_not_eligible_member",
+    });
   });
 
   it("as duas opções juntas: negócio, carteira e conversas, nesta ordem", async () => {

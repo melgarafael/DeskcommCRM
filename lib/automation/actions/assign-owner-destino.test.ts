@@ -77,6 +77,21 @@ function bancoFalso(estado: EstadoDoBanco = {}) {
       return { data: null, error: null };
     }),
     from: vi.fn((tabela: string) => {
+      if (tabela === "conversations") {
+        // #5328: a ação lê as conversas do contato que o handoff deixou sem dono.
+        // Aqui não há nenhuma: a consulta devolve lista vazia.
+        const vazio = {
+          select: () => vazio,
+          eq: () => vazio,
+          neq: () => vazio,
+          is: () => vazio,
+          not: () => vazio,
+          in: () => vazio,
+          then: (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
+            Promise.resolve({ data: [], error: null }).then(ok, falha),
+        };
+        return vazio;
+      }
       if (tabela === "crm_leads") {
         return {
           update: (valores: Record<string, unknown>) => ({
