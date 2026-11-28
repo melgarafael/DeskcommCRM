@@ -190,7 +190,7 @@ function LinhaDoProfissional({
   const { posicoes, faixas } = React.useMemo(() => {
     const pedacos = [
       ...agendamentos
-        .filter((a) => a.responsavelId === pessoa.id && a.situacao !== "cancelled")
+        .filter((a) => (a.responsavelId === pessoa.id || (a.responsaveis ?? []).includes(pessoa.id)) && a.situacao !== "cancelled")
         .map((a) => ({
           item: { tipo: "agendamento", agendamento: a } as ItemDaLinha,
           comeca: a.comeca,

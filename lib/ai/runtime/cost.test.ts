@@ -319,3 +319,108 @@ describe("computeCostCents — degrau do Claude Haiku 5.5 (#4123)", () => {
     }
   });
 });
+
+/**
+ * #5239 — o degrau do Haiku 5.5 é por REQUISIÇÃO, não pelo total do turno.
+ *
+ * A Anthropic cobra 5× a requisição que passou de 100 mil tokens de entrada;
+ * somar os passos antes de aplicar o fator cobrava 5× de um turno inteiro que
+ * nunca teve uma requisição acima do limite. Taxa do catálogo de teste:
+ * 100 centavos por milhão de entrada.
+ */
+describe("computeCostCents — degrau do Haiku 5.5 POR PASSO (#5239)", () => {
+  const passo = (inputTokens: number) => ({ inputTokens, outputTokens: 0 });
+
+  beforeEach(() => {
+    vi.mocked(createAdminClient).mockReturnValue(adminComCatalogo(CATALOGO) as never);
+  });
+
+  it("3 passos de 40 mil somam 120 mil, mas nenhum passa do limite: custo 1×", async () => {
+    const custo = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 120_000,
+      outputTokens: 0,
+      steps: [passo(40_000), passo(40_000), passo(40_000)],
+    });
+    // 40.000 × 100 / 1.000.000 = 4¢ por passo; 3 × 4 = 12¢. O total agregado
+    // (120 mil) aplicaria 5× e daria 60¢ — a cobrança a mais que a issue mediu.
+    expect(custo).toBe(12);
+  });
+
+  it("um passo de 100.001 tokens paga 5× naquele passo, e só nele", async () => {
+    const custo = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 110_001,
+      outputTokens: 0,
+      steps: [passo(100_001), passo(10_000)],
+    });
+    // 10,0001¢ × 5 + 1¢ = 51,0005¢. Pelo total (110.001) seriam 55,0005¢:
+    // 5× também sobre os 10 mil do passo curto.
+    expect(custo).toBeCloseTo(51.0005, 10);
+  });
+
+  it("caso misto (40 mil + 100.001): só o passo acima do limite recebe 5×", async () => {
+    const custo = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 140_001,
+      outputTokens: 0,
+      steps: [passo(40_000), passo(100_001)],
+    });
+    // 4¢ (1×) + 10,0001¢ × 5 = 54,0005¢. Pelo total (140.001): 70,0005¢.
+    expect(custo).toBeCloseTo(54.0005, 10);
+  });
+
+  it("40 mil + 70 mil somam 110 mil, mas nenhum passo passa do limite: 1×", async () => {
+    const custo = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 110_000,
+      outputTokens: 0,
+      steps: [passo(40_000), passo(70_000)],
+    });
+    // 4¢ + 7¢ = 11¢. Pelo total: 11¢ × 5 = 55¢. O limite é a requisição: 70
+    // mil sozinho não chega a 100 mil, então não há passo a 5× neste turno.
+    expect(custo).toBe(11);
+  });
+
+  it("sem `steps` o cálculo segue o total do turno, idêntico ao de hoje", async () => {
+    // Mesmo turno de 120 mil sem passos: o comportamento antigo (5×) continua
+    // valendo para quem ainda não passa `steps` — e `steps: []` também cai aqui.
+    const semPassos = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 120_000,
+      outputTokens: 0,
+    });
+    const listaVazia = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 120_000,
+      outputTokens: 0,
+      steps: [],
+    });
+    expect(semPassos).toBe(60);
+    expect(listaVazia).toBe(60);
+  });
+
+  it("passo único concorda com o total — o caminho por passo não muda o preço", async () => {
+    const semPassos = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 100_001,
+      outputTokens: 0,
+    });
+    const comPasso = await computeCostCents({
+      provider: "anthropic",
+      model: "claude-haiku-5-5",
+      inputTokens: 100_001,
+      outputTokens: 0,
+      steps: [passo(100_001)],
+    });
+    expect(semPassos).toBeCloseTo(50.0005, 10);
+    expect(comPasso).toBe(semPassos);
+  });
+});

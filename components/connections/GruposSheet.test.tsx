@@ -105,6 +105,12 @@ describe("GruposSheet", () => {
     expect(await screen.findByText("Nenhum grupo encontrado")).toBeInTheDocument();
   });
 
+  it("mostra 'Nenhum grupo encontrado' quando a lista do WhatsApp vem vazia", async () => {
+    fetchMock.mockReturnValueOnce(resposta([]));
+    render(<GruposSheet channelId="s1" onClose={() => {}} />);
+    expect(await screen.findByText("Nenhum grupo encontrado")).toBeInTheDocument();
+  });
+
   it("mostra o contador de grupos ligados", async () => {
     fetchMock.mockReturnValueOnce(
       resposta([

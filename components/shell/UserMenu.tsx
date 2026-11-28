@@ -35,7 +35,23 @@ export function UserMenu() {
   return (
     <div className="flex items-center gap-2">
       <SeletorDeIdioma />
-      <ThemeToggle />
+      {/*
+        ABAIXO DE 360px O TEMA SAI DO TOPO, E ISSO É O QUE LIBERTA A BUSCA.
+
+        Medido (issue #5096): em 320px os quatro controles da direita (sino,
+        idioma, tema, avatar) somam 200px e a coluna da busca fica com 0px — o
+        botão Buscar passa por cima do seletor de organização. Tirar o tema
+        (44px + 8px de vão) é o menor corte possível que não mexe no que a
+        pessoa precisa para ser atendida: idioma fica (quem não lê a interface
+        precisa dele), navegação fica, avisos ficam.
+
+        Por que 359 e não `sm`: em 360px a conta fecha com o tema visível e a
+        issue manda preservar o desenho de 360 para cima. `max-[359px]` é o
+        único corte que deixa 360/375 pixel a pixel como estão. O tema continua
+        em `prefers-color-scheme` e a preferência salva vale; em 360px ou mais
+        o botão segue na tela.
+      */}
+      <ThemeToggle className="max-[359px]:hidden" />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-full" aria-label={`${t("Menu do usuário")}: ${initials(user.full_name, user.email)}`}>

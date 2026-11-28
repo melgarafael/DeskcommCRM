@@ -76,6 +76,8 @@ function serieDeExemplo(): SerieTemporal {
 }
 
 /** Os funis que o componente de servidor entrega ao painel. */
+const JANELA = { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" };
+
 const FUNIS = [
   { id: "p-vendas", name: "Vendas" },
   { id: "p-suporte", name: "Suporte" },
@@ -85,7 +87,7 @@ describe("a evolução dos ganhos no Desempenho", () => {
   it("sem filtro o card diz que a conta é a da ORGANIZAÇÃO INTEIRA (#4918)", () => {
     serie = serieDeExemplo();
     pedidos = [];
-    render(<SeriePanel funis={FUNIS} />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     // O pedido é o de hoje: nenhum `pipeline_id` na rota.
     expect(pedidos.at(-1)).toEqual({ granularidade: "dia", funilId: null });
@@ -96,7 +98,7 @@ describe("a evolução dos ganhos no Desempenho", () => {
     // A RESPOSTA é quem nomeia: o card mostra o funil que a rota de fato contou.
     serie = { ...serieDeExemplo(), funil: { id: "p-suporte", name: "Suporte" } };
     pedidos = [];
-    render(<SeriePanel funis={FUNIS} />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     expect(screen.getByTestId("escopo-dos-ganhos").textContent).toBe("Funil: Suporte");
 
@@ -108,7 +110,7 @@ describe("a evolução dos ganhos no Desempenho", () => {
 
   it("⭐ gráfico e tabela no MESMO Card, e o balde parado aparece com zero", () => {
     serie = serieDeExemplo();
-    render(<SeriePanel funis={FUNIS} />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     // O gráfico existe (o invólucro do recharts, no mesmo Card da tabela).
     const grafico = screen.getByTestId("ganhos-no-tempo");
@@ -133,7 +135,7 @@ describe("a evolução dos ganhos no Desempenho", () => {
 
   it("a tabela conta exatamente o que a série traz, sem recalcular", () => {
     serie = serieDeExemplo();
-    render(<SeriePanel funis={FUNIS} />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     const linhas = Array.from(document.querySelectorAll("tbody tr")).map((tr) =>
       Array.from(tr.querySelectorAll("td")).map((td) => td.textContent ?? ""),
@@ -147,12 +149,12 @@ describe("a evolução dos ganhos no Desempenho", () => {
 
   it("série cortada no teto de leitura avisa, e a inteira não", () => {
     serie = serieDeExemplo();
-    const { unmount } = render(<SeriePanel funis={FUNIS} />);
+    const { unmount } = render(<SeriePanel funis={FUNIS} janela={JANELA} />);
     expect(screen.queryByText("Série cortada no teto de leitura.")).toBeNull();
     unmount();
 
     serie = { ...serieDeExemplo(), truncado: true };
-    render(<SeriePanel funis={FUNIS} />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
     expect(screen.getByText("Série cortada no teto de leitura.")).toBeTruthy();
   });
 });
@@ -220,7 +222,7 @@ function montarPainel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MetricsClient canCompare currentUserId="outra-pessoa" funis={FUNIS} />
+      <MetricsClient canCompare currentUserId="outra-pessoa" funis={FUNIS} fuso="America/Sao_Paulo" />
     </QueryClientProvider>,
   );
 }
@@ -263,11 +265,11 @@ describe("o ranking e Por canal no celular", () => {
           lingua === "es"
             ? {
                 ranking: ["Ganados", "Perdidos", "Conversaciones", "1ª respuesta (promedio / mediana)"],
-                canais: ["Conversaciones", "1ª respuesta (promedio)", "Sin respuesta"],
+                canais: ["Conversaciones", "1ª respuesta (promedio)", "Aún sin respuesta"],
               }
             : {
                 ranking: ["Ganhos", "Perdidos", "Conversas", "1ª resposta (média / mediana)"],
-                canais: ["Conversas", "1ª resposta (média)", "Sem resposta"],
+                canais: ["Conversas", "1ª resposta (média)", "Ainda sem resposta"],
               };
         expect(ranking.rotulos).toEqual(esperado.ranking);
         expect(canais.rotulos).toEqual(esperado.canais);

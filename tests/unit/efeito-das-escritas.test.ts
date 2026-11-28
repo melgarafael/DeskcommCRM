@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { criarEfeitoDasEscrituras } from "@/lib/ai/runtime/efeito-das-escritas";
+import { MAXIMO_DE_RESERVAS_NA_REVISAO } from "@/lib/ai/runtime/recibos-de-agendamento";
 
 /**
  * O PREDICADO ÚNICO do efeito (issue #3333) — a pergunta "esta ação já produziu efeito?"
@@ -56,6 +57,122 @@ describe("o coletor do efeito", () => {
     const b = criarEfeitoDasEscrituras();
     a.registrar("crm_create_lead", "produziu_efeito");
     expect(b.produziuEfeito("crm_create_lead")).toBe(false);
+  });
+});
+
+describe("recibos de cancelamento acumulam no turno", () => {
+  const confirmado = {
+    id: "11111111-1111-4111-8111-111111111111",
+    status: "confirmed",
+    starts_at: "2026-12-10T13:00:00Z",
+    ends_at: "2026-12-10T13:30:00Z",
+    revision: 1,
+  };
+  const cancelado = (id: string, revision = 2) => ({
+    id,
+    status: "cancelled",
+    starts_at: "2026-12-10T13:00:00Z",
+    ends_at: "2026-12-10T13:30:00Z",
+    revision,
+  });
+  const idA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const idB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("a troca inteira (cancelar → marcar → os dois recibos na lista)", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const g1 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g1, { cancelado: true, compromisso: cancelado(idA) });
+    const g2 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g2, { marcado: true, compromisso: confirmado });
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista).toHaveLength(2);
+    expect(lista.some((r) => r.status === "cancelled" && r.id === idA)).toBe(true);
+    expect(lista.some((r) => r.status === "confirmed" && r.id === confirmado.id)).toBe(true);
+  });
+
+  it("marcação que falha depois do cancelamento mantém o cancelado", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const g1 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g1, { cancelado: true, compromisso: cancelado(idA) });
+    const g2 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g2, { marcado: true, compromisso: { ...confirmado, revision: undefined } });
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista).toEqual([cancelado(idA)]);
+  });
+
+  it("dois cancelamentos acumulam", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const g1 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g1, { cancelado: true, compromisso: cancelado(idA) });
+    const g2 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g2, { cancelado: true, compromisso: cancelado(idB) });
+    expect(efeitos.recibosDeAgendamento().filter((r) => r.status === "cancelled")).toHaveLength(2);
+  });
+
+  it("cancelamento registrado com geração antiga é guardado e confirmado com geração antiga não", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const antiga = efeitos.iniciarAgendamento();
+    efeitos.iniciarAgendamento(); // geração já avançou
+    efeitos.registrarRecibosDeAgendamento(antiga, { cancelado: true, compromisso: cancelado(idA) });
+    efeitos.registrarRecibosDeAgendamento(antiga, { marcado: true, compromisso: confirmado });
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista.some((r) => r.status === "cancelled" && r.id === idA)).toBe(true);
+    expect(lista.some((r) => r.status === "confirmed")).toBe(false);
+  });
+
+  it("mesmo id não duplica; para um mesmo id vence o de maior revision", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const g1 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g1, { cancelado: true, compromisso: cancelado(idA, 2) });
+    const g2 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g2, { cancelado: true, compromisso: cancelado(idA, 3) });
+    const lista = efeitos.recibosDeAgendamento().filter((r) => r.id === idA);
+    expect(lista).toHaveLength(1);
+    expect(lista[0]!.revision).toBe(3);
+  });
+
+  it("confirmado anterior continua sendo invalidado por nova mutação", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const g1 = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(g1, { marcado: true, compromisso: confirmado });
+    expect(efeitos.recibosDeAgendamento().some((r) => r.status === "confirmed")).toBe(true);
+    efeitos.iniciarAgendamento();
+    expect(efeitos.recibosDeAgendamento().some((r) => r.status === "confirmed")).toBe(false);
+  });
+
+  it("o teto de 20 nunca corta o confirmado: 20 cancelamentos + 1 marcação → a marcação está na lista, e o cancelamento mais antigo sai", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    const idCancel = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    for (let i = 0; i < MAXIMO_DE_RESERVAS_NA_REVISAO; i++) {
+      const g = efeitos.iniciarAgendamento();
+      efeitos.registrarRecibosDeAgendamento(g, { cancelado: true, compromisso: cancelado(idCancel(i), i + 1) });
+    }
+    const gMark = efeitos.iniciarAgendamento();
+    efeitos.registrarRecibosDeAgendamento(gMark, { marcado: true, compromisso: confirmado });
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista).toHaveLength(MAXIMO_DE_RESERVAS_NA_REVISAO);
+    // confirmed primeiro
+    expect(lista[0]!.status).toBe("confirmed");
+    expect(lista[0]!.id).toBe(confirmado.id);
+    // cancelados do mais recente para o mais antigo
+    const cancelados = lista.filter((r) => r.status === "cancelled");
+    expect(cancelados[0]!.id).toBe(idCancel(MAXIMO_DE_RESERVAS_NA_REVISAO - 1));
+    // o cancelamento mais antigo é o que sai
+    expect(lista.some((r) => r.id === idCancel(0))).toBe(false);
+    expect(cancelados.some((r) => r.id === idCancel(1))).toBe(true);
+  });
+
+  it("no máximo MAXIMO_DE_RESERVAS_NA_REVISAO, devolvendo cópias", () => {
+    const efeitos = criarEfeitoDasEscrituras();
+    for (let i = 0; i < MAXIMO_DE_RESERVAS_NA_REVISAO + 5; i++) {
+      const g = efeitos.iniciarAgendamento();
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+      efeitos.registrarRecibosDeAgendamento(g, { cancelado: true, compromisso: cancelado(id, i + 1) });
+    }
+    const lista = efeitos.recibosDeAgendamento();
+    expect(lista.length).toBeLessThanOrEqual(MAXIMO_DE_RESERVAS_NA_REVISAO);
+    lista[0]!.revision = 9999;
+    expect(efeitos.recibosDeAgendamento()[0]!.revision).not.toBe(9999);
   });
 });
 

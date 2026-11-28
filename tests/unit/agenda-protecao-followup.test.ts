@@ -24,6 +24,40 @@ describe("agenda protege cobrança sem inventar presença", () => {
       appointment_id: a.id,
     });
   });
+  it.each(["pending", "confirmed"])(
+    "reavalia em uma hora quando a consulta %s está a três dias",
+    (status) => {
+      const compromisso = { ...a, status };
+      const protecao = protecaoDaAgenda([compromisso], undefined, at(-72));
+      expect(protecao).toMatchObject({
+        adiar: true,
+        motivo: "agendado",
+        appointment_id: a.id,
+        reavaliar_em: at(-71).toISOString(),
+      });
+
+      const reavaliacao = new Date(protecao.reavaliar_em!);
+      expect(protecaoDaAgenda([compromisso], undefined, reavaliacao)).toMatchObject({
+        adiar: true,
+        motivo: "agendado",
+        reavaliar_em: at(-70).toISOString(),
+      });
+      expect(
+        protecaoDaAgenda([{ ...compromisso, status: "cancelled" }], undefined, reavaliacao),
+      ).toMatchObject({
+        adiar: false,
+        motivo: "sem_compromisso",
+        reavaliar_em: null,
+      });
+    },
+  );
+  it("reavalia no início quando falta menos de uma hora", () => {
+    expect(protecaoDaAgenda([a], undefined, at(-0.5))).toMatchObject({
+      adiar: true,
+      motivo: "agendado",
+      reavaliar_em: a.starts_at,
+    });
+  });
   it("ao vencer libera só a proteção, mantendo o motivo para revisão", () => {
     expect(protecaoDaAgenda([a], undefined, at(25))).toMatchObject({
       adiar: false,

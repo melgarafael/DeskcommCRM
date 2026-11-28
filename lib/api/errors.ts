@@ -10,6 +10,7 @@
 export const ApiErrorCodes = {
   // 400 — body / params
   invalid_request: "invalid_request",
+  numero_sem_whatsapp: "numero_sem_whatsapp", // 422: todas as grafias consultadas não têm conta
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
   // POST /api/v1/avisos (#1418): `publicar_em` no futuro é recusado
@@ -57,6 +58,13 @@ export const ApiErrorCodes = {
   agenda_horario_indisponivel: "agenda_horario_indisponivel",
   agenda_fora_da_jornada: "agenda_fora_da_jornada",
   agenda_tipo_desativado: "agenda_tipo_desativado",
+  agenda_responsaveis_teto: "agenda_responsaveis_teto", // 422: excedeu o teto de responsáveis adicionais
+  agenda_responsaveis_invalidos: "agenda_responsaveis_invalidos", // 422: responsável adicional inválido
+  agenda_tipo_invalido: "agenda_tipo_invalido", // 422: tipo de compromisso fora da organização
+  agenda_contato_invalido: "agenda_contato_invalido", // 422: contato fora da organização
+  agenda_dono_invalido: "agenda_dono_invalido", // 422: responsável principal fora da organização
+  agenda_conversa_invalida: "agenda_conversa_invalida", // 422: conversa fora da organização
+  agenda_equipe_invalida: "agenda_equipe_invalida", // 422: convidado da equipe fora da organização
   agenda_sem_responsavel: "agenda_sem_responsavel",
   agenda_disponibilidade_invalida: "agenda_disponibilidade_invalida",
   agenda_ja_cancelado: "agenda_ja_cancelado",
@@ -164,12 +172,18 @@ export const ApiErrorCodes = {
   // POST/PATCH /api/v1/attendants/sectors com nome que já existe na organização
   // (índice attendant_sectors_org_name_unique, migration 0801).
   sector_name_taken: "sector_name_taken",
+  responsavel_indisponivel: "responsavel_indisponivel",
   // POST /api/v1/ai/agents e PATCH .../agents/[id] com nome que a organização já
   // usa (índice ai_agents_name_unique, composto `(organization_id, name)` —
   // baseline.sql:1963). Era 500 "Erro ao criar agent."; #3952. A régua que separa
   // ESTE `23505` dos outros índices mora em `lib/ai/agents/nome-repetido.ts`.
   // Irmão do `sector_name_taken`: mesma classe, outro cadastro.
   agent_name_taken: "agent_name_taken",
+  // Mover ou reabrir um card bate no índice único `crm_leads_clone_aberto_no_funil_uidx`
+  // (migration 9496, #5281): o mesmo negócio de origem já tem uma cópia ABERTA
+  // neste funil. A régua que separa ESTE `23505` dos outros mora em
+  // `lib/leads/copia-aberta-no-funil.ts`. Era 500.
+  copia_aberta_no_funil: "copia_aberta_no_funil",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
   // Doc 301 = B: o disparo do que ficou parado no assistido caiu fora da janela de envio

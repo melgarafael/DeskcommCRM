@@ -90,6 +90,10 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "messages:write", label: "Enviar mensagens" },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
+  {
+    id: "messages:institutional",
+    label: "Enviar avisos institucionais sem alterar a fila, SLA ou silenciar a IA",
+  },
   // #4515: registrar presença sempre foi decisão de gente, e o `mcp:write` não
   // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
   // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito

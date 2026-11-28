@@ -13,12 +13,28 @@ export const personalizacaoProspeccaoSchema = z
     vendedor_nome: z.string().trim().max(80).optional(),
     vendedor_apresentacao: z.string().trim().max(300).optional(),
     vendedor_diferencial: z.string().trim().max(300).optional(),
+    /**
+     * #5179 — a fala do vendedor pelo celular não pausa a IA enquanto o lead não
+     * respondeu. PADRÃO DESLIGADO (ausente = desligado): quem não optar continua
+     * com a pausa de 60 min de `pausarIaPorAtendimentoManual`. A regra de quando
+     * ela vale mora em `./pausa-antes-da-resposta.ts`.
+     */
+    nao_pausar_antes_da_primeira_resposta: z.boolean().optional(),
   })
   .strict();
 
 export type PersonalizacaoProspeccao = z.infer<typeof personalizacaoProspeccaoSchema>;
 
 export const PERSONALIZACAO_VAZIA: PersonalizacaoProspeccao = {};
+
+/**
+ * A opção do #5179 está ligada? Ausente, `false`, valor de outro tipo ou
+ * `settings` ilegível — tudo DESLIGADO, que é o comportamento de quem nunca
+ * abriu a tela. Nunca lança, pelo mesmo motivo de `lerPersonalizacao`.
+ */
+export function lerNaoPausarAntesDaPrimeiraResposta(settings: unknown): boolean {
+  return lerPersonalizacao(settings).nao_pausar_antes_da_primeira_resposta === true;
+}
 
 /** Lê `settings.prospeccao` sem nunca lançar (tick não pode cair por config). */
 export function lerPersonalizacao(settings: unknown): PersonalizacaoProspeccao {

@@ -93,6 +93,9 @@ CRONS="
 */10 * * * *|60|api/v1/cron/contact-avatars
 */10 * * * *|60|api/v1/cron/agenda-google-refresh
 * * * * *|90|api/v1/cron/agenda-google-sync
+# Ocupação do Outlook (#1754). Cada agenda só é relida 5 min depois da última
+# leitura; a batida de minuto serve para escalonar as conexões em lotes.
+* * * * *|90|api/v1/cron/agenda-microsoft-sync
 # A IDA. Cadência mais curta que a volta de propósito: quem marcou pela tela
 # espera ver o compromisso no celular dele em minutos, e a ida é barata (só
 # manda o que mudou). A volta é cara — varre calendário inteiro — e por isso

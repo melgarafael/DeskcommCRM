@@ -11,6 +11,7 @@ import { projetarDerivadoNoHistorico } from "@/lib/mcp/media-derived-read";
 import {
   listConversationsHandler,
   getConversationHandler,
+  countConversationsHandler,
 } from "@/app/api/v1/conversations/_handler";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
@@ -161,6 +162,38 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// count (#4996, item 2)
+// ---------------------------------------------------------------------------
+const countInputShape = {
+  status: z.enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"]).optional(),
+};
+
+export const crmCountConversations: McpToolDefinition<typeof countInputShape> = {
+  name: "crm_count_conversations",
+  description:
+    "Conta conversas por status e devolve só números (total e, sem filtro de status, o total por status), sem prévia nem mensagens. " +
+    "Para 'quantas conversas abertas/pendentes/com a IA?', use esta em vez de paginar crm_list_conversations. Em atendimento, conta só as conversas do contato desta conversa.",
+  inputSchema: countInputShape,
+  category: "read",
+  requiresRole: "agent",
+  requiresScope: "mcp:read",
+  handler: async (input, ctx) =>
+    countConversationsHandler(
+      ctx.supabase,
+      {
+        organization_id: ctx.organizationId,
+        actor: ctx.actor,
+        requestId: ctx.requestId,
+      },
+      {
+        status: input.status,
+        // Escopo do turno NO WHERE, como na listagem (#2184).
+        contact_id: ctx.contatoDoTurno,
+      },
+    ),
+};
+
 const getInputShape = {
   conversation_id: z.string().uuid(),
 };
@@ -229,12 +262,33 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
     const queue_position = isInQueue(conv)
       ? ((await getQueuePositions(ctx.supabase, ctx.organizationId)).get(conv.id) ?? null)
       : null;
+    let last_inbound_message_id: string | null = null;
+    try {
+      const { data: ultimaInbound } = await ctx.supabase
+        .from("messages")
+        .select("id")
+        .eq("organization_id", ctx.organizationId)
+        .eq("conversation_id", conv.id)
+        .eq("direction", "inbound")
+        .neq("type", "reaction")
+        .order("sent_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      last_inbound_message_id = (ultimaInbound as { id?: string } | null)?.id ?? null;
+    } catch {
+      last_inbound_message_id = null;
+    }
     return {
       id: conv.id,
       contact_id: conv.contact_id,
       channel_session_id: conv.channel_session_id,
       channel: conv.channel,
       status: conv.status,
+      service_revision: conv.service_revision,
+      sector_id: conv.sector_id ?? null,
+      last_inbound_message_id,
       assigned_to_user_id: conv.assigned_to_user_id,
       assignee_kind: conv.assignee_kind,
       assigned_to_user_name: conv.assigned_to_user_id
@@ -267,9 +321,10 @@ export type MediaDoHistorico = {
    * `ready`: arquivo guardado; `pending`: a mensagem tem mídia mas o worker
    * ainda não a guardou (ou o link falhou) — quem consome tenta de novo depois;
    * `expired`: apagada pela retenção (o mesmo marcador que faz a rota de mídia
-   * responder 410); ausente no mapa = mensagem sem mídia.
+   * responder 410); `failed`: download falhou definitivamente no worker;
+   * ausente no mapa = mensagem sem mídia.
    */
-  status: "ready" | "pending" | "expired";
+  status: "ready" | "pending" | "expired" | "failed";
   signedUrl: string | null;
 };
 
@@ -284,6 +339,10 @@ type MensagemComMidia = {
 const expirou = (m: MensagemComMidia) =>
   !m.media_storage_path && !m.media_url && m.metadata?.media_status === "expired";
 
+/** Mídia cujo download no worker falhou definitivamente (última tentativa): sem arquivo guardado e com marcador de falha. */
+const falhou = (m: MensagemComMidia) =>
+  !m.media_storage_path && m.metadata?.media_status === "failed";
+
 /**
  * Para cada mensagem do histórico que carrega mídia, diz o estado e, com
  * `comLink`, gera o link temporário do arquivo guardado. Nunca lança: falha ao
@@ -295,12 +354,15 @@ export async function resolverMidiasDoHistorico(
   { comLink = true }: { comLink?: boolean } = {},
 ): Promise<Map<string, MediaDoHistorico>> {
   const out = new Map<string, MediaDoHistorico>();
-  const comMidia = messages.filter((m) => m.media_storage_path || m.media_url || expirou(m));
+  const comMidia = messages.filter(
+    (m) => m.media_storage_path || m.media_url || expirou(m) || falhou(m),
+  );
   if (comMidia.length === 0) return out;
 
   const aAssinar: Array<{ id: string; caminho: string }> = [];
   for (const m of comMidia) {
     if (expirou(m)) out.set(m.id, { status: "expired", signedUrl: null });
+    else if (falhou(m)) out.set(m.id, { status: "failed", signedUrl: null });
     else if (!m.media_storage_path) out.set(m.id, { status: "pending", signedUrl: null });
     else if (!comLink) out.set(m.id, { status: "ready", signedUrl: null });
     else aAssinar.push({ id: m.id, caminho: m.media_storage_path });

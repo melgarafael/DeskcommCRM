@@ -138,6 +138,19 @@ export const TOOLS_ATENDIMENTO = declararTools([
     pacotes: ["atender", "escalar"],
   },
   {
+    name: "crm_count_conversations",
+    category: "read",
+    rotulo: "Contar conversas",
+    explicacao:
+      "Conta quantas conversas existem, no total e por situação (abertas, pendentes, com a IA, encerradas), sem abrir nenhuma delas: devolve só números.",
+    oQueToca: "Atendimento",
+    risco: "seguro",
+    // "escalar" e não "atender": "atender" já está no teto de 31 capacidades
+    // (tests/unit/pacote-reserva-vaga-da-critica.test.ts), e ligar mais uma ali
+    // faria o pacote deixar de caber. Continua alcançável pelo modo avançado.
+    pacotes: ["escalar"],
+  },
+  {
     name: "crm_pause_ai",
     category: "write",
     rotulo: "Pausar a IA nesta conversa",

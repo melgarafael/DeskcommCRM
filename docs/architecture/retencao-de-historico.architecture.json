@@ -43,7 +43,9 @@
     { "id": "fntraco", "lane": "banco", "col": 7, "type": "database", "label": "fn_expurgar_traco_do_turno_vencido (9021)", "sublabel": "service_role · piso 100 · mesmo knob da telemetria · só idade e lote" },
     { "id": "tracos", "lane": "banco", "col": 8, "type": "database", "label": "agent_turn_traces (0721)", "sublabel": "gravado por turno; created_at define a retenção; legado pode conter erro livre" },
     { "id": "leitortraco", "lane": "borda", "col": 5, "type": "api", "label": "GET /api/v1/ai/turn-traces", "sublabel": "cookie manager+ · organização da sessão · datas UTC e instante do corte · API parcial, tela na issue3201" },
-    { "id": "recibotraco", "lane": "regra", "col": 6, "type": "service", "label": "recibo-do-traco.ts", "sublabel": "projeção fechada: sem error_message, argumentos ou JSON arbitrário; códigos técnicos conhecidos" }
+    { "id": "recibotraco", "lane": "regra", "col": 6, "type": "service", "label": "recibo-do-traco.ts", "sublabel": "projeção fechada: sem error_message, argumentos ou JSON arbitrário; códigos técnicos conhecidos" },
+    { "id": "fnchaves", "lane": "banco", "col": 9, "type": "database", "label": "fn_expurgar_chaves_de_idempotencia_vencidas (9506)", "sublabel": "folga de 1 dia no corpo · for update skip locked · fora o recibo LGPD (#1613)" },
+    { "id": "chaves", "lane": "banco", "col": 10, "type": "database", "label": "idempotency_keys", "sublabel": "reserva 60 s / recibo 24 h (lib/api/idempotency.ts); só a leitura viva conta" }
   ],
   "edges": [
     { "id": "e1", "from": "scheduler", "to": "rota", "label": "curl com INTERNAL_SECRET" },
@@ -73,6 +75,8 @@
     { "id": "e25", "from": "politica", "to": "leitortraco", "label": "mesmo prazo; pedido vencido não reabre o corte" },
     { "id": "e26", "from": "tracos", "to": "leitortraco", "label": "RLS e filtro explícito de organização" },
     { "id": "e27", "from": "leitortraco", "to": "recibotraco", "label": "serializa só o recibo técnico" },
-    { "id": "e28", "from": "recibotraco", "to": "runbook", "label": "contrato de API parcial documentado; sem tela alegada" }
+    { "id": "e28", "from": "recibotraco", "to": "runbook", "label": "contrato de API parcial documentado; sem tela alegada" },
+    { "id": "e29", "from": "podar", "to": "fnchaves", "label": "lotes de 1000, 1 dia de folga" },
+    { "id": "e30", "from": "fnchaves", "to": "chaves", "label": "DELETE das vencidas há mais de 1 dia" }
   ]
 }

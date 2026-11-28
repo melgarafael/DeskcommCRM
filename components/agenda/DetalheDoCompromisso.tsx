@@ -10,7 +10,10 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { erroComNomeDoResponsavel } from "@/lib/agenda/erro-de-responsavel";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { ResponsaveisDoCompromisso } from "./ResponsaveisDoCompromisso";
+import type { Pessoa } from "./tipos";
 
 type Detalhe = {
   meeting?: MeetingDetail | null;
@@ -27,6 +30,8 @@ type Detalhe = {
   notes: string | null;
   location_kind: string | null;
   location_details: string | null;
+  service_space_id: string | null;
+  calendar_resources: { name: string } | { name: string }[] | null;
   starts_at: string;
   ends_at: string;
   time_zone: string;
@@ -34,6 +39,11 @@ type Detalhe = {
   revision: number;
   contact_id: string | null;
   conversation_id: string | null;
+  /** Quem conduz (#3067): o principal e os adicionais, por id. */
+  principal_user_id?: string | null;
+  responsaveis?: string[];
+  /** Sessão coletiva: a equipe é travada por quem abre a sessão (#3067). */
+  equipe_travada?: boolean;
   outcome_source_kind: string | null;
   outcome_recorded_at: string | null;
   recovery: {
@@ -69,6 +79,7 @@ export function DetalheDoCompromisso({
   const [reason, setReason] = useState("");
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [equipe, setEquipe] = useState<string[] | null>(null);
   const query = useQuery({
     queryKey: ["agenda", "detalhe", id],
     enabled: !!id,
@@ -94,9 +105,16 @@ export function DetalheDoCompromisso({
     setReason("");
     setDraftRevision(null);
     setConflict(false);
+    setEquipe(null);
   }
   function mutationFailed(error: unknown) {
-    showApiError(error);
+    showApiError(
+      erroComNomeDoResponsavel(
+        error,
+        qc.getQueryData<Pessoa[]>(["agenda", "pessoas"]) ?? [],
+        t("{nome} não está disponível neste horário. Escolha outro horário ou retire essa pessoa de Quem conduz."),
+      ),
+    );
     setConflict(true);
     void query.refetch();
   }
@@ -170,6 +188,14 @@ export function DetalheDoCompromisso({
                 {rotuloDoLocal(a.location_kind, a.location_details)}
               </p>
             ) : null}
+            {(() => {
+              const spaceName = Array.isArray(a.calendar_resources)
+                ? (a.calendar_resources[0]?.name ?? null)
+                : a.calendar_resources?.name ?? null;
+              return spaceName && a.service_space_id ? (
+                <p data-testid="compromisso-lugar">{t("Lugar")}: {spaceName}</p>
+              ) : null;
+            })()}
             {a.description?.trim() ? (
               <p data-testid="compromisso-observacao" className="whitespace-pre-wrap">
                 {a.description}
@@ -201,6 +227,21 @@ export function DetalheDoCompromisso({
                 )[a.status] ?? a.status,
               )}
             </p>
+            {a.principal_user_id ? (
+              <ResponsaveisDoCompromisso
+                principalId={a.principal_user_id}
+                gravados={a.responsaveis ?? []}
+                rascunho={equipe}
+                podeEditar={podeEditar && ["pending", "confirmed"].includes(a.status)}
+                desabilitado={mutation.isPending || staleDraft}
+                travada={a.equipe_travada === true}
+                onChange={(ids) => {
+                  beginDraft();
+                  setEquipe(ids);
+                }}
+                onSalvar={(ids) => decide({ responsible_user_ids: ids })}
+              />
+            ) : null}
             {a.contact_id ? (
               <Link href={`/app/contacts/${a.contact_id}`} className="underline">
                 {t("Ver contato")}

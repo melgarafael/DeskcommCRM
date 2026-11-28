@@ -20,6 +20,91 @@ source "$KIT_DIR/_common.sh"
 # shellcheck source=manutencao.sh
 source "$KIT_DIR/manutencao.sh"
 enter_project
+
+# ── Cadeado: uma atualização por vez, inclusive contra o painel (#5052) ─────
+# O `.update.lock` existia, mas só o `agent.sh` (o botão "Atualizar agora") o
+# tomava: o `update.sh` rodado pelo terminal entrava sem cadeado nenhum, e duas
+# atualizações podiam aplicar o `supabase/baseline.sql` no MESMO banco ao mesmo
+# tempo — o par de erros do incidente 1.118 → 1.119 (`cannot change name of
+# input parameter`), em duas aplicações defasadas em 2,75–3,5 s (medido no
+# #5030). O baseline é DDL: uma aplicação pode dropar o que a outra recém-criou,
+# e o banco fica sem a regra, sem erro visível na tela.
+#
+# O cadeado é tomado AQUI, antes de tudo, para a ordem valer de ponta a ponta:
+# cadeado → backup → código → banco. Tomá-lo depois do backup (:303) não
+# serviria — dois backups concorrentes disputariam a mesma pasta (#4222), e a
+# corrida que interessa é a do banco.
+#
+# 🔴 O caminho do BOTÃO passa por aqui também, e chega com o cadeado na mão: o
+# `agent.sh` abre o fd 9, trava e chama este script como FILHO. Tentar `flock -n`
+# num descritor NOVO ali faria o botão travar contra o próprio pai (o cadeado é
+# da descrição de arquivo aberta, e o pai é o dono) — o update nunca rodaria.
+# Por isso a trava HERDADA é detectada e reaproveitada: o filho não re-toma nem
+# sai. Só o caminho do terminal toma um cadeado próprio.
+#
+# O cadeado NÃO é solto em gatilho nenhum: quem o solta é o kernel, quando o
+# processo termina. Soltá-lo no `trap ... INT TERM HUP` seria pior que inútil —
+# o `restaurar_servicos` não chama `exit`, então depois de um Ctrl-C o script
+# SEGUE rodando, já sem o cadeado.
+TRAVA_PROPRIA=""
+# O descritor já aberto aponta para o NOSSO `.update.lock`? `exec 8>&N` falha
+# quando o fd está fechado, e é assim que "herdado" se distingue de "não
+# existe". O `readlink` cobre o caso de quem chama o update.sh de dentro de um
+# processo que já segura o cadeado sem declarar o fd (o `agent.sh` declara).
+trava_herdada() {  # imprime o número do fd herdado; 1 quando não há
+  local fd="${DESKCOMM_UPDATE_LOCK_FD:-9}" alvo aponta
+  ( exec 8>&"$fd" ) 2>/dev/null || return 1
+  if [ -n "${DESKCOMM_UPDATE_LOCK_FD:-}" ]; then printf '%s' "$fd"; return 0; fi
+  alvo="$(readlink -f "$PROJECT_DIR/.update.lock" 2>/dev/null || printf '%s' "$PROJECT_DIR/.update.lock")"
+  aponta="$(readlink -f "/proc/self/fd/$fd" 2>/dev/null || true)"
+  [ -n "$aponta" ] && [ "$aponta" = "$alvo" ] || return 1
+  printf '%s' "$fd"
+}
+# A recusa é DIDÁTICA de propósito: quem roda o update.sh no terminal precisa
+# saber que quem está trabalhando é o painel, e que a saída foi limpa. Sai com 0
+# porque nada falhou — a atualização vai acontecer, só não é esta execução (o
+# `agent.sh` sai do mesmo jeito quando não pega o cadeado).
+recusar_por_trava_ocupada() {
+  c_ylw "⚠ Já há uma atualização em andamento pelo painel (ou por outro terminal) — esta execução saiu sem fazer nada."
+  c_ylw "  O cadeado é o '$PROJECT_DIR/.update.lock'. Duas atualizações ao mesmo tempo aplicariam o"
+  c_ylw "  mesmo supabase/baseline.sql no MESMO banco em paralelo — foi o que produziu o par de erros"
+  c_ylw "  'cannot change name of input parameter' do incidente 1.118 → 1.119."
+  c_ylw "  Não parei serviço, não baixei código, não toquei no backup nem no banco."
+  c_ylw "  Espere a atualização em andamento terminar e rode este comando de novo."
+  c_ylw "  Para acompanhar a que está rodando:  tail -f $PROJECT_DIR/.update.log"
+  exit 0
+}
+tomar_trava_de_atualizacao() {
+  local fd="" alvo="$PROJECT_DIR/.update.lock"
+  if ! command -v flock >/dev/null 2>&1; then
+    # Host sem util-linux (o kit não instala pacote nenhum): seguir como antes é
+    # melhor que inventar uma recusa que o operador não consegue resolver — e o
+    # `agent.sh` já sai sem o flock, então a corrida do painel não existe por
+    # esse caminho.
+    c_ylw "⚠ O comando 'flock' não existe neste servidor: sigo SEM o cadeado que impede duas atualizações ao mesmo tempo. Não clique em \"Atualizar agora\" no painel enquanto esta estiver rodando."
+    return 0
+  fi
+  if fd="$(trava_herdada)"; then
+    # Trava herdada do agent.sh: o cadeado já é desta execução. `flock -n` aqui
+    # só CONFIRMA — falhar significa que o fd herdado não é dono de nada e
+    # outro processo é, o que é a mesma corrida que a trava própria barra.
+    if ! flock -n "$fd"; then recusar_por_trava_ocupada; fi
+    DESKCOMM_UPDATE_LOCK_FD="$fd"; export DESKCOMM_UPDATE_LOCK_FD
+    return 0
+  fi
+  exec 9>"$alvo"
+  # `-n` e não bloqueante: quem não pegou SAI. Ficar na fila faria a segunda
+  # atualização rodar logo depois da primeira, aplicando um baseline que já não
+  # precisa e reiniciando o app de novo, sem ninguém ter pedido.
+  if ! flock -n 9; then
+    exec 9>&-
+    recusar_por_trava_ocupada
+  fi
+  TRAVA_PROPRIA=1
+  DESKCOMM_UPDATE_LOCK_FD=9; export DESKCOMM_UPDATE_LOCK_FD
+}
+tomar_trava_de_atualizacao
+
 aviso_rede_do_supabase
 
 # ── 0-. O laço do diagnóstico (#1955) ───────────────────────────────────────
@@ -248,6 +333,22 @@ elif [ -n "$MESMA_TAG" ]; then
 else
   c_ylw "Vou atualizar para a versão $TARGET_TAG com segurança."
 fi
+
+# ── 1.4 Espaço em disco: a atualização cabe? (#4837) ────────────────────────
+# Antes do preflight porque é local e instantâneo, e antes de QUALQUER escrita
+# porque é o último ponto em que recusar ainda é barato. No incidente que
+# originou esta guarda, o pull morreu no meio com o disco cheio: o app ficou em
+# `Created` e a volta automática falhou seis vezes seguidas — e cada tentativa
+# gravava mais um backup de 1,6 GB, apertando ainda mais o mesmo disco.
+#
+# A conta é conservadora de propósito (imagens em uso + último backup + 20%):
+# quem tem espaço de sobra nem percebe; quem está no limite recebe o número, o
+# motivo e o que fazer, em vez de um `no space left on device` no meio do pull.
+step "Conferindo o espaço em disco"
+if ! checar_espaco_para_atualizacao; then
+  refuse "$(mensagem_de_espaco_curto)"
+fi
+c_grn "✓ espaço em disco: $(kb_em_gb "$ESPACO_LIVRE_KB") livres; esta atualização pede $(kb_em_gb "$ESPACO_NECESSARIO_KB")"
 
 # ── 1.5 Preflight: dá para atualizar sem derrubar o que está no ar? (#1955) ──
 # MEDIDO numa instalação real, reproduzido 2x: sem esta pergunta o update parava
@@ -771,6 +872,29 @@ export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
 export SCHEDULER_IMAGE="${IMG_SCHEDULER}:${VERSAO_ALVO}"
 export VOICE_AGENT_IMAGE="${IMG_VOICE_AGENT}:${VERSAO_ALVO}"
+# ── A IDENTIDADE DO BUILD QUE O `up -d` FAZ SOZINHO (#5196) ─────────────────
+#
+# Worker, scheduler e voice-agent têm `build:` ao lado do `image:` e o Compose
+# os constrói sozinhos quando o `pull` acima falha — gravando o resultado SOB A
+# TAG OFICIAL desta versão (`${WORKER_IMAGE}` etc.). Até aqui esse caminho
+# passava ZERO de identidade: a imagem saía com `APP_VERSION=dev` (o default
+# dos Dockerfiles) e sem `org.opencontainers.image.revision`, e o
+# `_runtime.sh` — que lê exatamente esse label — gravava `source_verified:
+# false`. Com `*_PULL_POLICY=missing` no `.env`, a tag já existia no disco e o
+# Docker nunca mais puxava a oficial: a confirmação de versão do parque ficava
+# travada sem ninguém ter pedido build nenhum.
+#
+# `APP_VERSION` é a versão ALVO: o código no disco É ela (o `git checkout` da
+# tag aconteceu lá em cima). `APP_REVISION` é o commit que o `checkout` deixou
+# — a revisão de onde a imagem é construída de verdade —, mas SÓ com a árvore
+# limpa: o `git checkout` mantém mudança local que não diverge da versão nova,
+# e o `COPY . .` a levaria para dentro de uma imagem carimbada como oficial.
+# Árvore suja, ou git que não responde, vai vazia: label vazio é aceito pelo
+# Compose e o `_runtime.sh` já o trata como não-medido (igual a hoje). A regra
+# mora em `revisao_da_arvore_limpa` (_common.sh). Nada de herdar `APP_REVISION`
+# do ambiente: o valor é medido aqui, nunca aceito de fora.
+export APP_VERSION="$VERSAO_ALVO"
+export APP_REVISION="$(revisao_da_arvore_limpa "$PROJECT_DIR")"
 # `gravar_imagens` também cria, só na lacuna, o par VAPID dos avisos com o app
 # fechado (`completar_par_vapid`), e nunca troca um par que já existe. Mora lá
 # dentro, e não numa linha daqui, porque é ela que o update.sh ANTIGO chama
@@ -798,6 +922,24 @@ VOZ_CRIADA="$(completar_segredos_da_voz .env)" || VOZ_CRIADA=""
 # `build_local_permitido` — construir aqui ou recusar, conforme o registro
 # responde ou não.
 if ! dc pull; then
+  # ── A RETENTATIVA QUE FALTAVA (#5196) ─────────────────────────────────────
+  #
+  # MEDIDO na issue: o preflight já confirmou as imagens no GHCR e o pull cai
+  # no meio do download com `read: connection reset by peer` — queda
+  # TRANSITÓRIA da CDN. Sem retentativa, a atualização ia direto para o
+  # build local, que é a mais cara das duas: 15 a 25 min de tela parada
+  # e, antes do #5196, imagem sem versão e sem revisão gravada sob a tag
+  # oficial. Uma segunda tentativa custa os layers que faltam (o Docker
+  # reaproveita o que já baixou) e resolve o caso transitório.
+  #
+  # UMA vez, não um laço: retentativa infinita contra registro fora do ar
+  # trocaria "cai no build local" por "atualização que nunca termina", e o
+  # `up -d` de baixo é justamente quem aciona o portão da #1955.
+  c_ylw "⚠ O pull das imagens da versão ${VERSAO_ALVO} falhou na primeira tentativa."
+  c_ylw "  Queda transitória de rede/CDN é comum: vou tentar o pull UMA vez mais."
+  if dc pull; then
+    c_grn "✓ O pull passou na segunda tentativa — nada será construído aqui por causa dele."
+  else
   # A mensagem distingue os dois casos porque a CAUSA é diferente, e uma frase
   # tranquilizadora sobre o caso errado é o pior desfecho possível. Se a do app
   # veio, o que faltar em worker, scheduler ou voz o Compose constrói sozinho no
@@ -810,16 +952,18 @@ if ! dc pull; then
   # também contam coisas distintas: "o app veio e falta outra peça" × "o app não
   # veio", que aponta para a versão ainda não publicada (ou o pacote privado).
   if dc pull app >/dev/null 2>&1; then
-    c_ylw "⚠ Não consegui puxar todas as imagens da versão ${VERSAO_ALVO}."
+    c_ylw "⚠ Não consegui puxar todas as imagens da versão ${VERSAO_ALVO} (nem na retentativa)."
     c_ylw "  A do app veio; o que faltar é construído aqui (mais lento, mesmo resultado)."
+    c_ylw "  A construção leva a versão e a revisão junto (#5196): não é imagem anônima."
   else
-    c_ylw "⚠ Não consegui puxar a imagem do APP na versão ${VERSAO_ALVO}."
+    c_ylw "⚠ Não consegui puxar a imagem do APP na versão ${VERSAO_ALVO} (nem na retentativa)."
     c_ylw "  Causas comuns: a versão ainda está publicando, ou o pacote está privado no GHCR."
     c_ylw "  Vou tentar subir mesmo assim — se o up -d falhar, quem decide o passo"
     c_ylw "  seguinte é a recuperação: com o registro respondendo ela constrói as"
     c_ylw "  imagens desta versão aqui (15 a 25 min); sem resposta do registro ela"
     c_ylw "  recusa, de propósito, para não gastar a memória desta VPS."
     c_ylw "  Se não subir, rode de novo em alguns minutos."
+  fi
   fi
 fi
 # A rede do proxy externo é declarada como EXTERNA no compose: se ela sumiu
@@ -987,6 +1131,15 @@ fi
 step "Conferindo as automações"
 ensure_encryption_key .env
 setup_event_log_drain_cron
+
+# ── 8. Devolver o espaço das imagens antigas (#4837) ────────────────────────
+# Só chega aqui quem PROVOU que a versão nova está de pé: o caminho de volta sai
+# antes, com `exit 1` no passo 6, e a imagem da versão anterior é justamente
+# para onde ele vai. Podar antes da prova trocaria "atualização falhou" por
+# "atualização falhou e não há como voltar". Falha da poda é aviso, nunca
+# aborto: a atualização já está concluída, e espaço é o que menos importa agora.
+step "Liberando espaço das imagens antigas"
+podar_imagens_nao_usadas || true
 
 # ── Fim: o banco que não terminou limpo é a ÚLTIMA coisa na tela ─────────────
 # Na v1.27.3 de uma VPS real o aviso do passo 4 ficou soterrado por centenas de

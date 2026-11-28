@@ -266,6 +266,31 @@ consertos estão em commits próprios desta branch — procure pelas palavras ab
 | J4.42 | **O funil arquivado tem porta de volta** (#979) | a gaveta "Funis arquivados (N)" nasce FECHADA na tela de Funis, abre com um clique, e de lá o funil volta para a lista viva (sobrevivendo ao reload) ou é excluído de vez com painel de confirmação. As duas asserções que impedem a regressão: o arquivado **não** aparece na lista de trabalho **nem no seletor de destino da importação** (o vazamento que os PRs #941/#944 tiraram de outras telas), e quem é `agent` não vê a gaveta nem o nome do funil arquivado. `tests/e2e/funil-arquivado-volta-pela-tela.spec.ts` (SPECS_PARTE_4) + `tests/unit/funil-arquivado-caminho-de-volta.test.ts` (4 casos, a regra da rota). A spec grava medidas (`getBoundingClientRect`) e capturas em `.superpowers/evidence/funil-arquivado-volta/`. ⚠️ **ESCRITA NESTA ENTREGA E AINDA NÃO EXECUTADA** — nenhum job a invocou até aqui, e verde local também não existe; quem decide é a primeira rodada do `e2e`. Se reprovar por ambiente, o lugar dela é o `FORA_DO_CI` COM o motivo medido, nunca uma exclusão preventiva |
 | J4.41 | **Arrastar o mesmo card duas vezes seguidas** (#916, PR #919) | o segundo arrasto, feito logo depois do primeiro e com o refetch do quadro segurado (a rede lenta de uma VPS distante), responde `200` e o card chega à terceira etapa, sem o aviso "modificado por outro usuário" e sem recarregar a página; o banco guarda a etapa final. `tests/e2e/kanban-owner-filter.spec.ts`, funil próprio, arrasto pelo teclado do `@hello-pangea/dnd` (executado 2026-09-16, ambiente fresco do `baseline.sql`). Evidência: `evidence/arrastar-duas-vezes/01-depois-do-primeiro.png` (o card na segunda etapa, depois do primeiro arrasto) e `evidence/arrastar-duas-vezes/02-depois-do-segundo.png` (na terceira, depois do segundo) |
 | J4.43 | **Mover de etapa pelo menu do card, no celular** ("Mover para…") | a spec cobra, a 390px: o botão "⋯" acerta a 21px do centro (44px de área, por `elementFromPoint`), cada etapa do menu tem ≥44px, o card entra no FIM da etapa inteira e a etapa de perda abre a janela do motivo antes de qualquer `POST /move`; arrastar para a perda também abre a janela, e o negócio reaberto não reaproveita o motivo da perda anterior. Spec: `tests/e2e/qa-l12-funil.spec.ts` (bloco do toque e #935 caminho 2), unit `tests/unit/mover-etapa-pelo-menu.test.tsx` |
+| J4.44 | **Marcar consulta numa sala livre (tela e agente)** | a tela mostra o select Lugar quando o horário tem `free_spaces`, reserva com `space_id`, e o detalhe exibe "Lugar: <nome>"; o agente escolhe a primeira sala livre via `primeiroLugarLivre` e não grava quando todas estão ocupadas (`space_capacity_reached`). O lembrete cita `{{lugar}}`. Status: a provar no PR (par: tela + ferramenta direta). |
+
+## J74 — Chat no site: o visitante conversa pela página `[P1]`
+
+Contexto do código: Spec 36, F2-A; módulo `canal_webchat` desligado de fábrica; prova exige um
+administrador que ligue o módulo e crie a conexão em Conexões. Roteiro detalhado:
+`docs/testing/chat-no-site.md` (roteiro de prova pela tela, ainda sem spec automatizada e sem execução; a prova fica para o PR ao mantenedor).
+
+A spec está **escrita e NÃO executada ainda**: o e2e só roda em PR para a main; a prova
+pela tela fica para o CI do PR ao mantenedor.
+
+| # | Caso | Expectativa |
+|---|------|-------------|
+| J74.1 | Módulo desligado | Sem aba "Chat no site" em Conexões; `/chat/<chave>` e `/api/v1/webchat/*` respondem 404; nenhuma organização que não ligue o módulo vê diferença |
+| J74.2 | Dono liga o módulo; admin da empresa cria a conexão | A aba aparece em Conexões; cadastrar o domínio de um servidor de teste gera a chave `wck_...` e o código para colar |
+| J74.3 | Visitante abre a janela | Colar o script numa página local exibe a bolha; abrir carrega `/chat/<chave>` com o CSP `frame-ancestors` da lista de domínios |
+| J74.4 | Conversar como visitante | Aceitar o aviso de LGPD (controlador + link de política), preencher coleta se obrigatória, enviar mensagem; a conversa aparece no Inbox com o selo "Chat no site" |
+| J74.5 | Responder pela Inbox | A resposta do atendente chega à janela do visitante pelo stream de eventos (`text/event-stream`) |
+| J74.6 | Site fora da lista | O iframe não carrega (`frame-ancestors` não inclui a origem); prova pela ausência do conteúdo da janela |
+| J74.7 | Girar a chave | Páginas com o código antigo recebem "chat indisponível" ao abrir conversa nova; quem já está conversando segue até a sessão expirar |
+| J74.8 | Pausar o chat | PATCH `config.pausado: true` pela rota de administração; as três rotas públicas (`/sessao`, `/mensagens`, `/eventos`) dão o mesmo 404; a janela mostra "chat indisponível" |
+| J74.9 | Retomar o chat | PATCH `config.pausado: false` volta a funcionar: sessão, mensagens e eventos respondem normalmente |
+| J74.10 | Visitante anônimo atinge o teto de respostas da IA | O visitante manda mensagens até o teto configurado na aba (padrão 20); passado o teto, a IA para de responder, o visitante recebe uma frase pedindo telefone ou e-mail, e a conversa fica na Inbox para a equipe com aviso na Central; quem deixa e-mail sai do teto — escrito e NÃO executado ainda: o e2e só roda em PR para a main; a prova pela tela fica para o CI do PR ao mantenedor. |
+| J74.11 | Horário do atendimento e conexão sem agente | Fora do horário do agente da conexão, a conversa mostra o aviso do agente ou o texto padrão com a hora da volta. Sem agente publicado, depois da primeira mensagem aceita aparece "Recebemos sua mensagem. Nossa equipe responde por aqui." O chat segue funcionando nos dois casos. Roteiro: `docs/testing/chat-no-site.md`, caso C9 |
+| J74.12 | Origem da página | Visitante chega por uma página com `utm_source=instagram` e `utm_campaign=natal` e manda a primeira mensagem: a ficha do contato mostra essa origem. Uma segunda mensagem, de outra página, não troca a origem. Roteiro: `docs/testing/chat-no-site.md`, caso C10 |
 
 ## J5 — Time: convites e atuação de atendentes `[P0]` (convite) / `[P1]` (rotina)
 
@@ -395,6 +420,9 @@ Evidência: `.superpowers/evidence/ia-360-w3/`.
 | J8.11 | O aviso respeita o motivo | quem pediu para PARAR recebe confirmação da parada, não oferta de atendente | FAIL(BUG-06) → PASS |
 | J8.12 | O aviso respeita a equipe real | conta sem ninguém configurado não recebe promessa de contato | FAIL(BUG-06) → PASS |
 | J8.13 | A passagem por SENTIMENTO abre item na Central | `triggerHandoff` não abria nenhum — cliente sem resposta E time sem sinal | FAIL(BUG-07) → PASS |
+| J8.14 | A opção "Continuar a conversa assim que a equipe devolver ao automático" aparece no editor do agente, desligada, e sobrevive a salvar e recarregar | `trigger_config.resume_on_handback` lido de volta na tela | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
+| J8.15 | Com a opção ligada e a última fala da equipe, "Devolver ao automático" põe UM turno de retomada na fila do agente | `job_queue` `followup_turn` `mode='retomada'` com `source_event_id` = o `ai.handoff_resolved` da devolução | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
+| J8.16 | Com o cliente tendo escrito por último, a mesma devolução NÃO põe turno de retomada (o turno de resposta cuida) | nenhum `followup_turn` de retomada para a conversa | PASS — `tests/e2e/retomar-ao-devolver.spec.ts` |
 
 Bugs desta jornada estão detalhados em `HANDOFF-ia-360.md` (BUG-01 a BUG-05) e em
 `HANDOFF-handoff-avisa-o-lead.md` (BUG-06, BUG-07).
@@ -4781,3 +4809,18 @@ O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
 impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
 Capacidades e a configuração do servidor externo. A próxima execução relê essa
 configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## Casca — barra lateral durante scroll lock `[P1]`
+
+Spec: `tests/e2e/sidebar-scroll-lock.spec.ts`, incluída na parte 8 do CI.
+
+- Desktop 1280 × 720: rolar Configurações e abrir perfil, seletor de organização e busca; a coordenada vertical da barra lateral deve permanecer igual (tolerância inferior a 1 px).
+- Celular 390 × 844: abrir e fechar a gaveta de navegação, sem rolagem horizontal da página.
+- Conferir também a largura da página no Inbox e na lista de funis.
+- Evidências a partir da raiz do repositório: `evidence/sidebar-scroll-lock/desktop-perfil.png`, `evidence/sidebar-scroll-lock/celular-navegacao.png` e `evidence/sidebar-scroll-lock/medidas-desktop.json`.
+- Resultado: PASS (2 testes, Chromium; 17,6 s) — ambiente isolado com baseline, bootstrap, Supabase, Redis e WAHA locais; sem dados reais do contribuidor.
+
+
+### [P1] Número sem WhatsApp ao iniciar conversa
+
+`tests/e2e/numero-sem-whatsapp.spec.ts`: Inbox → Iniciar conversa → telefone sintético → recusa legível antes de criar conversa. Em conversa legada, envio fica failed com motivo visível e natureza permanente; consulta inconclusiva continua permitindo envio. Supabase real do baseline e servidor HTTP simulado local, sem consulta de números nem envio no WhatsApp real. Evidências em evidence/numero-sem-whatsapp/.

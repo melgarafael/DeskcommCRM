@@ -946,6 +946,7 @@ jobs:
         publico-por-origem-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
+        retomar-ao-devolver.spec.ts
         etapa-avisa-na-central.spec.ts
         gatilho-de-caso.spec.ts
         conversa-do-caso.spec.ts
@@ -1190,6 +1191,7 @@ jobs:
         inbox-tempo-real.spec.ts
         inbox-rotulo-de-origem.spec.ts
         troca-de-organizacao-tem-volta.spec.ts
+        convite-nao-cai-no-onboarding.spec.ts
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
@@ -1572,6 +1574,8 @@ jobs:
       # O relógio publicado em cada run separa preparo, suíte e total da parte.
       # Toda admissão exige medir a composição; teto de caso não é duração medida.
       SPECS_PARTE_8: >-
+        numero-sem-whatsapp.spec.ts
+        sidebar-scroll-lock.spec.ts
         meta-lead-submitted-causal.spec.ts
         atendimento-conjunto.spec.ts
         autonomia-assistida.spec.ts

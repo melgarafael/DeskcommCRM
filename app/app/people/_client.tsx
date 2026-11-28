@@ -219,7 +219,7 @@ export function PeopleListClient() {
           <TableHeader>
             <TableRow>
               <TableHead>{t("Nome")}</TableHead>
-              <TableHead>E-mail</TableHead>
+              <TableHead>{t("E-mail")}</TableHead>
               <TableHead>{t("Atualizado")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -277,7 +277,7 @@ export function PeopleListClient() {
               <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </div>
             <div className="grid gap-1.5">
-              <Label>E-mail</Label>
+              <Label>{t("E-mail")}</Label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="grid gap-1.5">

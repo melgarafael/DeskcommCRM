@@ -102,4 +102,37 @@ describe("as réguas que já existiam continuam valendo", () => {
     expect(estaNaAgendaDe({ responsavelId: CAIO, convidadosDaEquipe: [ANA] }, ANA)).toBe(true);
     expect(estaNaAgendaDe({ responsavelId: CAIO, convidadosDaEquipe: [ANA] }, BRUNO)).toBe(false);
   });
+
+  it("a agenda da pessoa inclui o compromisso em que ela é adicional", () => {
+    expect(estaNaAgendaDe({ responsavelId: CAIO, responsaveis: [ANA] }, ANA)).toBe(true);
+    expect(estaNaAgendaDe({ responsavelId: CAIO, responsaveis: [ANA] }, BRUNO)).toBe(false);
+    expect(estaNaAgendaDe({ responsavelId: CAIO, responsaveis: [ANA] }, CAIO)).toBe(true);
+  });
+
+  it("a agenda da pessoa inclui principal, adicional e convidado ao mesmo tempo", () => {
+    expect(
+      estaNaAgendaDe(
+        { responsavelId: CAIO, responsaveis: [ANA], convidadosDaEquipe: [BRUNO] },
+        ANA,
+      ),
+    ).toBe(true);
+    expect(
+      estaNaAgendaDe(
+        { responsavelId: CAIO, responsaveis: [ANA], convidadosDaEquipe: [BRUNO] },
+        BRUNO,
+      ),
+    ).toBe(true);
+    expect(
+      estaNaAgendaDe(
+        { responsavelId: CAIO, responsaveis: [ANA], convidadosDaEquipe: [BRUNO] },
+        CAIO,
+      ),
+    ).toBe(true);
+    expect(
+      estaNaAgendaDe(
+        { responsavelId: CAIO, responsaveis: [ANA], convidadosDaEquipe: [BRUNO] },
+        "99999999-9999-4999-8999-999999999999",
+      ),
+    ).toBe(false);
+  });
 });

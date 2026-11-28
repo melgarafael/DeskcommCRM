@@ -56,6 +56,8 @@ interface Estado {
   rpcChamado: boolean;
   rpcArgs: Record<string, unknown> | null;
   isLostDaEtapa: boolean;
+  /** Recusa do banco que a função do lote devolve, seja qual for o motivo. */
+  erroDoRpc?: { code: string; message: string };
 }
 
 function clienteStub(estado: Estado) {
@@ -92,7 +94,7 @@ function clienteStub(estado: Estado) {
         maybeSingle() {
           // A etapa de destino do lote.
           return Promise.resolve({
-            data: { id: PERDIDO_ID, name: "Perdido", is_lost: estado.isLostDaEtapa },
+            data: { id: PERDIDO_ID, name: "Perdido", pipeline_id: PIPELINE_ID, is_lost: estado.isLostDaEtapa },
             error: null,
           });
         },
@@ -116,8 +118,8 @@ function clienteStub(estado: Estado) {
       // A função do banco roda numa transação só: sem motivo, a CHECK recusa o
       // lote inteiro (23514). Com motivo, ela gravou e devolveu as linhas.
       // A CHECK só olha o card que o trigger fechou: etapa de perda SEM motivo.
-      const error =
-        !estado.isLostDaEtapa || estado.motivoAtual || args?.p_lost_reason ? null : RECUSA_DO_BANCO;
+      const error = estado.erroDoRpc ??
+        (!estado.isLostDaEtapa || estado.motivoAtual || args?.p_lost_reason ? null : RECUSA_DO_BANCO);
       return Promise.resolve(
         error
           ? { data: null, error }
@@ -236,5 +238,15 @@ describe("mover o lote para uma etapa de perda (#917)", () => {
 
     expect(estado.rpcChamado).toBe(true);
     expect(res.status).toBe(200);
+  });
+
+  it("o lote que reabriria a cópia de um negócio já aberto no funil é 409, não 500 (#5281)", async () => {
+    estado.isLostDaEtapa = false;
+    estado.erroDoRpc = { code: "23505", message: 'duplicate key value violates unique constraint "crm_leads_clone_aberto_no_funil_uidx"' };
+    sessao(estado);
+    const res = await POST(pedido({ stage_id: PERDIDO_ID }));
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error?: { code?: string } }).error?.code).toBe("copia_aberta_no_funil");
   });
 });

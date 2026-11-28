@@ -28,6 +28,15 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${APP_MEM_LIMIT:-768m}
+    # Teto de CPU — DESLIGADO por padrão. `0` é "sem limite" no Compose (o
+    # serviço nem recebe o campo: `docker compose config` o omite, e o contêiner
+    # sobe com NanoCpus=0), então quem não escreve nada no `.env` fica como
+    # sempre. Serve a quem divide o host com outras aplicações: `APP_CPUS=1.5`
+    # no `.env` limita o app a um núcleo e meio. Pelo `.env`, e não por um
+    # override, porque o dc() do kit passa uma lista fixa de `-f` e ignora
+    # COMPOSE_FILE. O mesmo vale para os `<SERVIÇO>_CPUS` dos demais serviços.
+    # Acima do número de CPUs do host o daemon recusa criar o contêiner.
+    cpus: ${APP_CPUS:-0}
     # Imagem GENÉRICA pré-buildada: o leigo só puxa (sobe em ~2min, roda em 2GB).
     # Os NEXT_PUBLIC_* reais vêm em RUNTIME (env_file abaixo) — o browser lê via
     # <PublicEnvScript/> e o servidor via lib/env.ts. Não precisa buildar no VPS.
@@ -123,6 +132,8 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${WORKER_MEM_LIMIT:-512m}
+    # Teto de CPU pelo `.env`; `0` = sem limite (ver o comentário do `app`).
+    cpus: ${WORKER_CPUS:-0}
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
@@ -149,6 +160,32 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      # ── A IDENTIDADE DO BUILD QUE O `up -d` FAZ SOZINHO (#5196) ───────────
+      #
+      # Este bloco não é só o escape do operador: quando o `dc pull` do
+      # `update.sh` falha, o `up -d` o executa e grava o resultado SOB A TAG
+      # OFICIAL da release (`${WORKER_IMAGE}`). Sem os dois campos abaixo, essa
+      # imagem saía com `APP_VERSION=dev` — o default do `Dockerfile.worker` —
+      # e SEM `org.opencontainers.image.revision`, que no fluxo oficial é o CI
+      # que carimba. Como o `.env` guarda `WORKER_PULL_POLICY=missing`, a tag
+      # já existia no disco e o Docker nunca mais puxava a oficial: o
+      # `_runtime.sh` lia `revision: null`, gravava `source_verified: false` e
+      # a confirmação de versão do parque ficava travada para sempre.
+      #
+      # O valor de `APP_VERSION` vem do ambiente: o `update.sh` exporta a
+      # versão alvo antes do `up -d` e o `construir_aqui_e_subir` já exportava
+      # a dele. Sem ninguém exportando, `${APP_VERSION:-dev}` mantém o
+      # comportamento antigo (build à mão, sem versão de release).
+      #
+      # `APP_REVISION` é o commit de onde a imagem foi construída. Vazio é
+      # aceito pelo Compose e o label sai vazio — que é o que o `_runtime.sh`
+      # já trata como não-medido (`^[a-f0-9]{40,64}$` não casa com vazio),
+      # exatamente como hoje. NÃO é para o label mentir: quem não sabe a
+      # revisão não carimba uma.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     # ═══ O PRAZO QUE FALTAVA (#2823) ═══
     #
     # No `docker stop` o Docker manda SIGTERM e espera ESTE prazo; passado ele,
@@ -207,6 +244,8 @@ services:
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
     mem_limit: ${WAHA_MEM_LIMIT:-1280m}
+    # Teto de CPU pelo `.env`; `0` = sem limite (ver o comentário do `app`).
+    cpus: ${WAHA_CPUS:-0}
     # Core grátis por padrão; troque para devlikeapro/waha-plus via WAHA_IMAGE se
     # precisar de multi-número/retry/S3 (licença paga).
     #
@@ -267,6 +306,12 @@ services:
     networks: [internal]
 
   redis:
+    # Teto de memória — 12 MiB de memory.peak MEDIDO (evidence/2026-10-07-
+    # coolify-consumo/64-resumo-sem-swap.txt). Os dados são efêmeros e com TTL
+    # (rate limit, debounce); 256m deixa mais de 20x de folga e só existe para
+    # que um vazamento mate o redis, e não a máquina. Sobe pelo `.env`.
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0}
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]  # efêmero (rate-limit/debounce)
@@ -289,6 +334,11 @@ services:
     # O digest congela o que já está em produção HOJE: zero mudança de conteúdo,
     # e o `:latest` deixa de poder mudar sozinho debaixo de todo mundo.
     # Quando a T6 for validada, isto vira `:0.0.10` e o comentário sai.
+    #
+    # Teto de memória — 104 MiB de memory.peak MEDIDO (mesma evidência do
+    # redis; o maior dos três serviços pequenos). 256m é ~2,5x esse pico.
+    mem_limit: ${SRH_MEM_LIMIT:-256m}
+    cpus: ${SRH_CPUS:-0}
     image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
     restart: unless-stopped
     environment:
@@ -311,11 +361,25 @@ services:
     # serviço `restart: unless-stopped`, isso significa que o cron do cliente só
     # voltava se a VPS tivesse internet e o mirror do Alpine estivesse de pé,
     # justamente no momento em que a máquina está se recuperando de algo.
+    #
+    # Teto de memória — 30 MiB de memory.peak MEDIDO (mesma evidência do
+    # redis): é crond + curl. 128m é ~4x esse pico.
+    mem_limit: ${SCHEDULER_MEM_LIMIT:-128m}
+    cpus: ${SCHEDULER_CPUS:-0}
     image: ${SCHEDULER_IMAGE:-ghcr.io/melgarafael/deskcomm-scheduler:stable}
     pull_policy: ${SCHEDULER_PULL_POLICY:-always}
     build:
       context: .
       dockerfile: Dockerfile.scheduler
+      # Mesma identidade do `worker` (#5196, o porquê está lá): o `up -d` de
+      # produção constrói este serviço quando o pull falha, e o que ele
+      # constrói fica sob a tag oficial da release. Sem estes dois, a imagem
+      # saía com `APP_VERSION=dev` e sem revisão, e o `_runtime.sh` marcava
+      # `source_verified: false`.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     restart: unless-stopped
     depends_on:
       app:
@@ -377,6 +441,7 @@ services:
   wacalls:
     profiles: ["voz"]
     mem_limit: 256m
+    cpus: ${WACALLS_CPUS:-0}
     image: ${WACALLS_IMAGE:-ghcr.io/desklabs-opensource/wacalls@sha256:03f9e47fadc1afa909f512bbdda0fa4091d4646310f9a76ce3c752f05eafd1ff}
     pull_policy: ${WACALLS_PULL_POLICY:-missing}
     restart: unless-stopped
@@ -447,6 +512,7 @@ services:
   asterisk:
     profiles: ["telefonia"]
     mem_limit: 256m
+    cpus: ${ASTERISK_CPUS:-0}
     image: ${ASTERISK_IMAGE:-andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27}
     pull_policy: ${ASTERISK_PULL_POLICY:-missing}
     restart: unless-stopped
@@ -484,11 +550,19 @@ services:
   voice-agent:
     profiles: ["telefonia"]
     mem_limit: 512m
+    cpus: ${VOICE_AGENT_CPUS:-0}
     image: ${VOICE_AGENT_IMAGE:-ghcr.io/melgarafael/deskcomm-voice-agent:stable}
     pull_policy: ${VOICE_AGENT_PULL_POLICY:-always}
     build:
       context: .
       dockerfile: Dockerfile.voice-agent
+      # Mesma identidade do `worker` (#5196, o porquê está lá). O
+      # `Dockerfile.voice-agent` também aceita `ARG APP_VERSION`; a revisão vai
+      # como label de imagem.
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+      labels:
+        org.opencontainers.image.revision: ${APP_REVISION:-}
     restart: unless-stopped
     depends_on:
       asterisk:
@@ -507,6 +581,11 @@ services:
     networks: [internal]
 
   caddy:
+    # Teto de memória — sem medida no repositório; 512m é folgado para um
+    # proxy reverso com TLS (o proxy do Coolify, Traefik, mediu 123 MiB de
+    # memory.peak na mesma evidência do redis). Sobe pelo `.env`.
+    mem_limit: ${CADDY_MEM_LIMIT:-512m}
+    cpus: ${CADDY_CPUS:-0}
     image: caddy:2-alpine
     restart: unless-stopped
     ports:

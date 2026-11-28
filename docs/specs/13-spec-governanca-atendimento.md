@@ -377,7 +377,13 @@ como escopo/role a afetam. Implementação: `fn_attendant_metrics()` (SQL
 - **Janela temporal**: intervalo **semiaberto** `[from, to)` (inclui `from`,
   exclui `to`), dois query params ISO-8601 UTC. Default = últimos 30 dias
   (`to = now()`, `from = now() - 30d`). Cada métrica declara sobre QUAL coluna a
-  janela incide (não é a mesma para todas).
+  janela incide (não é a mesma para todas). Em **Desempenho**, a mesma janela
+  vale para atendentes, ganhos por período, perdas, canais e medidas de atrito
+  do período. Um período personalizado inclui as duas datas escolhidas no fuso
+  da organização, até 90 dias civis. O funil aberto e as demandas abertas são
+  fotografias atuais; meta mensal e previsão mantêm seus próprios recortes.
+  O CSV usa os instantes retornados pelo quadro de atendentes e nomeia as datas
+  civis incluídas.
 - **Escopo/role (o gate é a própria RLS, não uma checagem paralela)**: a agregação
   roda com o **client user-scoped** (cookie session) — a RLS de `crm_leads`
   (migration 0036, `fn_can_view_lead`) e `conversations` (migration 0035,

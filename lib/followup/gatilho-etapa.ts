@@ -191,6 +191,12 @@ export async function aplicaGatilhoDeEtapa(
   // gatilho espera. `matched:false` faz o dispatcher registrar 'skipped' — o
   // evento fica marcado como visto, não como consumido com efeito.
   if (!etapaDestino || !negocioId) return summary;
+  // Reordenar dentro da mesma etapa NÃO é entrada (#5337). A rota de mover
+  // emite `lead.stage_changed` também nesse caso, então quem decide que o fato
+  // não é uma mudança de etapa é este gatilho: sem origem diferente da destino,
+  // o evento não descreve entrada. `matched:false` → 'skipped', sem efeito.
+  const etapaOrigem = textoOuNulo(row.payload.from_stage_id);
+  if (etapaOrigem === etapaDestino) return summary;
   summary.matched = true;
 
   const armados = (await deps.db.carregaPointersDeEtapa(row.organization_id)).filter(

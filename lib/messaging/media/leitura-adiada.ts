@@ -118,6 +118,9 @@ export function adiarSemLeitorLigado(valor: string): boolean {
  */
 export const LEITORES_DA_DESCRICAO: Record<string, string> = {
   "lib/agent-engine/agent/contexto-do-atendimento.ts": "agente que vê imagens",
+  // Retomar ao devolver: compõe as falas da equipe pelo `corpoDaMensagem` (o
+  // orçamento em PDF/foto vira o texto derivado) para a abertura do turno.
+  "lib/agent-engine/agent/followup-turn.ts": "agente que vê imagens",
   "lib/agent-engine/agent/conversa-do-caso/leitura.ts": "agente que vê imagens | caso aberto sem agente no ar",
   "lib/agent-engine/agent/inbound-turn.ts": "agente que vê imagens",
   "lib/agent-engine/agent/palavra-chave-do-gatilho.ts": "agente que vê imagens",

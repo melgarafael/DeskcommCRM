@@ -36,6 +36,7 @@
 import { createElement as h } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -315,6 +316,11 @@ function cardDoQuadro(id: string): CardInput {
   };
 }
 
+/** O `ContatoNoCard` lê a escolha de links da organização pelo react-query (#5128). */
+function comQuery(ui: Parameters<typeof render>[0]) {
+  return render(h(QueryClientProvider, { client: new QueryClient() }, ui));
+}
+
 describe("KanbanCard — o card do quadro inteiro", () => {
   it("⭐ o card desenha o bloco de arquivos do FUNIL do lead, com os dois PDFs", () => {
     const lead = primeiro(
@@ -325,7 +331,7 @@ describe("KanbanCard — o card do quadro inteiro", () => {
       ),
     );
 
-    render(h(KanbanCard, { card: cardDoQuadro(NEGOCIO), lead, index: 0, pipelineId: "p-1" }));
+    comQuery(h(KanbanCard, { card: cardDoQuadro(NEGOCIO), lead, index: 0, pipelineId: "p-1" }));
 
     expect(screen.getByTestId("arquivos-do-campo-documentos")).toHaveTextContent("2");
     expect(screen.getAllByRole("link").map((a) => a.getAttribute("href"))).toContain(
@@ -334,7 +340,7 @@ describe("KanbanCard — o card do quadro inteiro", () => {
   });
 
   it("CONTROLE — card de negócio cujo funil não declara campo `file` fica sem o bloco", () => {
-    render(
+    comQuery(
       h(KanbanCard, {
         card: cardDoQuadro(NEGOCIO),
         lead: primeiro(negocios(NEGOCIO)),

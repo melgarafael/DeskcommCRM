@@ -36,6 +36,7 @@ import {
   ImpersonateBanner,
 } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
+import { SaldoDaIaBanner } from "@/components/app/SaldoDaIaBanner";
 import { FaixaDaCobranca } from "@/components/cobranca/FaixaDaCobranca";
 import { FaixasDeCima } from "@/components/shell/FaixasDeCima";
 import { faixaDaCobranca, type FaixaDaCobranca as Faixa } from "@/lib/cobranca/faixa";
@@ -189,7 +190,52 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Suspensão ANTES de onboarding: a org suspensa que nunca terminou o
     // onboarding ia para `/onboarding` e escapava da tela da suspensão.
     if (!ehOperante(orgRow?.status)) redirect("/account-suspended");
-    if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
+    if (orgRow && !orgRow.onboarded_at && !user.support) {
+      // #5127: quem ACEITOU UM CONVITE não é mandado ao wizard da empresa. Numa
+      // instalação nova o dono convida o time antes de terminar a configuração,
+      // e o convidado caía em `/onboarding/welcome` — o assistente que configura
+      // uma empresa que não é dele (o passo da chave da IA, por exemplo, exige
+      // `admin`). Ele segue para o CRM; o wizard continua acessível pela URL.
+      //
+      // A marca de "entrou por convite" é `user_organizations.invited_by`, que
+      // o aceite de convite (`fn_accept_team_invite`) e a criação de membro pela
+      // Equipe (`app/api/v1/team/users/route.ts`) preenchem. Ficam no
+      // wizard os vínculos sem `invited_by` (dono criado pelo cadastro,
+      // `bootstrap-owner`, provisionamento externo, vínculo antigo ou criado à
+      // mão) e o DONO de um tenant aberto pelo painel de plataforma, que entra
+      // como `admin` convidado por quem abriu.
+      //
+      // Esse dono convidado é reconhecido pelo CONVIDADOR, não pelo papel: o
+      // convite dele veio do administrador de plataforma, e o aceite como
+      // admin APAGA o vínculo provisório desse administrador
+      // (`fn_accept_team_invite`, migration 0237). Quem convida alguém que
+      // continua na empresa — o dono que convida um admin no meio do wizard
+      // (#5127), ou o próprio dono convidando o time — manda o convidado para
+      // o CRM. Só o admin cujo convidador já não é membro fica com o wizard:
+      // ele é o único que pode terminar a configuração.
+      //
+      // A leitura é SÓ neste ramo raro: organização já configurada não paga
+      // nenhuma consulta a mais, e o caminho normal de `/app` não muda.
+      const { data: vinculo } = await admin
+        .from("user_organizations")
+        .select("invited_by")
+        .eq("organization_id", activeOrg.orgId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const convidadorId = (vinculo?.invited_by as string | null | undefined) ?? null;
+      let vaiAoWizard = convidadorId === null;
+      if (!vaiAoWizard && roleAtLeast(activeOrg.role, "admin")) {
+        const { data: convidador } = await admin
+          .from("user_organizations")
+          .select("user_id")
+          .eq("organization_id", activeOrg.orgId)
+          .eq("user_id", convidadorId)
+          .is("revoked_at", null)
+          .maybeSingle();
+        vaiAoWizard = !convidador;
+      }
+      if (vaiAoWizard) redirect("/onboarding");
+    }
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
     const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
@@ -371,6 +417,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <FaixasDeCima>
           <ImpersonateBanner impersonating={impersonating} />
           <ConexaoCaidaBanner caidas={conexoesCaidas} />
+          <SaldoDaIaBanner />
           {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
         </FaixasDeCima>
         {needsMfaGate ? (

@@ -187,6 +187,7 @@ import {
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
   ehRespostaDeRobo,
+  iaVetadaNoEnvio,
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
@@ -282,6 +283,7 @@ import {
   loadChannelProvider,
   loadNotaDeVozDoCanal,
   nomesDasFerramentas,
+  RAZAO_DE_PASSAGEM_SEM_CASO,
   runBeforeSend,
   tipoDeEnvio,
   type GateContext,
@@ -310,7 +312,7 @@ import {
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
 import { classifyPromise, memoizarPorCandidata, protegerRevisaoDeAgendamento } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
-import { deveAbrirCasoDoFailsafe } from '../guardrails/failsafe-do-caso';
+import { deveAbrirCasoDoFailsafe, passagemDispensaCasoHumano } from '../guardrails/failsafe-do-caso';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import { montarResumoDoCaso } from '@/lib/escalacao/resumo-do-caso';
 import {
@@ -404,7 +406,26 @@ import {
  * não mexer em nada não muda nada. O texto de um lado só existe uma vez: quem
  * editar o rodapé altera os dois.
  */
-export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): string {
+export function descricaoDaFerramentaDePassagem(
+  handoffLegalEnabled: boolean,
+  casosLigados = false,
+): string {
+  // #5191 — com casos LIGADOS, o aviso que o gate anti-alucinação veta é o
+  // MESMO texto que a ferramenta pede. Quem escreve o aviso é o sistema
+  // (`aviso-de-escalacao`, que roda com `casesEnabled: false` porque ali a
+  // promessa é verdadeira por construção) e a frase é configurável em "Frase do
+  // aviso de passagem". Então a instrução inverte: NÃO escreva, CHAME.
+  //
+  // Sem casos, o texto fica byte a byte o de hoje — o `false` é o lado que
+  // `AGENT_TOOL_DEFS` publica, e é o que `aplicaAChaveDeAssuntoJuridico` troca
+  // no turno quando a coluna desliga.
+  const aviso = casosLigados
+    ? 'NÃO escreva o aviso você mesmo: não diga que vai chamar alguém nem que vai passar a conversa. ' +
+      'Chame esta ferramenta e encerre o turno — o sistema avisa o lead com a frase do aviso de ' +
+      'passagem. '
+    : 'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
+      'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
+      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ';
   return (
     'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
     'uma pessoa, quando a situação exigir alguém humano ' +
@@ -413,9 +434,7 @@ export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): s
       : '(reclamação séria, questão financeira sensível; assunto jurídico é o trabalho normal ' +
         'deste atendimento e não é, sozinho, motivo para passar a conversa) ') +
     'ou quando você atingir o limite do que pode resolver. ' +
-    'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
-    'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
-    'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
+    aviso +
     'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
     'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de ' +
     'verdade. Preencha por_que, o_que_tentei e cliente_quer — quem assumir só vê o que você escrever ' +
@@ -431,21 +450,34 @@ export function descricaoDaFerramentaDePassagem(handoffLegalEnabled: boolean): s
  * está mais no conjunto (chave irmã desligada), aqui não há o que trocar e a
  * função devolve sem tocar em nada — a ausência é da irmã, não dela.
  *
+ * Duas chaves decidem o texto, e ele sai sempre da MESMA função
+ * (`descricaoDaFerramentaDePassagem`, uma fonte só):
+ *
+ *   - `handoffLegalEnabled` (#2156) escolhe o trecho do assunto jurídico;
+ *   - `casosLigados` (#5191) escolhe entre "AVISE O LEAD ANTES" e "não escreva
+ *     o aviso, chame a ferramenta" — com casos ligados o aviso que o modelo
+ *     escreveria é vetado pelo `casePromiseGate`, e quem avisa é o sistema.
+ *
  * `undefined` (fixture antiga que ainda não lê a coluna) conta como LIGADO:
  * é o lado seguro e é o padrão da coluna.
  */
 export function aplicaAChaveDeAssuntoJuridico(
   rawTools: Record<string, unknown>,
   handoffLegalEnabled: boolean | undefined,
+  casosLigados = false,
 ): void {
-  if (handoffLegalEnabled !== false) return;
   const ferramenta = rawTools.request_human_handoff;
-  if (typeof ferramenta === 'object' && ferramenta !== null) {
-    rawTools.request_human_handoff = {
-      ...ferramenta,
-      description: descricaoDaFerramentaDePassagem(false),
-    };
-  }
+  if (typeof ferramenta !== 'object' || ferramenta === null) return;
+  const desejada = descricaoDaFerramentaDePassagem(
+    handoffLegalEnabled !== false,
+    casosLigados,
+  );
+  const atual = (ferramenta as { description?: unknown }).description;
+  if (atual === desejada) return;
+  rawTools.request_human_handoff = {
+    ...ferramenta,
+    description: desejada,
+  };
 }
 
 /**
@@ -474,7 +506,9 @@ const camposDoRetornoNativo = {
  * A descrição de `request_human_handoff` sai de
  * `descricaoDaFerramentaDePassagem(true)` — valor de módulo, constante como o
  * literal que estava aqui, e com UMA fonte só: a versão desligada da frase mora
- * na mesma função, então os dois lados não podem divergir.
+ * na mesma função, então os dois lados não podem divergir. O segundo argumento
+ * (casos ligados, #5191) fica no default: o texto de módulo é o lado SEM casos,
+ * e o turno troca pelo lado com casos quando a versão publicada os habilita.
  */
 export const AGENT_TOOL_DEFS = {
   get_lead_context: {
@@ -852,6 +886,15 @@ export class JobSettledError extends Error {
   override readonly name = 'job_settled';
 }
 
+/**
+ * O `reason` do `unavailable` que a guarda de envio devolve quando uma pessoa
+ * assumiu a conversa no meio do turno (ver `pessoaAssumiuDuranteOTurno` em
+ * `executarTurnoDoAgente`). Nomeado para que o tratamento do `unavailable` saiba
+ * separar "canal fora" (erro do run, a fila re-tenta) de "a pessoa chegou"
+ * (desfecho correto, nada a re-tentar).
+ */
+export const MOTIVO_PESSOA_ASSUMIU_NO_TURNO = 'pessoa_assumiu_a_conversa';
+
 // Shape que o drain (F2-05) grava no payload do job — organization/lead vêm da
 // ROW do job (fonte confiável), nunca daqui; o payload só carrega ponteiros do CRM.
 const inboundTurnPayloadSchema = z
@@ -1031,6 +1074,10 @@ export const RESUMO_DO_HANDOFF_POR_ORCAMENTO =
 /** Título do item da Central que este handoff abre — rótulo visível, logo constante. */
 export const TITULO_DO_HANDOFF_POR_ORCAMENTO = 'Teto de gasto com IA atingido — assumir a conversa';
 
+/** Título do item da Central do teto do visitante anônimo (Spec 36, F4): ninguém pediu uma pessoa. */
+export const TITULO_DO_HANDOFF_POR_TETO_DO_ANONIMO =
+  'Visitante do chat no site chegou ao limite da IA — assumir a conversa';
+
 /**
  * Título do item da Central do handoff por SUSPEITA de opt-out (#1713).
  *
@@ -1191,10 +1238,11 @@ async function briefingDoCheckpointDuravel(
   tenantId: string,
   leadId: string,
   log: Logger,
+  codigo: 'orcamento_de_ia' | 'teto_do_visitante_anonimo' = 'orcamento_de_ia',
 ): Promise<BriefingDaPassagem> {
   const idioma = (await fatosDaOrganizacao(pool, tenantId, log)).idioma;
   const montar = (checkpoint: Awaited<ReturnType<typeof latestCheckpoint>>) =>
-    montarBriefingDaPassagem({ checkpoint, motivo: { codigo: 'orcamento_de_ia' }, idioma });
+    montarBriefingDaPassagem({ checkpoint, motivo: { codigo }, idioma });
   try {
     return montar(await latestCheckpoint(pool, tenantId, leadId));
   } catch (err) {
@@ -2147,6 +2195,10 @@ const ERRO_HANDOFF_APOS_VETO_COMERCIAL =
  * no SUFIXO — depois do prefixo cacheável, sem invalidar o cache F2-17).
  */
 export interface AgentTurnInput {
+  historicoDoFollowup?: {
+    jobId: string;
+    registrar: (fase: "gerada" | "parcial", candidata: number) => Promise<void>;
+  };
   resolvedAgent?: TurnAgentResolution;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
@@ -2909,6 +2961,7 @@ async function executarTurnoDoAgente(
   // mudou. Canal 'open' (default) → `permite:true`, nada muda. NO-OP no início do
   // turno, antes de qualquer chamada de modelo — mesmo lugar e mesmo custo do
   // veto de handoff acima.
+  let escoltarTetoDoAnonimo = false;
   if (!preview) {
     try {
       const elegib = await decidirElegibilidadeDaConversa(pool, {
@@ -2918,11 +2971,18 @@ async function executarTurnoDoAgente(
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
       if (elegib !== null && !elegib.permite) {
-        runLog.info('turno pulado — conversa não elegível para IA', {
-          kind: liveJob().kind,
-          motivo: elegib.motivo,
-        });
-        return;
+        // TETO DO VISITANTE ANÔNIMO (Spec 36, F4): em vez de silêncio, o turno
+        // segue até a escolta, depois da janela de envio — fora do `try`, para a
+        // falha dela não seguir o turno até o modelo.
+        if (elegib.motivo === 'teto_do_visitante_anonimo' && liveJob().kind === 'inbound_turn') {
+          escoltarTetoDoAnonimo = true;
+        } else {
+          runLog.info('turno pulado — conversa não elegível para IA', {
+            kind: liveJob().kind,
+            motivo: elegib.motivo,
+          });
+          return;
+        }
       }
       // KEEP-ALIVE: enquanto a conversa autorizada está viva, renova o carimbo —
       // assim uma negociação de semanas não expira pela janela de validade, mas um
@@ -3042,6 +3102,93 @@ async function executarTurnoDoAgente(
     }
   }
 
+  // A escolta do teto do visitante anônimo: o aviso ANTES da passagem (que arma o
+  // `force_human` e vetaria o envio), e aviso que falha não impede a passagem.
+  // Nenhum modelo é chamado. Passagem que falha derruba o turno e o job tenta de
+  // novo, sem repetir o aviso (o envio é idempotente por job). Só recupera a falha
+  // ANTES de `performHumanHandoff` armar o `force_human`: depois disso a nova
+  // tentativa para no veto de handoff.
+  if (escoltarTetoDoAnonimo) {
+    // Fora do público do agente (#3722) é silêncio, no teto também.
+    if (input.resolvedAgent && 'silencioPeloPublico' in input.resolvedAgent
+      && input.resolvedAgent.silencioPeloPublico === true) {
+      runLog.info('turno pulado — teto do visitante anônimo, contato fora do público do agente');
+      return;
+    }
+    // Pedido de parar e pedido de uma pessoa vencem o teto.
+    const agente = input.resolvedAgent?.config;
+    if (
+      agente &&
+      (await deteccoesDeterministicasDoAssistido(pool, deps, {
+        job: liveJob(),
+        tenantId,
+        conversationId: input.conversationId,
+        channelSessionId: input.channelSessionId,
+        leadId,
+        agent: agente,
+        log: runLog,
+        inboundMessageId: input.inboundMessageId,
+      }))
+    ) {
+      return;
+    }
+    let aviso: DesfechoDoAviso;
+    try {
+      aviso = await avisarLeadLendoOContato(
+        pool,
+        {
+          tenantId,
+          leadId,
+          conversationId: input.conversationId,
+          channelSessionId: input.channelSessionId,
+          jobId: liveJob().id,
+          jobClaim: claimOfJob(liveJob()),
+        },
+        {
+          motivo: 'teto_do_visitante_anonimo',
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p,
+            agente ? { ...deps.crmCfg, agentActorId: agente.agentId } : deps.crmCfg)))(pool),
+          origem: tipoDeEnvio(eTurnoDeResposta(liveJob())),
+          now: clock(),
+          log: runLog,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+        },
+      );
+    } catch (erroDoAviso) {
+      runLog.warn('aviso ao visitante falhou antes da passagem pelo teto do anônimo', {
+        error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 160),
+      });
+      aviso = { avisado: false, porque: 'erro_no_envio' };
+    }
+    const briefing = await briefingDoCheckpointDuravel(
+      pool,
+      tenantId,
+      leadId,
+      runLog,
+      'teto_do_visitante_anonimo',
+    );
+    await performHumanHandoff(
+      pool,
+      { tenantId, leadId, conversationId: input.conversationId },
+      {
+        reason: 'teto_do_visitante_anonimo',
+        conversationSummary: briefing.body,
+        inboxTitle: TITULO_DO_HANDOFF_POR_TETO_DO_ANONIMO,
+        passagem: { origem: 'teto_do_anonimo', motivoCodigo: 'teto_do_visitante_anonimo', briefing },
+        avisoAoLead: aviso,
+        log: runLog,
+      },
+    );
+    runLog.info('turno pulado — teto do visitante anônimo, conversa devolvida à fila humana', {
+      kind: liveJob().kind,
+      lead_avisado: aviso.avisado,
+    });
+    return;
+  }
+
   // A prévia faz a mesma passagem do handler (`escalarComercialAntesDoModelo`), mas
   // só PROPÕE: nada é enviado nem silenciado no Testar. O turno real já passou por
   // ela antes de escolher o agente.
@@ -3111,6 +3258,7 @@ async function executarTurnoDoAgente(
       channelId: input.channelSessionId,
       boundary: currentExecutionBoundary() ?? undefined,
       agent: agentConfig,
+      followupJobId: input.historicoDoFollowup?.jobId,
     });
     if (job.kind === 'followup_turn') {
       // #1648 (3): o follow-up do assistido caía no `return` genérico de baixo
@@ -4242,6 +4390,47 @@ async function executarTurnoDoAgente(
   // ligada, NADA mais sai dele, nem a pergunta pendente do roteiro (que segue
   // feita para o turno da mensagem nova). Ver `perguntaDoRoteiroPodeSair`.
   let turnoDescartado = false;
+  // UMA PESSOA ASSUMIU DURANTE O TURNO. O gate do começo do turno já barra a
+  // conversa que está com gente; o que sobra é a janela entre a decisão de falar
+  // e a entrega física (modelo, tools, digitação, intervalo entre bolhas). Esta
+  // guarda roda IMEDIATAMENTE antes de cada envio ao canal — texto, bolha, voz,
+  // template e pergunta do roteiro — e, quando a pessoa chegou, descarta o turno
+  // inteiro pelo MESMO mecanismo da resposta obsoleta (`turnoDescartado`): nada
+  // mais sai, e nem a "correção do turno mudo" nem o fail-safe de silêncio (que
+  // abriria caso) disparam, porque o silêncio foi a decisão certa.
+  //
+  // ⚠️ O desfecho é `unavailable` com motivo próprio, e NUNCA `blocked`. `blocked`
+  // é o veto de opt-out irrevogável: o fim do turno cancela o job E todos os
+  // follow-ups agendados do contato (`applySendOutcome` →
+  // `cancelPendingCronsForLead`) e diz ao modelo que o cliente pediu para não
+  // receber mensagens. Uma pessoa assumir não é nada disso.
+  const pessoaAssumiuDuranteOTurno = async (): Promise<boolean> => {
+    if (preview) return false;
+    // #5259: o job do turno deixa a guarda reconhecer a transferência que ELE
+    // fez (`crm_assign_conversation`) — o aviso ao cliente sai; pessoa de
+    // verdade assumindo continua vetando.
+    if (!(await iaVetadaNoEnvio(pool, tenantId, leadId, input.conversationId, { jobDoTurno: liveJob().id }))) return false;
+    if (!turnoDescartado) {
+      runLog.info('envio abortado — uma pessoa assumiu a conversa durante o turno', {
+        conversation_id: input.conversationId,
+      });
+    }
+    turnoDescartado = true;
+    return true;
+  };
+  const ENVIO_ABORTADO_PELA_PESSOA: ChannelSendResult = {
+    kind: 'unavailable',
+    reason: MOTIVO_PESSOA_ASSUMIU_NO_TURNO,
+  };
+  const ERRO_PESSOA_ASSUMIU = {
+    ok: false as const,
+    error: {
+      code: 'pessoa_assumiu_a_conversa',
+      message:
+        'Uma pessoa da equipe assumiu esta conversa agora; esta mensagem NÃO foi enviada. ' +
+        'NÃO chame send_message de novo neste turno — encerre agora.',
+    },
+  };
   // TURNO MUDO: quantas vezes o modelo chamou `send_message` e se passou a conversa à
   // equipe. Os dois dizem que o silêncio foi decisão — só sem eles o motor pede a
   // correção do turno que terminou sem falar com o cliente (ver depois da chamada principal).
@@ -4851,7 +5040,8 @@ async function executarTurnoDoAgente(
           now: clock(),
           sleep: deps.sleep,
           lgpd,
-          send: (finalBody: string) => {
+          send: async (finalBody: string) => {
+            if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
             pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
             seq += 1;
             return liveChannel().send({
@@ -4882,6 +5072,9 @@ async function executarTurnoDoAgente(
         }
         const outcome = chain.outcome;
         outcomes.push(outcome);
+        if (outcome.kind === 'unavailable' && outcome.reason === MOTIVO_PESSOA_ASSUMIU_NO_TURNO) {
+          return ERRO_PESSOA_ASSUMIU;
+        }
         if (outcome.kind === 'failed' && outcome.permanente === true) {
           falhaPermanenteNoTurno = true;
           return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
@@ -4973,7 +5166,7 @@ async function executarTurnoDoAgente(
         cliente_pediu,
         imagem_url,
       }) => {
-        tentativasDeEnvio += 1;
+        const numeroDaCandidata = ++tentativasDeEnvio;
         // Recusa definitiva já neste turno: nem chama a cadeia (ver a declaração da flag).
         if (falhaPermanenteNoTurno) return { ok: false, error: ERRO_DA_FALHA_PERMANENTE };
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
@@ -4981,6 +5174,10 @@ async function executarTurnoDoAgente(
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
         const body = formatarParaWhatsApp(corpoDoModelo);
+        // O texto já existe mesmo se uma guarda barrar a candidata.
+        if (input.historicoDoFollowup && !semConteudoVisivel(body)) {
+          await input.historicoDoFollowup.registrar("gerada", numeroDaCandidata);
+        }
         // Segundo texto com preço depois de um veto comercial sem cliente esperando:
         // nem chama a cadeia — o agente já foi avisado e insistir só gasta o turno.
         if (vetosComerciaisSemPendencia >= 2 && contemAssuntoComercialNaSaida(body)) {
@@ -5356,31 +5553,34 @@ async function executarTurnoDoAgente(
             // Link ou resposta longa: `null` e o texto segue em bolhas (ver `textoParaFalar`).
             const falado = voz ? textoParaFalar(texto) : null;
             if (!voz || falado === null) return null;
-            seq += 1;
-            const seqDesteEnvio = seq;
-            return liveChannel().send({
-              tenantId,
-              leadId,
-              jobId: liveJob().id,
-              jobClaim: claimOfJob(liveJob()),
-              agentOperation,
-              seq: seqDesteEnvio,
-              envioSeq: envioSeqDoEnvio,
-              conversationId: input.conversationId,
-              // `body` continua sendo o texto FALADO — é ele que entra no
-              // hash de idempotência do ledger (ver o comentário de
-              // `SendMessageInput.voz` em send-message.ts).
-              body: falado,
-              voz: {
-                textoOriginal: texto,
-                apiKey: voz.apiKey,
-                voiceId: voz.voiceId,
-                ...(voz.modelId ? { modelId: voz.modelId } : {}),
-                formato: voz.formato,
-                upload: (audio, mimeType) =>
-                  uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
-              },
-            });
+            return (async (): Promise<ChannelSendResult> => {
+              if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
+              seq += 1;
+              const seqDesteEnvio = seq;
+              return liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq: seqDesteEnvio,
+                envioSeq: envioSeqDoEnvio,
+                conversationId: input.conversationId,
+                // `body` continua sendo o texto FALADO — é ele que entra no
+                // hash de idempotência do ledger (ver o comentário de
+                // `SendMessageInput.voz` em send-message.ts).
+                body: falado,
+                voz: {
+                  textoOriginal: texto,
+                  apiKey: voz.apiKey,
+                  voiceId: voz.voiceId,
+                  ...(voz.modelId ? { modelId: voz.modelId } : {}),
+                  formato: voz.formato,
+                  upload: (audio, mimeType) =>
+                    uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
+                },
+              });
+            })();
           };
           // #4590 — este turno RESPONDE a alguém que escreveu? É o que decide a
           // janela (`resposta*`) e é o que arma o teto de respostas por conversa:
@@ -5439,6 +5639,12 @@ async function executarTurnoDoAgente(
             casesEnabled: agentConfig?.casesEnabled ?? false,
             hasOpenCase,
             openedCaseThisTurn,
+            // #5191 — a ferramenta de PASSAGEM está NO TURNO? O `casePromiseGate`
+            // continua vetando a promessa explícita de humano sem caso, mas com
+            // ela na mão a razão do veto manda chamar `request_human_handoff` em
+            // vez de abrir caso ao lado da passagem. Lido do conjunto REAL, não da
+            // coluna: o turno pode ter removido a ferramenta (`handoff_tool_enabled`).
+            handoffDisponivel: rawTools.request_human_handoff !== undefined,
             // Nome(s) próprio(s) que o prompt do tenant usa pra retaguarda humana (ex.:
             // "Fulano") — o mesmo vocabulário que `matchesHandoffKeyword` já usa do lado
             // do CLIENTE, agora somado ao alvo genérico do `casePromiseGate` do lado do
@@ -5568,10 +5774,12 @@ async function executarTurnoDoAgente(
               // envio levam todos esse `envioSeq` para o ledger; o reprocesso lê
               // por ele e não mistura o envio seguinte.
               const seqDoEnvio = seq + 1;
-              const enviar = (
+              let parteAceita = false;
+              const enviarAoCanal = async (
                 corpo: string,
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 seq += 1;
                 return liveChannel().send({
                   tenantId,
@@ -5588,6 +5796,18 @@ async function executarTurnoDoAgente(
                   // metadata que faz os freios de reenvio contarem uma vez.
                   ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
                 });
+              };
+              // O histórico do follow-up fica fora da guarda, para ela seguir em uma linha.
+              const enviar = async (
+                corpo: string,
+                media?: FotoParaEnvio,
+              ): Promise<ChannelSendResult> => {
+                const resultado = await enviarAoCanal(corpo, media);
+                if (resultado === ENVIO_ABORTADO_PELA_PESSOA && parteAceita) {
+                  await input.historicoDoFollowup?.registrar("parcial", numeroDaCandidata);
+                }
+                parteAceita ||= resultado.kind === "sent" || resultado.kind === "already_sent";
+                return resultado;
               };
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seqDoEnvio }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
@@ -5665,6 +5885,29 @@ async function executarTurnoDoAgente(
                 { vetos: casePromiseVetoCount },
               );
               return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            // #5191 — PASSAGEM explícita pedida e ferramenta de passagem NO TURNO:
+            // o caso NÃO abre. É aqui que nascia o caso DUPLICADO do mesmo
+            // atendimento: o modelo prometia a passagem, o gate vetava e este
+            // fail-safe abria um caso ao lado da passagem que o modelo ia fazer.
+            // A passagem já é destino real (conversa em `pending`, roteamento G5,
+            // aviso na Central); o certo é devolver ao modelo o caminho da
+            // ferramenta — a MESMA frase que o gate usaria.
+            if (
+              passagemDispensaCasoHumano({
+                corpo: body,
+                alvosExtras: agentConfig?.handoffKeywords ?? [],
+                passagemDisponivel: rawTools.request_human_handoff !== undefined,
+              })
+            ) {
+              runLog.warn(
+                'fail-safe de caso: passagem explícita e ferramenta no turno — caso NÃO aberto',
+                { vetos: casePromiseVetoCount },
+              );
+              return {
+                ok: false,
+                error: { code: chain.code, message: RAZAO_DE_PASSAGEM_SEM_CASO },
+              };
             }
             const auto = await openCase(
               pool,
@@ -5924,6 +6167,10 @@ async function executarTurnoDoAgente(
                 },
               };
             case 'unavailable':
+              // Uma pessoa assumiu no meio do turno (`pessoaAssumiuDuranteOTurno`):
+              // não é falha do canal, não há o que re-tentar — re-tentar só rodaria
+              // de novo um turno que o gate do começo já vai pular.
+              if (outcome.reason === MOTIVO_PESSOA_ASSUMIU_NO_TURNO) return ERRO_PESSOA_ASSUMIU;
               // transiente (transporte/tool do canal): ensina o modelo a parar; o
               // job re-tenta com a MESMA idempotency_key (ledger ficou 'requested').
               noteRunError(
@@ -6305,7 +6552,12 @@ async function executarTurnoDoAgente(
   // `AGENT_TOOL_DEFS` já carrega a descrição ligada. A lógica mora em
   // `aplicaAChaveDeAssuntoJuridico` para o teste do turno exercitá-la fora do
   // turno (tests/unit/chave-juridico-so-troca-a-descricao.test.ts).
-  aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled);
+  //
+  // #5191 — o MESMO ponto troca o trecho do aviso: com casos ligados, o texto
+  // vira "não escreva o aviso, chame a ferramenta" (quem avisa é o sistema).
+  // Sem a troca, o modelo continua lendo a instrução contrária ao gate.
+  const casosLigados = agentConfig !== null && agentConfig.casesEnabled;
+  aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled, casosLigados);
 
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
@@ -7102,8 +7354,12 @@ async function executarTurnoDoAgente(
               // mesmas duas escolhas do aviso de escalação.
               enforceCommercialRestriction: false,
               enforceSpinning: false,
-              send: (finalBody: string) =>
-                liveChannel().send({
+              // A pessoa que assumiu entre a leitura do turno e este aviso
+              // também cala a frase da troca: é um envio ao canal como os
+              // outros (`unavailable` → o aviso conta como não enviado).
+              send: async (finalBody: string) => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
+                return liveChannel().send({
                   tenantId,
                   leadId,
                   jobId: liveJob().id,
@@ -7112,7 +7368,8 @@ async function executarTurnoDoAgente(
                   seq: SEQ_DA_PASSAGEM_AO_CLIENTE,
                   conversationId: input.conversationId,
                   body: finalBody,
-                }),
+                });
+              },
             });
             return chain.status === 'vetoed' ? 'blocked' : chain.outcome.kind;
           },
@@ -7754,7 +8011,8 @@ async function executarTurnoDoAgente(
               ...(deps.knobs.disclosureMode !== undefined
                 ? { disclosureMode: deps.knobs.disclosureMode }
                 : {}),
-              send: (finalBody: string) => {
+              send: async (finalBody: string) => {
+                if (await pessoaAssumiuDuranteOTurno()) return ENVIO_ABORTADO_PELA_PESSOA;
                 pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
                 seq += 1;
                 return liveChannel().send({
@@ -8379,6 +8637,10 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       });
       return;
     }
+    // O teto do visitante anônimo (Spec 36, F4) atravessa este veto: a escolta
+    // (frase e passagem) mora dentro de `runAgentTurn`. No assistido ele para
+    // mais abaixo, sem rascunho.
+    let tetoDoAnonimo = false;
     try {
       const elegib = await decidirElegibilidadeDaConversa(pool, {
         organizationId: job.organization_id,
@@ -8386,7 +8648,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         agora: deps.clock?.() ?? new Date(),
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
-      if (elegib !== null && !elegib.permite) {
+      tetoDoAnonimo = elegib?.motivo === 'teto_do_visitante_anonimo';
+      if (elegib !== null && !elegib.permite && !tetoDoAnonimo) {
         deps.log.info('turno pulado — conversa não elegível para IA', {
           job_id: job.id,
           conversation_id: payload.conversation_id,
@@ -8403,7 +8666,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
     }
-    if (await escalarComercialAntesDoModelo(pool, deps, job, {
+    // No teto, quem passa a conversa é a escolta, que espera a janela de envio.
+    if (!tetoDoAnonimo && await escalarComercialAntesDoModelo(pool, deps, job, {
       leadId: job.contact_id,
       conversationId: payload.conversation_id,
       channelSessionId: payload.channel_session_id,
@@ -8412,7 +8676,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     // A coluna interna conserva plano e operação originais; não é uma nova
     // escolha de agente. O payload legado nunca autoriza nem controla replay.
     let apresentacaoVetada: { proximaSeq: number } | undefined;
-    if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
+    if (!tetoDoAnonimo && job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
       // O envio retomado credita o agente do turno que gravou o snapshot, como o
       // envio original; sem isto ele sairia com o ator de fallback.
       const agenteDoSnapshot = readCatalogPresentationSnapshot(
@@ -8458,7 +8722,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       jobId: job.id,
       conversationId: payload.conversation_id,
       channelSessionId: payload.channel_session_id,
-      inbound: true,
+      // No teto do visitante anônimo não há sinal: o roteador escolhe sem classificar (sem gasto).
+      inbound: !tetoDoAnonimo,
     }, { log: deps.log, jev: deps.jev });
     const operationAgent = resolvedAgent.config;
     if (operationAgent?.operationMode === 'assisted') {
@@ -8483,6 +8748,13 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           inboundMessageId: payload.inbound_message_id,
         })
       ) {
+        return;
+      }
+      if (tetoDoAnonimo) {
+        deps.log.info('turno pulado — teto do visitante anônimo no modo assistido, sem rascunho', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
         return;
       }
       const { generateReplyDraft } = await import('./reply-drafts');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarEfeitoDasEscrituras } from "./efeito-das-escritas";
+import { extrairRecibosDeAgendamento } from "./recibos-de-agendamento";
 
 const recibo = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -8,6 +9,8 @@ const recibo = {
   ends_at: "2026-12-10T13:30:00Z",
   revision: 1,
 };
+
+const reciboCancelado = { ...recibo, status: "cancelled" };
 
 describe("recibos da agenda no coletor do turno", () => {
   it("conserva o recibo devolvido pela ponte, separado do booleano de efeito", () => {
@@ -46,6 +49,42 @@ describe("recibos da agenda no coletor do turno", () => {
     expect(efeitos.recibosDeAgendamento()).toEqual([]);
     efeitos.registrarRecibosDeAgendamento(primeira, { marcado: true, compromisso: recibo });
     expect(efeitos.recibosDeAgendamento()).toEqual([]);
+  });
+
+  it("extrai cancelamento (cancelado=true) com status cancelled", () => {
+    expect(
+      extrairRecibosDeAgendamento({ cancelado: true, compromisso: reciboCancelado }),
+    ).toEqual([reciboCancelado]);
+  });
+
+  it("cancelamento com status confirmed → vazio", () => {
+    expect(
+      extrairRecibosDeAgendamento({ cancelado: true, compromisso: { ...recibo, status: "confirmed" } }),
+    ).toEqual([]);
+  });
+
+  it("marcação com status cancelled → vazio", () => {
+    expect(extrairRecibosDeAgendamento({ marcado: true, compromisso: reciboCancelado })).toEqual([]);
+    expect(extrairRecibosDeAgendamento({ remarcado: true, compromisso: reciboCancelado })).toEqual([]);
+    expect(extrairRecibosDeAgendamento({ confirmado: true, compromisso: reciboCancelado })).toEqual([]);
+  });
+
+  it("cancelamento com human_confirmation pending → extrai (aprovação pendente não impede cancelamento)", () => {
+    expect(
+      extrairRecibosDeAgendamento({
+        cancelado: true,
+        compromisso: { ...reciboCancelado, human_confirmation: "pending" },
+      }),
+    ).toEqual([reciboCancelado]);
+  });
+
+  it("cancelamento ja_estava sem datas/revisão → vazio", () => {
+    expect(
+      extrairRecibosDeAgendamento({
+        cancelado: true,
+        compromisso: { id: recibo.id, status: "cancelled", ja_estava: true },
+      }),
+    ).toEqual([]);
   });
 
   it("devolve cópias: editar o resultado ou a leitura não fabrica outro comprovante", () => {

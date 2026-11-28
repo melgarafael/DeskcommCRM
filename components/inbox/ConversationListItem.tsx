@@ -35,6 +35,7 @@ interface Props {
   conversation: ConversationWithContact;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  ocultarPrevia?: boolean;
   /** Posição 1-based na fila (G5-03). Presente só na visão Fila. */
   queuePosition?: number;
   /**
@@ -134,6 +135,20 @@ const COR_DO_COMANDO: Record<string, string> = {
   encerrada: "bg-muted-foreground/30",
 };
 
+/**
+ * QUANTAS ETIQUETAS CABEM NA LINHA (#5212).
+ *
+ * Era 2, e só as do contato. A conversa também tem etiquetas — `conversations.tags`
+ * já vem no `SELECT_COLS` do handler desde sempre — e na lista elas eram invisíveis:
+ * a marca só aparecia depois de abrir a conversa. O teto sobe para 4 porque a fonte
+ * dobrou, não por gosto: a faixa é `flex-wrap` e divide a linha com o selo de exemplo,
+ * o atendente, o canal e o bloqueio. O que passa do teto vira `+N` com o `title`
+ * listando as que ficaram de fora — o contrato do #3649, que continua de pé.
+ * Uma constante só aqui porque a régua é dela, não de um `slice`: quem mudar o teto
+ * muda um número, não caça dois literais `2` soltos na função.
+ */
+const LIMITE_DE_TAGS_NA_LISTA = 4;
+
 function initials(name: string | null | undefined, fallback: string): string {
   const v = (name ?? "").trim();
   if (!v) return fallback.slice(0, 2).toUpperCase();
@@ -169,6 +184,7 @@ export function ConversationListItem({
   conversation,
   isSelected,
   onSelect,
+  ocultarPrevia = false,
   queuePosition,
   mostrarCanal,
   mostrarAtendente,
@@ -185,11 +201,11 @@ export function ConversationListItem({
   const c = conversation.contacts ?? null;
   const displayName = rotuloParaAEquipe(c, t);
   const phoneFallback = c?.phone_number ? phoneForDisplay(c.phone_number) : "??";
-  const tags = c?.tags ?? [];
-  const visibleTags = tags.slice(0, 2);
+  const tags = [...new Set([...(c?.tags ?? []), ...(conversation.tags ?? [])])];
+  const visibleTags = tags.slice(0, LIMITE_DE_TAGS_NA_LISTA);
   const overflow = tags.length - visibleTags.length;
-  const hiddenTags = tags.slice(2);
-  const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
+  const hiddenTags = tags.slice(LIMITE_DE_TAGS_NA_LISTA);
+  const preview = ocultarPrevia ? "" : conversation.last_message_preview?.trim() || t("Sem mensagens");
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
   const naFila = queuePosition !== undefined;
   /**
@@ -501,7 +517,8 @@ export function ConversationListItem({
         {temSelos && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
             {/* O SELO DO EXEMPLO vem ANTES das etiquetas de propósito: a faixa
-                mostra no máximo 2 etiquetas e as que sobram viram "+N". Um
+                mostra no máximo `LIMITE_DE_TAGS_NA_LISTA` etiquetas (juntando
+                contato e conversa, #5212) e as que sobram viram "+N". Um
                 estado que decide se a conversa entra na base de conhecimento
                 do agente não pode ser o primeiro a ser cortado. */}
             {exemploMarcado && (

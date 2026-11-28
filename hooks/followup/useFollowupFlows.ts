@@ -15,6 +15,13 @@ export interface FollowupFlowPointerRow {
   active_version_id: string | null;
   handoff_policy: string;
   updated_at: string;
+  /**
+   * `trigger_config->>kind`, que a busca da lista lê (#4593). `null` = a
+   * configuração não tem `kind` (o editor mostra «Manual»). Ausente = a linha
+   * veio de uma escrita (criar, duplicar, instalar) e a lista ainda não foi
+   * relida.
+   */
+  trigger_kind?: string | null;
 }
 
 interface ListResponse {
@@ -93,6 +100,9 @@ export function useDuplicateFollowupFlow() {
       qc.setQueryData<FollowupFlowPointerRow[]>(followupFlowsListQueryKey, (prev) =>
         prev ? [created, ...prev] : [created],
       );
+      // A linha devolvida não traz `trigger_kind`: reler a lista devolve o
+      // gatilho à busca (#4593), senão a cópia some de um termo como «silencio».
+      void qc.invalidateQueries({ queryKey: followupFlowsListQueryKey });
       toast.success(t("Fluxo duplicado."));
     },
     onError: (err) => {

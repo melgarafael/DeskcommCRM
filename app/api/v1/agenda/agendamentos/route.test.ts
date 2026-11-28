@@ -352,6 +352,61 @@ describe("PATCH /api/v1/agenda/agendamentos — editar o título (#3776)", () =>
 });
 
 /**
+ * `responsible_user_ids` na forma da rota: teto de 9 adicionais (schema) e o
+ * campo chega ao handler. A validação de organização, teto de banco e principal
+ * fica no `_handler` / banco (testes de invariante).
+ */
+describe("PATCH /api/v1/agenda/agendamentos — responsible_user_ids (forma)", () => {
+  const ID = "66666666-6666-4666-8666-666666666666";
+  const R1 = "11111111-1111-4111-8111-111111111111";
+  const R2 = "22222222-2222-4222-8222-222222222222";
+  const R3 = "33333333-3333-4333-8333-333333333333";
+  const R4 = "44444444-4444-4444-8444-444444444444";
+  const R5 = "55555555-5555-4555-8555-555555555555";
+  const R6 = "66666666-6666-4666-8666-666666666666";
+  const R7 = "77777777-7777-4777-8777-777777777777";
+  const R8 = "88888888-8888-4888-8888-888888888888";
+  const R9 = "99999999-9999-4999-8999-999999999999";
+  const R10 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  function patchReq(body: unknown): NextRequest {
+    return new NextRequest("http://localhost/api/v1/agenda/agendamentos", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  it("até 9 adicionais passa pelo schema e chega ao handler", async () => {
+    sessaoOk();
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({ id: ID });
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, responsible_user_ids: [R1, R2, R3, R4, R5, R6, R7, R8, R9] }));
+
+    expect(res.status).toBeLessThan(300);
+    expect(vi.mocked(alterarAgendamentoHandler).mock.calls[0]?.[2]).toMatchObject({
+      id: ID,
+      responsible_user_ids: [R1, R2, R3, R4, R5, R6, R7, R8, R9],
+    });
+  });
+
+  it("dez adicionais é recusado pelo schema (422) e o handler não roda", async () => {
+    sessaoOk();
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(
+      patchReq({ id: ID, responsible_user_ids: [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10] }),
+    );
+    const corpo = (await res.json()) as { error?: { details?: Record<string, string[]> } };
+
+    expect(res.status).toBe(422);
+    expect(alterarAgendamentoHandler).not.toHaveBeenCalled();
+    expect(corpo.error?.details?.responsible_user_ids).toBeDefined();
+  });
+});
+
+/**
  * `/api/v1/agenda/agendamentos` agora está em `PUBLIC_PATHS` — o proxy deixa de
  * barrar o GET sem cookie. Quem barra é o `requireRole` da própria rota, que
  * NÃO lê Bearer: listar a agenda segue só-sessão.

@@ -18,6 +18,13 @@ import { devolverAtendimentoAoAgente, type OrigemDaRetomada } from "@/lib/escala
 import type { Actor } from "@/lib/api/handlers/types";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
+// A limpeza do setor tem a sua própria prova (`devolucao-limpa-setor-da-ia.test.ts`);
+// aqui se prova QUANDO a devolução a chama — e que falhar nela não derruba nada.
+const limparSetor = vi.fn();
+vi.mock("@/lib/atendimento/setor-da-conversa", () => ({
+  limparSetorDaIaNaDevolucao: (...a: unknown[]) => limparSetor(...a),
+}));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ cliente: "servico" }) }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const CONV = "44444444-4444-4444-8444-444444444444";
@@ -67,6 +74,13 @@ interface CenarioBanco {
    * como o Postgres faria.
    */
   marcaNaEscrita?: boolean;
+  /**
+   * Sinal humano DEPOIS do corte do cron, como está na hora da escrita (cron
+   * handoff-devolucao). Na conversa sem dono, o dublê só recusa o UPDATE se ele
+   * trouxer o filtro do relógio em `last_outbound_at`; na conversa com dono,
+   * `fn_conversation_release_if_idle` responde `false`.
+   */
+  respostaDepoisDoCorte?: boolean;
 }
 
 /**
@@ -87,6 +101,10 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
       },
       is: () => chain,
       in: () => chain,
+      or: (expr: string) => {
+        filtros.push(["or", expr]);
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
       update: (valores: Record<string, unknown>) => {
@@ -108,7 +126,8 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
           return Promise.resolve({ data: casa ? { id: CONTATO } : null, error: null });
         }
         if (ehUpdate) {
-          const casa = cenario.updateDaConversaCasa ?? true;
+          const relogio = filtros.some(([c, v]) => c === "or" && String(v).startsWith("last_outbound_at."));
+          const casa = (cenario.updateDaConversaCasa ?? true) && !(relogio && cenario.respostaDepoisDoCorte);
           return Promise.resolve({ data: casa ? { id: CONV } : null, error: null });
         }
         if (tabela === "conversations") {
@@ -147,6 +166,9 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
       cap.rpc.push({ fn, args });
       if (fn === "emit_event") {
         return Promise.resolve({ data: null, error: cenario.erroDoEmitEvent ?? null });
+      }
+      if (fn === "fn_conversation_release_if_idle") {
+        return Promise.resolve({ data: cenario.respostaDepoisDoCorte !== true, error: null });
       }
       return Promise.resolve({ data: [{ id: CONV }], error: null });
     },
@@ -474,6 +496,82 @@ describe("devolver o atendimento ao agente", () => {
     });
   });
 
+  /**
+   * O CRON DECIDE SOBRE UMA LEITURA ANTIGA (cron `handoff-devolucao`).
+   *
+   * Entre a varredura e a escrita o atendente pode responder sem trocar de dono
+   * — só `last_outbound_at` anda. O corte vai para DENTRO da escrita: com dono,
+   * no release sob o lock (`fn_conversation_release_if_idle`, migration 9472);
+   * sem dono, no próprio UPDATE da devolução, que é a única escrita.
+   */
+  const CORTE = "2026-08-04T12:00:00.000Z";
+  async function retomarPeloCron(cenario: CenarioBanco, cap: Captura) {
+    return devolverAtendimentoAoAgente(
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: fazerSupabase(cenario, cap) as any,
+        organizationId: ORG,
+        actor: { type: "webhook_source", id: "cron:handoff-devolucao" } as Actor,
+        requestId: "req-1",
+      },
+      {
+        conversationId: CONV,
+        origem: { automatica: { minutos: 60 } },
+        expectedAssignee: (cenario.conversa?.assigned_to_user_id ?? null) as string | null,
+        semSinalHumanoDesde: CORTE,
+      },
+    );
+  }
+
+  it("cron, conversa com dono: solta pelo release que confere dono E relógio sob o lock", async () => {
+    const cap = novaCaptura();
+    const res = await retomarPeloCron(cenarioComAtendimentoHumano(), cap);
+    expect(res.ok).toBe(true);
+    expect(cap.rpc.filter((r) => r.fn.startsWith("fn_conversation_"))).toEqual([
+      {
+        fn: "fn_conversation_release_if_idle",
+        args: {
+          p_organization_id: ORG,
+          p_conversation_id: CONV,
+          p_expected_assignee: ATENDENTE,
+          p_sem_sinal_humano_desde: CORTE,
+        },
+      },
+    ]);
+  });
+
+  it("cron, conversa com dono: o atendente respondeu depois do corte → nada volta à IA, conflito SEM detalhe", async () => {
+    const cap = novaCaptura();
+    const res = await retomarPeloCron(
+      cenarioComAtendimentoHumano({
+        respostaDepoisDoCorte: true,
+        contato: { id: CONTATO, ai_opt_out: false, force_human: true },
+      }),
+      cap,
+    );
+    expect(res).toMatchObject({ ok: false, erro: "assignment_conflict" });
+    if (!res.ok) expect(res.detalhe).toBeUndefined();
+    expect(cap.updates.filter((u) => u.tabela === "conversations")).toEqual([]);
+    expect(cap.rpc.some((r) => r.fn === "emit_event")).toBe(false);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toEqual([
+      { tabela: "contacts", valores: { force_human: false } },
+      { tabela: "contacts", valores: { force_human: true } },
+    ]);
+  });
+
+  it("cron, conversa sem dono: o relógio vai no UPDATE da devolução, e resposta depois do corte o recusa", async () => {
+    const semDono = conversaPassadaAHumano({ assigned_to_user_id: null, assignee_kind: null });
+    const cap = novaCaptura();
+    const res = await retomarPeloCron(cenarioComAtendimentoHumano({ conversa: semDono, respostaDepoisDoCorte: true }), cap);
+    expect(res).toMatchObject({ ok: false, erro: "assignment_conflict" });
+    if (!res.ok) expect(res.detalhe).toBeUndefined();
+    expect(cap.rpc.some((r) => r.fn === "emit_event")).toBe(false);
+
+    // Controle: sem resposta depois do corte, a mesma conversa é devolvida.
+    const cap2 = novaCaptura();
+    expect((await retomarPeloCron(cenarioComAtendimentoHumano({ conversa: semDono }), cap2)).ok).toBe(true);
+  });
+
   it("é idempotente: repetir com a conversa já no agente segue devolvendo ok", async () => {
     const cap = novaCaptura();
     const res = await retomar(
@@ -640,5 +738,87 @@ describe("devolver o atendimento ao agente", () => {
     if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
     expect(cap.updates, "a conversa fechou e a trava CONTINUA — é isso que a tela conta").toEqual([]);
     expect(cap.rpc).toEqual([]);
+  });
+});
+
+/**
+ * A DEVOLUÇÃO GRAVA A MARCA QUE SEGURA O RODÍZIO, E UMA PESSOA ENCERRA A
+ * CLASSIFICAÇÃO DA IA (D6 numa instalação de teste, 2026-11-20).
+ */
+describe("a marca da retomada e a classificação da IA", () => {
+  async function retomarComo(
+    cenario: CenarioBanco,
+    cap: Captura,
+    extra: { origem?: OrigemDaRetomada; limparClassificacaoDaIa?: boolean },
+  ) {
+    return devolverAtendimentoAoAgente(
+      {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: fazerSupabase(cenario, cap) as any,
+        organizationId: ORG,
+        actor: USUARIO,
+        requestId: "req-1",
+      },
+      { conversationId: CONV, ...extra },
+    );
+  }
+
+  it("⭐ a marca `ia_retomada` sai na MESMA escrita da devolução, sem perder o metadata que já existia", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    const cenario = cenarioComAtendimentoHumano({
+      conversa: conversaPassadaAHumano({ metadata: { setor_origem: "ia", outra_chave: 1 } }),
+    });
+    await retomarComo(cenario, cap, { limparClassificacaoDaIa: true });
+    const naConversa = cap.updates.find((u) => u.tabela === "conversations");
+    const metadata = naConversa?.valores.metadata as Record<string, unknown>;
+    expect(naConversa?.valores).toMatchObject({ assignee_kind: "ai", bot_silenced_until: null });
+    expect(metadata.outra_chave).toBe(1);
+    expect(metadata.setor_origem).toBe("ia");
+    expect(metadata.ia_retomada).toMatchObject({ por: "pessoa" });
+    expect(Number.isFinite(Date.parse(String((metadata.ia_retomada as { em: string }).em)))).toBe(true);
+  });
+
+  it("a devolução automática também marca — por `automatica` — e NÃO limpa a classificação", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    await retomarComo(cenarioComAtendimentoHumano(), cap, { origem: { automatica: { minutos: 60 } } });
+    const metadata = cap.updates.find((u) => u.tabela === "conversations")?.valores.metadata as Record<
+      string,
+      unknown
+    >;
+    expect(metadata.ia_retomada).toMatchObject({ por: "automatica" });
+    expect(limparSetor).not.toHaveBeenCalled();
+  });
+
+  it("sem o pedido explícito (ex.: a reação à derivação técnica) a classificação fica", async () => {
+    limparSetor.mockReset();
+    const cap = novaCaptura();
+    await retomarComo(cenarioComAtendimentoHumano(), cap, {});
+    expect(limparSetor).not.toHaveBeenCalled();
+  });
+
+  it("uma PESSOA devolveu: a limpeza é chamada uma vez, para esta conversa e organização, com o cliente de serviço para o módulo", async () => {
+    limparSetor.mockReset();
+    limparSetor.mockResolvedValue({ limpou: true, de: "setor-tecnico" });
+    const cap = novaCaptura();
+    const res = await retomarComo(cenarioComAtendimentoHumano(), cap, { limparClassificacaoDaIa: true });
+    expect(res.ok).toBe(true);
+    expect(limparSetor).toHaveBeenCalledTimes(1);
+    expect(limparSetor.mock.calls[0]![0]).toMatchObject({
+      organizationId: ORG,
+      conversationId: CONV,
+      admin: { cliente: "servico" },
+      ator: { tipo: "user", userId: ATENDENTE },
+    });
+  });
+
+  it("a limpeza falhar (ou lançar) NÃO derruba a devolução: o comando já voltou para a IA", async () => {
+    limparSetor.mockReset();
+    limparSetor.mockRejectedValue(new Error("banco fora"));
+    const cap = novaCaptura();
+    const res = await retomarComo(cenarioComAtendimentoHumano(), cap, { limparClassificacaoDaIa: true });
+    expect(res.ok).toBe(true);
+    expect(cap.rpc.map((r) => r.fn)).toContain("emit_event");
   });
 });

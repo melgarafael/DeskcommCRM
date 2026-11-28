@@ -1046,6 +1046,23 @@ restaurar_servicos() {
   diagnostico_de_atualizacao "$rc_da_execucao"
 }
 
+# ── A revisão que um build feito AQUI pode carimbar (#5196) ──────────────────
+# O commit do disco, e só quando a árvore É exatamente ele. Os Dockerfiles do
+# worker, do scheduler e da voz copiam a pasta inteira (`COPY . .`): um remendo
+# feito à mão, ou um arquivo novo deixado aqui, entra na imagem e não está no
+# commit — carimbar a revisão oficial nessa imagem a faria passar por
+# verificada na tela de versão. Árvore suja sai VAZIA, e a imagem segue "não
+# verificada", como antes do #5196. Git que não responde (sem `.git`, dono
+# diferente) também sai vazio: carimbar um palpite seria pior que não carimbar.
+# As marcas do próprio kit (`.update-de-onde-vim`, `.update.lock`, os `.log`)
+# moram no `.gitignore`, que o `git status` respeita.
+revisao_da_arvore_limpa() {  # revisao_da_arvore_limpa <pasta> → sha ou nada
+  local sujo
+  sujo="$(git -C "$1" status --porcelain --untracked-files=normal 2>/dev/null)" || return 0
+  [ -z "$sujo" ] || return 0
+  git -C "$1" rev-parse HEAD 2>/dev/null || true
+}
+
 # ── Imagem pronta que não serve para esta VPS: constrói a versão aqui ────────
 # Uma VPS cuja arquitetura não é a das imagens publicadas (Oracle Ampere, por
 # exemplo) recebe "no matching manifest for linux/arm64/v8" ao puxá-las. O
@@ -1121,14 +1138,56 @@ construir_aqui_e_subir() {  # construir_aqui_e_subir [versão alvo] → 0 se sub
 # O prazo é a outra metade: sem ele o `docker ps` também trava (foi o que
 # prendeu o healthcheck no passo "▶ Containers") e nenhum destes sinais chega
 # a existir — o script simplesmente nunca termina.
+# ── O prazo de um comando (#1955, #5055) ────────────────────────────────────
+#
+# `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
+# comportamento continua o antigo, não nasce um erro novo. O `busybox` também
+# tem um `timeout`, mas sem `-k` — sondado UMA vez, na carga, para o kit não
+# trocar um travamento por "todo comando falha na hora" numa VPS mínima.
+#
+# O prazo da sonda é 5 s, não 10 ms (sugestão da revisão do #5161): o `true`
+# sai na hora, então o prazo só existe para não deixar a sonda pendurada; com
+# 10 ms, uma VPS sobrecarregada podia matar o `true` antes do exec e desligar
+# o `-k` em silêncio, justo na máquina em que ele importa.
+if timeout -k 1 5 true >/dev/null 2>&1; then
+  COM_PRAZO_MATA=1
+else
+  COM_PRAZO_MATA=
+fi
+
 com_prazo() {  # com_prazo <segundos> <comando...>
   local prazo="$1"; shift
-  # `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
-  # comportamento continua o antigo, não nasce um erro novo.
+  # `</dev/null` (#5055) — quem roda sob prazo NÃO lê o terminal.
+  #
+  # O passo "Saúde interna do app" do healthcheck chega aqui pelo
+  # `app_health_probe 30`, que é
+  # `com_prazo 30 docker compose … exec -T app node -e …`, e o
+  # `docker compose exec -T` ENCAMINHA o stdin. O `timeout` põe o filho num
+  # grupo de processos fora do primeiro plano: ler o terminal de lá PARA o
+  # processo (SIGTTIN), e o TERM do prazo fica pendente num processo parado —
+  # o `timeout` espera por ele para sempre. Foi assim que o passo ficou parado
+  # em produção (v1.117.0) com `/api/v1/health` respondendo 200 `healthy` no
+  # mesmo instante. Nenhum chamador alimenta stdin (são `docker ps`, `info`,
+  # `buildx imagetools inspect`, `compose ps`): fechar o stdin não muda o que
+  # eles fazem e tira a leitura do terminal do caminho.
+  #
+  # `-k 5` (mesma issue) — estourado o prazo, o TERM pode ser ignorado, e o
+  # `$(…)` do healthcheck espera TODO processo que ainda tem o pipe aberto. O
+  # KILL 5s depois fecha essa porta em vez de deixar o passo pendurado.
+  #
+  # SEM `--foreground`, de propósito, e medido aqui (um comando que deixa um
+  # filho segurando o stdout): 1014 ms sem ele contra 20016 ms com ele,
+  # porque `--foreground` deixa de matar o grupo do filho. Como o stdin já
+  # está fechado, o motivo de existir dele (deixar o comando ler o tty) não
+  # se aplica, e é o grupo morto que libera a substituição de comando.
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$prazo" "$@"
+    if [ -n "$COM_PRAZO_MATA" ]; then
+      timeout -k 5 "$prazo" "$@" </dev/null
+    else
+      timeout "$prazo" "$@" </dev/null
+    fi
   else
-    "$@"
+    "$@" </dev/null
   fi
 }
 
@@ -2797,6 +2856,42 @@ completar_pin_ausente() {  # completar_pin_ausente [envfile]
   printf '%s' "${corrigidos# }"
 }
 
+# ── O pull_policy que VALE é o do .env que acabou de ser gravado (#5116) ────
+#
+# O Compose dá precedência à variável do AMBIENTE sobre a do `.env`
+# (docker-compose.prod.yml, `pull_policy: ${APP_PULL_POLICY:-missing}`), e o
+# `load_env` exporta o `.env` INTEIRO para o ambiente do processo no começo de
+# todo script do kit. As duas coisas juntas produzem o defeito medido numa VPS
+# real: o `.env` tinha `APP_PULL_POLICY=never` de uma correção de emergência
+# (imagem construída na VPS, como o runbook prevê), o `gravar_imagens` regravou
+# o `.env` com `missing` — e o ambiente do processo continuou com `never`, que é
+# quem o Compose lê. O `dc pull` registrou `Image ...:1.122.0 Skipped` só no app
+# (worker e scheduler foram baixados), o `up -d` falhou com "No such image", e o
+# script concluiu que as imagens da release "não servem para esta VPS" — foi
+# construir aqui e morreu no OOM do `pnpm build`.
+#
+# Reexportar com o valor que ACABOU de ser escrito fecha o buraco na origem:
+# quem decide o pull passa a ser o `.env` DESTA versão, não o export da
+# anterior. Lido do ARQUIVO, e não da variável `$politica` de quem chamou,
+# porque o arquivo é a fonte que o Compose usaria sem ambiente — a releitura é o
+# que garante que as duas fontes concordem (inclusive no dia em que a política
+# deixar de ser uma só para as quatro imagens).
+#
+# NÃO é "sempre puxa": o `never` do operador continua valendo em toda execução
+# que não grava imagem nenhuma — as saídas de "nada a atualizar", por exemplo.
+# Esta função só roda de dentro do `gravar_imagens`, que só é chamado quando há
+# versão nova para instalar (ou quando alguém pediu --force).
+reexportar_pull_policies() {  # reexportar_pull_policies <envfile>
+  local envfile="$1" chave valor
+  [ -f "$envfile" ] || return 0
+  for chave in APP_PULL_POLICY WORKER_PULL_POLICY SCHEDULER_PULL_POLICY VOICE_AGENT_PULL_POLICY; do
+    valor="$(sed -n "s/^${chave}=//p" "$envfile" 2>/dev/null | tail -1 | tr -d "\"'")"
+    [ -n "$valor" ] || continue
+    printf -v "$chave" '%s' "$valor"
+    export "$chave"
+  done
+}
+
 # Escreve no .env as três imagens da MESMA versão + o pull_policy que combina
 # com a mutabilidade da tag.
 #
@@ -2827,6 +2922,12 @@ gravar_imagens() {
   # não no `stable` móvel do default do compose.
   set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
   set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
+  # Os `*_PULL_POLICY` também, e AQUI dentro pela mesma razão do WAHA (abaixo):
+  # o `.env` acabou de mudar, mas o ambiente do processo ainda tem o valor do
+  # `load_env` — e é o ambiente que o Compose lê. Sem esta releitura, um
+  # `APP_PULL_POLICY=never` da execução anterior faz o `dc pull` pular o app
+  # justamente na atualização que troca a imagem dele (#5116).
+  reexportar_pull_policies "$envfile"
   # O WAHA de quem já roda em ARM mora AQUI, e não numa linha do update.sh: é
   # esta função que o update.sh ANTIGO chama depois de reler o kit, então é
   # assim que a troca chega já na atualização que a traz. O export vale porque
@@ -3128,6 +3229,46 @@ owner_id_by_email() {
     | head -1 | sed 's/^"id":"//;s/".*//' || return 0
 }
 
+# ── Troca do e-mail de LOGIN: o caminho e o corpo (issue #5073) ──────────────
+# O e-mail de login mora em `auth.users` (GoTrue) e é o identificador da conta.
+# Numa instalação single-server o instalador cria o dono como `admin@<domínio>`,
+# que quase nunca é uma caixa de verdade: "esqueci minha senha" e os avisos por
+# e-mail não chegam a ninguém. `change-email.sh` conserta isso pela admin API,
+# no molde do `reset-password.sh`.
+#
+# Estas duas peças são PURAS (montam string, não tocam a rede) para que a prova
+# do payload rode sem VPS nem GoTrue: `test-validators.sh` confere as duas, e o
+# PR da #5073 mediu o corpo REAL com um servidor HTTP de mentira.
+#
+# `email_confirm: true` não é enfeite: sem ele o GoTrue manda a confirmação
+# para o endereço NOVO e a troca fica PENDENTE até alguém clicar no link — numa
+# instalação sem SMTP (o estado de um primeiro deploy) esse e-mail nunca sai, e
+# o dono termina com um login que não existe em lugar nenhum. É o mesmo
+# `email_confirm: true` com que o instalador cria o dono (install.sh).
+#
+# O `%/` come a barra final do NEXT_PUBLIC_SUPABASE_URL (quem edita o .env à mão
+# deixa uma) para não nascer `//auth/v1`, que o proxy pode tratar como outro
+# caminho.
+url_admin_user() { printf '%s/auth/v1/admin/users/%s' "${NEXT_PUBLIC_SUPABASE_URL%/}" "${1:?uid}"; }
+
+# O corpo é montado com `printf` e não com `jq`: o consumidor já validou o
+# endereço antes (só [A-Za-z0-9._%+-]@[A-Za-z0-9.-]), então não há aspa nem
+# barra invertida para escapar — e o kit não fica dependendo do `jq` num script
+# de emergência.
+#
+# A guarda devolve 1 (e não chama `die`): isto roda em substituição de comando,
+# e um `exit 1` ali mataria só o subshell — o `curl` seguiria com o corpo vazio.
+# Quem chama trata o status na atribuição: `corpo="$(…)" || die`.
+corpo_troca_de_email() {
+  case "${1:-}" in
+    *\"*|*\\*|"")
+      printf 'endereço impróprio para o corpo JSON: %s\n' "${1:-<vazio>}" >&2
+      return 1
+      ;;
+  esac
+  printf '{"email":"%s","email_confirm":true}' "$1"
+}
+
 # Ativa (idempotente) o cron que dispara o drain de eventos a cada minuto. SEM
 # isso, nenhuma automação/webhook roda num self-host: neste kit os workers são
 # lidos por cron, não por trigger→HTTP nem fila gerenciada (doutrina do
@@ -3354,7 +3495,10 @@ trocar_segredo_do_cron_vazado() {
   # andamento (quem a dirige ainda fala com a senha velha), nem duas vezes ao
   # mesmo tempo (update.sh no terminal e agent.sh no cron).
   local tem_cadeado=""
-  if command -v flock >/dev/null 2>&1; then
+  # O update.sh de terminal já segura o `.update.lock` (#5052): um `flock -n`
+  # num descritor novo falharia contra o próprio processo e a troca sairia calada.
+  if [ -n "${TRAVA_PROPRIA:-}" ]; then :
+  elif command -v flock >/dev/null 2>&1; then
     exec 8>"${dir}/.update.lock"
     flock -n 8 || { exec 8>&-; return 0; }
     tem_cadeado=1
@@ -3753,3 +3897,206 @@ ultima_release_estavel() {
     *) printf '' ;;
   esac
 }
+
+
+# ── Espaço em disco, retenção de backup e poda de imagens (#4837) ──────────
+# Vivem AQUI, e não num arquivo próprio, porque o `_common.sh` é o único do kit
+# que todo mundo carrega com `source` DURO — e os fixtures da suíte copiam uma
+# lista fixa de arquivos do kit. Um módulo novo teria de entrar nessa lista em
+# cada fixture, e esquecer um deles não dá um vermelho que fale de espaço: dá a
+# atualização morrendo na linha do `source`, com vinte e tantos casos dizendo
+# "a atualização não explicou nada" (o mesmo tropeço já documentado em
+# tests/shell/update-guard.test.sh sobre o manutencao.sh).
+# ── Espaço em disco ─────────────────────────────────────────────────────────
+
+espaco_livre_kb() {  # espaco_livre_kb <diretório> → KB livres (rc 1 se não mediu)
+  local dir="${1:-.}" kb
+  # `-P` é POSIX: sem quebrar a linha em nomes longos de sistema de arquivos, que
+  # é o que faz o `awk NR==2` ler a linha errada e devolver lixo. `-k` fixa a
+  # unidade em KB — a conta daqui é toda em KB, sem parsear "1,2G".
+  kb="$(df -Pk -- "$dir" 2>/dev/null | awk 'NR==2 { print $4 }')"
+  case "$kb" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$kb"
+}
+
+kb_em_gb() {  # kb_em_gb <KB> → "12,3 GB" (texto para o operador)
+  awk -v kb="${1:-0}" 'BEGIN { printf "%.1f GB", kb / 1048576 }'
+}
+
+tamanho_do_ultimo_backup_kb() {  # tamanho_do_ultimo_backup_kb <dir> → KB
+  # O backup desta atualização é do tamanho do último que deu certo; medir o
+  # mais recente de cada tipo é a estimativa mais barata e mais fiel que existe.
+  local dir="${1:-}" glob f total=0
+  [ -n "$dir" ] || { printf '0'; return 0; }
+  for glob in 'db-*.sql.gz' 'waha-*.tgz' 'storage-*.tgz'; do
+    # SC2086 é proposital: o glob tem de ser expandido pelo shell.
+    # shellcheck disable=SC2086
+    f="$(ls -1t -- "$dir"/$glob 2>/dev/null | head -n 1)"
+    [ -n "$f" ] || continue
+    total=$(( total + $(stat -c %s -- "$f" 2>/dev/null || printf 0) / 1024 ))
+  done
+  printf '%s' "$total"
+}
+
+tamanho_das_imagens_em_uso_kb() {  # soma o tamanho das imagens desta instalação
+  local img bytes soma=0
+  for img in "${APP_IMAGE:-}" "${WORKER_IMAGE:-}" "${SCHEDULER_IMAGE:-}" "${VOICE_AGENT_IMAGE:-}"; do
+    [ -n "$img" ] || continue
+    bytes="$(docker image inspect --format '{{.Size}}' "$img" 2>/dev/null | head -n 1)"
+    case "$bytes" in ''|*[!0-9]*) continue ;; esac
+    soma=$(( soma + bytes / 1024 ))
+  done
+  printf '%s' "$soma"
+}
+
+espaco_necessario_kb() {  # → KB que a atualização precisa ter livres
+  # O piso é o chamado de última hora: quando `docker image inspect` não
+  # responde (daemon parado, imagem ainda não baixada), não há o que medir, e
+  # 1 GB é o mínimo para um pull não deixar o disco zerado no meio. Com medição,
+  # a conta das imagens + backup domina o piso em toda instalação real.
+  local piso_mb="${DESKCOMM_ESPACO_MINIMO_MB:-1024}" imagens backups medido
+  case "$piso_mb" in ''|*[!0-9]*) piso_mb=1024 ;; esac
+  imagens="$(tamanho_das_imagens_em_uso_kb)"
+  backups="$(tamanho_do_ultimo_backup_kb "${BACKUP_DIR:-${PROJECT_DIR:-.}/backups}")"
+  # O pull grava as camadas novas ANTES de as antigas perderem a referência, e o
+  # backup desta atualização ocupa o mesmo que o anterior. Os 20% de folga
+  # cobrem a diferença de compressão e o diretório temporário do Docker.
+  medido=$(( (${imagens:-0} + ${backups:-0}) * 12 / 10 ))
+  if [ "$medido" -gt $(( piso_mb * 1024 )) ]; then
+    printf '%s' "$medido"
+  else
+    printf '%s' $(( piso_mb * 1024 ))
+  fi
+}
+
+# Preenchidas por `checar_espaco_para_atualizacao` — o chamador formata a
+# mensagem com os dois números, em vez de raparsar texto.
+ESPACO_LIVRE_KB=""
+ESPACO_NECESSARIO_KB=""
+
+checar_espaco_para_atualizacao() {  # 0 = pode seguir; 1 = falta espaço
+  local livre necessario
+  ESPACO_LIVRE_KB=""; ESPACO_NECESSARIO_KB=""
+  if ! livre="$(espaco_livre_kb "${PROJECT_DIR:-.}")"; then
+    # Não conseguir medir NÃO é motivo para impedir a atualização: numa VPS com
+    # `df` quebrado, recusar trocaria um risco por uma parada garantida — e o
+    # pior caso da guarda é justamente virar ela mesma a falha.
+    c_ylw "⚠ não consegui medir o espaço livre em disco (df falhou) — sigo sem a checagem de espaço."
+    return 0
+  fi
+  necessario="$(espaco_necessario_kb)"
+  ESPACO_LIVRE_KB="$livre"; ESPACO_NECESSARIO_KB="$necessario"
+  [ "$livre" -ge "$necessario" ] || return 1
+  return 0
+}
+
+mensagem_de_espaco_curto() {  # texto pronto para o `refuse` do update.sh
+  local piso_mb="${DESKCOMM_ESPACO_MINIMO_MB:-1024}"
+  case "$piso_mb" in ''|*[!0-9]*) piso_mb=1024 ;; esac
+  cat <<EOF
+Atualização NÃO começou — nada foi parado, nada foi baixado, e a versão atual segue no ar.
+  Falta espaço em disco: há $(kb_em_gb "$ESPACO_LIVRE_KB") livres e esta atualização precisa de $(kb_em_gb "$ESPACO_NECESSARIO_KB").
+  A conta é o maior entre o piso de ${piso_mb} MB (DESKCOMM_ESPACO_MINIMO_MB, no .env) e o tamanho das imagens em uso mais o do último backup, com 20% de folga.
+  O que libera espaço sem apagar dado nenhum:
+    docker system df                                  # quem está ocupando o disco
+    docker image prune -f --filter "until=168h"       # só camadas sem tag, mais velhas que 7 dias
+    bash hostgator-setup-kit/backup.sh --podar        # aplica a retenção dos backups agora
+  NUNCA use "docker system prune --volumes": os volumes guardam o pareamento do WhatsApp e o banco.
+  Aumentar o disco da VPS também resolve — a atualização continua exatamente daqui.
+EOF
+}
+
+# ── Retenção de backup ──────────────────────────────────────────────────────
+
+podar_backups() {  # podar_backups <diretório> <manter por tipo>
+  local dir="${1:-}" manter="${2:-14}" glob total apagados=0 i
+  local -a lista
+  [ -n "$dir" ] || return 0
+  case "$manter" in
+    ''|*[!0-9]*) c_ylw "⚠ BACKUP_KEEP inválido ('$manter'): uso 14."; manter=14 ;;
+  esac
+  # ZERO não é política de retenção: apagaria o backup que a atualização acabou
+  # de fazer, que é o único que importa se o banco quebrar agora. O piso é 1.
+  [ "$manter" -ge 1 ] || manter=1
+  for glob in 'db-*.sql.gz' 'waha-*.tgz' 'storage-*.tgz'; do
+    lista=()
+    mapfile -t lista < <(ls -1t -- "$dir"/$glob 2>/dev/null || true)
+    total=${#lista[@]}
+    [ "$total" -gt "$manter" ] || continue
+    # `ls -1t` já vem do mais novo para o mais antigo: o que passa do limite é
+    # o mais ANTIGO, e é ele que sai primeiro.
+    for (( i = manter; i < total; i++ )); do
+      if rm -f -- "${lista[$i]}"; then
+        apagados=$(( apagados + 1 ))
+        c_dim "  apagado: ${lista[$i]##*/}"
+      else
+        c_ylw "⚠ não consegui apagar ${lista[$i]##*/} — ele segue no disco"
+      fi
+    done
+  done
+  if [ "$apagados" -gt 0 ]; then
+    c_grn "✓ backups antigos: $apagados apagado(s); mantendo os $manter mais recentes de cada tipo"
+  fi
+  return 0
+}
+
+# ── Poda de imagens ─────────────────────────────────────────────────────────
+
+podar_imagens_nao_usadas() {  # nunca aborta: a atualização já deu certo quando roda
+  if [ "${DESKCOMM_PODA_IMAGENS:-1}" != "1" ]; then
+    c_dim "  (poda de imagens desligada: DESKCOMM_PODA_IMAGENS=0 no .env)"
+    return 0
+  fi
+  # 1) Camadas soltas. `docker image prune` SEM `-a`: só o que já perdeu a tag.
+  #    `until=168h` poupa o que uma atualização em voo acabou de baixar, e
+  #    `dangling=true` explícito deixa registrado na saída o que foi alvo.
+  #    NUNCA `prune -a`: ele leva embora a imagem da versão anterior, que é
+  #    justamente para onde a volta automática precisa ir.
+  if ! docker image prune -f --filter "dangling=true" --filter "until=168h" >/dev/null 2>&1; then
+    c_ylw "⚠ a poda de camadas soltas não rodou (Docker ocupado?) — a atualização está concluída, siga com ela."
+  fi
+  podar_versoes_antigas_das_nossas_imagens || true
+  return 0
+}
+
+podar_versoes_antigas_das_nossas_imagens() {
+  # As imagens de terceiros (WAHA, Redis, Caddy, Supabase) NÃO entram: outra
+  # pilha Docker na mesma VPS usa as mesmas tags, e o kit não é dono delas.
+  local atual="${APP_IMAGE##*:}" anterior="" refs img usadas tag
+  if [ -f "${PROJECT_DIR:-.}/.deskcomm-env-antes-do-update" ]; then
+    # Lido pelo `load_env` do kit, não por `sed`: o snapshot vem no encoding de
+    # `envq` (aspas, escapes), e cortar por `sed` deixava a aspa de fecho dentro
+    # do nome da tag — o resultado era a versão da volta ser apagada.
+    anterior="$(
+      load_env "${PROJECT_DIR:-.}/.deskcomm-env-antes-do-update" >/dev/null 2>&1
+      printf '%s' "${APP_IMAGE:-}"
+    )"
+    anterior="${anterior##*:}"
+  fi
+  # Contêiner parado também conta: `docker image rm` se recusaria a apagar (e
+  # recusar é o certo — não se usa --force aqui de jeito nenhum). A lista evita
+  # a tentativa e o aviso inútil no meio da saída da atualização.
+  usadas="$(docker ps -a --format '{{.Image}}' 2>/dev/null || true)"
+  for refs in "${IMG_APP:-}" "${IMG_WORKER:-}" "${IMG_SCHEDULER:-}" "${IMG_VOICE_AGENT:-}"; do
+    [ -n "$refs" ] || continue
+    docker image ls --format '{{.Repository}}:{{.Tag}}' "$refs" 2>/dev/null | while IFS= read -r img; do
+      [ -n "$img" ] || continue
+      tag="${img##*:}"
+      # Só tag de versão. As nossas imagens são publicadas e gravadas no .env
+      # SEM o `v` (update.sh: VERSAO_ALVO="${TARGET_TAG#v}"); o `v[0-9]*` fica
+      # para tag escrita à mão. `stable`, `latest`, `local` e `<none>` são
+      # canais móveis ou lixo de build: mexer neles muda o que o compose sobe.
+      case "$tag" in
+        v[0-9]*|[0-9]*.[0-9]*.[0-9]*) ;;
+        *) continue ;;
+      esac
+      if [ "$tag" = "$atual" ] || [ "$tag" = "$anterior" ]; then continue; fi
+      case " $usadas " in *" $img "*) continue ;; esac
+      if docker image rm "$img" >/dev/null 2>&1; then
+        c_dim "  imagem antiga removida: $img"
+      fi
+    done
+  done
+  return 0
+}
+

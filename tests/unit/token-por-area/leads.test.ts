@@ -76,6 +76,8 @@ const PIPELINE_A = "a3333333-3333-4333-8333-aaaaaaaaaaaa";
 const PIPELINE_B = "b3333333-3333-4333-8333-bbbbbbbbbbbb";
 /** Um SEGUNDO funil da organização A: destino do clone (o da B não serve a A). */
 const PIPELINE_A_DESTINO = "a3333333-3333-4333-8333-aaaaaaaaaac2";
+/** A cópia que a transação do clone devolve, no funil de destino de A. */
+const CLONE_A = "a1111111-1111-4111-8111-aaaaaaaaac10";
 const ETAPA_A = "a4444444-4444-4444-8444-aaaaaaaaaaaa";
 const ETAPA_B = "b4444444-4444-4444-8444-bbbbbbbbbbbb";
 const ETAPA_A_DESTINO = "a4444444-4444-4444-8444-aaaaaaaaaac3";
@@ -553,6 +555,21 @@ const CASOS: readonly Caso[] = [
     papelDoToken: undefined,
     recurso: "crm_leads",
     recursoDoTeto: "leads_clone",
+    // A cópia, os vínculos e o fecho da origem são uma transação no banco (#5229).
+    // A consulta (sem linha e sem fecho) não acha cópia aberta; a gravação devolve a nova.
+    rpc: {
+      fn_levar_negocio_para_funil: (args: Record<string, unknown>) =>
+        args.p_linha == null && args.p_fechamento == null
+          ? { data: null }
+          : {
+              data: {
+                clone: { ...(args.p_linha as Record<string, unknown>), id: CLONE_A },
+                origem: { ...LEADS.find((l) => l.id === LEAD_A), status: "lost" },
+                criou: true,
+                fechou: true,
+              },
+            },
+    },
     status: 201,
     cria: true,
     audita: true,
@@ -899,6 +916,11 @@ async function comoSessao(c: Caso) {
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: PESSOA_DA_SESSAO, idioma: "pt-BR" } },
+        error: null,
+      }),
+      // O clone repassa as claims da sessão à transação (#5229).
+      getClaims: vi.fn().mockResolvedValue({
+        data: { claims: { sub: PESSOA_DA_SESSAO, session_id: "sessao-1", aal: "aal1", role: "authenticated" } },
         error: null,
       }),
     },

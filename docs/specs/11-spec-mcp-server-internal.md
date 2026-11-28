@@ -189,13 +189,50 @@ inputSchema: z.object({
 })
 ```
 
+#### `crm_count_conversations`
+**Maps to**: `countConversationsHandler` (`app/api/v1/conversations/_handler.ts`) — sem rota REST própria.
+
+Conta conversas **sem listá-las**. Existe porque `crm_list_conversations` pagina de 50 em 50 e traz a prévia da última mensagem: quem precisa de "quantas conversas abertas?" acabava levando mensagens ao modelo só para contar. Devolve só números.
+
+```ts
+inputSchema: z.object({
+  status: z.enum(['open', 'pending', 'claimed', 'ai_handling', 'closed', 'archived']).optional()
+})
+outputSchema: z.object({
+  total: z.number().int(),
+  by_status: z.record(z.number()).optional() // só sem filtro de status: os seis status
+})
+```
+
+Mesma régua de visibilidade da listagem: `organization_id` na primeira cláusula (client service-role), conversa de contato pessoal e de canal desativado não contam e, em conversa de atendimento, conta apenas as conversas do contato do turno. Contagem feita no banco (`head: true`, `count: 'exact'`).
+
 #### `crm_get_conversation`
 **Maps to**: `GET /api/v1/conversations/:id`
 
 ```ts
 inputSchema: z.object({ conversation_id: z.string().uuid() })
-outputSchema: ConversationDetail (with last_message_at, contact, channel_session)
+outputSchema: ConversationDetail (with service_revision, sector_id, last_inbound_message_id, last_message_at, contact, channel_session)
 ```
+
+#### `crm_close_conversation`
+**Maps to**: `POST /api/v1/conversations/:id/close` (escopo `conversations:write`; proibido para `ai_agent`)
+
+Aceita encerramento condicional seguro (`safe_close`) com validação atômica via `fn_safe_close_conversation`:
+
+```ts
+inputSchema: z.object({
+  conversation_id: z.string().uuid(),
+  expected_revision: z.number().int().positive().optional(),
+  safe_close: z.boolean().optional(),
+  expected_status: z.enum(['open', 'pending', 'claimed', 'ai_handling', 'closed', 'resolved', 'archived']).optional(),
+  expected_last_inbound_message_id: z.string().uuid().nullable().optional(),
+  expected_assigned_to_user_id: z.string().uuid().nullable().optional(),
+  expected_sector_id: z.string().uuid().nullable().optional(),
+  idempotency_key: z.string().min(1).max(200).optional()
+})
+```
+O modo condicional liga com `safe_close: true` ou com qualquer `expected_*` além de `expected_revision` (que sozinho segue o encerramento de sempre; `idempotency_key` não liga o modo). Nele, `expected_revision` e `expected_last_inbound_message_id` são obrigatórios (sem eles, 422), e a recusa por humano atribuído e por pendência aberta é sempre aplicada.
+Em caso de divergência ou pendência aberta, retorna `409 Conflict` (`error.details.reason`).
 
 #### `crm_get_conversation_history`
 **Maps to**: `GET /api/v1/messages?conversation_id=...&limit=...`
@@ -289,7 +326,8 @@ inputSchema: z.object({
   media_url: z.string().url().optional(),
   media_storage_path: z.string().optional(),   // #5034
   media_filename: z.string().optional(),       // #5034 (caminho e nome ficam fora da auditoria)
-  media_mime: z.string().optional()
+  media_mime: z.string().optional(),
+  dispatch_mode: z.enum(['operational', 'institutional']).optional() // #5284: apenas token de integração com messages:institutional (bloqueado para ai_agent)
 })
 // Precisa de body, media_url ou media_storage_path.
 ```
@@ -415,7 +453,7 @@ A versão do agente armazena `tool_ids text[]` (Spec 10 §3.2). Validação no p
 ```ts
 const VALID_TOOL_IDS = [
   'crm_search_contacts', 'crm_get_contact',
-  'crm_list_conversations', 'crm_get_conversation', 'crm_get_conversation_history',
+  'crm_list_conversations', 'crm_count_conversations', 'crm_get_conversation', 'crm_get_conversation_history',
   'crm_list_leads', 'crm_count_leads', 'crm_get_lead', 'crm_list_pipelines',
   'crm_send_whatsapp_message', 'crm_create_lead', 'crm_update_lead', 'crm_move_lead_stage',
   'crm_request_human_handoff'

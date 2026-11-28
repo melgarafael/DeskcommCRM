@@ -171,6 +171,11 @@ export interface HandlerCtx {
    * o ctx não — falha fechada, nunca grava por omissão.
    */
   onBehalfOf?: { userId: string; userName?: string | null; tokenName?: string | null };
+  /**
+   * Presente SOMENTE quando o ingresso (REST ou MCP) validou o escopo
+   * `messages:institutional` para envio sem efeitos colaterais no atendimento.
+   */
+  dispatchMode?: "institutional";
   requestId: string;
   /**
    * Idioma de quem chamou, só quando é um usuário humano de verdade — as

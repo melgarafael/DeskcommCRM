@@ -335,6 +335,44 @@ describe("o que a borda recusa — e diz por quê", () => {
     expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "false");
   });
 
+  it("o adicional do card puxado já tem outro compromisso como principal → recusa", () => {
+    const inter = interacao();
+    montar({
+      interacao: inter,
+      agendamentos: [
+        compromisso({ id: "maria", de: "14:00", ate: "14:30", responsaveis: ["p2"] }),
+        compromisso({ id: "joao", de: "14:30", ate: "15:00", responsavelId: "p2" }),
+      ],
+    });
+    puxar("maria", "14:30", "14:45");
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "false");
+    soltar("14:45");
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({
+      id: "maria",
+      duracaoMin: null,
+      razao: "já há um compromisso neste horário",
+    }));
+  });
+
+  it("o outro compromisso tem o principal do card puxado como adicional → recusa", () => {
+    const inter = interacao();
+    montar({
+      interacao: inter,
+      agendamentos: [
+        compromisso({ id: "maria", de: "14:00", ate: "14:30" }),
+        compromisso({ id: "joao", de: "14:30", ate: "15:00", responsavelId: "p2", responsaveis: ["p1"] }),
+      ],
+    });
+    puxar("maria", "14:30", "14:45");
+    expect(screen.getByTestId("fantasma-da-duracao")).toHaveAttribute("data-valido", "false");
+    soltar("14:45");
+    expect(inter.onMudarDuracao).toHaveBeenCalledWith(expect.objectContaining({
+      id: "maria",
+      duracaoMin: null,
+      razao: "já há um compromisso neste horário",
+    }));
+  });
+
   it("confere a agenda da RESPONSÁVEL mesmo quando o filtro a esconde da grade", () => {
     // Bruno isolado no filtro: o card em que ele é convidado aparece, o da Ana
     // às 14:30 não. A prévia tem de ver a ocupação inteira, não a desenhada.

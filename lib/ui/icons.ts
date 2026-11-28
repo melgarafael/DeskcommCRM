@@ -41,6 +41,9 @@ export {
   // Evolução da IA), e um terceiro gráfico deixaria as três linhas do menu
   // indistinguíveis de relance. Mesma família Phosphor, mesmo peso.
   Megaphone,
+  // Vendas (Análise › Vendas): o cifrão separa a tela de dinheiro das telas
+  // de gráfico vizinhas (Desempenho usa ChartBar).
+  CurrencyDollar,
   // health dashboard
   WifiHigh,
   Brain,
@@ -107,6 +110,7 @@ export {
   InstagramLogo,
   MessengerLogo,
   TelegramLogo,
+  TiktokLogo,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,

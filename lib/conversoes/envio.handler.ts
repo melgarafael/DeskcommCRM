@@ -43,15 +43,20 @@
 import { canalQueReportaConversao } from "@/lib/channels/conversao-pelo-canal";
 import type { ChannelConversionInput, ChannelConversionResult } from "@/lib/channels/types";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
-import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
+import { lerCredencial, type DestinoGoogle } from "@/lib/plataformas-de-anuncio/credenciais";
 import { transporteDe, ehPlataformaConhecida } from "@/lib/plataformas-de-anuncio/registry";
 import type {
   ConversaoOffline,
   NomeDoEvento,
   ResultadoDeEnvio,
+  ApiDeConversaoGoogle,
 } from "@/lib/plataformas-de-anuncio/types";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lerAtribuicao } from "./leitura-da-atribuicao";
+import {
+  lerAtribuicao,
+  motivoDeContaDaEtapaGoogle,
+  type LeituraDeAtribuicao,
+} from "./leitura-da-atribuicao";
 import { lerValorDaConversa } from "./valor-da-conversa";
 import { lerVendaPeloCanal } from "./venda-pelo-canal";
 import { ehEventoDeEtapa } from "./regras-google";
@@ -83,6 +88,8 @@ export interface EventoDeEtapa {
   evento?: NomeDoEvento;
   googleActionId?: string;
   eventoMeta?: string;
+  destinoGoogle?: DestinoGoogle;
+  googleDestinationExplicit?: boolean;
 }
 
 export async function processarConversao(
@@ -101,14 +108,26 @@ export async function processarConversao(
   if (!row.entity_id) return ok("skipped", "sem_entidade");
 
   const admin = createAdminClient();
+  const etapaGoogle = qualificacao !== undefined && !qualificacao.eventoMeta;
 
   // ⚠️ Filtro de organização junto do id: o client é service-role e bypassa RLS.
-  const { data, error } = await admin
+  const campos = etapaGoogle
+    ? "id, status, value_cents, currency, closed_at, contact_id, source_metadata"
+    : "id, status, value_cents, currency, closed_at, contact_id";
+  const { data: lead, error } = await admin
     .from("crm_leads")
-    .select("id, status, value_cents, currency, closed_at, contact_id")
+    .select(campos)
     .eq("id", row.entity_id)
     .eq("organization_id", row.organization_id)
-    .maybeSingle();
+    .maybeSingle<{
+      id: string;
+      status: string;
+      value_cents: number | null;
+      currency: string | null;
+      closed_at: string | null;
+      contact_id: string | null;
+      source_metadata?: unknown;
+    }>();
 
   if (error) {
     // Erro de leitura é transitório por natureza (rede/banco). Marcar `error`
@@ -120,16 +139,7 @@ export async function processarConversao(
       detail: `leitura do lead falhou: ${error.message}`,
     };
   }
-  if (!data) return ok("skipped", "lead_inexistente");
-
-  const lead = data as {
-    id: string;
-    status: string;
-    value_cents: number | null;
-    currency: string | null;
-    closed_at: string | null;
-    contact_id: string | null;
-  };
+  if (!lead) return ok("skipped", "lead_inexistente");
 
   // O filtro que faz `lead.stage_changed` valer a pena escutar: a grande maioria
   // das mudanças de etapa não é fechamento, e sai por aqui sem tocar no banco de
@@ -141,25 +151,28 @@ export async function processarConversao(
     return ok("skipped", "ja_enviada");
   }
 
-  const leitura =
+  const leitura: LeituraDeAtribuicao =
     registro?.remote_request_id && ehPlataformaConhecida(registro.platform)
       ? {
-          temAtribuicao: true as const,
+          temAtribuicao: true,
           atribuicao: { plataforma: registro.platform, cliqueDeOrigem: "", telefone: null },
         }
-      : await lerAtribuicao(admin, row.organization_id, lead.contact_id);
+      : await lerAtribuicao(
+          admin,
+          row.organization_id,
+          lead.contact_id,
+          etapaGoogle ? lead : undefined,
+        );
   if (!leitura.temAtribuicao) return ok("skipped", leitura.motivo);
 
-  const { plataforma, cliqueDeOrigem, telefone } = leitura.atribuicao;
-  // Presente só na captura de PÁGINA (formulário): o ramo do protocolo
-  // pendente monta a atribuição sem identidade de navegador, e o `in` cobre o
-  // tipo sem inventar campo.
-  const identidadeDoNavegador =
-    "identidadeDoNavegador" in leitura.atribuicao ? leitura.atribuicao.identidadeDoNavegador : undefined;
-  const identificadoresGoogle =
-    "identificadoresGoogle" in leitura.atribuicao
-      ? leitura.atribuicao.identificadoresGoogle
-      : undefined;
+  const {
+    plataforma,
+    cliqueDeOrigem,
+    telefone,
+    identidadeDoNavegador,
+    identificadoresGoogle,
+    contaGoogleDoClique,
+  } = leitura.atribuicao;
   // A regra de etapa é de UMA plataforma: o lead que veio da outra não é dela.
   // Sai sem linha no livro-razão — não há pendência, havia nada a reportar.
   if (qualificacao && !qualificacao.eventoMeta && plataforma !== "google_ads")
@@ -173,6 +186,17 @@ export async function processarConversao(
   let moedaDaVenda: string | null = lead.currency;
   /** De onde veio o valor (ou por que faltou), quando ele foi lido da conversa. */
   let detalheDoValor: string | null = null;
+  // Credenciais são substituíveis; a identidade do envio não. Protocolos
+  // antigos sem retrato continuam no destino global, sem inferir pela regra.
+  let destinoGoogle = registro?.google_customer_id
+    ? {
+        customerId: registro.google_customer_id,
+        loginCustomerId: registro.google_login_customer_id ?? null,
+      }
+    : qualificacao?.destinoGoogle;
+  let apiGoogle: ApiDeConversaoGoogle | undefined = registro?.google_api ?? undefined;
+  let destinoExplicito =
+    registro?.google_destination_explicit ?? qualificacao?.googleDestinationExplicit ?? false;
 
   const registra = (
     status: "sent" | "skipped" | "error",
@@ -199,6 +223,14 @@ export async function processarConversao(
             ocorridoEm: registro?.event_occurred_at ?? qualificacao.ocorridoEm,
             googleActionId: registro?.google_action_id ?? qualificacao.googleActionId,
             metaEventName: registro?.meta_event_name ?? qualificacao.eventoMeta,
+            ...(!registro?.remote_request_id && destinoGoogle
+              ? {
+                  googleCustomerId: destinoGoogle.customerId,
+                  googleLoginCustomerId: destinoGoogle.loginCustomerId,
+                  googleApi: apiGoogle,
+                  googleDestinationExplicit: destinoExplicito,
+                }
+              : {}),
           }
         : {}),
       moeda: registro?.remote_request_id ? registro.currency : moedaDaVenda,
@@ -270,6 +302,7 @@ export async function processarConversao(
 
   const credencial = await lerCredencial(admin, row.organization_id, plataforma, {
     exigirAcaoDeVenda: !qualificacao,
+    ...(etapaGoogle && destinoGoogle ? { destinoGoogle } : {}),
   });
   if (!credencial.ok) {
     if (credencial.motivo === "leitura_indisponivel")
@@ -381,6 +414,12 @@ export async function processarConversao(
   }
 
   if (valorPodeVirDaConversa) await lerOValorNaConversa();
+  if (etapaGoogle && credencial.credencial.google) {
+    const google = credencial.credencial.google;
+    if (apiGoogle) google.api = apiGoogle;
+    else apiGoogle = google.api ?? "google_ads";
+    destinoGoogle = { customerId: google.customerId, loginCustomerId: google.loginCustomerId };
+  }
   // O modo de valor é do Google (0436). A Meta exige valor na compra sempre —
   // agora que a decisão dela também passa por aqui, a plataforma é explícita.
   const modoDeValor =
@@ -393,11 +432,36 @@ export async function processarConversao(
   }
   if (!qualificacao && modoDeValor === "nunca") valorDaVenda = null;
 
+  if (qualificacao && plataforma === "google_ads") {
+    if (registro?.remote_request_id) {
+      // O Data Manager confere a conta e a ação do protocolo. Nunca reenviar em seu lugar.
+      if (!transporte.consultar) throw new Error("Consulta do protocolo do Google indisponível.");
+    } else {
+      const motivo = await motivoDeContaDaEtapaGoogle(
+        admin,
+        row.organization_id,
+        contaGoogleDoClique,
+        credencial.credencial.google?.customerId,
+        destinoExplicito,
+      );
+      if (motivo) {
+        await registra("skipped", motivo);
+        return ok("skipped", motivo);
+      }
+    }
+  }
+
   const acaoDoGoogle = registro?.google_action_id ?? qualificacao?.googleActionId;
   if (qualificacao && acaoDoGoogle && credencial.credencial.google) {
     credencial.credencial.google.conversionActionId = acaoDoGoogle;
   }
-  if (qualificacao && !registro?.event_occurred_at) {
+  if (
+    qualificacao &&
+    (!registro?.event_occurred_at ||
+      (etapaGoogle &&
+        (!registro?.google_customer_id || !registro?.google_api) &&
+        !registro?.remote_request_id))
+  ) {
     await registra("skipped", "nova_tentativa_agendada");
     // O primeiro snapshot vence também quando dois movimentos concorrem.
     const salvo = await lerRegistro(admin, row.organization_id, lead.id, EVENTO);
@@ -414,6 +478,35 @@ export async function processarConversao(
       };
       if (credencial.credencial.google)
         credencial.credencial.google.conversionActionId = salvo.google_action_id;
+      if (
+        credencial.credencial.google &&
+        (!salvo.google_customer_id ||
+          !salvo.google_api ||
+          salvo.google_destination_explicit == null)
+      )
+        throw new Error("Destino da qualificação não persistido antes do envio.");
+      if (salvo.google_customer_id && salvo.google_api && credencial.credencial.google) {
+        destinoGoogle = {
+          customerId: salvo.google_customer_id,
+          loginCustomerId: salvo.google_login_customer_id ?? null,
+        };
+        apiGoogle = salvo.google_api;
+        destinoExplicito = salvo.google_destination_explicit === true;
+        Object.assign(credencial.credencial.google, destinoGoogle, { api: apiGoogle });
+        credencial.credencial.datasetId = destinoGoogle.customerId;
+        // Uma execução concorrente pode ter gravado primeiro outro retrato.
+        const motivo = await motivoDeContaDaEtapaGoogle(
+          admin,
+          row.organization_id,
+          contaGoogleDoClique,
+          destinoGoogle.customerId,
+          destinoExplicito,
+        );
+        if (motivo) {
+          await registra("skipped", motivo);
+          return ok("skipped", motivo);
+        }
+      }
     }
   }
 

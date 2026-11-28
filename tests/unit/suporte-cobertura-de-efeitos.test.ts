@@ -53,6 +53,11 @@ it("todo handler mutante do app declara guarda de suporte ou é infraestrutura i
   // Encerrar delegação só revoga a própria sessão, validada por auth.uid/session_id
   // no RPC. Precisa funcionar mesmo depois da revogação da agência.
   if(path==="app/api/v1/agencia/sessao/encerrar/route.ts")continue;
+  // O chat no site (spec 36, F1): as duas POST que o VISITANTE chama não têm sessão de
+  // quem administra; quem autoriza é a chave pública e o token de visitante, conferidos
+  // dentro da rota. O acompanhamento de suporte nunca age por elas. Só estas duas: a
+  // rota de quem administra o canal continua exigindo a guarda.
+  if(/^app\/api\/v1\/webchat\/(sessao|mensagens)\/route\.ts$/.test(path))continue;
   // Busca do token do módulo `connected` (spec 33, F2): quem chama é o servidor do módulo, autenticado
   // pela assinatura do segredo da instalação, sem cookie nem ator — a guarda não teria sessão para ler.
   if(path==="app/api/v1/extensions/token/route.ts")continue;

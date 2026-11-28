@@ -60,6 +60,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       orgId: organizationId,
       userId: actorUserId,
       apiTokenId: authz.apiTokenId ?? null,
+      actor: authz.actor,
       requestId,
     },
     id,

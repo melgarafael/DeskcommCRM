@@ -25,6 +25,7 @@ import { LeadDossier } from "./LeadDossier";
 import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
 import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
 import { camposPorEscopo, camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { motivosDeGanhoDoFunil } from "@/lib/leads/motivo-do-ganho-do-funil";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -490,6 +491,7 @@ export function KanbanBoard({
         }}
         recusa={recusaDeCampos}
         isPending={moveCard.isPending}
+        wonReasons={motivosDeGanhoDoFunil(data.pipeline.settings ?? null)}
         onConfirmar={({ customFields, wonReason }) => {
           if (!recusaDeCampos) return;
           const { args } = recusaDeCampos;

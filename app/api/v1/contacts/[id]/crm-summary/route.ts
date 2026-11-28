@@ -46,6 +46,13 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { isServiceRoleConfigured } from "@/lib/audit";
+import { logger } from "@/lib/logger";
+import {
+  SELECT_DO_TOKEN_DA_ATIVIDADE,
+  tokenDaAtividade,
+  type IntegracaoDaAtividade,
+} from "@/lib/leads/integracao-da-atividade";
 import { situacaoDaRecusaDeOfertas } from "@/lib/lgpd/sem-interesse";
 
 export const dynamic = "force-dynamic";
@@ -70,8 +77,11 @@ const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
  * comando virando linha da timeline, "Transferiu a conversa · Você/time" seria a
  * resposta errada para a pergunta que a entrega existe para responder.
  */
-const ACTIVITY_COLS =
-  "id, type, source_module, performed_at, payload, reason, actor_kind, performed_by_user_id";
+/**
+ * O id do token que agiu (#5160) vem como coluna própria, pelo caminho do
+ * jsonb: o `metadata` inteiro não vai ao navegador.
+ */
+const ACTIVITY_COLS = `id, type, source_module, performed_at, payload, reason, actor_kind, performed_by_user_id, ${SELECT_DO_TOKEN_DA_ATIVIDADE}`;
 /**
  * Passo 4 do cap. 5 — a DEMANDA chega ao lugar onde o humano atende.
  *
@@ -288,18 +298,40 @@ async function responderCrmSummary(
     contactScope.organization_id,
     linhas.map((a) => a.performed_by_user_id ?? null),
   );
+  // E QUAL integração, quando foi um token (#5160): "Integração · Zapier" no
+  // lugar de "Sistema". Mesma janela, mesma degradação declarada.
+  const integracoes = await nomesDosTokens(
+    contactScope.organization_id,
+    linhas.map((a) => tokenDaAtividade(a)),
+  );
 
   return ok(
     {
       ...enrichment,
       leads: leadsResolvidos.map((row) => comCamposDoFunil(row as Record<string, unknown>)),
       orders: orders.data ?? [],
-      activities: linhas.map((a) => ({
-        ...a,
-        performed_by_name: a.performed_by_user_id
-          ? (nomes.get(a.performed_by_user_id) ?? null)
-          : null,
-      })),
+      activities: linhas.map(({ actor_api_token_id: _token, ...a }) => {
+        const token = tokenDaAtividade({ actor_api_token_id: _token });
+        // Leitura feita: só o token que EXISTE nesta organização vira
+        // "Integração" (o app só revoga token, nunca apaga a linha; id que não
+        // casa é de outra empresa ou não é de token nenhum, e segue o rótulo do
+        // ator). Leitura caída: a linha diz que foi um token, só falta o nome,
+        // então "Integração" sem nome.
+        const integracao: IntegracaoDaAtividade = !token
+          ? null
+          : !integracoes.lido
+            ? { nome: null }
+            : integracoes.nomes.has(token)
+              ? { nome: integracoes.nomes.get(token) ?? null }
+              : null;
+        return {
+          ...a,
+          performed_by_name: a.performed_by_user_id
+            ? (nomes.get(a.performed_by_user_id) ?? null)
+            : null,
+          integracao,
+        };
+      }),
       demandas: demandas.data ?? [],
       fatos: fatos.data ?? [], historico: historico.data ?? [],
       ...anuncios,
@@ -307,6 +339,47 @@ async function responderCrmSummary(
     },
     { requestId },
   );
+}
+
+/**
+ * O NOME de cada token que agiu na janela (#5160), lido de `api_tokens.name`.
+ *
+ * Service role porque `api_tokens` não é legível por quem atende; o tenant vai
+ * no filtro (R3 de `admin-client-exige-filtro-de-tenant`), então token de outra
+ * organização não ganha nome. Sem service role, ou com a leitura caída, volta
+ * `lido: false` e a linha diz só "Integração" — nunca derruba o painel.
+ */
+async function nomesDosTokens(
+  orgId: string,
+  tokenIds: Array<string | null>,
+): Promise<{ lido: boolean; nomes: Map<string, string | null> }> {
+  const unicos = [...new Set(tokenIds.filter((id): id is string => Boolean(id)))];
+  if (unicos.length === 0) return { lido: true, nomes: new Map() };
+  if (!isServiceRoleConfigured()) return { lido: false, nomes: new Map() };
+  try {
+    const { data, error } = await createAdminClient()
+      .from("api_tokens")
+      .select("id, name")
+      .eq("organization_id", orgId)
+      .in("id", unicos);
+    if (error) {
+      logger.warn("[crm-summary] nomes dos tokens não lidos", { organizationId: orgId, erro: error.message });
+      return { lido: false, nomes: new Map() };
+    }
+    const nomes = new Map<string, string | null>();
+    for (const linha of (data ?? []) as Array<{ id?: unknown; name?: unknown }>) {
+      if (typeof linha.id !== "string") continue;
+      const nome = typeof linha.name === "string" ? linha.name.trim() : "";
+      nomes.set(linha.id, nome || null);
+    }
+    return { lido: true, nomes };
+  } catch (err) {
+    logger.warn("[crm-summary] leitura dos nomes dos tokens lançou", {
+      organizationId: orgId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    return { lido: false, nomes: new Map() };
+  }
 }
 
 /**

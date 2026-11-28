@@ -1,6 +1,7 @@
 "use client";
 import { TituloDaAgenda } from "@/components/agenda/TituloDaAgenda";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
+import { AgendasDoOutlook } from "@/components/agenda/AgendasDoOutlook";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
@@ -56,6 +57,8 @@ export interface TipoRow {
   reminder_extra_offsets_minutes: number[] | null;
   reminder_body: string | null;
   reminder_bodies: Record<string, string> | null;
+  /** #5154: degraus (minutos) cujo aviso sai sem a linha do link. Vazio = todos levam. */
+  reminder_sem_link_offsets_minutes?: number[] | null;
   default_price_cents: number | null;
 }
 
@@ -123,6 +126,11 @@ type CartaoDeLembrete = {
   quantidade: number;
   unidade: UnidadeDeAntecedencia;
   body: string;
+  /**
+   * A opção por degrau (#5154). Vive no cartão, e não num mapa parallel, para
+   * acompanhar o degrau quando a pessoa muda os minutos ou apaga o aviso.
+   */
+  comLink: boolean;
 };
 
 export interface CanalParaLembrete {
@@ -161,6 +169,7 @@ function LembreteDoCompromisso({
       reminder_extra_offsets_minutes: tipo.reminder_extra_offsets_minutes,
       reminder_body: tipo.reminder_body,
       reminder_bodies: tipo.reminder_bodies,
+      reminder_sem_link_offsets_minutes: tipo.reminder_sem_link_offsets_minutes,
     }).map((p, i) => {
       const u = deMinutos(p.minutes);
       return {
@@ -168,6 +177,7 @@ function LembreteDoCompromisso({
         quantidade: u.quantidade,
         unidade: u.unidade,
         body: p.body,
+        comLink: p.comLink,
       };
     }),
   );
@@ -201,7 +211,18 @@ function LembreteDoCompromisso({
   }
 
   const teto = 1 + TETO_DE_LEMBRETES_EXTRAS;
-  const passos = cartoes.map((c) => ({ minutes: minutosDe(c), body: c.body }));
+  /**
+   * Os dois tipos que têm "link da reunião" para (não) ir: o Meet pendente/
+   * pronto e a sala `video_link` que a equipe escreveu. Os demais nunca ganham
+   * a linha, e um interruptor ali não mudaria nada — por isso não aparece.
+   */
+  const temLinkDaReuniao =
+    tipo.location_kind === "google_meet" || tipo.location_kind === "video_link";
+  const passos = cartoes.map((c) => ({
+    minutes: minutosDe(c),
+    body: c.body,
+    comLink: c.comLink,
+  }));
 
   return (
     <div className="grid gap-3 border-t border-border pt-3">
@@ -387,6 +408,33 @@ function LembreteDoCompromisso({
                   className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
                 />
               </label>
+              {/* #5154: só os tipos com link da reunião ganham o interruptor.
+                  Noutro tipo ele não mudaria nada, e controle que não muda nada
+                  ensina a não confiar nos que mudam. */}
+              {temLinkDaReuniao ? (
+                <label className="flex items-start gap-2 text-xs text-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={c.comLink}
+                    disabled={!ligado}
+                    onChange={(e) => atualizar(c.id, { comLink: e.target.checked })}
+                    data-testid={
+                      i === 0
+                        ? `editar-lembrete-link-${tipo.id}`
+                        : `editar-lembrete-link-${tipo.id}-${i}`
+                    }
+                    className="mt-0.5 size-4 shrink-0 rounded-sm border-border accent-accent disabled:opacity-50"
+                  />
+                  <span className="grid gap-0.5">
+                    <span>{t("Incluir o link da reunião neste lembrete")}</span>
+                    <span className="text-[11px]">
+                      {t(
+                        "Desligado, este aviso sai sem a linha do link e sem a frase de que ele chega pela conversa.",
+                      )}
+                    </span>
+                  </span>
+                </label>
+              ) : null}
             </li>
           );
         })}
@@ -407,6 +455,7 @@ function LembreteDoCompromisso({
                 quantidade: u.quantidade,
                 unidade: u.unidade,
                 body: "",
+                comLink: true,
               },
             ]);
           }}
@@ -416,7 +465,7 @@ function LembreteDoCompromisso({
       ) : null}
       <p className="text-[11px] text-text-muted">
         {t(
-          "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}.",
+          "Deixe a mensagem em branco para o texto padrão. Variáveis: {{nome}}, {{titulo}}, {{dia}}, {{hora}}, {{endereco}}, {{lugar}}.",
         )}
       </p>
     </div>
@@ -434,6 +483,7 @@ export function TiposDeAgendamentoClient({
   podeEditar,
   usuarioAtualId,
   podeConfigurarGoogle,
+  outlook,
   erroDeLeitura = null,
   clientePelaAgendaLigado,
   podeLigarClientePelaAgenda,
@@ -453,6 +503,8 @@ export function TiposDeAgendamentoClient({
   podeEditar: boolean;
   usuarioAtualId: string;
   podeConfigurarGoogle: boolean;
+  /** Ausente = a instalação não tem Outlook e a pessoa não tem conta conectada. */
+  outlook?: { configurado: boolean };
   /** Mensagem do banco quando a consulta FALHOU. `null` = a consulta rodou. */
   erroDeLeitura?: string | null;
   /** `organizations.settings.crm.cliente_pela_agenda`, lido pela página. */
@@ -872,6 +924,7 @@ export function TiposDeAgendamentoClient({
                                 reminder_extra_offsets_minutes: emp.extras,
                                 reminder_body: emp.corpoPrincipal,
                                 reminder_bodies: emp.corposExtras,
+                                reminder_sem_link_offsets_minutes: emp.degrausSemLink,
                               };
                             })()
                           : {}),
@@ -979,6 +1032,7 @@ export function TiposDeAgendamentoClient({
         ))}
       </ul>
       {podeConfigurarGoogle && <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Contas e calendários Google")}</summary><div className="mt-4"><AgendasConectadas /></div></details>}
+      {podeConfigurarGoogle && outlook && <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Contas e calendários do Outlook")}</summary><div className="mt-4"><AgendasDoOutlook configurado={outlook.configurado} /></div></details>}
       <details className="rounded-lg border border-border bg-surface p-4"><summary className="cursor-pointer font-semibold">{t("Regras gerais da agenda")}</summary><div className="mt-4 space-y-4">
         <TituloDaAgenda tituloInicial={tituloDaAgenda} podeEditar={podeEditar}/>
       <PrazosDePresenca podeEditar={podeEditar}/>

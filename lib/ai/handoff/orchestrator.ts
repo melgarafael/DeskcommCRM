@@ -73,7 +73,13 @@ export type HandoffReason =
    * a MESMA constante que o engine grava: dois caminhos param a IA pelo mesmo
    * motivo, e duas grafias fariam quem filtra por uma achar metade das conversas.
    */
-  | "orcamento_de_ia";
+  | "orcamento_de_ia"
+  /** O teto de respostas da IA para visitante anônimo parou o atendimento automático.
+   * NÃO é pedido do lead — o visitante simplesmente esgotou as respostas sem
+   * contato. A primeira frase que o humano digita depende de saber que o cliente
+   * NÃO pediu uma pessoa.
+   */
+  | "teto_do_visitante_anonimo";
 
 export interface TriggerHandoffInput {
   serviceBoundary?: ServiceBoundary;
@@ -134,6 +140,7 @@ const MOTIVO_DA_PASSAGEM = {
   legal_mention: "legal_mention",
   refund_mention: "refund_mention",
   orcamento_de_ia: "orcamento_de_ia",
+  teto_do_visitante_anonimo: "teto_do_visitante_anonimo",
   restricao_comercial: "restricao_comercial",
 } satisfies Record<HandoffReason, MotivoDaPassagem>;
 

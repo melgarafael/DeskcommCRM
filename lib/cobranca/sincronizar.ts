@@ -190,7 +190,11 @@ export async function sincronizar(
   try {
     situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({
       clienteRef: cliente,
-      // Já está na linha: o Efi lê a assinatura por aqui (não tem cliente).
+      // #4862: o recorte é a ORGANIZAÇÃO — o cliente pode ter sido adotado do
+      // painel e carregar assinatura e cobrança de outra integração.
+      organizacao: orgId,
+      // #4056: já está na linha, e o Efi lê a assinatura por aqui (ele não tem
+      // cliente). Stripe e Asaas ignoram o campo.
       assinaturaRef: primeira?.provedor_assinatura_id ?? null,
     });
   } catch (e) {

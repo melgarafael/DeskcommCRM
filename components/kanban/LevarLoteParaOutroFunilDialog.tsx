@@ -87,7 +87,13 @@ export function LevarLoteParaOutroFunilDialog({
   function fechar(next: boolean) {
     if (levando) return; // o laço não é cancelável no meio: fechar esconderia o que já foi
     if (!next) {
-      const houveEfeito = (resultado?.levados.length ?? 0) > 0;
+      // Qualquer cópia criada no destino conta como efeito — inclusive a de
+      // quem falhou DEPOIS de o clone nascer (`cloneId`). Antes só `levados`
+      // contava, e nesse caso o negócio continuava selecionado: o "Levar"
+      // seguinte criava uma segunda cópia no destino (#5102).
+      const houveEfeito =
+        (resultado?.levados.length ?? 0) > 0 ||
+        (resultado?.recusados.some((recusa) => recusa.cloneId) ?? false);
       limpar();
       if (houveEfeito) onConcluido?.();
     }
@@ -133,7 +139,16 @@ export function LevarLoteParaOutroFunilDialog({
           <div className="space-y-2 text-sm" data-testid="resultado-do-lote">
             <p>
               {resultado.levados.length} {t("de")}{" "}
-              {resultado.levados.length + resultado.recusados.length} {t("negócios levados.")}
+              {resultado.levados.length + resultado.recusados.length}{" "}
+              {/* Com um só, "1 de 1 negócios levados." é plural em cima de um
+                  número ímpar (#5232). A contagem continua dizendo tudo: muda
+                  só a palavra, e o par singular mora no dicionário — nada de
+                  plural por heurística sobre palavra livre. */}
+              {t(
+                resultado.levados.length + resultado.recusados.length === 1
+                  ? "negócio levado."
+                  : "negócios levados.",
+              )}
             </p>
             {resultado.recusados.length > 0 ? (
               <div>
@@ -174,7 +189,9 @@ export function LevarLoteParaOutroFunilDialog({
         ) : (
           <>
             <p className="text-sm">
-              {leadIds.length} {t("negócios selecionados.")}
+              {leadIds.length === 1
+                ? `1 ${t("negócio")} ${t("selecionado")}.`
+                : `${leadIds.length} ${t("negócios selecionados.")}`}
               {acimaDoTeto
                 ? ` ${t("Só os 50 primeiros serão levados nesta vez.")}`
                 : null}

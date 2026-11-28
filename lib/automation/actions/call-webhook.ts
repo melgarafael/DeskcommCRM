@@ -194,6 +194,8 @@ function horaDoFato(criadoEm: string | undefined): string {
 // Projeções públicas do envelope — NUNCA repassar a row inteira do DB (vaza
 // organization_id, cpf_*, consent, source_metadata, owner_user_id etc. pra
 // endpoint externo do tenant). Só inclui as chaves presentes na row.
+// A única leitura de `source_metadata` é a CURADA do `attribution` do contato
+// (#5152), chave a chave em `atribuicaoPublica` — o jsonb em si não passa.
 const LEAD_PUBLIC_FIELDS = [
   "id",
   "title",
@@ -229,6 +231,64 @@ const CONTACT_PUBLIC_FIELDS = [
   "tags",
   "created_at",
 ] as const;
+
+/**
+ * O bloco `attribution` do contato (#5152): a origem do ANÚNCIO em lista
+ * FECHADA de chaves, montada da PRÓPRIA row (`contacts.source_metadata`) —
+ * sem consulta nova no caminho do webhook.
+ *
+ * O `source_metadata` cru NUNCA sai: é jsonb genérico e carrega `ad_raw` (o
+ * payload inteiro do transporte), `fbc`/`fbp` e o que mais for gravado. O caso
+ * de uso (ROAS por criativo) precisa cruzar anúncio/campanha, e para cada
+ * chave pública existe uma chave de origem conhecida — a primeira presente e
+ * não vazia vence. `click_id` é o clique (`ad_source_id`: `ctwa_clid` no
+ * clique-pro-WhatsApp, `fbclid`/`gclid` no formulário).
+ *
+ * Nome de campanha é o TEXTO que a metadata já traz (`utm_campaign`), nunca
+ * uma resolução por API: os nomes oficiais de campanha/conjunto/anúncio estão
+ * em `GET /api/v1/contacts/{id}/hierarquia-do-anuncio`, fora do caminho quente.
+ * Sem `source_metadata`, ou sem nenhuma destas chaves, o bloco nem nasce.
+ */
+const CAMPOS_DA_ATRIBUICAO = [
+  ["platform", ["ad_platform"]],
+  ["click_id", ["ad_source_id"]],
+  ["click_source", ["ad_click_source"]],
+  ["ad_id", ["ad_id", "google_ad_id"]],
+  ["campaign_id", ["google_campaign_id", "campaign_id"]],
+  ["campaign_name", ["utm_campaign", "campaign_name"]],
+] as const;
+
+function atribuicaoPublica(sourceMetadata: unknown): Record<string, string> | undefined {
+  if (!sourceMetadata || typeof sourceMetadata !== "object") return undefined;
+  const meta = sourceMetadata as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const [chavePublica, chavesDeOrigem] of CAMPOS_DA_ATRIBUICAO) {
+    for (const chave of chavesDeOrigem) {
+      const valor = meta[chave];
+      if (typeof valor === "string" && valor.trim()) {
+        out[chavePublica] = valor;
+        break;
+      }
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** O contato público + o `attribution`, quando o contato tem origem de anúncio. */
+function contatoPublico(row: unknown): Record<string, unknown> | undefined {
+  const contact = projectPublicFields(row, CONTACT_PUBLIC_FIELDS);
+  if (!contact) return undefined;
+  const linha = row as Record<string, unknown>;
+  // A prospecção grava em `source_metadata.campaign_id` o id da campanha
+  // INTERNA de abordagem (`lib/prospecting/store.ts`), não um anúncio: sair
+  // como `attribution.campaign_id` seria id interno no envelope.
+  const meta =
+    linha.source === "prospecting" && linha.source_metadata && typeof linha.source_metadata === "object"
+      ? { ...(linha.source_metadata as Record<string, unknown>), campaign_id: undefined }
+      : linha.source_metadata;
+  const atribuicao = atribuicaoPublica(meta);
+  return atribuicao ? { ...contact, attribution: atribuicao } : contact;
+}
 
 function projectPublicFields(
   row: unknown,
@@ -410,7 +470,9 @@ export async function executeCallWebhook(
   }
 
   const leadPublic = projectPublicFields(ctx.context.lead, LEAD_PUBLIC_FIELDS);
-  const contactPublic = projectPublicFields(ctx.context.contact, CONTACT_PUBLIC_FIELDS);
+  // O contato público + `attribution` (#5152): a origem sai curada, da própria
+  // row, e `source_metadata` cru continua fora do envelope.
+  const contactPublic = contatoPublico(ctx.context.contact);
   const ownerPublic = await responsavelPublico(ctx, config);
   const compromissoPublic = localDoCompromisso(ctx.context.appointment);
   const entrega = idDaEntrega(ctx.event.id, ctx.ruleId, ctx.actionIndex ?? 0, ctx.ruleActions ?? []);

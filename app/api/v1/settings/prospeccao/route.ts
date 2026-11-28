@@ -74,9 +74,22 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   const settings = ((atual as { settings?: Record<string, unknown> } | null)?.settings ??
     {}) as Record<string, unknown>;
+  // #5179: `prospeccao` é gravada por INTEIRO (a tela manda o formulário da voz
+  // completo), então um PATCH que fala só da voz — ou de qualquer outra chave —
+  // apagaria o interruptor da pausa por omissão. Ele não é da voz: ausente no
+  // corpo, fica o que já está gravado. Desligar é explícito (`false`).
+  const fatiaAtual = (settings.prospeccao ?? {}) as Record<string, unknown>;
+  const prospeccao: Record<string, unknown> = { ...parsed.data };
+  if (
+    parsed.data.nao_pausar_antes_da_primeira_resposta === undefined &&
+    typeof fatiaAtual.nao_pausar_antes_da_primeira_resposta === "boolean"
+  ) {
+    prospeccao.nao_pausar_antes_da_primeira_resposta =
+      fatiaAtual.nao_pausar_antes_da_primeira_resposta;
+  }
   const { error } = await admin
     .from("organizations")
-    .update({ settings: { ...settings, prospeccao: parsed.data } })
+    .update({ settings: { ...settings, prospeccao } })
     .eq("id", authz.organizationId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
@@ -88,8 +101,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     resourceType: "organization",
     resourceId: authz.organizationId,
     requestId,
-    metadata: parsed.data as unknown as Record<string, unknown>,
+    metadata: prospeccao as Record<string, unknown>,
   });
 
-  return ok({ personalizacao: parsed.data }, { requestId });
+  return ok({ personalizacao: prospeccao }, { requestId });
 }
