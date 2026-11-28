@@ -1791,14 +1791,25 @@ async function fecharOLaco(
     return;
   }
 
-  await supabase.from("crm_lead_links").insert({
-    organization_id: ctx.organization_id,
-    lead_id: leadId,
-    target_kind: ALVO_DE_VINCULO_DO_AGENDAMENTO,
-    target_id: args.appointmentId,
-    link_kind: VINCULO_DE_AGENDAMENTO,
-    created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
-  });
+  const { error: linkErr } = await supabase.from("crm_lead_links").upsert(
+    {
+      organization_id: ctx.organization_id,
+      lead_id: leadId,
+      target_kind: ALVO_DE_VINCULO_DO_AGENDAMENTO,
+      target_id: args.appointmentId,
+      link_kind: VINCULO_DE_AGENDAMENTO,
+      created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+    },
+    { onConflict: "lead_id,target_kind,target_id,link_kind", ignoreDuplicates: true },
+  );
+  if (linkErr) {
+    logger.error("[agenda] falha ao vincular compromisso ao negócio", {
+      appointment_id: args.appointmentId,
+      lead_id: leadId,
+      organization_id: ctx.organization_id,
+      error: linkErr.message,
+    });
+  }
 
   await emitLeadActivity(supabase, {
     organizationId: ctx.organization_id,
