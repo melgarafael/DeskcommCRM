@@ -830,14 +830,23 @@ export function AttendantsClient({ canManage, organizationTimezone, setoresLigad
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="md:h-7 md:w-7"
+                            className="md:h-7 md:w-7 lg:w-auto lg:px-2"
                             aria-label={`Editar horário de ${a.name}`}
                             onClick={() => setScheduleFor(a)}
                           >
                             {/* Rótulo visível (item opcional da #2312): achar o
                                 editor era o primeiro problema — ele era só um
                                 ícone solto na coluna. O `aria-label` fica, é ele
-                                que a automação e o leitor de tela usam. */}
+                                que a automação e o leitor de tela usam.
+
+                                `lg:w-auto`: o tamanho `icon` fixa 36 px a partir
+                                de `lg` (`lg:w-9`), e o `md:w-7` só vale entre 768
+                                e 1023 px. Com o rótulo visível a partir de `lg`,
+                                a caixa de 36 px não cabia ícone + texto — a #5230
+                                mediu `scrollWidth` 51 contra 36, com o conteúdo
+                                passando 15 px para cada lado. Largura automática
+                                com padding, e não `sr-only`, porque o rótulo à
+                                vista é o que a #2312 pediu. */}
                             <Clock size={16} />
                             <span className="ml-1 hidden lg:inline">{t("Editar")}</span>
                           </Button>
