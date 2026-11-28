@@ -73,9 +73,22 @@ export function WinLeadDialog({
   const [recusa, setRecusa] = useState<string | null>(null);
 
   const temLista = motivos.length > 0;
+  /**
+   * A ESCOLHA SÓ VALE ENQUANTO EXISTIR NA LISTA ATUAL (#5340).
+   *
+   * `motivoDaLista` é estado do CLIQUE; `motivos` é a lista do FUNIL, e o funil
+   * muda por fora — outra pessoa edita, o quadro recarrega, e a lista que volta
+   * já não tem o que estava marcado. Guardar a escolha antiga sem conferir a
+   * prop deixava o rádio marcado num valor que o servidor acabou de recusar com
+   * `won_reason_invalid`, com "Confirmar ganho" habilitado para repetir o 422.
+   * Derivar da prop (em vez de só limpar no clique) é o que reconcilia o estado
+   * local com a lista que a caixa está mostrando agora.
+   */
+  const escolhaDaLista =
+    temLista && motivos.includes(motivoDaLista) ? motivoDaLista : "";
   // Com lista, o que vale é a escolha; sem lista, o texto digitado. O `trim` é
   // o mesmo do servidor (`recusaDeMotivoDoGanho` apara antes de comparar).
-  const motivo = temLista ? motivoDaLista : textoLivre.trim();
+  const motivo = temLista ? escolhaDaLista : textoLivre.trim();
 
   const mutation = useWinLead(pipelineId, {
     // A recusa é da CAIXA, não do toast: o texto é o mesmo da rota, para a
@@ -130,7 +143,7 @@ export function WinLeadDialog({
                     type="radio"
                     name="won-reason"
                     value={opcao}
-                    checked={motivoDaLista === opcao}
+                    checked={escolhaDaLista === opcao}
                     onChange={(e) => {
                       setMotivoDaLista(e.target.value);
                       setRecusa(null);
