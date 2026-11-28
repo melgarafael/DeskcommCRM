@@ -105,8 +105,12 @@ describe("store.message busca pela PK e só cai no metadata se a PK não achar",
     expect(await pgSendLedger(db).message("org", "k")).toEqual({ id: "k", status: "sent" });
     expect(db.sqls).toHaveLength(1);
     expect(db.sqls[0]).toMatch(/\bid=\$2/);
-    expect(db.sqls[0]).not.toContain("metadata");
-    expect(db.params[0]).toEqual(["org", "k"]);
+    // A busca sem índice (`metadata->>'idempotency_key'`) não acontece. O que lê
+    // `metadata` aqui é só a PROJEÇÃO da natureza da recusa
+    // (`lib/channels/falha-de-envio.ts`), nunca filtro.
+    expect(db.sqls[0]).not.toContain("idempotency_key");
+    expect(db.sqls[0]!.split(/\bwhere\b/i)[1]).not.toContain("metadata");
+    expect(db.params[0]).toEqual(["org", "k", "falha_de_envio"]);
   });
 
   it("pg: PK vazia → reserva pelo metadata (linha anterior à convenção)", async () => {
@@ -130,26 +134,42 @@ describe("store.message busca pela PK e só cai no metadata se a PK não achar",
       return q;
     });
     const sb = { from } as unknown as SupabaseClient;
-    expect(await supabaseSendLedger(sb).message("org", "k")).toEqual({ id: "k", status: "sent" });
+    expect(await supabaseSendLedger(sb).message("org", "k")).toEqual({
+      id: "k",
+      status: "sent",
+      metadata: { falha_de_envio: null },
+    });
     expect(filtros).toEqual([[["organization_id", "org"], ["id", "k"]]]);
   });
 });
 
 describe("pacing: sem varrer o histórico do número", () => {
-  it("dois subselects pelo índice, mesmo lastSentAt/sentToday", async () => {
+  it("três subselects pelo índice: lastSentAt, sentToday e abordagensToday", async () => {
     const ultimo = new Date("2026-10-02T13:00:00Z");
-    const db = fakeDb([[{ last_sent_at: ultimo, sent_today: "3" }]]);
+    const db = fakeDb([[{ last_sent_at: ultimo, sent_today: "3", abordagens_today: "2" }]]);
     const estado = await loadPacingState(db, "org", "sess", {
       now: new Date("2026-10-02T15:00:00Z"),
       timezone: "America/Sao_Paulo",
       numberActivatedAt: null,
     });
-    expect(estado).toEqual({ lastSentAt: ultimo, sentToday: 3, numberActivatedAt: null });
+    // O terceiro subselect veio com o teto por abordagem (#3851): a MESMA ida ao
+    // banco passou a devolver o recorte que o motor usa quando o canal liga a
+    // opção — uma segunda consulta só para isso seria custo em todo canal.
+    expect(estado).toEqual({
+      lastSentAt: ultimo,
+      sentToday: 3,
+      abordagensToday: 2,
+      numberActivatedAt: null,
+    });
     const sql = (db.sqls[0] ?? "").replace(/\s+/g, " ");
     expect(sql).not.toMatch(/filter|max\(/i);
     expect(sql).toContain("order by sent_at desc limit 1");
     // Resposta não gasta o teto do dia (9061): a contagem exclui a coluna `resposta`.
     expect(sql).toMatch(/and sent_at >= \$3 and not resposta\) as sent_today/);
+    // A contagem do teto por abordagem usa o MESMO molde e o mesmo filtro de dia.
+    expect(sql).toMatch(
+      /and sent_at >= \$3 and not resposta and abordagem\) as abordagens_today/,
+    );
     // Meia-noite de São Paulo = 03:00Z: o início do dia vem do `now` injetado.
     expect(db.params[0]).toEqual(["org", "sess", new Date("2026-10-02T03:00:00Z")]);
   });

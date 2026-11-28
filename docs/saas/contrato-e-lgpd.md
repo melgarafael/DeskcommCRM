@@ -69,6 +69,16 @@ escreva-a à mão seguindo as mesmas regras:
   declara o país; consulte a política do provedor" — omitir esconde uma transferência que existe;
 - endpoint próprio ou modelo local aparecem como **"no servidor do operador"**.
 
+O catálogo registra também as duas respostas que faltavam para esta lista não ser escrita à mão
+(#4518): `motivoDaRegiaoNaoDeclarada` diz, provedor por provedor, **por que** não há país declarado —
+a OpenAI declara residência por projeto, a Gemini Developer API não publica a lista de países, o
+OpenRouter varia a cada chamada, e os demais não têm fonte citável — e
+`ondeExecutaComEndpointProprio` diz o que acontece com o lugar quando a base URL é trocada: o texto
+passa a ir para o host configurado e o país do catálogo deixa de valer. Ao escrever a cláusula à
+mão, use as duas: motivo genérico ("não declara") é a resposta de quem não conferiu. A cláusula
+gerada ainda não imprime esses dois campos; a tela e o documento que os mostram são as issues
+seguintes.
+
 A data acompanha a **linha de quem declarou** (`fonteDoPais.consultadoEm`). A conferência das
 **sedes** pelo catálogo tem data própria (`CONSULTA_DOS_PAISES_EM`), e é essa que o parágrafo cita
 quando alguma linha fala de sede: ela diz quando ESTE catálogo conferiu as sedes, não que o

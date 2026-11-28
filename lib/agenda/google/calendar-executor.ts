@@ -1,16 +1,140 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { doEventoDoGoogle, type EventoDoGoogle } from "./evento";
+import { logger } from "@/lib/logger";
+import { doEventoDoGoogle, estaCancelado, type EventoDoGoogle, type MotivoDeRecusa } from "./evento";
 import { ehEventoNosso } from "./escrita";
 import { classificarErroDoGoogle } from "./erros";
 import { googleTransport, GoogleHttpError, type GoogleFetch } from "./transport";
 import { calendarSnapshotSchema, googleRpc, type CalendarFence } from "./sync-store";
 import { reconcileAppointment, tokenForConnection } from "./sync-executor";
 
+/**
+ * Extrai classe, código e constraint de um erro do banco para registro estruturado,
+ * sem carregar texto livre de erro (LGPD / PII).
+ */
+export function diagnosticoDeErro(erro: unknown): {
+  class: string | null;
+  code: string | null;
+  constraint: string | null;
+} {
+  if (!erro || typeof erro !== "object") {
+    return { class: null, code: null, constraint: null };
+  }
+  const e = erro as {
+    code?: unknown;
+    class?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+    details?: unknown;
+  };
+  const rawCode =
+    typeof e.code === "string" && e.code.trim().length > 0 ? e.code.trim() : null;
+  const rawClass =
+    typeof e.class === "string" && e.class.trim().length > 0
+      ? e.class.trim()
+      : rawCode && rawCode.length >= 2
+        ? rawCode.slice(0, 2)
+        : null;
+
+  let constraint: string | null = null;
+  if (typeof e.constraint === "string" && e.constraint.trim().length > 0) {
+    constraint = e.constraint.trim();
+  } else {
+    const pistas = [e.message, e.details].filter(
+      (p): p is string => typeof p === "string" && p.length > 0,
+    );
+    for (const texto of pistas) {
+      const match =
+        /(?:violates (?:check |unique |foreign key )?constraint|constraint) ["']?([a-zA-Z0-9_]+)["']?/i.exec(
+          texto,
+        );
+      if (match?.[1]) {
+        constraint = match[1];
+        break;
+      }
+    }
+  }
+
+  return {
+    class: rawClass,
+    code: rawCode,
+    constraint,
+  };
+}
+
+/**
+ * O evento do Google que a leitura recusou, nomeado com o dia e a hora DE PAREDE.
+ *
+ * Sem isto a rodada seguinte relê a mesma página para sempre e a tela repete a
+ * frase genérica: o operador não tem como saber QUAL evento corrigir no Google.
+ * A frase carrega a data e a hora como a tela do Google as mostra — e só isso.
+ * Título e pessoa ficam de fora de propósito: o texto é persistido e sai na
+ * tela, e conteúdo de terceiro não viaja para lá.
+ */
+export class EventoRecusadoNaLeitura extends Error {
+  constructor(
+    /** Motivo nomeado do parser, para o log e o programador; fica FORA da frase da tela (código cru não é texto para quem opera). */
+    readonly motivo: MotivoDeRecusa,
+    /** Dia (e hora, quando o evento tem) de parede, pronto para a tela. */
+    readonly quando: string,
+  ) {
+    super(
+      `O evento de ${quando} tem horário que a leitura não consegue usar. Corrija ou remova esse evento no Google Agenda.`,
+    );
+    this.name = "EventoRecusadoNaLeitura";
+  }
+}
+
+/**
+ * O evento foi criado por este sistema, mas o compromisso que o publicou não
+ * existe mais no banco (#5109).
+ *
+ * Só chega aqui o evento que ainda OCUPA horário: a lápide cancelada sem par é
+ * podada antes, porque não há o que reconciliar. A frase carrega o dia e a hora
+ * de parede — e nada do conteúdo do evento (título, pessoa), pela mesma tesoura
+ * de privacidade do `EventoRecusadoNaLeitura`.
+ */
+export class EventoDoProdutoSemVinculo extends Error {
+  constructor(
+    /** Dia (e hora, quando o evento tem) de parede, pronto para a tela. */
+    readonly quando: string,
+  ) {
+    super(
+      `O evento de ${quando} foi criado por este sistema, mas não tem mais compromisso correspondente. Corrija ou remova esse evento no Google Agenda.`,
+    );
+    this.name = "EventoDoProdutoSemVinculo";
+  }
+}
+
+/** `YYYY-MM-DD` com hora opcional, exatamente como o Google devolve o `start`. */
+const DATA_DE_PAREDE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
+
+/**
+ * O dia e a hora de PAREDE do evento, do jeito que a tela do Google mostra.
+ *
+ * Lido do texto cru, sem converter fuso: a hora de parede é justamente a que a
+ * pessoa vê lá. Converter mandaria o operador procurar o evento no dia errado
+ * sempre que ele cruza a meia-noite.
+ */
+function quandoDoEvento(evento: EventoDoGoogle): string {
+  const inicio = evento.start;
+  const texto = (inicio?.dateTime ?? inicio?.date ?? "").trim();
+  const m = DATA_DE_PAREDE.exec(texto);
+  if (!m) return "data ilegível";
+  const [, ano, mes, dia, hora, minuto] = m;
+  return hora && minuto ? `${dia}/${mes}/${ano} às ${hora}:${minuto}` : `${dia}/${mes}/${ano}`;
+}
+
 /** A frase persistida quando a leitura incremental do Google falha. */
 export function mensagemDaRecusaDeLeitura(erro: unknown): string {
   if (erro instanceof GoogleHttpError) {
     return classificarErroDoGoogle(erro, "sincronizar").mensagem;
   }
+  // A recusa do evento é diagnóstica por natureza: data e hora já passaram pelo
+  // recorte que remove título e pessoa, então a frase pode ir para a tela.
+  if (erro instanceof EventoRecusadoNaLeitura) return erro.message;
+  // Mesma regra para o evento do produto sem vínculo (#5109): a frase nomeia o
+  // evento e o que fazer, e nada mais.
+  if (erro instanceof EventoDoProdutoSemVinculo) return erro.message;
   return "A leitura não terminou. Tente sincronizar novamente nas configurações.";
 }
 
@@ -124,11 +248,20 @@ export async function syncCalendar(
         pruneIds.add(eventId);
         continue;
       }
-      if (ehEventoNosso(event.id))
-        throw new Error("Evento do produto sem vínculo. Revise a publicação antiga.");
+      if (ehEventoNosso(event.id)) {
+        // Lápide do produto sem par (#5109): o compromisso que a publicou foi
+        // excluído, então não há o que reconciliar. Podar em vez de lançar —
+        // lançar aqui derrubava a página inteira a cada leitura, inclusive na
+        // completa, e a agenda nunca mais sincronizava.
+        if (estaCancelado(event)) {
+          pruneIds.add(eventId);
+          continue;
+        }
+        throw new EventoDoProdutoSemVinculo(quandoDoEvento(event));
+      }
       const read = doEventoDoGoogle(event, { fusoDoCalendario: timeZone! });
       if (read.tipo === "recusado")
-        throw new Error("Evento inválido. A leitura não foi concluída.");
+        throw new EventoRecusadoNaLeitura(read.motivo, quandoDoEvento(event));
       if (read.tipo === "cancelado") {
         items.push({
           external_event_id: read.externalEventId,
@@ -140,6 +273,10 @@ export async function syncCalendar(
       }
       const begins = Date.parse(read.evento.starts_at);
       const ends = Date.parse(read.evento.ends_at);
+      if (!(ends > begins)) {
+        pruneIds.add(eventId);
+        continue;
+      }
       if (ends <= windowStart || begins >= windowEnd) {
         pruneIds.add(eventId);
         continue;
@@ -170,6 +307,16 @@ export async function syncCalendar(
     fence.cursor = saved.sync_cursor ?? fence.cursor;
     return saved.sync_cursor ? "partial" : "complete";
   } catch (e) {
+    const diag = diagnosticoDeErro(e);
+    logger.warn("[agenda.google.sync] leitura da agenda falhou", {
+      class: diag.class,
+      code: diag.code,
+      constraint: diag.constraint,
+      // A frase que a tela mostra também vai para o log (#5109): sem ela o log
+      // só tinha class/code/constraint e a causa real se perdia. É a versão
+      // SANITIZADA — a mensagem crua do erro continua fora do log (LGPD/PII).
+      message: mensagemDaRecusaDeLeitura(e),
+    });
     try {
       if (e instanceof GoogleHttpError && e.status === 410) await call("reset");
       else await call("error", { message: mensagemDaRecusaDeLeitura(e) });

@@ -151,6 +151,21 @@ describe("aplicaGatilhoDeEtapa — o que NÃO dispara", () => {
     expect(s.enrolled).toBe(0);
   });
 
+  it("reordenar o cartão dentro da MESMA etapa (from == to) não inscreve, mesmo com fluxo armado nela", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeEtapa(
+      {
+        db: fakeDb({ pointers: [pointerArmado], registro: reg }),
+        gateDb: fakeGate([{ agentId: AGENT, pointerIds: [POINTER] }]),
+        clock: CLOCK,
+      },
+      evento({ payload: { from_stage_id: ETAPA_DESTINO, to_stage_id: ETAPA_DESTINO } }),
+    );
+    expect(s.matched).toBe(false);
+    expect(reg.contatoConsultado).toBe(0);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
   it("sem fluxo armado, NÃO vai ao banco atrás do contato — a maioria dos movimentos de card cai aqui", async () => {
     const reg = registro();
     await aplicaGatilhoDeEtapa(
@@ -227,6 +242,7 @@ describe("aplicaGatilhoDeEtapa — o enrollment que nasce", () => {
         pointer_id: POINTER,
         version_id: VERSION,
         contact_id: CONTATO,
+        lead_id: NEGOCIO,
         current_node_id: "t1",
         agent_id: AGENT,
       },

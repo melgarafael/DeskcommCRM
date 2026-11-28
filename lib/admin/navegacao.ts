@@ -156,6 +156,13 @@ export const ADMIN_DESTINATIONS: readonly AdminDestination[] = [
     icon: CalendarBlank,
   },
   {
+    href: "/admin/microsoft",
+    label: "Agenda do Outlook",
+    description: "Aplicativo da Microsoft: cliente e segredo para a agenda",
+    group: "canais",
+    icon: CalendarBlank,
+  },
+  {
     href: "/admin/meta",
     label: "API Oficial (Meta)",
     description: "App da Meta: chave secreta e token do webhook do WhatsApp oficial",

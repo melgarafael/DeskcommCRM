@@ -3,17 +3,22 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useState } from "react";
 
-import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
+import { Button } from "@/components/ui/button";
+import { useAttendantMetrics, type AttendantMetric, type AttendantMetrics } from "@/hooks/metrics/useAttendantMetrics";
 import { EmptyState } from "@/components/empty/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatarDuracao } from "@/lib/metrics/canais";
-import { WarningOctagon } from "@/lib/ui/icons";
+import type { DiasDoPeriodo, JanelaIso } from "@/lib/metrics/periodo-do-desempenho";
+import { urlDaExportacao } from "@/lib/relatorios/vendas-csv";
+import { DownloadSimple, WarningOctagon } from "@/lib/ui/icons";
 import { AtritoPanel } from "./AtritoPanel";
 import { CanaisPanel } from "./CanaisPanel";
 import { MetaDoMesPanel, type EstadoDaMeta } from "./MetaDoMesPanel";
 import { PerdasPanel } from "./PerdasPanel";
+import { PeriodoDoDesempenho } from "./PeriodoDoDesempenho";
 import { PrevisaoPanel } from "./PrevisaoPanel";
 import { SeriePanel } from "./SeriePanel";
+import { type FunilDaSerie } from "@/hooks/metrics/useSerieTemporal";
 import { useMetasDoMes } from "@/hooks/metrics/useMetasDoMes";
 import { janelaDoMes, mesLocal } from "@/lib/metas/periodo";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
@@ -51,13 +56,29 @@ function attendantLabel(a: AttendantMetric, t: (texto: string) => string): strin
 interface Props {
   canCompare: boolean;
   currentUserId: string;
+  fuso: string;
+  /**
+   * Os funis da organização, para o recorte dos ganhos (#4918). Vêm do
+   * componente de SERVIDOR, como no Kanban: `GET /api/v1/pipelines` exige
+   * manager+ e `/app/metrics` é de qualquer papel — um agent que pedisse a
+   * lista por ali levaria 403 e ficaria sem o seletor.
+   */
+  funis: FunilDaSerie[];
 }
 
-export function MetricsClient({ canCompare, currentUserId }: Props) {
+export function MetricsClient({ canCompare, currentUserId, fuso, funis }: Props) {
   const t = useT();
   const [owner, setOwner] = useState<string>(ALL);
   const selectedOwner = owner === ALL ? null : owner;
-  const { data, isLoading, isError, refetch } = useAttendantMetrics(selectedOwner);
+  const [periodo, setPeriodo] = useState<{ dias: DiasDoPeriodo; janela: JanelaIso } | null>(null);
+  const [reinicio, setReinicio] = useState(0);
+  const { data, isLoading, isError, isFetching, refetch } =
+    useAttendantMetrics(selectedOwner, periodo?.janela ?? null, reinicio);
+  const metrics = isError ? undefined : data?.data;
+  // Sem datas escolhidas, o relógio do servidor define os últimos 30 dias.
+  // Se a leitura por atendente falhar, as outras rotas ainda podem consultar
+  // seus últimos 30 dias como faziam antes de compartilhar a janela.
+  const janela = periodo?.janela ?? metrics?.window ?? (isLoading ? undefined : null);
   // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
 
@@ -67,6 +88,18 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   // nenhuma de dado.
   const [janelaDaMeta] = useState(() => janelaDoMes(mesLocal()));
   const metasDoMes = useMetasDoMes(janelaDaMeta);
+  // #4796: a meta do vendedor precisa de NOME no painel. A lista da equipe é a
+  // mesma que o filtro de atendente já carrega; quem não pode vê-la (agent) cai
+  // no rótulo genérico "Vendedor", porque o número continua valendo.
+  const nomesDaEquipe = Object.fromEntries(
+    (team.data?.data ?? []).map((membro) => [
+      membro.user_id,
+      rotuloDoMembro(
+        { full_name: membro.full_name, email: membro.email, user_id: membro.user_id },
+        t,
+      ),
+    ]),
+  );
   const estadoDaMeta: EstadoDaMeta = metasDoMes.isLoading
     ? "carregando"
     : metasDoMes.isError || !metasDoMes.data
@@ -75,68 +108,22 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         ? "vazio"
         : "ok";
 
-  // ─── CARREGANDO: a SILHUETA da tela, não a palavra "Carregando…" ──────────
-  //
-  // Era `<p>Carregando…</p>`: uma linha de texto cinza no alto de uma tela
-  // vazia. Esqueleto com a forma certa faz a espera parecer continuação;
-  // retângulo genérico — ou uma frase — faz parecer que a página trocou. É o
-  // que o resto do produto já faz (`app/app/kanban/loading.tsx` desenha 5
-  // colunas × 3 cards, `components/agenda/estados.tsx` desenha a grade).
-  //
-  // As três faixas abaixo são as três seções reais: o filtro de atendente, os
-  // painéis de atrito/perdas/previsão, e a tabela por atendente.
-  if (isLoading) {
-    return (
-      <div
-        className="flex flex-col gap-6"
-        aria-busy="true"
-        aria-label={t("Carregando o desempenho")}
-      >
-        {canCompare ? <Skeleton className="h-10 w-64" /> : null}
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-48 w-full" />
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-40" />
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── ERRO: diz o que houve e oferece saída ────────────────────────────────
-  //
-  // Era `<p class="text-destructive">Erro ao carregar métricas.</p>` — uma frase
-  // vermelha solta no alto de uma tela em branco, sem ícone, sem explicação e
-  // sem nada para clicar. Visto na captura de 360px: a tela inteira era o
-  // título, a descrição e aquela linha.
-  //
-  // O `EmptyState` da casa é o mesmo componente que as telas vazias usam, então
-  // a tela de erro passa a ter a mesma forma das outras — e um "Tentar de novo"
-  // que de fato refaz a consulta, em vez de pedir F5.
-  if (isError || !data) {
-    return (
-      <EmptyState
-        icon={WarningOctagon}
-        headline="Não consegui carregar o desempenho"
-        subcopy="Pode ser uma falha de rede, ou este painel pode não estar incluído no plano da sua empresa."
-        primary={{ label: t("Tentar de novo"), onClick: () => void refetch() }}
-      />
-    );
-  }
-
-  const metrics = data.data;
-  const funnelTotal = metrics.funnel.reduce((acc, s) => acc + s.count, 0);
-  const maxCount = Math.max(1, ...metrics.funnel.map((s) => s.count));
-
   return (
     <div className="flex flex-col gap-6">
+      <PeriodoDoDesempenho
+        fuso={fuso}
+        aplicado={periodo?.dias ?? null}
+        onApply={(dias, janelaAplicada) => setPeriodo({ dias, janela: janelaAplicada })}
+        onClear={() => {
+          setPeriodo(null);
+          setReinicio((anterior) => anterior + 1);
+        }}
+      />
       {canCompare ? (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">{t("Atendente")}</span>
           <Select value={owner} onValueChange={setOwner}>
-            <SelectTrigger className="w-full max-w-64">
+            <SelectTrigger className="w-full max-w-64" aria-label={t("Atendente")}>
               <SelectValue placeholder={t("Todos os atendentes")} />
             </SelectTrigger>
             <SelectContent>
@@ -151,6 +138,16 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
                 ))}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            disabled={!metrics || isFetching}
+            onClick={() => {
+              if (metrics) window.location.href = urlDaExportacao(metrics.owner_user_id, metrics.window);
+            }}
+          >
+            <DownloadSimple size={16} weight="bold" aria-hidden />
+            <span>{t("Exportar vendas")}</span>
+          </Button>
         </div>
       ) : null}
 
@@ -158,11 +155,11 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           inteiro, ao qual as métricas de área se subordinam (doutrina §3.6).
           Não filtra por atendente — atrito é propriedade do sistema, e quebrá-lo
           por pessoa convida a otimização local que degrada o todo. */}
-      <AtritoPanel podeEditarRegua={canCompare} />
+      <AtritoPanel podeEditarRegua={canCompare} janela={janela} />
 
       {/* Relatório "Perdas" (#1537): manager+, porque é o funil inteiro — o
           mesmo critério do /metrics para quem compara. */}
-      {canCompare ? <PerdasPanel /> : null}
+      {canCompare && <PerdasPanel janela={janela} />}
 
       {/* Previsão ponderada do funil (issue #1535): por mês × moeda, com os
           baldes "sem data" e "sem probabilidade" à parte. Depois do atrito de
@@ -182,12 +179,59 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         metas={metasDoMes.data?.data.metas ?? []}
         podeConfigurar={canCompare}
         valores={metasDoMes.data?.data.valores_do_periodo ?? null}
+        nomes={nomesDaEquipe}
       />
 
+      {isLoading ? (
+        <div aria-busy="true" aria-label={t("Carregando o desempenho")} className="flex flex-col gap-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : metrics ? (
+        <ResultadosPorAtendente
+          metrics={metrics}
+          canCompare={canCompare}
+          currentUserId={currentUserId}
+        />
+      ) : (
+        <EmptyState
+          icon={WarningOctagon}
+          headline="Não consegui carregar o desempenho"
+          subcopy="Tente novamente ou escolha um período menor."
+          primary={{ label: t("Tentar de novo"), onClick: () => void refetch() }}
+        />
+      )}
+
+      {/* Relatório "Por canal" (issue #2390): o mesmo corte de período e de
+          atendente da página, agora pelo NÚMERO — a unidade de trabalho da
+          operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
+          escopa: agent vê as próprias conversas, manager+ a organização. */}
+      <CanaisPanel owner={selectedOwner} janela={janela} />
+      <SeriePanel funis={funis} janela={janela} />
+    </div>
+  );
+}
+
+
+function ResultadosPorAtendente({
+  metrics,
+  canCompare,
+  currentUserId,
+}: {
+  metrics: AttendantMetrics;
+  canCompare: boolean;
+  currentUserId: string;
+}) {
+  const t = useT();
+  const funnelTotal = metrics.funnel.reduce((acc, etapa) => acc + etapa.count, 0);
+  const maxCount = Math.max(1, ...metrics.funnel.map((etapa) => etapa.count));
+
+  return (
+    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {t("Funil")} {selectedOwner ? t("do atendente") : ""} · {funnelTotal}{" "}
+            {t("Funil atual")} {metrics.owner_user_id ? t("do atendente") : ""} · {funnelTotal}{" "}
             {funnelTotal === 1 ? t("aberto") : t("abertos")}
           </CardTitle>
         </CardHeader>
@@ -268,13 +312,6 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
           )}
         </CardContent>
       </Card>
-
-      {/* Relatório "Por canal" (issue #2390): o mesmo corte de período e de
-          atendente da página, agora pelo NÚMERO — a unidade de trabalho da
-          operação (rodízio #1330). Fora do filtro de atendente a RLS é quem
-          escopa: agent vê as próprias conversas, manager+ a organização. */}
-      <CanaisPanel owner={selectedOwner} />
-      <SeriePanel />
-    </div>
+    </>
   );
 }

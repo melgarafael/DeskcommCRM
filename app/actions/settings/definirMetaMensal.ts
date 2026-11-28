@@ -1,12 +1,29 @@
 "use server";
 
 /**
- * Cadastra a META MENSAL da empresa para um indicador (issue #3025, fatia 1).
+ * Cadastra a META MENSAL da empresa para um indicador (issue #3025, fatia 1;
+ * meta em VALOR na #4796).
  *
  * ─── O que esta action resolve ──────────────────────────────────────────────
  * A tela de Desempenho só mostrava o realizado. O alvo existia na cabeça de
  * quem cobra o time: aqui ele passa a ser LINHA (`crm_metas`, migration 0756),
  * com mês, indicador e alvo — e a leitura do progresso vira conta, não memória.
+ *
+ * ─── DOIS indicadores agora, e o antigo não muda de régua ──────────────────
+ * `vendas_ganhas` (quantidade) segue sendo o DEFAULT: meta antiga, gravada
+ * antes do campo existir, continua valendo por quantidade — trocar o default
+ * mudaria o número que quem já usa vê. `valor_vendido` grava o alvo em CENTAVOS
+ * (a unidade de `crm_leads.value_cents`), porque R$ 500.000,00 em reais
+ * quebrados não cabe numa coluna inteira com centavo. A tela digita em reais e
+ * converte aqui mesmo, com `Math.round`.
+ *
+ * ─── Três níveis: empresa, funil e vendedor ────────────────────────────────
+ * `pipeline_id` nulo e `vendedor_id` nulo é a meta da EMPRESA; `pipeline_id`
+ * preenchido é a do funil; `vendedor_id` preenchido é a do vendedor. Os três
+ * são gravados aqui (o funil desde a #4796; a leitura e o Desempenho já o
+ * entendiam). A meta do vendedor não aceita funil junto: duas dimensões na mesma
+ * linha tornariam "a meta do vendedor" ambígua (é a constraint
+ * `crm_metas_dono_ou_funil`), e a recusa sai aqui, antes do banco.
  *
  * ─── Quem escreve, e por quê ────────────────────────────────────────────────
  * `manager+`, o mesmo grau de `definirMeetAberto` e da porta da tela
@@ -43,6 +60,8 @@ export type DefinirMetaMensalResult =
       ok: false;
       error:
         | "validation_failed"
+        | "vendedor_fora_da_equipe"
+        | "funil_invalido"
         | "unauthenticated"
         | "forbidden_tenant"
         | "forbidden_role"
@@ -51,16 +70,45 @@ export type DefinirMetaMensalResult =
       details?: unknown;
     };
 
-/** O único indicador desta fatia: quantidade de vendas ganhas. */
-const INDICADOR_DA_FATIA = "vendas_ganhas" as const;
+/**
+ * O teto do alvo por indicador. Quantidade é venda contada (1 milhão já é
+ * absurdo); valor é centavo, e o teto cabe no `integer` da coluna
+ * (2.147.483.647) com folga para R$ 20 milhões.
+ */
+const TETO_DA_QUANTIDADE = 1_000_000;
+const TETO_DO_VALOR_EM_CENTAVOS = 2_000_000_000;
 
-const entradaSchema = z.object({
-  // 'YYYY-MM': o mês é o que a pessoa escolhe; o DIA é sempre o 1º, e quem
-  // garante isso é a action (a constraint da tabela recusa qualquer outro).
-  periodo: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mês inválido"),
-  indicador: z.literal(INDICADOR_DA_FATIA).default(INDICADOR_DA_FATIA),
-  alvo: z.number().int().min(1).max(1_000_000),
-});
+const entradaSchema = z
+  .object({
+    // 'YYYY-MM': o mês é o que a pessoa escolhe; o DIA é sempre o 1º, e quem
+    // garante isso é a action (a constraint da tabela recusa qualquer outro).
+    periodo: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mês inválido"),
+    // Sem indicador = quantidade: é o que a meta antiga significa.
+    indicador: z.enum(["vendas_ganhas", "valor_vendido"]).default("vendas_ganhas"),
+    // Nulo = meta da empresa; preenchido = meta daquele vendedor.
+    vendedor_id: z.string().uuid().nullish(),
+    // Preenchido = meta daquele funil (#4796). Nunca junto com vendedor.
+    pipeline_id: z.string().uuid().nullish(),
+    alvo: z.number().int().min(1),
+  })
+  .superRefine((valor, ctx) => {
+    if (valor.vendedor_id && valor.pipeline_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pipeline_id"],
+        message: "A meta é do vendedor ou do funil, não dos dois",
+      });
+    }
+    const teto =
+      valor.indicador === "valor_vendido" ? TETO_DO_VALOR_EM_CENTAVOS : TETO_DA_QUANTIDADE;
+    if (valor.alvo > teto) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["alvo"],
+        message: "Alvo acima do teto do indicador",
+      });
+    }
+  });
 
 export type DefinirMetaMensalInput = z.input<typeof entradaSchema>;
 
@@ -89,21 +137,66 @@ export async function definirMetaMensal(
   const supabase = await createClient();
   const orgId = activeOrg.orgId;
   const { periodo, indicador, alvo } = parsed.data;
+  const vendedorId = parsed.data.vendedor_id ?? null;
+  const pipelineId = parsed.data.pipeline_id ?? null;
   const primeiroDia = `${periodo}-01`;
 
-  // A linha do mês, na organização ativa. `pipeline_id is null` é a meta da
-  // EMPRESA — o recorte por funil é a fatia seguinte e não é gravado aqui.
-  const { data: existente, error: erroLeitura } = await supabase
-    .from("crm_metas")
-    .select("id, alvo")
-    .eq("organization_id", orgId)
-    .eq("periodo", primeiroDia)
-    .eq("indicador", indicador)
-    .is("pipeline_id", null)
-    .maybeSingle();
+  // O vendedor tem de ser MEMBRO ATIVO da organização: a FK só garante que o id
+  // existe em `auth.users`, e a meta individual é de alguém DESTA empresa que
+  // ainda está nela (vínculo revogado não conta). A recusa tem código PRÓPRIO
+  // (#4986): com `validation_failed` a tela dizia "o mês e o alvo precisam estar
+  // preenchidos", com os dois preenchidos.
+  if (vendedorId) {
+    const { data: membro, error: erroMembro } = await supabase
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", orgId)
+      .eq("user_id", vendedorId)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (erroMembro) return { ok: false, error: "erro_ao_gravar", details: erroMembro.message };
+    if (!membro) {
+      return { ok: false, error: "vendedor_fora_da_equipe" };
+    }
+  }
+
+  // O funil tem de ser DESTA organização e estar em uso: o id vem do
+  // formulário, e a FK só garante que ele existe em algum lugar. Arquivado não
+  // recebe meta nova (some do seletor; a meta antiga dele continua lida).
+  if (pipelineId) {
+    const { data: funil, error: erroFunil } = await supabase
+      .from("crm_pipelines")
+      .select("id")
+      .eq("id", pipelineId)
+      .eq("organization_id", orgId)
+      .eq("is_archived", false)
+      .maybeSingle();
+    if (erroFunil) return { ok: false, error: "erro_ao_gravar", details: erroFunil.message };
+    if (!funil) return { ok: false, error: "funil_invalido" };
+  }
+
+  // A linha do mês, na organização ativa, pela MESMA chave do índice único
+  // parcial que vale para o dono: empresa (funil e vendedor nulos), vendedor ou
+  // funil — mês + indicador + dono.
+  const lerMeta = () => {
+    let consulta = supabase
+      .from("crm_metas")
+      .select("id, alvo")
+      .eq("organization_id", orgId)
+      .eq("periodo", primeiroDia)
+      .eq("indicador", indicador);
+    consulta = pipelineId ? consulta.eq("pipeline_id", pipelineId) : consulta.is("pipeline_id", null);
+    consulta = vendedorId
+      ? consulta.eq("vendedor_id", vendedorId)
+      : consulta.is("vendedor_id", null);
+    return consulta.maybeSingle();
+  };
+  const { data: existente, error: erroLeitura } = await lerMeta();
   if (erroLeitura) return { ok: false, error: "erro_ao_gravar", details: erroLeitura.message };
 
-  const alvoAnterior = ((existente as { alvo?: number } | null)?.alvo ?? null) as number | null;
+  // Quem foi de fato corrigido (a linha lida, ou a que outra pessoa acabou de
+  // criar na corrida do índice) — é ela que o audit conta.
+  let corrigida = existente as { id: string; alvo?: number } | null;
 
   if (existente) {
     const { error } = await supabase
@@ -117,22 +210,40 @@ export async function definirMetaMensal(
       organization_id: orgId,
       periodo: primeiroDia,
       indicador,
-      pipeline_id: null,
+      pipeline_id: pipelineId,
+      vendedor_id: vendedorId,
       alvo,
       created_by: authUser.id,
     });
-    if (error) return { ok: false, error: "erro_ao_gravar", details: error.message };
+    // Duas pessoas salvando a PRIMEIRA meta da mesma chave ao mesmo tempo: as
+    // duas leram "não existe", e o índice único barra a segunda. Ela não é um
+    // erro de quem salvou — é a correção da meta que acabou de nascer.
+    if (error && (error as { code?: string }).code === "23505") {
+      const { data: nascida, error: erroReleitura } = await lerMeta();
+      if (erroReleitura || !nascida) {
+        return { ok: false, error: "erro_ao_gravar", details: erroReleitura?.message ?? error.message };
+      }
+      const { error: erroCorrecao } = await supabase
+        .from("crm_metas")
+        .update({ alvo, updated_at: new Date().toISOString() })
+        .eq("id", (nascida as { id: string }).id)
+        .eq("organization_id", orgId);
+      if (erroCorrecao) return { ok: false, error: "erro_ao_gravar", details: erroCorrecao.message };
+      corrigida = nascida as { id: string; alvo?: number };
+    } else if (error) {
+      return { ok: false, error: "erro_ao_gravar", details: error.message };
+    }
   }
 
   const hdrs = await headers();
   await audit({
-    action: existente ? "crm_meta.updated" : "crm_meta.created",
+    action: corrigida ? "crm_meta.updated" : "crm_meta.created",
     actorUserId: authUser.id,
     organizationId: orgId,
     resourceType: "crm_meta",
     // Sem id na criação (o PostgREST não devolve a linha no insert sem
     // `select`); o que identifica o alvo é o par período + indicador.
-    resourceId: (existente as { id?: string } | null)?.id ?? null,
+    resourceId: corrigida?.id ?? null,
     requestId: hdrs.get("x-request-id") ?? undefined,
     ip: ipDoCliente(hdrs) ?? undefined,
     userAgent: hdrs.get("user-agent") ?? undefined,
@@ -140,9 +251,11 @@ export async function definirMetaMensal(
       periodo: primeiroDia,
       indicador,
       alvo,
+      vendedor_id: vendedorId,
+      pipeline_id: pipelineId,
       // O alvo ANTERIOR entra: é a mudança que interessa a quem audita depois —
       // "de 40 para 25" é uma história diferente de "criou 25".
-      alvo_anterior: alvoAnterior,
+      alvo_anterior: corrigida?.alvo ?? null,
     },
   });
 

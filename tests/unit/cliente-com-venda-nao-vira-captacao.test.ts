@@ -485,7 +485,14 @@ describe("#3644 · o custo por mensagem recebida", () => {
     expect(c.consultas).toEqual([
       "contacts",
       "crm_leads",
+      // #4670: a conexão da conversa — UMA leitura por card que nasce, e só
+      // depois do "já existe" (o caso de cima, mensagem de conversa com card,
+      // continua custando as mesmas 2 leituras de antes).
+      "conversations",
       "organizations",
+      // migration 9430: o número da conversa, para o funil de entrada por número —
+      // uma leitura por card criado, e só quando quem chama não trouxe o número
+      "conversations",
       "crm_pipelines",
       "crm_stages",
       // #4076: a opção reabrir_perdido_dias do funil de destino — uma leitura por card criado, não por mensagem
@@ -500,6 +507,7 @@ describe("#3644 · o custo por mensagem recebida", () => {
     expect(c.consultas).toEqual([
       "contacts",
       "crm_leads", // negócio aberto
+      "conversations", // #4670: a conexão da conversa (uma por card que nasce)
       "organizations", // as três chaves de settings.crm, numa leitura
       "crm_leads", // a venda ganha
       "crm_pipelines", // nome do funil da venda (só para o texto)

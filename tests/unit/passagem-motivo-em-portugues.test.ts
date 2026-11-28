@@ -75,6 +75,12 @@ function separadorPosix(relativo: string): string {
  */
 const USO_COMO_CHAVE: Array<{ arquivo: string; codigo: string; razao: string }> = [
   {
+    arquivo: "app/app/imports/_client.tsx",
+    codigo: "sem_telefone",
+    razao:
+      "chave do contador da prévia de importação (`previa.previa.sem_telefone`, vem de lib/crm-b2b/import-previa.ts) — o número vai para a tela, o código não: o texto é t(\"sem telefone\")",
+  },
+  {
     arquivo: "components/connections/ChannelAiAccess.tsx",
     codigo: "pre_go_live",
     razao:
@@ -126,6 +132,12 @@ describe("o motivo da passagem tem frase em português", () => {
     // o verde vácuo que este repo já pagou várias vezes.
     expect(MOTIVOS_DA_PASSAGEM.length).toBeGreaterThanOrEqual(9);
     expect(MOTIVOS_DO_AVISO.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("teto do visitante anônimo entra no vocabulário da passagem", () => {
+    // Sem esta linha, o motivo existe no dicionário do gate mas nunca chega à
+    // passagem — e o cartão de quem assume fica sem o porquê.
+    expect(MOTIVOS_DA_PASSAGEM).toContain("teto_do_visitante_anonimo");
   });
 
   it("todo motivo tem frase, e nenhuma frase é vazia nem o próprio código", () => {

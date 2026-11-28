@@ -39,21 +39,34 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 // O `@sentry/nextjs` funciona fora do Next — aqui é só `Sentry.init` puro,
 // sem `instrumentation.ts` porque o worker não é um processo Next.
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "@/lib/sentry/dsn";
+import {
+  resolveSentryDsn,
+  isCommunityDsn,
+  DEFAULT_SENTRY_DSN,
+  integracoesDoServidor,
+} from "@/lib/sentry/dsn";
 import { opcoesDePrivacidade } from "@/lib/sentry/privacidade";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const sentryCommunity = isCommunityDsn(sentryDsn);
 
-Sentry.init({
-  dsn: sentryDsn,
+// O worker é quem roda o turno do agente, inclusive o ramo da assinatura do
+// ChatGPT (`streamText` com tools, run-model-call.ts:1131). Sem DSN, nada de
+// Sentry aqui; com DSN, sem a integração do AI SDK — é ela que trava o stream
+// (#4798). Ver `integracoesDoServidor`, com o porquê e o tradeoff.
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
 
-  // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
-  tracesSampleRate: sentryCommunity ? 0 : 1,
+    // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
+    tracesSampleRate: sentryCommunity ? 0 : 1,
 
-  // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
-  ...opcoesDePrivacidade,
-});
+    integrations: integracoesDoServidor,
+
+    // Coleta restrita + scrub, num ponto só (Sentry 11 coleta amplo por default).
+    ...opcoesDePrivacidade,
+  });
+}
 
 // Transparência de telemetria (mesma mensagem de sentry.server.config.ts,
 // adaptada para o processo worker): uma linha no boot dizendo o que está
@@ -311,6 +324,8 @@ export async function startWorker(
       intervalMs: env.CRM_DRAIN_INTERVAL_MS,
       idleIntervalMs: env.CRM_DRAIN_IDLE_INTERVAL_MS,
       debounceMs: env.INBOUND_DEBOUNCE_MS,
+      // #196: a janela acima anda a cada mensagem nova e para neste teto.
+      debounceMaxMs: env.INBOUND_BURST_MAX_MS,
       reapTimeoutMs: env.CRM_EVENT_REAP_TIMEOUT_MS,
       allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
       // Quem corta a soneca do laço da fila quando um turno nasce (#3688).

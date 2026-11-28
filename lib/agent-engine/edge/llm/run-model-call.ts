@@ -67,7 +67,14 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { corpoComoObjeto, custoInformadoPeloOpenRouter, custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
+import {
+  corpoComoObjeto,
+  custoInformadoPeloOpenRouter,
+  custoPorPassosComDegrauDoHaiku,
+  custoPorPassosComFaixaLonga,
+  costCents,
+  gravacaoDeUmaHora,
+} from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { decidirCustoDaChamada, haUsoMedido } from './custo-da-chamada';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
@@ -1796,9 +1803,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // preço da linha sai do catálogo da INSTALAÇÃO (`ai_models`/`ai_pricing`, as
   // mesmas tabelas que `lib/ai/cost.ts` e `lib/ai/runtime/cost.ts` já consultam).
   // Sem preço em nenhum dos dois o custo continua `null` — mas com aviso no log,
-  // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
-  // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
-  // primeiro, e só o `null` dele chega aqui.
+  // nunca calado, e nunca um 0 inventado. Modelos com faixa longa e o degrau do
+  // Haiku 5.5 (#5017) usam a mesma tabela por passo, pois a soma do turno não
+  // determina o preço.
   //
   // Na OpenRouter oficial, o número que vale é o que ELA cobrou (`usage.cost` de
   // cada passo, com a regra de BYOK em `custoInformadoPeloOpenRouter`): ela só
@@ -1807,8 +1814,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // número (campo ausente), vale a tabela, como antes. `config` já é a reserva
   // quando a assinatura cai nela. Gateway do operador NUNCA informa o próprio
   // custo: o critério é o endereço da chamada que de fato rodou.
-  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): as quatro
-  // entradas abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
+  // A REGRA ÚNICA mora em `custo-da-chamada.ts` (issue #4697): os
+  // valores abaixo são só RESOLUÇÃO — o que vale, em que ordem e com que
   // marca é decidido num lugar só. Antes, três `??` encadeados aqui decidiam
   // em silêncio, e o mesmo modelo saía com custo numas linhas e nulo noutras
   // sem ninguém conseguir apontar a regra.
@@ -1820,13 +1827,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     config.provider === 'openrouter' && ehOpenRouterOficial(baseUrlDaChamadaEfetiva)
       ? custoInformadoPeloOpenRouter(result)
       : undefined;
-  const porPassosDoTerra = informado === undefined ? custoTerraPorPassos(model, result) : undefined;
   const daTabelaDoMotor =
-    informado === undefined && porPassosDoTerra === undefined
-      ? costCents(model, usage, cfg.cacheTtl ?? '1h')
+    informado === undefined
+      ? (custoPorPassosComFaixaLonga(model, result) ??
+        custoPorPassosComDegrauDoHaiku(model, result, cfg.cacheTtl ?? '1h') ??
+        costCents(model, usage, cfg.cacheTtl ?? '1h'))
       : null;
   const doCatalogoDaInstalacao =
-    daTabelaDoMotor === null && informado === undefined && porPassosDoTerra === undefined
+    daTabelaDoMotor === null && informado === undefined
       ? await custoDoModeloForaDoMotor(db, {
           model,
           provider: config.provider,
@@ -1840,7 +1848,6 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // (preço × 0 token) — vira nulo com motivo `sem_uso`.
     temUso: haUsoMedido(usage),
     informadoPeloProvedor: informado,
-    porPassosDoTerra,
     daTabelaDoMotor,
     doCatalogoDaInstalacao,
   });
@@ -1876,9 +1883,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
         status, origem_da_escolha, agent_id,
         passos, entrada_do_primeiro_passo, chars_sistema, chars_ferramentas, chars_mensagens,
-        partes_de_midia, prefixo_hash, preview_run_id)
+        partes_de_midia, prefixo_hash, cache_write_1h_tokens, preview_run_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15,
-        $16, $17, $18, $19, $20, $21, $22, $23)
+        $16, $17, $18, $19, $20, $21, $22, $23, $24)
      returning id`,
     [
       input.tenantId,
@@ -1903,6 +1910,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       composicao?.charsMensagens ?? null,
       composicao?.partesDeMidia ?? null,
       composicao?.prefixoHash ?? null,
+      // #5020: a MESMA divisão que já decidiu o custo acima. Sem ela o banco só
+      // tem o total, e uma auditoria não consegue provar a parcela de 1 hora.
+      // Provedor sem a divisão (nenhum passo com `cache_creation`) grava nulo —
+      // "não medido", nunca 0. Os outros escritores de `llm_calls` também.
+      usage.cacheWrite1hTokens ?? null,
       // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
       input.previewRunId ?? null,
     ],

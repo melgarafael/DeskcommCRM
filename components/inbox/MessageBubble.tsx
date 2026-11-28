@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -25,8 +25,11 @@ import {
   textoComMencoesResolvidas,
 } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
+import { corDoParticipante } from "@/lib/messaging/cor-do-participante";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
+import { nomeDaIntegracaoDaMensagem } from "@/lib/messaging/nome-da-integracao";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -386,6 +389,7 @@ export function MessageBubble({
   // controle decorativo — a tela oferecendo uma distinção que o motor não fazia.
   // O carimbo vive em `origemDaMensagem` (`app/api/v1/messages/_handler.ts`) e o
   // par é vigiado nas duas direções por tests/unit/rotulo-de-origem-tem-emissor.
+  const mensagemInstitucional = ehMensagemInstitucional(message.metadata);
   const senderLabel = (() => {
     if (!isOutbound) return null;
     // #1613: a autoria "em nome de" sobe a MESA. Quem apertou foi o token, mas
@@ -422,7 +426,19 @@ export function MessageBubble({
     // A integração falou, a IA não. Sem este ramo a bolha omite a autoria e o
     // dono lê a conversa como se tudo tivesse saído do CRM — que é o defeito do
     // #866 visto de dentro da tela.
-    if (message.sent_via === "system") return "Sistema";
+    //
+    // #5160: o NOME do token viaja GRAVADO na linha (`metadata.integration_actor_name`,
+    // escrito pelo handler com a linha de `api_tokens`, nunca com o `metadata`
+    // do cliente), porque o balão não faz join. Módulo conectado não grava nome
+    // — a identidade dele é o `slug`, não o nome da linha do token — e cai no
+    // rótulo genérico. Sem nome (linha antiga, token revogado) também: o
+    // rótulo diz o que o `sent_via` garante, sem inventar identificação.
+    // "Integração" passa por `t()`; o nome do token sai como cadastrado (#1046).
+    if (message.sent_via === "system") {
+      const nome = nomeDaIntegracaoDaMensagem(message.metadata);
+      const prefixo = mensagemInstitucional ? t("Aviso institucional") : t("Integração");
+      return nome ? `${prefixo} · ${nome}` : prefixo;
+    }
     if (message.sent_via === "external_device") return "Celular";
     if (message.sent_via === "user" || message.sent_via === "crm") {
       // "Você" exige as DUAS pontas: saber quem lê e saber quem enviou. Falta
@@ -449,6 +465,9 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // Cada pessoa do grupo tem uma cor fixa no NOME, como no WhatsApp do celular.
+  // A apagada fica de fora: ela já foi para o cinza de propósito (ver abaixo).
+  const corDoRemetente = remetente && !apagada ? corDoParticipante(remetente) : null;
   // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
   // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
   // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
@@ -520,6 +539,7 @@ export function MessageBubble({
         // classe utilitária entrava na conta — foi assim que o painel flutuante
         // fez a spec achar que havia mensagem onde não havia (issue #1318).
         data-testid="message-bubble"
+        data-dispatch-mode={mensagemInstitucional ? "institutional" : undefined}
         className={cn(
           "relative max-w-[75%] min-w-0 text-sm",
           isBareSticker
@@ -701,7 +721,21 @@ export function MessageBubble({
           </CitacaoDaBolha>
         )}
         {remetente && (
-          <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+          <p
+            className={cn(
+              "mb-0.5 text-[11px] font-medium text-muted-foreground",
+              corDoRemetente &&
+                "font-semibold text-[color:var(--cor-participante)] dark:text-[color:var(--cor-participante-escuro)]",
+            )}
+            style={
+              corDoRemetente
+                ? ({
+                    "--cor-participante": corDoRemetente.claro,
+                    "--cor-participante-escuro": corDoRemetente.escuro,
+                  } as CSSProperties)
+                : undefined
+            }
+          >
             {rotuloDoRemetente(remetente)}
           </p>
         )}

@@ -42,6 +42,7 @@ import {
   type UpdateDeMarcacao,
 } from "@/lib/leads/stage-editing";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
+import { recusaDeCopiaAbertaPeloBanco } from "@/lib/leads/copia-aberta-no-funil";
 
 type SB = SupabaseClient;
 
@@ -51,6 +52,12 @@ export interface DepsDeEtapa {
   /** Quem está agindo. NUNCA sai do input — é resolvido de fonte confiável pelo chamador. */
   actor: Actor;
   requestId: string;
+  /**
+   * Id da linha do token (`api_tokens.id`) quando a chamada veio por Bearer: vai
+   * para o `actor_api_token_id` do audit. Ausente na sessão e no MCP, e então a
+   * chave nem entra no audit.
+   */
+  actorApiTokenId?: string | null;
 }
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
@@ -241,6 +248,11 @@ async function funilDepois(
   return corpo(depois);
 }
 
+/** O token que agiu, na forma do audit — a chave só existe quando há token. */
+function tokenDoAudit(deps: DepsDeEtapa): { actorApiTokenId?: string } {
+  return deps.actorApiTokenId ? { actorApiTokenId: deps.actorApiTokenId } : {};
+}
+
 /** `actorUserId` do audit — `null` quando quem agiu não é uma pessoa. */
 function autorDoAudit(actor: Actor): { actorUserId: string | null; metadata: Record<string, unknown> } {
   if (actor.type === "user") return { actorUserId: actor.id, metadata: { actor_type: "user" } };
@@ -316,6 +328,7 @@ export async function criarEtapa(
   void audit({
     action: "pipeline.stage_created",
     actorUserId: autor.actorUserId,
+    ...tokenDoAudit(deps),
     organizationId: deps.organizationId,
     resourceType: "crm_stage",
     resourceId: stageId,
@@ -572,6 +585,7 @@ export async function atualizarEtapa(
     void audit({
       action: "pipeline.stage_updated",
       actorUserId: autor.actorUserId,
+      ...tokenDoAudit(deps),
       organizationId: deps.organizationId,
       resourceType: "crm_stage",
       resourceId: stageId,
@@ -674,6 +688,13 @@ export async function arquivarEtapa(
       .eq("organization_id", deps.organizationId)
       .eq("stage_id", stageId);
     if (error) {
+      // Levar um card encerrado para a etapa de destino o reabre; se ele é cópia
+      // de um negócio que já tem outra aberta no funil, o índice único da 9496
+      // recusa (#5281). Nada foi movido nem arquivado.
+      const copiaAberta = recusaDeCopiaAbertaPeloBanco(error);
+      if (copiaAberta) {
+        throw new ApiError(409, copiaAberta.codigo, undefined, deps.requestId, copiaAberta.mensagem);
+      }
       // O texto do Postgres vai em `details`, não colado na frase: a mensagem é
       // o que a tela mostra ao dono da clínica.
       throw new ApiError(
@@ -744,6 +765,7 @@ export async function arquivarEtapa(
   void audit({
     action: "pipeline.stage_archived",
     actorUserId: autor.actorUserId,
+    ...tokenDoAudit(deps),
     organizationId: deps.organizationId,
     resourceType: "crm_stage",
     resourceId: stageId,

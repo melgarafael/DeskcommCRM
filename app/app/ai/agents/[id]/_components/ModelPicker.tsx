@@ -6,6 +6,7 @@ import { Check, ChevronDown, DollarSign } from "lucide-react";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { modeloAposentadoNoProvedor } from "@/lib/agent-engine/edge/llm/modelos-aposentados";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -151,7 +152,16 @@ export function ModelPicker({ provider, value, onChange, disabled, id, placehold
 
   const models = React.useMemo(() => query.data ?? [], [query.data]);
   const aviso = avisoDaFalha(provider, query.error, t);
-  const visiveis = React.useMemo(() => filtrarModelos(models, busca), [models, busca]);
+  // Mantém o catálogo para exibir o nome e os metadados de um modelo já salvo.
+  const disponiveis = React.useMemo(
+    () =>
+      provider === "google"
+        ? models.filter((m) => !modeloAposentadoNoProvedor(m.model_id))
+        : models,
+    [models, provider],
+  );
+  const visiveis = React.useMemo(() => filtrarModelos(disponiveis, busca), [disponiveis, busca]);
+  const escolhidoAposentado = provider === "google" && modeloAposentadoNoProvedor(value);
   const escolhido = models.find((m) => m.model_id === value);
   // O agente pode já ter salvo um id que a lista não oferece mais (a variante
   // `:batch`, ou um id digitado à mão): o gatilho mostra o que está salvo em vez
@@ -177,6 +187,11 @@ export function ModelPicker({ provider, value, onChange, disabled, id, placehold
       {aviso ? (
         <p role="alert" className="text-sm text-destructive">
           {aviso}
+        </p>
+      ) : null}
+      {escolhidoAposentado ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t("Este modelo foi aposentado pelo provedor. Escolha outro modelo.")}
         </p>
       ) : null}
       {ehVarianteEmLote(value) ? (

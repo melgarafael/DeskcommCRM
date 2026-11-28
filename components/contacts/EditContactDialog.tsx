@@ -40,11 +40,14 @@ import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+import { ComoCriarCamposDoContato } from "@/components/contacts/ComoCriarCamposDoContato";
+import type { Pipeline } from "@/lib/kanban/types";
 
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { ehIdentificadorTecnico } from "@/lib/contacts/rotulo-do-contato";
 
 interface FormShape {
   name?: string;
@@ -88,6 +91,23 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /**
+   * As definições vieram de TODOS os funis, não só do padrão (issue #4929 —
+   * a lista de contatos não tem funil). Muda só a frase da seção, que sem isto
+   * diria "funil padrão" sobre campos que vieram de outro funil.
+   */
+  camposDeTodosOsFunis?: boolean;
+  /**
+   * O funil padrão de onde `customFieldDefs` SAIU — presente só quando a leitura
+   * terminou (#4744). Com ele e nenhum campo, o administrador vê onde criar.
+   *
+   * ⚠️ NÃO É `customFieldDefs.length === 0`. A lista de contatos abre este mesmo
+   * diálogo sem funil único (passa a união dos funis, #4929, e `[]` enquanto a
+   * leitura corre), e a ficha passa `[]` enquanto a leitura ainda corre: nos dois
+   * casos "vazio" não quer dizer "a empresa não tem campo", e a dica diria isso a
+   * quem já tem.
+   */
+  funilDosCampos?: Pick<Pipeline, "name"> | null;
   /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
   vocabulario?: readonly string[] | null;
   /** `pipelines.settings.canonical_tags` do funil padrão. */
@@ -99,6 +119,8 @@ export function EditContactDialog({
   open,
   onOpenChange,
   customFieldDefs = [],
+  camposDeTodosOsFunis = false,
+  funilDosCampos,
   vocabulario,
   canonicalTags,
 }: Props) {
@@ -112,6 +134,9 @@ export function EditContactDialog({
   // papéis a paleta nem chega ao campo — a régua é "a tela não oferece o que a
   // escrita recusa" (#2718), a MESMA do `SeletorDeCorDaEtiqueta`.
   const podeDefinirCor = roleAtLeast(org?.role, "manager");
+  // Criar campo é `updatePipelineConfig`, que recusa abaixo de admin: a dica de
+  // onde criar só aparece para quem consegue criar (#4744, mesma régua do #2718).
+  const podeCriarCampos = roleAtLeast(org?.role, "admin");
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
@@ -145,6 +170,21 @@ export function EditContactDialog({
   // e o botão desabilitado são o mesmo erro dito duas vezes.
   const cpfError = form.formState.errors.cpf;
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
+  // Sem nome no cadastro, a ficha chama a pessoa pelo nome da agenda ou do
+  // perfil do WhatsApp e o campo abre vazio: parecia formulário que não carregou.
+  // Os nomes são OFERECIDOS, nunca preenchidos sozinhos — o da agenda é só da
+  // equipe (PR #2439), e gravá-lo em `name` o levaria às mensagens.
+  const nomeDigitado = useWatch({ control: form.control, name: "name" }) ?? "";
+  const nomesDoCanal =
+    contact.name?.trim() || nomeDigitado.trim()
+      ? []
+      : [
+          { origem: "agenda", rotulo: t("Nome na agenda do celular"), valor: contact.address_book_name },
+          { origem: "whatsapp", rotulo: `${t("Nome")} · WhatsApp`, valor: contact.display_name },
+        ].flatMap(({ valor, ...resto }) => {
+          const nome = valor?.trim() ?? "";
+          return nome && !ehIdentificadorTecnico(nome) ? [{ ...resto, nome }] : [];
+        });
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
   const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
@@ -316,9 +356,35 @@ export function EditContactDialog({
           <div className="space-y-2">
             <Label htmlFor="ec-name">{t("Nome")}</Label>
             <Input id="ec-name" {...form.register("name")} />
+            {nomesDoCanal.length > 0 && (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>{t("Este contato ainda não tem nome no cadastro.")}</p>
+                {nomesDoCanal.map(({ origem, rotulo, nome }) => (
+                  <div key={origem} className="flex flex-wrap items-center gap-x-2">
+                    <span className="break-all">
+                      {rotulo}: {nome}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
+                      aria-label={`${t("Usar este nome")}: ${nome}`}
+                      disabled={update.isPending}
+                      onClick={() => form.setValue("name", nome, { shouldDirty: true })}
+                    >
+                      {t("Usar este nome")}
+                    </Button>
+                  </div>
+                ))}
+                {nomesDoCanal.some((n) => n.origem === "agenda") && (
+                  <p>{t("Só a equipe vê o nome da agenda. Ao salvá-lo como nome, ele pode aparecer em mensagens.")}</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-email">Email</Label>
+            <Label htmlFor="ec-email">{t("Email")}</Label>
             <Input id="ec-email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">
@@ -421,12 +487,14 @@ export function EditContactDialog({
               erroNoVocabulario={erroNoVocabulario}
             />
           </div>
-          {customFieldDefs.length > 0 && (
+          {customFieldDefs.length > 0 ? (
             <div className="space-y-3 rounded-md border border-border p-3">
               <div>
                 <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {t("Campos definidos no funil padrão da organização.")}
+                  {camposDeTodosOsFunis
+                    ? t("Campos personalizados definidos nos funis da organização.")
+                    : t("Campos definidos no funil padrão da organização.")}
                 </p>
               </div>
               <CustomFieldsEditor
@@ -436,6 +504,9 @@ export function EditContactDialog({
                 onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
               />
             </div>
+          ) : (
+            podeCriarCampos &&
+            funilDosCampos && <ComoCriarCamposDoContato nomeDoFunil={funilDosCampos.name} />
           )}
           {serverError && (
             <p role="alert" className="text-sm text-error-fg">

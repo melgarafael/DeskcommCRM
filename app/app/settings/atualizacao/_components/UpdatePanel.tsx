@@ -113,7 +113,16 @@ const PASSOS = [
 
 export function UpdatePanel() {
   const t = useT();
-  const { data, isError } = useSystemVersion({ refetchInterval: 5_000 });
+  // Só faz poll rápido (5s) enquanto houver atualização em andamento (run despachado);
+  // parado, usa o intervalo relaxado de 5 min do hook (#2235).
+  const { data, isError } = useSystemVersion({
+    // Agendado pela janela (#4334): a espera é de horas, e o poll de 5 s não
+    // traria nada novo até ela abrir.
+    refetchInterval: (query) =>
+      query.state.data?.run?.status === "dispatched" && !agendadoNoFuturo(query.state.data?.run)
+        ? 5_000
+        : 5 * 60_000,
+  });
   const queryClient = useQueryClient();
   const [erro, setErro] = useState<string | null>(null);
 
@@ -255,10 +264,21 @@ export function UpdatePanel() {
      */
     const destinoDoPedido = semV(data.run?.to_version) || nova;
 
+    if (!data.run?.last_step && agendadoNoFuturo(data.run)) {
+      return (
+        <AgendadaParaAJanela
+          scheduledFor={data.run?.scheduled_for}
+          destino={destinoDoPedido}
+          semSmtp={semSmtp}
+        />
+      );
+    }
+
     if (!data.run?.last_step) {
       return (
         <AguardandoOServidor
-          dispatchedAt={data.run?.dispatched_at}
+          // A janela abriu: a espera conta da hora agendada, não do clique.
+          dispatchedAt={data.run?.scheduled_for ?? data.run?.dispatched_at}
           // O destino é o do RUN (#2757) — a mesma razão do título logo abaixo.
           destino={destinoDoPedido}
           semSmtp={semSmtp}
@@ -700,6 +720,38 @@ export function UpdatePanel() {
     );
   }
 
+  // ⭐ #4955 — A RELEASE SAIU, MAS AINDA NÃO PODE SER INSTALADA.
+  //
+  // O host viu a tag publicada e, de propósito, NÃO a anunciou: a imagem dela
+  // ainda não existe no registro (ou a release está incompleta) e acender o
+  // botão ali pararia o sistema para instalar o que não existe. O silêncio dele
+  // era honesto — a mentira era desta tela, que lia `latest_version` vazio como
+  // "está em dia" e imprimia "Última release oficial: 1.118.0" logo acima, numa
+  // instalação 1.116.0.
+  //
+  // A partir de agora o estado tem nome: a versão saiu, ainda está sendo
+  // preparada, e o botão aparece sozinho quando ficar pronta (a sonda do host
+  // roda a cada 5 minutos e a tela recarrega junto). O que este estado NUNCA
+  // faz é dizer "não há nada a fazer" com uma release mais nova na mesma tela.
+  const preparando = semV(data.pending_release_version ?? undefined);
+  if (!data.update_available && !data.off_release && preparando) {
+    return (
+      <Layout semSmtp={semSmtp} titulo={`${t("A versão")} ${preparando} ${t("já saiu")}`}>
+        <p className="text-sm">
+          {t(
+            "Ela foi publicada oficialmente, mas a imagem que esta instalação precisa baixar ainda não está pronta — isso costuma levar poucos minutos.",
+          )}
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t(
+            "Assim que estiver pronta, o botão Atualizar agora aparece aqui sozinho; você não precisa fazer nada. Por enquanto, a sua instalação segue na versão",
+          )}{" "}
+          <strong>{versao}</strong>.
+        </p>
+      </Layout>
+    );
+  }
+
   if (!data.update_available && !data.off_release) {
     return (
       <Layout semSmtp={semSmtp} titulo={`${t("Você está na versão")} ${versao}`}>
@@ -906,6 +958,44 @@ function AguardandoOServidor({
           {t("Esperando há")} {formataEspera(segundos)}.
         </p>
       )}
+      <p className="mt-3 text-sm text-muted-foreground">
+        {t("Pode fechar esta página: o pedido já está registrado e não se perde.")}
+      </p>
+    </Layout>
+  );
+}
+
+/**
+ * O pedido espera a janela de manutenção do servidor (#4334).
+ *
+ * Sem este estado a tela contava a espera como se o servidor estivesse prestes
+ * a pegar o pedido e, 15 minutos depois, dizia "perdi contato" e oferecia o
+ * botão de novo — e o pedido nem tinha começado. Aqui não há botão: o pedido já
+ * está registrado, e clicar de novo não o adianta.
+ */
+function agendadoNoFuturo(run: { scheduled_for?: string | null } | null | undefined): boolean {
+  const quando = run?.scheduled_for ? Date.parse(run.scheduled_for) : NaN;
+  return !Number.isNaN(quando) && quando > Date.now();
+}
+
+function AgendadaParaAJanela({
+  scheduledFor,
+  destino,
+  semSmtp,
+}: {
+  scheduledFor: string | null | undefined;
+  destino: string;
+  semSmtp?: boolean;
+}) {
+  const t = useT();
+  return (
+    <Layout semSmtp={semSmtp} titulo={`${t("Atualização agendada para")} ${horaCurta(scheduledFor)}`}>
+      <p className="text-sm" data-testid="atualizacao-agendada">
+        {t("Anotei o pedido de atualizar para a versão")} <strong>{destino}</strong>.{" "}
+        {t(
+          "Este servidor só atualiza na janela de manutenção configurada, e o pedido roda sozinho quando ela abrir.",
+        )}
+      </p>
       <p className="mt-3 text-sm text-muted-foreground">
         {t("Pode fechar esta página: o pedido já está registrado e não se perde.")}
       </p>

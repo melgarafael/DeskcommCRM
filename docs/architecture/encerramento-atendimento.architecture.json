@@ -25,16 +25,7 @@
       "label": "Canal externo"
     }
   ],
-  "mainPath": [
-    "inbound",
-    "boundary",
-    "origin",
-    "receipt",
-    "job",
-    "guard",
-    "sink",
-    "transport"
-  ],
+  "mainPath": ["inbound", "boundary", "origin", "receipt", "job", "guard", "sink", "transport"],
   "nodes": [
     {
       "id": "inbox",
@@ -48,7 +39,7 @@
       "lane": "service",
       "col": 2,
       "type": "backend",
-      "label": "close/reopen CAS e encerramento explícito da demanda"
+      "label": "close/reopen CAS, safe_close condicional e encerramento explícito da demanda"
     },
     {
       "id": "inbound",
@@ -123,7 +114,7 @@
     {
       "from": "commands",
       "to": "boundary",
-      "label": "origem e estado explícitos"
+      "label": "origem, estado, revisão, última inbound e pendências validados atomicamente"
     },
     {
       "from": "inbound",

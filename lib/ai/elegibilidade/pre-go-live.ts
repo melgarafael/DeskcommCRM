@@ -39,6 +39,11 @@ export const AI_TEST_SOCIAL_IDENTITIES_KEY = "ai_test_social_identities" as cons
  * identidade — quem responde é quem declara a ingestão, não quem lista canais
  * (doutrina `restricao-de-canal`, invariante 1: a feature pede a capacidade e
  * não o nome do transporte).
+ *
+ * Por construção ficam de fora o `whatsapp` (lista de telefones), o bot do
+ * `telegram` (identidade do robô) e o `webchat` (Spec 36, sem rede social por
+ * trás): nenhum deles é rede do catálogo com `inbox`, então não há nome de
+ * provider a excluir à mão aqui.
  */
 export const REDES_COM_TESTADOR_SOCIAL: readonly string[] = SOCIAL_NETWORKS.filter(
   (rede) => rede.inbox,

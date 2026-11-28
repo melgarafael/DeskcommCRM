@@ -19,6 +19,7 @@ import { redirect } from "next/navigation";
 import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, escreveComoPlatformAdmin } from "@/lib/auth/types";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { mesLocal } from "@/lib/metas/periodo";
 import { createClient } from "@/lib/supabase/server";
@@ -39,15 +40,42 @@ export default async function MetaDeVendasPage() {
 
   const mes = mesLocal();
   const supabase = await createClient();
-  const { data } = await supabase
+  // Todas as metas do MÊS (empresa, vendedor, funil): o formulário mostra a que
+  // já existe para a combinação escolhida em vez de fingir campo vazio. Os
+  // outros meses o formulário lê quando a pessoa troca o mês. Leitura que
+  // falhou vai como `null`: o formulário tenta de novo, em vez de mostrar
+  // "ainda não há meta" para um mês que pode ter.
+  const { data, error: erroDasMetas } = await supabase
     .from("crm_metas")
-    .select("alvo")
+    .select("indicador, vendedor_id, pipeline_id, alvo")
     .eq("organization_id", activeOrg.orgId)
-    .eq("indicador", "vendas_ganhas")
-    .is("pipeline_id", null)
-    .eq("periodo", `${mes}-01`)
-    .maybeSingle();
-  const alvoAtual = ((data as { alvo?: number } | null)?.alvo ?? null) as number | null;
+    .eq("periodo", `${mes}-01`);
+  const metas = erroDasMetas ? null : (
+    (data ?? []) as Array<{ indicador: string; vendedor_id: string | null; pipeline_id: string | null; alvo: number }>
+  )
+    .filter((m) => m.indicador === "vendas_ganhas" || m.indicador === "valor_vendido")
+    .map((m) => ({
+      periodo: mes,
+      indicador: m.indicador as "vendas_ganhas" | "valor_vendido",
+      vendedor_id: m.vendedor_id ?? null,
+      pipeline_id: m.pipeline_id ?? null,
+      alvo: Number(m.alvo),
+    }));
+  // Os funis que podem ter meta própria (#4796): os em uso. Arquivado não recebe
+  // meta nova — a action recusa o mesmo —, e a meta antiga dele segue no Desempenho.
+  const { data: dadosDosFunis } = await supabase
+    .from("crm_pipelines")
+    .select("id, name")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("is_archived", false)
+    .order("name", { ascending: true });
+  const funis = ((dadosDosFunis ?? []) as Array<{ id: string; name: string }>).map((f) => ({
+    id: f.id,
+    name: f.name,
+  }));
+  // A unidade do alvo em valor: a moeda que a organização declarou (cai em BRL,
+  // o default da coluna, se a linha não vier).
+  const moeda = await moedaDaOrganizacao(supabase, activeOrg.orgId);
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -57,16 +85,16 @@ export default async function MetaDeVendasPage() {
       <CabecalhoDaSubTela className="flex flex-col gap-2" titulo={t("Meta de vendas")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
-            "Quanto a empresa quer vender neste mês. O Desempenho passa a mostrar o quanto já foi feito contra esse número — o realizado, o percentual e o quanto falta.",
+            "Quanto a empresa — ou um funil, ou um vendedor — quer vender neste mês, em quantidade de vendas ou em valor. O Desempenho passa a mostrar o quanto já foi feito contra esse número: o realizado, o percentual, o quanto falta e a projeção até o fim do mês.",
           )}
         </p>
       </CabecalhoDaSubTela>
 
-      <FormularioDaMeta mes={mes} alvoAtual={alvoAtual} />
+      <FormularioDaMeta mes={mes} metas={metas} moeda={moeda} funis={funis} />
 
       <p className="max-w-2xl text-xs text-muted-foreground">
         {t(
-          "Nesta primeira versão a meta é da EMPRESA inteira, para a quantidade de vendas ganhas: o que conta é o negócio fechado como ganho dentro do mês. Meta por vendedor, por período maior e por funil ficam para as próximas fatias.",
+          "A meta da empresa conta os negócios fechados como ganhos no mês; a do funil, só os daquele funil; a do vendedor, só os dele. Metas por trimestre ficam para uma próxima fatia.",
         )}
       </p>
     </div>

@@ -115,6 +115,25 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // ranking — e por isso sobreviveu à troca do papel do agente para `ai_operator`,
   // que um piso de `manager` teria transformado em bloqueio por coincidência.
   "crm_resume_ai_attendance",
+  // #4517 — o quarteto de comandos de conversa, e a paridade de cada um com a sua
+  // rota: `conversations/[id]/pause-ai` (agent), `/reactivate-bot` (agent),
+  // `/close` (agent) e `/reopen` (agent). Todos chamam o MESMO handler da rota.
+  //
+  // O poder extra que cada um carrega não vem do papel, vem do escopo
+  // `conversations:write` do token — e as quatro recusam `actor.type` igual a
+  // `ai_agent` no handler, em voz alta: o agente não comanda a própria automação.
+  "crm_pause_ai",
+  "crm_resume_ai",
+  "crm_close_conversation",
+  "crm_reopen_conversation",
+  // #4517 — `PATCH /api/v1/contacts/[id]/` é a MESMA rota das linhas acima, e
+  // esta tool chama o MESMO `patchContactHandler`.
+  //
+  // ⚠️ O poder de SOBRESCREVER a ficha não vem deste nome nem do papel: vem do
+  // escopo `contacts:write` do token. Sem ele, a tool cai no caminho de proposta
+  // — inclusive para o agente da casa (`tokenScopes` ausente), que continua
+  // proibido de gravar por interpretação de texto (spec 17 §4b).
+  "crm_update_contact",
   // `app/api/v1/leads/[id]/lose/` — POST exige `agent`. Encerrar demanda que o
   // cliente declarou encerrada é o trabalho do dia (paridade medida na W2→base).
   "crm_close_demand",
@@ -142,6 +161,11 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // grava uma linha que uma PESSOA precisa revisar e enviar (`consumed_at` só
   // depois do clique); ela não envia nada ao cliente, então não muda a casa.
   "crm_create_conversation_draft",
+  // #4838 — `app/api/v1/tasks/` (POST) e `app/api/v1/tasks/[id]/` (PATCH)
+  // exigem `agent`: criar e concluir tarefa é o gesto de quem atende, todo dia.
+  // A tarefa é lembrete interno da equipe; nada sai para o cliente.
+  "crm_create_task",
+  "crm_update_task",
 ];
 
 function alcancavelPeloAgente(requiresRole: Role): boolean {

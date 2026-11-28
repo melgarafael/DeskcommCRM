@@ -112,6 +112,8 @@ export interface GatilhoEtapaDb {
     pointer_id: string;
     version_id: string;
     contact_id: string;
+    /** #4191: o negócio que mudou de etapa — ver `gatilho-lead.ts`. */
+    lead_id?: string | null;
     current_node_id: string;
     /**
      * ⚠️ OMITIDO DE PROPÓSITO quando o enrollment nasce vencido — e é sempre o
@@ -189,6 +191,12 @@ export async function aplicaGatilhoDeEtapa(
   // gatilho espera. `matched:false` faz o dispatcher registrar 'skipped' — o
   // evento fica marcado como visto, não como consumido com efeito.
   if (!etapaDestino || !negocioId) return summary;
+  // Reordenar dentro da mesma etapa NÃO é entrada (#5337). A rota de mover
+  // emite `lead.stage_changed` também nesse caso, então quem decide que o fato
+  // não é uma mudança de etapa é este gatilho: sem origem diferente da destino,
+  // o evento não descreve entrada. `matched:false` → 'skipped', sem efeito.
+  const etapaOrigem = textoOuNulo(row.payload.from_stage_id);
+  if (etapaOrigem === etapaDestino) return summary;
   summary.matched = true;
 
   const armados = (await deps.db.carregaPointersDeEtapa(row.organization_id)).filter(
@@ -246,6 +254,8 @@ export async function aplicaGatilhoDeEtapa(
       pointer_id: pointer.id,
       version_id: pointer.active_version_id,
       contact_id: contatoId,
+      // #4191: a inscrição nasce do NEGÓCIO que mudou de etapa, não do contato.
+      lead_id: negocioId,
       current_node_id: noDeGatilho.id,
       // `next_eval_at` NÃO vai: o default do banco decide. Ver o comentário na
       // interface e a migration 0147.

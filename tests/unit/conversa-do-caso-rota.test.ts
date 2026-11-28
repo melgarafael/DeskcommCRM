@@ -110,9 +110,19 @@ function sessaoComVisibilidade(visiveis: string[], mensagens: unknown[] = []) {
         : mensagens;
   function cadeia(rows: unknown[]) {
     const c: Record<string, unknown> = {};
+    let faixa: [number, number] | null = null;
     for (const m of ["select", "eq", "in", "order", "limit", "lt"]) c[m] = () => c;
+    // A leitura do universo dos casos é paginada (#5255): a página depois da
+    // última tem de vir vazia, como o PostgREST devolve.
+    c.range = (inicio: number, fim: number) => {
+      faixa = [inicio, fim];
+      return c;
+    };
     c.then = (aceita: (v: unknown) => unknown) =>
-      Promise.resolve({ data: rows, error: null }).then(aceita);
+      Promise.resolve({
+        data: faixa ? rows.slice(faixa[0], faixa[1] + 1) : rows,
+        error: null,
+      }).then(aceita);
     return c;
   }
   vi.mocked(createClient).mockResolvedValue({

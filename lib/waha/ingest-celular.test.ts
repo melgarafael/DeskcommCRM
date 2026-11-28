@@ -1,10 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ingest.ts importa @/lib/audit (→ supabase/server → validação de env);
 // o mock corta a cadeia sem tocar no que está sob teste.
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
+// #5179: a pausa é o EFEITO que os casos da prospecção medem (chamou ou não
+// chamou). O resto do módulo continua real — `pausarIaDuravelmente` (o `#off`)
+// não é o caminho medido aqui.
+vi.mock("@/lib/escalacao/atendimento-manual", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/escalacao/atendimento-manual")>();
+  return { ...real, pausarIaPorAtendimentoManual: vi.fn(async () => true) };
+});
+
+import { audit } from "@/lib/audit";
+import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { dispatchWahaEvent, parseChatId, type WahaEnvelope, type WahaPayload } from "@/lib/waha/ingest";
+
+const pausa = vi.mocked(pausarIaPorAtendimentoManual);
+
 
 /**
  * A MENSAGEM QUE O DONO DIGITA NO CELULAR TEM QUE CHEGAR NO CRM.
@@ -41,8 +54,24 @@ interface Duplo {
   rpcs: Array<{ fn: string; args: Record<string, unknown> }>;
 }
 
+/** O que as leituras da ingestão encontram em `conversations` / `organizations`. */
+interface EstadoFalso {
+  /** A conversa do teste. `null`/ausente = não existe linha para ela. */
+  conversa?: {
+    channel_session_id?: string | null;
+    active_ai_agent_id?: string | null;
+    metadata?: Record<string, unknown> | null;
+    last_inbound_at?: string | null;
+  } | null;
+  /** `organizations.settings` da organização do teste. */
+  settings?: unknown;
+}
+
 /** Admin de mentira com um "banco" em memória só de `messages`. */
-function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo {
+function bancoDeMentira(
+  preexistentes: Array<Partial<LinhaMessage>> = [],
+  estado: EstadoFalso = {},
+): Duplo {
   const messages: LinhaMessage[] = preexistentes.map((m, i) => ({
     id: `pre-${i + 1}`,
     organization_id: "org-1",
@@ -120,8 +149,53 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
     return q;
   };
 
+  // A conversa do teste. As leituras do roteamento (agente que aceita comando,
+  // #5179) pedem colunas diferentes da MESMA linha, então o dublê devolve a
+  // linha inteira — quem lê, escolhe.
+  const conversa = estado.conversa
+    ? { channel_session_id: null, active_ai_agent_id: null, ...estado.conversa }
+    : null;
+  const consultaDeConversa = () => {
+    const q = {
+      eq: () => q,
+      in: () => q,
+      is: () => q,
+      limit: () => q,
+      async maybeSingle() {
+        return { data: conversa, error: null };
+      },
+      then(ok: (v: unknown) => unknown) {
+        return Promise.resolve(ok({ data: conversa ? [conversa] : [], error: null }));
+      },
+    };
+    return q;
+  };
+
+  // `organizations.settings` — a opção por organização do #5179.
+  const consultaDeOrganizacao = () => {
+    const linha = estado.settings === undefined ? null : { id: "org-1", settings: estado.settings };
+    const q = {
+      eq: () => q,
+      async maybeSingle() {
+        return { data: linha, error: null };
+      },
+      async single() {
+        return { data: linha, error: null };
+      },
+      then(ok: (v: unknown) => unknown) {
+        return Promise.resolve(ok({ data: linha, error: null }));
+      },
+    };
+    return q;
+  };
+
   const tabela = (nome: string) => ({
-    select: () => consulta(),
+    select: () =>
+      nome === "conversations"
+        ? consultaDeConversa()
+        : nome === "organizations"
+          ? consultaDeOrganizacao()
+          : consulta(),
     insert: (linha: Record<string, unknown>) => ({
       select: () => ({
         async maybeSingle() {
@@ -444,5 +518,101 @@ describe("precedência dos três candidatos a chat", () => {
       "req-1",
     );
     expect(rpcs.find((c) => c.fn === "fn_upsert_wa_contact")!.args.p_chat_id).toBe("5599888888888@c.us");
+  });
+});
+
+/**
+ * #5179 — A FALA DO VENDEDOR PELO CELULAR NÃO PAUSA A IA ANTES DA RESPOSTA.
+ *
+ * A opção é da ORGANIZAÇÃO (`settings.prospeccao`) e vem DESLIGADA. Quando
+ * ligada, a pausa é dispensada só quando as três condições valem juntas:
+ * conversa de PROSPECÇÃO (`metadata.prospecting_campaign_id`), lead que AINDA
+ * NÃO respondeu (`last_inbound_at` nulo) e a opção ligada. Os quatro casos
+ * abaixo são exatamente essa matriz — e os três em que a pausa acontece provam
+ * que a opção não afrouxou nada fora da janela pedida.
+ *
+ * ⚠️ MEDIDO PELO `audit`: o motivo da dispensa (`pausa_pulada`) é a única
+ * testemunha de que a IA seguiu ligada de propósito, e não por acidente.
+ */
+describe("#5179 — pausa da IA na prospecção antes da primeira resposta", () => {
+  const MOTIVO = "prospeccao_sem_resposta_do_lead";
+  const CONVERSA_DE_CAMPANHA = { metadata: { prospecting_campaign_id: "campanha-1" } };
+  const LIGADO = { prospeccao: { nao_pausar_antes_da_primeira_resposta: true } };
+
+  beforeEach(() => {
+    pausa.mockClear();
+    vi.mocked(audit).mockClear();
+  });
+
+  /** O metadata do `message.sent` desta ingestão (o audit que leva o motivo). */
+  async function eventoSentido(): Promise<Record<string, unknown>> {
+    const chamada = vi
+      .mocked(audit)
+      .mock.calls.find(([evento]) => (evento as { action?: string }).action === "message.sent");
+    expect(chamada, "a ingestão não registrou o message.sent").toBeDefined();
+    return (chamada![0] as { metadata?: Record<string, unknown> }).metadata ?? {};
+  }
+
+  it("(a) opção DESLIGADA: a pausa acontece como hoje", async () => {
+    const { admin } = bancoDeMentira([], {
+      conversa: CONVERSA_DE_CAMPANHA,
+      settings: { prospeccao: { nao_pausar_antes_da_primeira_resposta: false } },
+    });
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(CELULAR_NOWEB), "req-1");
+
+    expect(pausa, "opção desligada não pode mudar a pausa").toHaveBeenCalledTimes(1);
+    expect(await eventoSentido()).not.toHaveProperty("pausa_pulada");
+  });
+
+  it("(a2) opção AUSENTE é o padrão desligado: a pausa acontece", async () => {
+    // O padrão não é um detalhe: quem nunca abriu a tela não pode herdar a
+    // opção nova. `settings` sem a fatia é o estado de toda instalação de hoje.
+    const { admin } = bancoDeMentira([], { conversa: CONVERSA_DE_CAMPANHA, settings: {} });
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(CELULAR_NOWEB), "req-1");
+
+    expect(pausa).toHaveBeenCalledTimes(1);
+    expect(await eventoSentido()).not.toHaveProperty("pausa_pulada");
+  });
+
+  it("(b) ligada + conversa de campanha + lead sem resposta: a pausa NÃO acontece", async () => {
+    const { admin } = bancoDeMentira([], {
+      conversa: { ...CONVERSA_DE_CAMPANHA, last_inbound_at: null },
+      settings: LIGADO,
+    });
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(CELULAR_NOWEB), "req-1");
+
+    expect(pausa, "a IA foi calada antes de o lead responder").not.toHaveBeenCalled();
+    expect(await eventoSentido()).toMatchObject({ pausa_pulada: MOTIVO });
+  });
+
+  it("(c) ligada + campanha, mas o lead JÁ respondeu: a pausa acontece", async () => {
+    // Depois da primeira resposta, quem fala pelo celular é atendimento: a IA
+    // não pode responder por cima. O limite da opção é este caso.
+    const { admin } = bancoDeMentira([], {
+      conversa: { ...CONVERSA_DE_CAMPANHA, last_inbound_at: "2026-11-23T22:00:00.000Z" },
+      settings: LIGADO,
+    });
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(CELULAR_NOWEB), "req-1");
+
+    expect(pausa).toHaveBeenCalledTimes(1);
+    expect(await eventoSentido()).not.toHaveProperty("pausa_pulada");
+  });
+
+  it("(d) ligada + conversa que NÃO é de campanha: a pausa acontece", async () => {
+    // A sabotagem que prova este caso é remover a condição de campanha (ver o
+    // PR): atendimento comum não pode herdar a dispensa da prospecção.
+    const { admin } = bancoDeMentira([], {
+      conversa: { metadata: {}, last_inbound_at: null },
+      settings: LIGADO,
+    });
+
+    await dispatchWahaEvent(admin as never, SESSION as never, envelope(CELULAR_NOWEB), "req-1");
+
+    expect(pausa, "conversa de atendimento comum foi tratada como prospecção").toHaveBeenCalledTimes(1);
+    expect(await eventoSentido()).not.toHaveProperty("pausa_pulada");
   });
 });

@@ -15,15 +15,18 @@
 import { z } from "zod";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { ESCOPO_MENSAGENS_INSTITUCIONAIS } from "@/lib/api/escopos-do-token";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
   canalDaConversa,
   prepararMaterialDaEmpresa,
 } from "@/lib/agent-engine/agent/materiais-da-empresa";
 import { copiarMaterialNoStorage } from "@/lib/materiais/copiar-no-storage";
+import { MODOS_DE_ENVIO, MODO_DE_ENVIO_INSTITUCIONAL } from "@/lib/messaging/modo-de-envio";
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { McpAuthError } from "../auth";
 import { enviarComChave } from "../idempotencia-da-ferramenta";
 import type { McpToolDefinition } from "../types";
 
@@ -33,11 +36,20 @@ const inputShape = {
   conversation_id: z.string().uuid(),
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
+  // #5034: arquivo que o cliente MCP já subiu ao CRM (`POST /api/v1/conversations/{id}/media` devolve o
+  // `storage_path`). Sem link público: documento de cliente não precisa ir para a internet. A posse do
+  // arquivo (organização E esta conversa) é conferida pelo `sendMessageHandler`, a mesma régua do Inbox.
+  media_storage_path: z.string().optional().describe("storage_path de POST /api/v1/conversations/{id}/media; dispensa media_url"),
+  media_filename: z.string().optional(),
   media_mime: z.string().optional(),
   type: z
     .enum(["text", "image", "audio", "document", "sticker", "video", "location", "contact"])
     .optional()
     .default("text"),
+  dispatch_mode: z
+    .enum(MODOS_DE_ENVIO)
+    .optional()
+    .describe("Use 'institutional' para aviso sem efeito na fila, SLA, IA ou prévia (requer escopo messages:institutional)."),
   idempotency_key: z
     .string()
     .min(1)
@@ -54,14 +66,46 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  // #5034: o nome do arquivo pode carregar o nome do paciente ou do cliente, e a auditoria é só de
+  // acréscimo (não some quando a mensagem some). O caminho também: quem erra e cola um caminho LOCAL
+  // ("C:/clientes/Maria/laudo.pdf") deixaria o nome na trilha mesmo com o envio recusado. Fica o fato
+  // de que havia, não o valor.
+  redigirParaAuditoria: (args) => ({
+    ...args,
+    ...(args.media_filename === undefined ? {} : { media_filename: "[redigido]" }),
+    ...(args.media_storage_path === undefined ? {} : { media_storage_path: "[redigido]" }),
+  }),
   handler: async (input, ctx) => {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,
       type: input.type,
       body: input.body,
       media_url: input.media_url,
+      media_storage_path: input.media_storage_path,
+      media_filename: input.media_filename,
       media_mime: input.media_mime,
+      ...(input.dispatch_mode !== undefined ? { dispatch_mode: input.dispatch_mode } : {}),
     });
+
+    const ehInstitucional = parsed.dispatch_mode === MODO_DE_ENVIO_INSTITUCIONAL;
+    if (ehInstitucional) {
+      if (ctx.actor.type === "ai_agent") {
+        throw new McpAuthError(
+          -32002,
+          403,
+          "forbidden: agentes de IA não podem enviar mensagens institucionais.",
+          "forbidden",
+        );
+      }
+      if (!ctx.tokenScopes?.includes(ESCOPO_MENSAGENS_INSTITUCIONAIS)) {
+        throw new McpAuthError(
+          -32002,
+          403,
+          `forbidden: token sem o escopo '${ESCOPO_MENSAGENS_INSTITUCIONAIS}'.`,
+          "forbidden",
+        );
+      }
+    }
 
     return enviarComChave({
       ctx,
@@ -84,6 +128,7 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
             organization_id: ctx.organizationId,
             actor: ctx.actor,
             requestId: ctx.requestId,
+            ...(ehInstitucional ? { dispatchMode: MODO_DE_ENVIO_INSTITUCIONAL } : {}),
           },
           parsed,
         );

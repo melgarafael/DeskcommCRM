@@ -6,7 +6,8 @@ import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
 const RAIZ = process.cwd();
 
 const CAMINHOS_DE_CRIACAO = [
-  "app/api/v1/channels/official/route.ts",
+  // As duas portas do canal oficial (token colado e Embedded Signup) gravam por aqui.
+  "lib/channels/meta/gravar-canal-oficial.ts",
   "lib/channels/connect.ts",
 ] as const;
 
@@ -14,7 +15,7 @@ describe("todo canal criado pela interface nasce em pré-go-live", () => {
   it.each(CAMINHOS_DE_CRIACAO)("%s usa a configuração inicial compartilhada", (arquivo) => {
     const fonte = readFileSync(resolve(RAIZ, arquivo), "utf8");
     expect(fonte).toMatch(/import \{ metadataInicialDoCanal \}/);
-    expect(fonte).toMatch(/metadata:\s*metadataInicialDoCanal\(\)/);
+    expect(fonte).toMatch(/metadata:\s*(\{\s*\.\.\.)?metadataInicialDoCanal\(\)/);
   });
 
   it.each([

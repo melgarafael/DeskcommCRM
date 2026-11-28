@@ -17,12 +17,12 @@ Uma resposta HTTP de sucesso não basta: a Meta precisa confirmar `events_receiv
 
 Eventos enviados com código de teste da Meta ficam como pendência de teste e não elevam o contador de vendas aceitas. Desative o código e só reporte vendas reais verificadas.
 
-## Google: duas formas de conexão
+## Google: duas formas de enviar conversões
 
 - Conexões existentes permanecem na Google Ads API. O token de desenvolvedor continua necessário para esse caminho.
 - Novas autorizações usam Data Manager. Use o mesmo aplicativo OAuth configurado na instalação, habilite a Data Manager API no projeto Google Cloud e autorize o escopo `https://www.googleapis.com/auth/datamanager`. Não precisa de developer token para essa API.
 - A tela oferece **Autorizar nova integração do Google** para migrar uma conexão anterior de forma explícita. Conta e ação continuam sendo informadas pela tela. A escolha da API faz parte do `state` assinado; o callback grava a API junto do refresh token cifrado.
-- A conexão deve ter permissão sobre a conta/ação escolhida. Se ela for alterada enquanto houver protocolo pendente, restaure o destino original para consultar esse protocolo. Não há reenvio automático para outra conta.
+- A conexão deve ter permissão sobre cada conta/ação escolhida. Novos envios de etapa guardam a conta, a gerente (MCC), a API e a ação antes de chamar o Google. Retentativas e consultas de protocolo preservam esse destino, mesmo que a regra seja editada. Protocolos legados sem esse retrato continuam pela conexão anterior: se ela mudou, restaure o destino original para consultá-los. Não há reenvio automático para outra conta.
 
 Configuração de instalação já existente: `GOOGLE_ADS_OAUTH_CLIENT_ID` e `GOOGLE_ADS_OAUTH_CLIENT_SECRET`; `GOOGLE_ADS_DEVELOPER_TOKEN` é específico do caminho anterior. Não há variável nova obrigatória.
 
@@ -32,20 +32,34 @@ Fontes oficiais consultadas em 24/09/2026 UTC:
 - [Restrições de acesso a uploads antigos](https://developers.google.com/google-ads/api/docs/deprecations): a elegibilidade histórica depende do uso anterior do recurso.
 - [Ingestão Data Manager](https://developers.google.com/data-manager/api/reference/rest/v1/events/ingest) e [consulta do protocolo](https://developers.google.com/data-manager/api/reference/rest/v1/requestStatus/retrieve).
 
+## Consultar campanhas de várias contas Google Ads
+
+1. Como administrador do CRM, abra **Google Ads → Desempenho no Google** e clique em **Conectar conta de leitura**. Dê um nome que a equipe reconheça, como “Unidade Centro”. Informe o ID de dez dígitos da conta de anúncios. Se o login acessa essa conta por uma conta gerente, preencha também o ID da gerente (MCC).
+2. Clique em **Continuar no Google** e escolha um login com acesso à conta de anúncios informada. A consulta de campanhas usa a Google Ads API e o escopo OAuth `adwords`. Se a autorização anterior era só para Data Manager, use **Autorizar leitura desta conta**.
+3. Repita para as outras contas e use o seletor do painel para consultar cada uma. Você pode usar logins Google diferentes. **Reconectar para leitura** permite refazer a autorização da conta selecionada.
+
+No projeto Google Cloud do aplicativo OAuth, habilite a Google Ads API. Um projeto com acesso **Explorer** pode fazer as consultas sem informar um token de desenvolvedor. Confira a elegibilidade e os limites do seu projeto na [documentação de níveis de acesso do Google](https://developers.google.com/google-ads/api/docs/api-policy/access-levels).
+
+O painel dá preferência à autorização de leitura cadastrada para cada conta. Para a conta de conversões já existente, também aceita a autorização anterior se ela permitir consultar campanhas. **Remover acesso de leitura** retira a autorização específica de relatórios. A captura pelos links do site e a configuração em **Configurações → Conversões** têm funcionamento independente.
+
 ## Escopo desta entrega
 
 Correção e evolução da integração já distribuída no núcleo. Reutiliza contatos, funil, eventos e configuração por organização. Não cria outro CRM nem transforma o envio em requisito para o atendimento.
 
-Esta entrega usa a origem capturada no contato, os eventos de venda `Purchase`, as etapas configuradas do Google (`QualifiedLead` e `Etapa:<uuid>`, 0436) e as etapas configuradas da Meta (`MetaEtapa:<uuid>`, 0524 — seção abaixo). Captura web completa para Meta, atribuição por nova jornada de cliente antigo, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
+A venda (`Purchase`) e as etapas da Meta (`MetaEtapa:<uuid>`, 0524) usam a origem capturada no contato. As etapas do Google (`QualifiedLead` e `Etapa:<uuid>`, 0436) usam o clique registrado no próprio negócio. Captura web completa para Meta, atribuição por nova jornada de cliente antigo, conversões otimizadas por dados pessoais e painéis de ROAS são evoluções separadas. Não são anunciados como implementados.
 
 ## Captura Google e qualificação por etapa
 
 CONFIRMADO no código desta entrega:
 
 - **Captura de origem do Google Ads**, na mesma tela, configura WhatsApp, mensagem com `[ref:{token}]` e ativação do endereço. Funciona antes de conectar a API de conversões.
-- O botão do site deve repassar os parâmetros reais recebidos na página: `gclid`, `gbraid` ou `wbraid`. Copiar apenas a URL fixa não preserva esses identificadores. Macros não resolvidas e identificadores inválidos não fabricam atribuição; o visitante ainda recebe o destino WhatsApp.
-- A captura persiste os tipos de identificadores e somente UTMs permitidas da query. O código curto é associado ao contato pela ingestão existente. Remover o código da mensagem impede essa associação.
-- Em **Google Ads → Lead qualificado (opcional)**, escolha uma etapa aberta e o ID de uma ação de conversão diferente da compra. A conta e a autorização são as mesmas da conexão. Configure a categoria da ação e a participação na otimização no Google Ads; o CRM não cria nem altera essas propriedades remotamente.
+- O botão do site deve repassar o identificador real do clique (`gclid`, `gbraid` ou `wbraid`). Se a organização tem mais de uma conta do Google Ads cadastrada, inclua também `google_customer_id` no modelo de rastreamento ou no sufixo de URL de cada conta e repasse o parâmetro pelo botão. Use os dez dígitos da conta que veiculou o anúncio. Com uma conta só, esse parâmetro é opcional. Copiar apenas a URL fixa não preserva os identificadores. Macros não resolvidas e identificadores inválidos não comprovam atribuição. O visitante ainda chega ao WhatsApp.
+- A captura persiste os tipos de identificadores e os parâmetros de campanha permitidos da query. O código curto é associado ao contato pela ingestão existente. Remover o código da mensagem impede essa associação.
+- Confira a origem no próprio negócio. Para a regra que usa **Conta padrão**, o CRM conta os IDs distintos da conexão de envio, das contas de leitura em **Google Ads → Desempenho no Google** e dos destinos explícitos cadastrados nas regras, inclusive pausadas. Com uma única conta cadastrada, essa regra legada envia para ela mesmo que o clique não informe a conta ou indique outra; isso permite enviar à conta de administrador que recebe conversões de uma conta de cliente. Com várias contas, o clique precisa identificar a conta de envio. Regras com **Conta específica** sempre exigem correspondência exata, mesmo com uma única conta. Se faltar essa correspondência, o motivo aparece no histórico e o envio é ignorado. Alterar o rastreamento só identifica os próximos cliques. Em qualquer configuração, o negócio precisa ter seu próprio clique, mesmo que a ficha do contato já tenha uma origem no Google Ads.
+- Em **Configurações → Conversões → O que cada etapa do funil informa ao Google Ads**, escolha a ação de cada etapa aberta. A regra existente continua usando a conta padrão da conexão. Para informar a mesma etapa a contas diferentes, use **Adicionar conta nesta etapa** e informe a conta de destino e sua ação de conversão em cada regra. Informe a gerente (MCC) apenas se o acesso passar por ela. Uma regra com destino explícito exige que o ID da conta no clique do negócio corresponda exatamente ao destino; não envia quando esse ID falta ou diverge.
+- As regras de uma mesma etapa são alternativas, não uma lista de destinatários: o clique seleciona uma regra, e o CRM envia no máximo uma conversão por negócio e etapa. A mesma conta efetiva não pode ter duas regras ligadas para a mesma etapa. Pausar uma regra preserva seu histórico. Conta de destino não muda a captura do site nem a conta consultada pelo painel.
+- **A autorização de envio continua sendo a conexão nativa de conversões.** Ela precisa de permissão nas contas escolhidas. Conectar uma conta somente para relatórios não autoriza o envio por essa conta. Se o Google recusar o acesso, o diagnóstico orienta conferir o ID, a gerente e a autorização. O botão **Criar no Google**, quando disponível na instalação, usa o destino da própria regra; trocar o destino no formulário limpa o ID da ação para evitar reaproveitar uma ação de outra conta.
+- A escolha por regra cobre conversões de etapas abertas. A compra (`Purchase`) mantém a conta e a ação da conexão global; esta mudança não cria regras de venda por conta nem altera lances ou orçamentos.
 - A regra começa desligada. Salvar não percorre negócios antigos: apenas movimentos posteriores à configuração são elegíveis. Arrastar e mover em lote usam `lead.stage_changed`.
 - Qualificação envia uma vez por negócio, sem valor monetário; compra continua exigindo negócio ganho e valor positivo. Reentrada na etapa não gera uma segunda qualificação. Um novo negócio é outra conversão.
 - `QualifiedLead` é o nome interno do registro do Google, não um evento enviado à Meta. No Google, a ação escolhida define o resultado. A Meta tem regras de etapa próprias (seção seguinte).
@@ -83,7 +97,7 @@ Migration 0401 adiciona API da conexão e protocolo do envio, preserva RLS/grant
 4. Tela: `/app/settings/conversoes`, origem, pendência e próximo passo.
 5. Porta: navegação existente de Configurações → Conversões.
 6. Recuperação: retentativa transitória, consulta de protocolo e ação manual após 24 horas.
-7. Configuração: `_formGoogle` escolhe etapa/ação e `_formCapturaDeUtm` configura o destino; formulários existentes, escolha explícita da nova autorização e explicação quando faltam credenciais.
+7. Configuração: `_formGoogle` mantém a conexão e a compra; `_regrasGoogle` escolhe a conta e a ação de cada regra de etapa; `_formCapturaDeUtm` configura o WhatsApp de destino. Os formulários explicam a autorização necessária e apresentam falhas de configuração.
 8. Continuidade: ganho pelo humano ou pelas capacidades existentes alimenta o mesmo consumidor; falha de anúncios não interfere no atendimento.
 9. Retorno: resultado altera o registro e a pendência; pedido manual volta ao mesmo consumidor, com a mesma identidade de venda.
 10. Mapa: `docs/architecture/conversoes-de-anuncios.architecture.json`.

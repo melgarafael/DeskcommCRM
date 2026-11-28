@@ -17,6 +17,10 @@ vi.mock("sonner", () => ({ toast: { success: sucesso } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: mostrarErro }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 
+vi.mock("@/hooks/realtime/useRealtimeChannel", () => ({
+  useRealtimeChannel: () => ({ ultimaEntrega: { current: null } }),
+}));
+
 const ID = "66666666-6666-4666-8666-666666666666";
 let status: string;
 

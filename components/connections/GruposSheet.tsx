@@ -434,12 +434,7 @@ export function GruposSheet({
               </li>
             ))}
           </ul>
-          {grupos?.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              {t("Este número não está em nenhum grupo.")}
-            </p>
-          )}
-          {grupos && grupos.length > 0 && filtrados.length === 0 && (
+          {grupos !== null && filtrados.length === 0 && (
             <p className="text-sm text-muted-foreground">{t("Nenhum grupo encontrado")}</p>
           )}
         </div>

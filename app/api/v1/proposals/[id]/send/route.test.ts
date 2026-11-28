@@ -112,6 +112,8 @@ interface MundoOpts {
   agendamentoDeRetorno?: unknown;
   /** Proposta órfã — o negócio foi apagado (lead_id virou null, D10). */
   leadIdNulo?: boolean;
+  /** O negócio já tem venda registrada (`valor_pelas_vendas = true`, #5254). */
+  leadComVenda?: boolean;
 }
 
 interface Proposta {
@@ -377,9 +379,22 @@ function montarMundoDeEnvio(opts: MundoOpts = {}) {
             }),
           }),
           update: (dados: unknown) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if ((dados as any).value_cents) leadValueCentsDepois = (dados as any).value_cents;
-            return { eq: () => ({ eq: async () => ({ error: null }) }) };
+            // O envio grava por `gravarValorDaPropostaNoNegocio`: a linha só casa
+            // quando o filtro `valor_pelas_vendas` bate com o negócio (#5254).
+            const filtros: Record<string, unknown> = {};
+            const cadeia = {
+              eq: (coluna: string, valor: unknown) => {
+                filtros[coluna] = valor;
+                return cadeia;
+              },
+              select: async () => {
+                const casou = filtros.valor_pelas_vendas === (opts.leadComVenda ?? false);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                if (casou && (dados as any).value_cents) leadValueCentsDepois = (dados as any).value_cents;
+                return { data: casou ? [{ id: LEAD_ID }] : [], error: null };
+              },
+            };
+            return cadeia;
           },
         };
       }
@@ -555,6 +570,18 @@ describe("POST /api/v1/proposals/[id]/send", () => {
     expect(mundo.propostaEnviada?.numero).toBe(42);
     expect(mundo.mensagemEnviada).toBe(true);
     expect(mundo.leadValueCentsDepois).toBe(mundo.propostaEnviada?.total_cents);
+  });
+
+  it("negócio com venda registrada: o envio não troca o valor nem registra proposal_value_changed (#5254)", async () => {
+    const mundo = montarMundoDeEnvio({ papel: "manager", leadComVenda: true });
+    const res = await mundo.POST();
+    expect(res.status).toBe(200);
+    expect(mundo.propostaEnviada?.status).toBe("enviada");
+    expect(mundo.leadValueCentsDepois).toBeNull();
+    const chamadas = mocks.emitLeadActivity.mock.calls as Array<[unknown, { type: string }]>;
+    const tipos = chamadas.map(([, atividade]) => atividade.type);
+    expect(tipos).toContain("proposal_sent");
+    expect(tipos).not.toContain("proposal_value_changed");
   });
 
   it("ao enviar com sucesso, resolve o aviso de revisão com forcar: true", async () => {

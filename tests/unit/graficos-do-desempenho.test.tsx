@@ -14,6 +14,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SerieTemporal } from "@/hooks/metrics/useSerieTemporal";
@@ -35,9 +36,23 @@ vi.mock("next/link", () => ({
 }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useTagDeIdioma: () => "pt-BR" }));
 
+// O `Select` do Radix usa captura de ponteiro; o jsdom não a implementa (mesma
+// muleta de `agenda-camada-datas-guarda-a-escolha`), e sem ela o clique na
+// opção estoura antes de a escolha chegar ao `onValueChange`.
+window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+window.HTMLElement.prototype.setPointerCapture = vi.fn();
+window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+// O destaque da opção chama `scrollIntoView`, que o jsdom também não tem.
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
 let serie: SerieTemporal;
+/** Cada chamada do hook: a granularidade e o funil pedidos (null = organização). */
+let pedidos: Array<{ granularidade: string; funilId: string | null }> = [];
 vi.mock("@/hooks/metrics/useSerieTemporal", () => ({
-  useSerieTemporal: () => ({ data: { data: serie }, isLoading: false, isError: false }),
+  useSerieTemporal: (granularidade: string, funilId: string | null) => {
+    pedidos.push({ granularidade, funilId });
+    return { data: { data: serie }, isLoading: false, isError: false };
+  },
 }));
 
 import { MetricsClient } from "@/app/app/metrics/_components/MetricsClient";
@@ -55,13 +70,47 @@ function serieDeExemplo(): SerieTemporal {
     ],
     total: 3,
     truncado: false,
+    // Sem funil: a conta da organização inteira, como antes do recorte (#4918).
+    funil: null,
   };
 }
 
+/** Os funis que o componente de servidor entrega ao painel. */
+const JANELA = { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" };
+
+const FUNIS = [
+  { id: "p-vendas", name: "Vendas" },
+  { id: "p-suporte", name: "Suporte" },
+];
+
 describe("a evolução dos ganhos no Desempenho", () => {
+  it("sem filtro o card diz que a conta é a da ORGANIZAÇÃO INTEIRA (#4918)", () => {
+    serie = serieDeExemplo();
+    pedidos = [];
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
+
+    // O pedido é o de hoje: nenhum `pipeline_id` na rota.
+    expect(pedidos.at(-1)).toEqual({ granularidade: "dia", funilId: null });
+    expect(screen.getByTestId("escopo-dos-ganhos").textContent).toBe("Organização inteira");
+  });
+
+  it("⭐ o card nomeia o funil quando há recorte, e o seletor pede o funil escolhido", async () => {
+    // A RESPOSTA é quem nomeia: o card mostra o funil que a rota de fato contou.
+    serie = { ...serieDeExemplo(), funil: { id: "p-suporte", name: "Suporte" } };
+    pedidos = [];
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
+
+    expect(screen.getByTestId("escopo-dos-ganhos").textContent).toBe("Funil: Suporte");
+
+    // Escolher outro funil refaz o pedido COM o id — é o recorte de verdade.
+    await userEvent.click(screen.getByRole("combobox", { name: "Funil selecionado" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Vendas" }));
+    expect(pedidos.at(-1)).toEqual({ granularidade: "dia", funilId: "p-vendas" });
+  });
+
   it("⭐ gráfico e tabela no MESMO Card, e o balde parado aparece com zero", () => {
     serie = serieDeExemplo();
-    render(<SeriePanel />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     // O gráfico existe (o invólucro do recharts, no mesmo Card da tabela).
     const grafico = screen.getByTestId("ganhos-no-tempo");
@@ -86,7 +135,7 @@ describe("a evolução dos ganhos no Desempenho", () => {
 
   it("a tabela conta exatamente o que a série traz, sem recalcular", () => {
     serie = serieDeExemplo();
-    render(<SeriePanel />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
 
     const linhas = Array.from(document.querySelectorAll("tbody tr")).map((tr) =>
       Array.from(tr.querySelectorAll("td")).map((td) => td.textContent ?? ""),
@@ -100,12 +149,12 @@ describe("a evolução dos ganhos no Desempenho", () => {
 
   it("série cortada no teto de leitura avisa, e a inteira não", () => {
     serie = serieDeExemplo();
-    const { unmount } = render(<SeriePanel />);
+    const { unmount } = render(<SeriePanel funis={FUNIS} janela={JANELA} />);
     expect(screen.queryByText("Série cortada no teto de leitura.")).toBeNull();
     unmount();
 
     serie = { ...serieDeExemplo(), truncado: true };
-    render(<SeriePanel />);
+    render(<SeriePanel funis={FUNIS} janela={JANELA} />);
     expect(screen.getByText("Série cortada no teto de leitura.")).toBeTruthy();
   });
 });
@@ -173,7 +222,7 @@ function montarPainel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MetricsClient canCompare currentUserId="outra-pessoa" />
+      <MetricsClient canCompare currentUserId="outra-pessoa" funis={FUNIS} fuso="America/Sao_Paulo" />
     </QueryClientProvider>,
   );
 }
@@ -216,11 +265,11 @@ describe("o ranking e Por canal no celular", () => {
           lingua === "es"
             ? {
                 ranking: ["Ganados", "Perdidos", "Conversaciones", "1ª respuesta (promedio / mediana)"],
-                canais: ["Conversaciones", "1ª respuesta (promedio)", "Sin respuesta"],
+                canais: ["Conversaciones", "1ª respuesta (promedio)", "Aún sin respuesta"],
               }
             : {
                 ranking: ["Ganhos", "Perdidos", "Conversas", "1ª resposta (média / mediana)"],
-                canais: ["Conversas", "1ª resposta (média)", "Sem resposta"],
+                canais: ["Conversas", "1ª resposta (média)", "Ainda sem resposta"],
               };
         expect(ranking.rotulos).toEqual(esperado.ranking);
         expect(canais.rotulos).toEqual(esperado.canais);

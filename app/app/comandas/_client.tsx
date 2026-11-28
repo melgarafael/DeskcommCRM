@@ -499,7 +499,7 @@ function Fechamento({
         frente. Aqui ela vê antes de tentar, e o texto diz onde resolver.
       */}
       {escolhida && !escolhida.account_id ? (
-        <p className="w-full text-xs text-danger" data-testid="aviso-forma-sem-conta">
+        <p className="w-full text-xs text-destructive" data-testid="aviso-forma-sem-conta">
           {t(
             "Esta forma de pagamento ainda não tem conta de destino. Defina em Configurações › Financeiro.",
           )}

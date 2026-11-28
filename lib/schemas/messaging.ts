@@ -11,6 +11,7 @@ import {
   MAXIMO_DE_ETIQUETAS_NO_FILTRO,
   MODOS_DE_ETIQUETA,
 } from "@/lib/inbox/marcador-da-conversa";
+import { telefoneWhatsappSchema } from "@/lib/schemas/contacts";
 import { PISO_DA_BUSCA, buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
 import { NOME_DE_ARQUIVO_MAX } from "@/lib/messaging/media/nome-de-arquivo";
 
@@ -133,6 +134,12 @@ const camposDoEnvio = z.object({
    * linha do token e o membership, no banco.
    */
   on_behalf_of_user_id: z.string().uuid().optional(),
+  /**
+   * Classificação explícita do disparo pelo token (`operational` = padrão atual;
+   * `institutional` = aviso/lembrete/comunicado sem efeitos colaterais no
+   * atendimento). Sem default para manter intacto o hash legado de idempotência.
+   */
+  dispatch_mode: z.enum(["operational", "institutional"]).optional(),
 });
 
 /**
@@ -217,6 +224,22 @@ export const sendMessagePorTelefoneSchema = camposDoEnvio
      * normaliza nada, para o corpo validado continuar sendo o que chegou.
      */
     phone_number: z.string().min(8).max(32).optional(),
+    /**
+     * ─── DE QUAL NÚMERO A MENSAGEM SAI (#5028) ─────────────────────────────
+     *
+     * Com mais de um número conectado, a porta por telefone mandava pelo
+     * primeiro canal que disca — quem chama não tinha como escolher. Este campo
+     * é o "por ESTE número", e é OPCIONAL por decisão do mantenedor: sem ele
+     * nada muda (nem no caminho `phone_number`, nem no `conversation_id`).
+     *
+     * Aqui é só a forma: uuid, ou ausente. Que a sessão seja DA ORGANIZAÇÃO
+     * resolvida pela autenticação e esteja conectada é pergunta do helper que
+     * abre a conversa (`openSharedContactConversation`, que já consulta
+     * `channel_sessions` com `organization_id`). A recusa nomeada é da rota —
+     * 422 `validation_error` com `campo: "channel_session_id"`, que não
+     * distingue "não existe aqui" de "existe em outra organização".
+     */
+    channel_session_id: z.string().uuid().optional(),
   })
   .refine(conteudoObrigatorio, {
     message:
@@ -332,6 +355,9 @@ export const openConversationWithContactSchema = z
     contact_id: z.string().uuid().optional(),
     phone_number: z.string().min(8).max(32).optional(),
     name: z.string().trim().min(1).max(200).optional(),
+    // O número tem WhatsApp? Vale só para a ficha que a chamada CRIA; ausente,
+    // ela nasce `nao_sei` (DES-1950). Ficha existente não é tocada.
+    phone_whatsapp: telefoneWhatsappSchema.optional(),
   })
   .refine((d) => !!d.contact_id || !!d.phone_number?.trim(), {
     message: "Informe contact_id ou phone_number.",
@@ -553,6 +579,14 @@ export const listConversationsQuerySchema = z.object({
    * handler, uma vez.
    */
   pessoais: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  /**
+   * A ORDEM DA FILA. `espera` (padrão do schema) = quem espera há mais tempo
+   * primeiro, a fila de banco. `recentes` = a conversa que acabou de chegar em
+   * cima — sem isso, numa Fila com dezenas de esperas antigas o contato novo
+   * caía depois da primeira página (50) e ninguém o via. Só vale na Fila; nas
+   * outras visões a ordem é sempre a da última mensagem.
+   */
+  ordem_fila: z.enum(["espera", "recentes"]).optional(),
   /**
    * Só as que têm mensagem não lida para o dono.
    *

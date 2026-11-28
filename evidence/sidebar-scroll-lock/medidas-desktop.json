@@ -1,0 +1,17 @@
+[
+  {
+    "controle": "^Menu do usuário:",
+    "antes": 0,
+    "depois": 0
+  },
+  {
+    "controle": "^Organização:",
+    "antes": 0,
+    "depois": 0
+  },
+  {
+    "controle": "Buscar",
+    "antes": 0,
+    "depois": 0
+  }
+]

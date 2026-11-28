@@ -4,6 +4,7 @@ import { LOCAIS_DE_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 import { instanteDoBanco } from "@/lib/tempo/agora";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
 /** Mutações que tornam qualquer comprovante anterior do turno insuficiente. */
 export const ESCRITAS_DE_AGENDAMENTO: ReadonlySet<string> = new Set([
@@ -34,7 +35,7 @@ function terminaDepois(inicio: unknown, fim: unknown): boolean {
 const reciboSchema = z
   .object({
     id: z.uuid(),
-    status: z.literal("confirmed"),
+    status: z.enum(["confirmed", "cancelled"]),
     starts_at: z.iso.datetime({ offset: true }),
     ends_at: z.iso.datetime({ offset: true }),
     revision: z.number().int().positive(),
@@ -43,13 +44,21 @@ const reciboSchema = z
 
 export type ReciboDeAgendamento = z.infer<typeof reciboSchema>;
 
-/** Só o RESULTADO estruturado de uma mutação bem-sucedida; nunca argumentos ou prosa. */
+/**
+ * Só o RESULTADO estruturado de uma mutação bem-sucedida; nunca argumentos ou prosa.
+ * `marcado`/`remarcado`/`confirmado` exigem `status="confirmed"`; `cancelado` exige
+ * `status="cancelled"`. `cancelado=true` não aplica a checagem de `human_confirmation`
+ * (aprovação pendente não impede cancelamento). `error`, `resultado_incerto`,
+ * `aguarda_confirmacao` e `agenda_externa_nunca_lida` continuam recusando. Resultado
+ * sem datas/revisão (ex. `{ id, status:"cancelled", ja_estava:true }`) não gera recibo.
+ */
 export function extrairRecibosDeAgendamento(resultado: unknown): ReciboDeAgendamento[] {
   const r = z
     .object({
       marcado: z.boolean().optional(),
       remarcado: z.boolean().optional(),
       confirmado: z.boolean().optional(),
+      cancelado: z.boolean().optional(),
       aguarda_confirmacao: z.boolean().optional(),
       agenda_externa_nunca_lida: z.boolean().optional(),
       resultado_incerto: z.boolean().optional(),
@@ -62,21 +71,29 @@ export function extrairRecibosDeAgendamento(resultado: unknown): ReciboDeAgendam
     r.data.error !== undefined ||
     r.data.resultado_incerto ||
     r.data.aguarda_confirmacao ||
-    r.data.agenda_externa_nunca_lida ||
-    !(r.data.marcado === true || r.data.remarcado === true || r.data.confirmado === true)
+    r.data.agenda_externa_nunca_lida
   )
     return [];
+  const cancelado = r.data.cancelado === true;
+  const operacao =
+    cancelado || r.data.marcado === true || r.data.remarcado === true || r.data.confirmado === true;
+  if (!operacao) return [];
   const compromisso = r.data.compromisso as Record<string, unknown> | null;
+  if (!compromisso) return [];
+  // `human_confirmation` pendente barra reserva confirmada; cancelamento não.
   if (
-    !compromisso ||
-    (compromisso.human_confirmation !== undefined &&
-      !["not_required", "confirmed"].includes(String(compromisso.human_confirmation)))
+    !cancelado &&
+    compromisso.human_confirmation !== undefined &&
+    !["not_required", "confirmed"].includes(String(compromisso.human_confirmation))
   )
     return [];
   // Reserva de grupo só vale inteira, e o teto coincide com o input da agenda.
   const bruto = Array.isArray(compromisso.appointments) ? compromisso.appointments : [compromisso];
   const recibos = z.array(reciboSchema).min(1).max(20).safeParse(bruto);
-  return recibos.success ? recibos.data : [];
+  if (!recibos.success) return [];
+  const esperado = cancelado ? "cancelled" : "confirmed";
+  if (recibos.data.some((rec) => rec.status !== esperado)) return [];
+  return recibos.data;
 }
 
 const linhaSchema = reciboSchema.and(
@@ -91,6 +108,8 @@ const linhaSchema = reciboSchema.and(
     service_requires_confirmation: z.boolean().nullable(),
     service_confirmed_by_user_id: z.uuid().nullable(),
     service_confirmed_at: z.string().nullable(),
+    owner_user_id: z.uuid().nullable().optional(),
+    calendar_appointment_responsibles: z.array(z.object({ user_id: z.uuid() })).nullable().optional(),
     calendar_event_types: z.object({
       id: z.uuid(),
       organization_id: z.uuid(),
@@ -109,6 +128,8 @@ export interface EvidenciaDeAgendamento extends ReciboDeAgendamento {
   local: string;
   time_zone: string;
   beneficiario: string | null;
+  /** Quem atende ESTA reserva (principal primeiro). Só nomes; vazio não comprova ninguém. */
+  profissionais: string[];
 }
 
 interface EscopoDoContato {
@@ -116,42 +137,97 @@ interface EscopoDoContato {
   contactId: string | null;
 }
 
-/** A linha é desta organização e deste contato, e nenhuma aprovação humana está pendente. */
+/**
+ * A linha é desta organização e deste contato. Organização, contato e tipo relacionado
+ * valem sempre; a exigência de aprovação humana vale só para `status="confirmed"`.
+ */
 function comprovaReserva(row: LinhaDeAgendamento, escopo: EscopoDoContato): boolean {
   return (
     row.organization_id === escopo.organizationId &&
     row.contact_id === escopo.contactId &&
     row.calendar_event_types.organization_id === escopo.organizationId &&
     row.calendar_event_types.id === row.event_type_id &&
-    !(
-      row.service_requires_confirmation === true &&
-      (!row.service_confirmed_by_user_id || !row.service_confirmed_at)
-    )
+    (row.status !== "confirmed" ||
+      !(
+        row.service_requires_confirmation === true &&
+        (!row.service_confirmed_by_user_id || !row.service_confirmed_at)
+      ))
   );
 }
 
+type ReservaConferida = {
+  evidencia: Omit<EvidenciaDeAgendamento, "profissionais">;
+  idsDosProfissionais: string[];
+};
+
 /** Projeção explícita: não transporta notas, nome do contato responsável, link ou estado Google. */
-function projetarEvidencia(row: LinhaDeAgendamento): EvidenciaDeAgendamento {
+function projetarEvidencia(row: LinhaDeAgendamento): ReservaConferida {
+  // Ids do profissional NÃO entram na evidência: servem só para resolver nomes.
+  const idsDosProfissionais = [
+    ...new Set(
+      [row.owner_user_id ?? null, ...(row.calendar_appointment_responsibles ?? []).map((r) => r.user_id)]
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
   return {
-    id: row.id,
-    status: row.status,
-    starts_at: row.starts_at,
-    ends_at: row.ends_at,
-    revision: row.revision,
-    organization_id: row.organization_id,
-    contact_id: row.contact_id,
-    event_type_id: row.event_type_id,
-    tipo: row.calendar_event_types.name,
-    local: rotuloDoLocal(row.location_kind, row.location_details)!,
-    time_zone: row.time_zone,
-    beneficiario: row.participant_name,
+    evidencia: {
+      id: row.id,
+      status: row.status,
+      starts_at: row.starts_at,
+      ends_at: row.ends_at,
+      revision: row.revision,
+      organization_id: row.organization_id,
+      contact_id: row.contact_id,
+      event_type_id: row.event_type_id,
+      tipo: row.calendar_event_types.name,
+      local: rotuloDoLocal(row.location_kind, row.location_details)!,
+      time_zone: row.time_zone,
+      beneficiario: row.participant_name,
+    },
+    idsDosProfissionais,
   };
+}
+
+/**
+ * Único caminho para nome de profissional. UMA leitura para todas as reservas;
+ * falha de nome nunca derruba o comprovante. Sem admin → profissionais vazio.
+ */
+async function comProfissionais(
+  admin: SupabaseClient | undefined,
+  escopo: EscopoDoContato,
+  reservas: ReservaConferida[],
+): Promise<EvidenciaDeAgendamento[]> {
+  const ids = [...new Set(reservas.flatMap((r) => r.idsDosProfissionais))];
+  let nomes = new Map<string, string | null>();
+  if (admin && ids.length > 0) {
+    try {
+      nomes = await nomesDosAtendentesCom(admin, escopo.organizationId, ids);
+    } catch {
+      // falha de nome nunca derruba o comprovante
+      nomes = new Map();
+    }
+  }
+  return reservas.map((r) => ({
+    ...r.evidencia,
+    profissionais: r.idsDosProfissionais
+      .map((id) => nomes.get(id) ?? null)
+      .map((n) => (typeof n === "string" ? n.trim() : ""))
+      .filter((n) => n.length > 0),
+  }));
 }
 
 /**
  * Confere o recibo atual antes da revisão (inclusive replay de idempotência).
  * A leitura usa service role: filtra organização/contato E o tipo relacionado.
- * Mudança de estado, horário ou revisão descarta o recibo inteiro; nunca regrava.
+ * Mudança de estado (`row.status === recibo.status` exigido), horário ou revisão
+ * descarta; nunca regrava.
+ *
+ * `confirmed`: tudo-ou-nada ENTRE ELES — se um falha, nenhum confirmado vale.
+ * `cancelled`: cada um é conferido sozinho; o que falhar (linha ausente, schema,
+ * escopo, status, revisão, horário) sai da lista sem derrubar os demais, e um
+ * confirmado que falha não derruba cancelado válido. Erro da consulta lança
+ * `booking_evidence_lookup_failed`. Ordem da evidência = ordem dos recibos
+ * recebidos. Profissionais são resolvidos uma única vez, no final.
  */
 export async function conferirRecibosDeAgendamento(
   db: SupabaseClient,
@@ -162,7 +238,7 @@ export async function conferirRecibosDeAgendamento(
   const { data, error } = await db
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, event_type_id, status, starts_at, ends_at, revision, time_zone, location_kind, location_details, participant_name, service_requires_confirmation, service_confirmed_by_user_id, service_confirmed_at, calendar_event_types!calendar_appointments_event_type_id_fkey!inner(id, organization_id, name)",
+      "id, organization_id, contact_id, event_type_id, status, starts_at, ends_at, revision, time_zone, location_kind, location_details, participant_name, service_requires_confirmation, service_confirmed_by_user_id, service_confirmed_at, owner_user_id, calendar_appointment_responsibles(user_id), calendar_event_types!calendar_appointments_event_type_id_fkey!inner(id, organization_id, name)",
     )
     .eq("organization_id", escopo.organizationId)
     .eq("contact_id", escopo.contactId)
@@ -173,22 +249,55 @@ export async function conferirRecibosDeAgendamento(
       recibos.map((r) => r.id),
     );
   if (error) throw new Error("booking_evidence_lookup_failed");
-  if (!data || data.length !== recibos.length) return [];
-  const evidencias: EvidenciaDeAgendamento[] = [];
-  for (const recibo of recibos) {
-    const parsed = linhaSchema.safeParse(data.find((r) => r.id === recibo.id));
-    if (!parsed.success) return [];
+  if (!data) return [];
+
+  const conferirUm = (recibo: ReciboDeAgendamento): ReservaConferida | null => {
+    const parsed = linhaSchema.safeParse(data.find((r) => (r as { id?: unknown }).id === recibo.id));
+    if (!parsed.success) return null;
     const row = parsed.data;
     if (
       !comprovaReserva(row, escopo) ||
+      row.status !== recibo.status ||
       row.revision !== recibo.revision ||
       !mesmoInstante(row.starts_at, recibo.starts_at) ||
       !mesmoInstante(row.ends_at, recibo.ends_at)
     )
-      return [];
-    evidencias.push(projetarEvidencia(row));
+      return null;
+    return projetarEvidencia(row);
+  };
+
+  // confirmed: tudo-ou-nada entre eles.
+  const confirmados = new Map<string, ReservaConferida>();
+  let confirmadosOk = true;
+  for (const recibo of recibos) {
+    if (recibo.status !== "confirmed") continue;
+    const conferida = conferirUm(recibo);
+    if (!conferida) {
+      confirmadosOk = false;
+      continue;
+    }
+    confirmados.set(recibo.id, conferida);
   }
-  return evidencias;
+
+  // cancelled: cada um sozinho.
+  const cancelados = new Map<string, ReservaConferida>();
+  for (const recibo of recibos) {
+    if (recibo.status !== "cancelled") continue;
+    const conferida = conferirUm(recibo);
+    if (conferida) cancelados.set(recibo.id, conferida);
+  }
+
+  // Ordem da evidência = ordem dos recibos recebidos.
+  const reservas: ReservaConferida[] = [];
+  for (const recibo of recibos) {
+    const conferida =
+      recibo.status === "confirmed"
+        ? (confirmadosOk ? confirmados.get(recibo.id) : undefined)
+        : cancelados.get(recibo.id);
+    if (conferida) reservas.push(conferida);
+  }
+  // Só no final, depois que as linhas passaram nas conferências.
+  return comProfissionais(db, escopo, reservas);
 }
 
 /** Teto da lista que vai ao revisor. É o mesmo do recibo de grupo. */
@@ -213,16 +322,22 @@ export async function lerReservasConfirmadasDoContato(
   db: Queryable,
   escopo: EscopoDoContato,
   agora: Date,
+  admin?: SupabaseClient,
 ): Promise<AgendaDaRevisao> {
   if (!escopo.contactId) return { evidencias: [], parcial: false };
   const { rows } = await db.query(
     `select a.id, a.organization_id, a.contact_id, a.event_type_id, a.status,
             a.time_zone, a.location_kind, a.location_details, a.participant_name,
             a.service_requires_confirmation, a.service_confirmed_by_user_id,
+            a.owner_user_id,
             to_json(a.revision) as revision,
             to_json(a.service_confirmed_at) as service_confirmed_at,
             to_json(a.starts_at) as starts_at,
             to_json(a.ends_at) as ends_at,
+            (select coalesce(json_agg(json_build_object('user_id', r.user_id) order by r.user_id), '[]'::json)
+               from calendar_appointment_responsibles r
+              where r.organization_id = a.organization_id and r.appointment_id = a.id)
+              as calendar_appointment_responsibles,
             json_build_object('id', t.id, 'organization_id', t.organization_id, 'name', t.name)
               as calendar_event_types
        from calendar_appointments a
@@ -237,10 +352,15 @@ export async function lerReservasConfirmadasDoContato(
       limit $4`,
     [escopo.organizationId, escopo.contactId, agora.toISOString(), MAXIMO_DE_RESERVAS_NA_REVISAO + 1],
   );
-  const evidencias = rows.slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).flatMap((bruta) => {
+  // Só linhas confirmed (SQL filtra; linha cancelada devolvida por engano não vira evidência),
+  // que passaram em comprovaReserva e dentro do teto.
+  const reservas = rows.slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).flatMap((bruta) => {
     const linha = linhaSchema.safeParse(bruta);
-    return linha.success && comprovaReserva(linha.data, escopo) ? [projetarEvidencia(linha.data)] : [];
+    return linha.success && linha.data.status === "confirmed" && comprovaReserva(linha.data, escopo)
+      ? [projetarEvidencia(linha.data)]
+      : [];
   });
+  const evidencias = await comProfissionais(admin, escopo, reservas);
   return { evidencias, parcial: rows.length > MAXIMO_DE_RESERVAS_NA_REVISAO };
 }
 
@@ -265,7 +385,7 @@ export async function lerAgendaDaRevisao(
   },
 ): Promise<AgendaDaRevisao> {
   if (turno.geracaoDaAgenda === 0 && turno.temEvidenciaComercial) {
-    return lerReservasConfirmadasDoContato(db, escopo, turno.agora);
+    return lerReservasConfirmadasDoContato(db, escopo, turno.agora, admin);
   }
   return {
     evidencias: await conferirRecibosDeAgendamento(admin, escopo, turno.recibos),

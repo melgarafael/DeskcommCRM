@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const mocks = vi.hoisted(() => ({ config: vi.fn(), renovar: vi.fn() }));
 vi.mock("@/lib/plataformas-de-anuncio/google/config", () => ({
   configuracaoDoGoogleAds: mocks.config,
 }));
 vi.mock("@/lib/plataformas-de-anuncio/google/token", () => ({ renovarToken: mocks.renovar }));
+vi.mock("@/lib/webhooks/secrets", () => ({ decryptWebhookSecret: async () => "refresh-nativo" }));
 
 const {
   classificarRecusa,
+  conferirContaDeRelatorio,
   criarAcaoDeConversao,
   listarAcoesDeConversao,
   lerCampanhas,
   listarRecursosDeMensagem,
+  lerConexaoNativaParaDestinoGoogle,
+  lerConexaoGoogleParaApi,
 } = await import("@/lib/plataformas-de-anuncio/google/api-google-ads");
 
 const conexao = { refreshToken: "r", customerId: "1234567890", loginCustomerId: "9998887776" };
@@ -28,6 +33,12 @@ beforeEach(() => {
 });
 
 describe("recusas do Google em linguagem de quem opera", () => {
+  it("indica o projeto Cloud quando falta acesso a anunciantes de produção", () => {
+    expect(
+      classificarRecusa(403, { error: { message: "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION" } })
+        .falha,
+    ).toBe("projeto_sem_acesso");
+  });
   it("escopo insuficiente pede reconexão", () => {
     expect(
       classificarRecusa(403, {
@@ -59,6 +70,54 @@ describe("recusas do Google em linguagem de quem opera", () => {
 });
 
 describe("ações de conversão", () => {
+  it("usa só o refresh nativo da organização no destino explícito e conserva o guard do relatório legado", async () => {
+    const filtros: Array<[string, unknown]> = [];
+    const tabelas: string[] = [];
+    const q = {
+      select: () => q,
+      eq: (coluna: string, valor: unknown) => {
+        filtros.push([coluna, valor]);
+        return q;
+      },
+      maybeSingle: async () => ({
+        data: {
+          google_refresh_token_encrypted: "cifrado",
+          google_customer_id: "1234567890",
+          google_login_customer_id: "9998887776",
+        },
+        error: null,
+      }),
+    };
+    const admin = {
+      from: (tabela: string) => {
+        tabelas.push(tabela);
+        return q;
+      },
+    } as unknown as SupabaseClient;
+    expect(
+      await lerConexaoNativaParaDestinoGoogle(admin, "org-A", {
+        customerId: "1112223333",
+        loginCustomerId: null,
+      }),
+    ).toEqual({
+      ok: true,
+      dados: {
+        refreshToken: "refresh-nativo",
+        customerId: "1112223333",
+        loginCustomerId: null,
+      },
+    });
+    expect(tabelas).toEqual(["ad_platform_connections"]);
+    expect(filtros).toEqual([
+      ["organization_id", "org-A"],
+      ["platform", "google_ads"],
+    ]);
+    expect(await lerConexaoGoogleParaApi(admin, "org-A", "1112223333")).toMatchObject({
+      ok: false,
+      falha: "sem_conexao",
+    });
+  });
+
   it("sem developer token nem chama o Google", async () => {
     mocks.config.mockReturnValue(null);
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -69,16 +128,14 @@ describe("ações de conversão", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
   it("cria ação de importação de cliques com sufixo, categoria e headers de conta gerente", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            results: [{ resourceName: "customers/1234567890/conversionActions/555" }],
-          }),
-          { status: 200 },
-        ),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [{ resourceName: "customers/1234567890/conversionActions/555" }],
+        }),
+        { status: 200 },
+      ),
+    );
     const r = await criarAcaoDeConversao(conexao, {
       nome: "Lead qualificado",
       categoria: "QUALIFIED_LEAD",
@@ -139,6 +196,45 @@ describe("ações de conversão", () => {
 });
 
 describe("campanhas e recursos de mensagem", () => {
+  it("consulta a conta com OAuth sem developer token e encaminha o MCC somente quando informado", async () => {
+    mocks.config.mockReturnValue({ clientId: "c", clientSecret: "s", developerToken: "" });
+    const http = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ results: [] }));
+    expect(await lerCampanhas(conexao, { de: "2026-01-01", ate: "2026-01-02" })).toEqual({
+      ok: true,
+      dados: [],
+    });
+    expect(mocks.config).toHaveBeenCalledWith("relatorio");
+    expect(http.mock.calls[0]?.[1]?.headers).toEqual({
+      "content-type": "application/json",
+      authorization: "Bearer AT",
+      "login-customer-id": conexao.loginCustomerId,
+    });
+    http.mockResolvedValueOnce(
+      Response.json({ results: [{ customer: { id: conexao.customerId } }] }),
+    );
+    expect(await conferirContaDeRelatorio("novo", conexao.customerId, null)).toMatchObject({
+      ok: true,
+    });
+    const [url, init] = http.mock.calls[1]!;
+    expect(String(url)).toContain("/customers/1234567890/googleAds:search");
+    expect(init?.headers).toEqual({
+      "content-type": "application/json",
+      authorization: "Bearer novo",
+    });
+    expect(JSON.parse(String(init?.body)).query).toContain("FROM customer");
+  });
+  it.each([{ id: "1111111111" }, { id: "1234567890", manager: true }])(
+    "recusa autorizar uma conta diferente ou gerenciadora",
+    async (customer) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        Response.json({ results: [{ customer }] }),
+      );
+      expect(await conferirContaDeRelatorio("novo", conexao.customerId, null)).toMatchObject({
+        ok: false,
+        falha: "sem_permissao",
+      });
+    },
+  );
   it("converte micros na moeda retornada pela conta e recusa período malformado sem chamar o Google", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

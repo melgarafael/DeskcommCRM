@@ -103,28 +103,31 @@ describe("escolherModeloEconomico com temPrecoNoMotor", () => {
   });
 });
 
-async function modeloDoSeam(habilitados: readonly string[]): Promise<string | null> {
-  const query = vi.fn(async (sql: string) => (sql.includes("from ai_models") ? { rows: CATALOGO } : { rows: [] }));
+type Cenario = { catalogo: readonly ModeloDoCatalogoEconomico[]; provider: string; defaultModel: string };
+const OPENAI: Cenario = { catalogo: CATALOGO, provider: "openai", defaultModel: "gpt-5.6-terra" };
+
+async function modeloDoSeam(habilitados: readonly string[], c: Cenario = OPENAI): Promise<string | null> {
+  const query = vi.fn(async (sql: string) => (sql.includes("from ai_models") ? { rows: c.catalogo } : { rows: [] }));
   const d = await decidirParaOSeam({ query } as never, {
     organizationId: ORG,
     purpose: "stage_classifier",
     modeloDoCallSite: undefined,
     overrideDoAgente: null,
-    padraoDaOrganizacao: { provider: "openai", defaultModel: "gpt-5.6-terra" },
+    padraoDaOrganizacao: { provider: c.provider, defaultModel: c.defaultModel },
     modelosHabilitados: habilitados,
   });
   return d.modelId;
 }
 
-async function modeloDaTela(habilitados: readonly string[]): Promise<string | null> {
-  banco.lista.ai_models = CATALOGO.map((c) => ({
-    ...c,
-    display_name: c.model_id,
+async function modeloDaTela(habilitados: readonly string[], c: Cenario = OPENAI): Promise<string | null> {
+  banco.lista.ai_models = c.catalogo.map((linha) => ({
+    ...linha,
+    display_name: linha.model_id,
     supports_vision: false,
     context_window: null,
   }));
   banco.unica.organizations = {
-    settings: { llm: { provider: "openai", default_model: "gpt-5.6-terra", enabled_models: habilitados } },
+    settings: { llm: { provider: c.provider, default_model: c.defaultModel, enabled_models: habilitados } },
   };
   const res = await GET();
   expect(res.status).toBe(200);
@@ -157,6 +160,25 @@ describe("a tela e o seam concordam", () => {
     const comNano = [...SO_O_MINI, "gpt-5.4-nano"];
     expect(await modeloDoSeam(comNano)).toBe("gpt-5.4-nano");
     expect(await modeloDaTela(comNano)).toBe("gpt-5.4-nano");
+  });
+
+  // #4925: os Gemini aposentados são os mais baratos do catálogo. O seam os
+  // descarta; se a tela não recebesse o mesmo filtro, anunciaria um modelo
+  // que responde 404 enquanto o motor roda o 3.1 Flash-Lite.
+  it("Google com aposentados no catálogo: os dois ficam no gemini-3.1-flash-lite", async () => {
+    const g = (model_id: string, input: number, output: number) => ({ ...m(model_id, input, output), provider: "google" });
+    const google: Cenario = {
+      catalogo: [
+        g("gemini-3.5-flash", 150, 900),
+        g("gemini-3.1-flash-lite", 25, 150),
+        g("gemini-2.5-flash-lite", 10, 40),
+        g("gemini-2.0-flash", 10, 40),
+      ],
+      provider: "google",
+      defaultModel: "gemini-3.5-flash",
+    };
+    expect(await modeloDoSeam([], google)).toBe("gemini-3.1-flash-lite");
+    expect(await modeloDaTela([], google)).toBe("gemini-3.1-flash-lite");
   });
 });
 

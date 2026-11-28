@@ -11,6 +11,7 @@
  * (endpoint, chave), filtro de janela e recibo terminal na mesma linha.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
@@ -72,6 +73,66 @@ beforeEach(() => {
   mockedSend.mockReset();
   mockedSegurar.mockReset();
   mockedRegistrar.mockClear();
+});
+
+describe("crm_send_whatsapp_message — arquivo já enviado ao CRM, sem link público (#5034)", () => {
+  const PATH = `${ORG_ID}/${CONVERSATION_ID}/out-1.pdf`;
+  const enviado = { id: "m1", status: "sent", external_id: "x", sent_at: "2026-11-20T12:00:00.000Z" };
+
+  it("passa media_storage_path e media_filename ao mesmo envio do Inbox", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedSend.mockResolvedValue(enviado as any);
+
+    await crmSendWhatsappMessage.handler(
+      { conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "contrato.pdf",
+        media_mime: "application/pdf" } as never,
+      ctx,
+    );
+
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(mockedSend.mock.calls[0]?.[2]).toMatchObject({
+      type: "document",
+      media_storage_path: PATH,
+      media_filename: "contrato.pdf",
+      media_mime: "application/pdf",
+    });
+  });
+
+  it("só o caminho, sem texto nem link, já é conteúdo", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedSend.mockResolvedValue(enviado as any);
+
+    await expect(
+      crmSendWhatsappMessage.handler({ conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH } as never, ctx),
+    ).resolves.toMatchObject({ message_id: "m1" });
+  });
+
+  it("os dois campos passam pela entrada da ferramenta (o schema que o servidor MCP usa)", () => {
+    const entrada = z.object(crmSendWhatsappMessage.inputSchema).parse({
+      conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "contrato.pdf",
+    });
+    expect(entrada).toMatchObject({ media_storage_path: PATH, media_filename: "contrato.pdf" });
+  });
+
+  it("o nome do arquivo não vai para a auditoria (pode ter nome de paciente)", () => {
+    const redigido = crmSendWhatsappMessage.redigirParaAuditoria?.({
+      conversation_id: CONVERSATION_ID, type: "document", media_storage_path: PATH, media_filename: "laudo-Maria-da-Silva.pdf",
+    });
+    expect(JSON.stringify(redigido ?? {})).not.toContain("Maria");
+    expect(redigido).toMatchObject({ conversation_id: CONVERSATION_ID, type: "document" });
+  });
+
+  it("caminho de outra conversa: a recusa do envio chega ao cliente MCP, nada sai", async () => {
+    mockedSend.mockRejectedValue(new ApiError(422, "validation_failed", undefined, "req-1", "media_storage_path fora da conversa."));
+
+    await expect(
+      crmSendWhatsappMessage.handler(
+        { conversation_id: CONVERSATION_ID, type: "document", media_storage_path: `${ORG_ID}/outra/out-1.pdf` } as never,
+        ctx,
+      ),
+    ).rejects.toThrow(/fora da conversa/);
+    expect(mockedRegistrar).not.toHaveBeenCalled();
+  });
 });
 
 describe("crm_send_whatsapp_message — freio anti-ban do número", () => {
@@ -249,5 +310,122 @@ describe.each(FERRAMENTAS)("$nome — idempotência pela chave reservada (#1613,
     expect(segunda).toMatchObject({ message_id: "m2" });
     expect(segunda).not.toHaveProperty("deduplicated");
     expect(idem.size).toBe(0);
+  });
+});
+
+describe("crm_send_whatsapp_message — envio institucional (PR 02)", () => {
+  const enviados = {
+    id: "m-inst-1",
+    status: "sent",
+    external_id: "wamid-inst-1",
+    sent_at: "2026-11-25T12:00:00.000Z",
+  };
+
+  it("recusa dispatch_mode='institutional' sem escopo messages:institutional sem gastar freio ou enviar", async () => {
+    const semEscopo = {
+      ...ctx,
+      tokenScopes: ["mcp:write"],
+    } as unknown as McpContext;
+
+    const erro = await crmSendWhatsappMessage
+      .handler(
+        {
+          conversation_id: CONVERSATION_ID,
+          body: "Aviso institucional de manutenção",
+          type: "text",
+          dispatch_mode: "institutional",
+        } as never,
+        semEscopo,
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    expect(erro).toMatchObject({ httpStatus: 403 });
+    expect(mockedSegurar).not.toHaveBeenCalled();
+    expect(mockedSend).not.toHaveBeenCalled();
+  });
+
+  it("recusa dispatch_mode='institutional' quando o ator é ai_agent mesmo com escopo", async () => {
+    const agenteCtx = {
+      ...ctx,
+      actor: { type: "ai_agent", id: "run-1", role: "agent", api_token_id: "tok" },
+      tokenScopes: ["mcp:write", "messages:institutional"],
+    } as unknown as McpContext;
+
+    const erro = await crmSendWhatsappMessage
+      .handler(
+        {
+          conversation_id: CONVERSATION_ID,
+          body: "Tentativa da IA",
+          type: "text",
+          dispatch_mode: "institutional",
+        } as never,
+        agenteCtx,
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    expect(erro).toMatchObject({ httpStatus: 403 });
+    expect(mockedSegurar).not.toHaveBeenCalled();
+    expect(mockedSend).not.toHaveBeenCalled();
+  });
+
+  it("com escopo messages:institutional e ator api_token repassa dispatchMode='institutional' e respeita freio + idempotência", async () => {
+    const { db } = bancoFalso();
+    mockedSend.mockResolvedValue(enviados as never);
+    const instCtx = {
+      ...ctx,
+      supabase: db,
+      tokenScopes: ["mcp:write", "messages:institutional"],
+    } as unknown as McpContext;
+
+    const r1 = await crmSendWhatsappMessage.handler(
+      {
+        conversation_id: CONVERSATION_ID,
+        body: "Seu boleto vence hoje.",
+        type: "text",
+        dispatch_mode: "institutional",
+        idempotency_key: "inst-key-1",
+      } as never,
+      instCtx,
+    );
+    const r2 = await crmSendWhatsappMessage.handler(
+      {
+        conversation_id: CONVERSATION_ID,
+        body: "Seu boleto vence hoje.",
+        type: "text",
+        dispatch_mode: "institutional",
+        idempotency_key: "inst-key-1",
+      } as never,
+      instCtx,
+    );
+    const conflito = await crmSendWhatsappMessage
+      .handler(
+        {
+          conversation_id: CONVERSATION_ID,
+          body: "Seu boleto vence hoje.",
+          type: "text",
+          dispatch_mode: "operational",
+          idempotency_key: "inst-key-1",
+        } as never,
+        instCtx,
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    expect(mockedSegurar).toHaveBeenCalledTimes(1);
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(mockedSend.mock.calls[0]?.[1]).toMatchObject({ dispatchMode: "institutional" });
+    expect(mockedSend.mock.calls[0]?.[2]).toMatchObject({ dispatch_mode: "institutional" });
+    expect(r1).toMatchObject({ message_id: "m-inst-1" });
+    expect(r2).toMatchObject({ message_id: "m-inst-1", deduplicated: true });
+    expect(conflito).toBeInstanceOf(ApiError);
+    expect(conflito).toMatchObject({ status: 409, code: "idempotency_conflict" });
   });
 });

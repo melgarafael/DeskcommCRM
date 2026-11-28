@@ -26,7 +26,9 @@ services:
       - "3030:3000"
     environment:
       # Hash SHA512 hex da api key (NÃO plaintext). Cliente envia plaintext em X-Api-Key.
-      WAHA_API_KEY: ${WAHA_API_KEY_SHA512}
+      # Prefixo sha512: faz o WAHA HASHEAR o X-Api-Key recebido e comparar com este
+      # hash. Sem o prefixo ele compara literal → o app (que manda o plaintext) toma 401.
+      WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
       # Webhook base URL — precisa ser pública (use ngrok/cloudflared em dev).
       # host.docker.internal: o app Next roda no HOST em dev — localhost dentro do
       # container seria o próprio WAHA e o webhook nunca chegaria. Porta 3002:
@@ -36,7 +38,9 @@ services:
       # e o CRM fica sem a resposta mais comum do WhatsApp. O roteador tem o ramo
       # próprio (`handleReaction`, lib/waha/ingest.ts): a reação vira linha
       # `type='reaction'` ligada ao alvo, e não carimba a conversa como mensagem.
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
+      # `call.received`: a ligação de voz, recusada quando a empresa liga
+      # "Bloquear chamadas recebidas" (lib/organizacao/bloqueio-de-chamadas.ts).
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change,call.received"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}

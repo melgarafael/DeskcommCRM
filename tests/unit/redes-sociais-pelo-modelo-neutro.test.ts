@@ -136,7 +136,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
     // diferente do Telegram do catálogo social, que segue `inbox: false`): é a
     // mudança que o PR faz de propósito, e a fotografia acompanha.
     // `olx` entrou com o chat da OLX (#2927): canal próprio, fora do catálogo social.
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "olx", "instagram", "facebook"]);
+    // `webchat` é o chat no site (Spec 36): canal de conversa sem rede social por trás.
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "telegram", "olx", "webchat", "instagram", "facebook"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {
@@ -151,6 +152,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "telegram",
       // O chat da OLX (#2927): canal de mensagem opcional, com matriz própria.
       "olx",
+      // O chat no site (Spec 36) manda texto livre na conversa, sem telefone.
+      "webchat",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);

@@ -49,6 +49,7 @@ import {
   type OrigemDaPassagem,
 } from '@/lib/escalacao/passagem';
 import { traduzir } from '@/lib/i18n/dicionario';
+import { donoHumanoVetaIA, lerModoIaComDono } from '@/lib/ai/elegibilidade/ia-com-dono';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 import { CONVERSATION_TERMINAL_STATUSES } from '@/lib/schemas';
@@ -209,6 +210,20 @@ export function ehMenuDeOpcoesNumeradas(mensagem: string): boolean {
   if (mensagem.trim() === '') return false;
   const normalizada = normalize(mensagem);
   if (INSTRUCOES_DE_MENU.some((re) => re.test(normalizada))) return true;
+  const opcoes = normalizada.match(OPCAO_NUMERADA);
+  return opcoes !== null && new Set(opcoes.map((o) => o.replace(/\D/gu, ''))).size >= 2;
+}
+
+/**
+ * Menu que PEDE a escolha: instrução explícita ("digite o número") E duas opções
+ * numeradas. É o sinal de menu que o follow-up usa (doc 422): as duas metades
+ * sozinhas são frase de cliente — "1. preço / 2. prazo" numera dúvidas, e "me
+ * manda o menu de opções" cita a instrução sem montar opção nenhuma.
+ */
+export function ehMenuQuePedeEscolha(mensagem: string): boolean {
+  if (mensagem.trim() === '') return false;
+  const normalizada = normalize(mensagem);
+  if (!INSTRUCOES_DE_MENU.some((re) => re.test(normalizada))) return false;
   const opcoes = normalizada.match(OPCAO_NUMERADA);
   return opcoes !== null && new Set(opcoes.map((o) => o.replace(/\D/gu, ''))).size >= 2;
 }
@@ -406,6 +421,123 @@ export async function isLeadInHandoff(
     escopo === '' ? [tenantId, leadId] : [tenantId, leadId, conversationId],
   );
   return rows[0]?.handoff === true;
+}
+
+/**
+ * A IA ainda pode ENTREGAR esta mensagem, agora?
+ *
+ * A pergunta é a do instante do envio, não a do começo do turno. O turno decide
+ * falar pelo gate completo (`isLeadInHandoff` + elegibilidade, que inclui o veto
+ * do dono humano), mas entre essa decisão e a entrega há o modelo, as tools e o
+ * ritmo de digitação — segundos a minutos. Uma pessoa que assume nesse meio-tempo
+ * não pode receber uma bolha da IA por cima da sua primeira frase.
+ *
+ * Por isso a reconferência lê as DUAS travas da conversa:
+ *   1. `isLeadInHandoff` — contato travado, sempre-humano, silêncio em vigor;
+ *   2. o dono humano (`assignee_kind = 'user'`), que é veto absoluto do gate
+ *      (`donoHumanoVetaIA`, `lib/ai/elegibilidade/ia-com-dono.ts`) e que o item 1
+ *      NÃO enxerga: o rodízio atribui sem gravar silêncio, e "Assumir" pode
+ *      chegar por um caminho que ainda não gravou o `'infinity'`.
+ * O modo "IA com o dono" (#3967) continua liberando o item 2 pela MESMA função do
+ * gate (`donoHumanoVetaIA` + `lerModoIaComDono`), lida sobre a linha da conversa:
+ * uma segunda escrita da regra, em SQL, divergiria dela na primeira mudança.
+ *
+ * `organization_id` entra nas duas leituras: o pool é de serviço e não passa
+ * pela RLS. Falha de leitura propaga — o envio não acontece com o estado
+ * desconhecido (a fila re-tenta o job pela MESMA chave de idempotência).
+ */
+export async function iaVetadaNoEnvio(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+  opcoes: { jobDoTurno?: string } = {},
+): Promise<boolean> {
+  if (!(await travasDaConversaVetam(db, tenantId, leadId, conversationId))) return false;
+  // #5259: o turno que TRANSFERIU não está diante de "uma pessoa assumiu" — as
+  // duas travas acima foram gravadas por ele mesmo (`fn_conversation_assign`
+  // grava dono humano E silêncio sem prazo na mesma transação).
+  if (opcoes.jobDoTurno === undefined) return true;
+  return !(await soOProprioTurnoAtribuiu(db, tenantId, leadId, conversationId, opcoes.jobDoTurno));
+}
+
+async function travasDaConversaVetam(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+): Promise<boolean> {
+  if (await isLeadInHandoff(db, tenantId, leadId, { conversationId })) return true;
+  const { rows } = await db.query<{ assignee_kind: string | null; metadata: unknown }>(
+    `select v.assignee_kind, v.metadata
+       from conversations v
+      where v.organization_id = $1 and v.id = $2`,
+    [tenantId, conversationId],
+  );
+  const conversa = rows[0];
+  if (!conversa) return false;
+  return donoHumanoVetaIA({
+    assigneeKind: conversa.assignee_kind,
+    iaComDono: lerModoIaComDono(conversa.metadata),
+  });
+}
+
+/**
+ * O veto em vigor é SÓ o que a atribuição deste turno gravou? (#5259)
+ *
+ * O agente transfere com `crm_assign_conversation` e avisa o cliente em seguida.
+ * `fn_conversation_assign` grava o dono humano e `bot_silenced_until = 'infinity'`
+ * juntos, e o evento de atribuição leva `source_job_id` — campo que só o runtime
+ * escreve (#3926, migration 9103). Sem esta leitura, o aviso de transferência
+ * era recusado como `pessoa_assumiu_a_conversa` e o cliente ficava sem resposta.
+ *
+ * Libera somente quando TUDO vale:
+ *   - a ÚLTIMA atribuição da conversa veio deste job, e o dono atual é o que ela
+ *     gravou (outro ator, ou o dono trocado depois, gera evento mais novo → veta);
+ *   - nenhuma fala humana (Inbox ou aparelho) na conversa desde que o job nasceu;
+ *   - nenhuma trava do CONTATO (`force_human`, sempre-humano, contato interno) —
+ *     essas não são gravadas pela atribuição.
+ * Vale só para o resto DESTE turno: o próximo turno passa pelo gate do começo,
+ * que vê o dono humano e não fala.
+ */
+async function soOProprioTurnoAtribuiu(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  conversationId: string,
+  jobDoTurno: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ do_proprio_turno: boolean }>(
+    `select (
+       not c.force_human
+       and not c.ai_opt_out
+       and not ${sqlContatoInterno('c')}
+       and v.assignee_kind = 'user'
+       and e.source_job_id = $4
+       and e.to_user_id = v.assigned_to_user_id
+       and not exists (
+         select 1 from messages m
+          where m.organization_id = $1 and m.conversation_id = v.id
+            and m.direction = 'outbound'
+            and m.sent_via in ('user', 'crm', 'external_device')
+            and m.type not in ('reaction', 'system')
+            and m.created_at >= j.created_at
+       )
+     ) as do_proprio_turno
+       from conversations v
+       join contacts c on c.organization_id = v.organization_id and c.id = v.contact_id
+       join job_queue j on j.organization_id = v.organization_id and j.id = $4
+       cross join lateral (
+         select e.source_job_id, e.to_user_id
+           from conversation_assignment_events e
+          where e.organization_id = $1 and e.conversation_id = v.id
+          order by e.created_at desc
+          limit 1
+       ) e
+      where v.organization_id = $1 and c.id = $2 and v.id = $3`,
+    [tenantId, leadId, conversationId, jobDoTurno],
+  );
+  return rows[0]?.do_proprio_turno === true;
 }
 
 export interface HandoffIds {

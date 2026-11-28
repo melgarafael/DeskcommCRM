@@ -110,6 +110,8 @@ const QUEM_LE_A_AGENDA: Record<string, string> = {
   "app/api/v1/cron/contact-names/route.ts": "a varredura que ESCREVE o campo",
   "lib/channels/meta/ingest.ts": "o app WhatsApp Business (coexistência) que ESCREVE o campo",
   "lib/contacts/nome-da-agenda.ts": "decide o que a varredura grava",
+  "lib/modulo/redigir-contato.ts":
+    "usa o nome da agenda (que vem no objeto do contato das conversas) só para TIRÁ-LO do texto livre do módulo sem `contatos`; o objeto sai inteiro",
   "lib/contacts/agenda-do-celular.ts":
     "o 'Sincronizar agenda' (#2776) que ESCREVE o campo no contato que acabou de nascer; não lê nem monta mensagem",
   "lib/contacts/rotulo-do-contato.ts": "rotuloParaAEquipe, o rótulo das telas da equipe",
@@ -121,6 +123,8 @@ const QUEM_LE_A_AGENDA: Record<string, string> = {
   "app/api/v1/conversations/_handler.ts": "select da caixa de entrada (tela da equipe)",
   "app/api/v1/contacts/_handler.ts": "select da ficha e da lista (tela da equipe)",
   "app/app/contacts/[id]/_client.tsx": "a ficha mostra o campo, marcado como só da equipe",
+  "components/contacts/EditContactDialog.tsx":
+    "o 'Editar contato' OFERECE o nome da agenda quando o cadastro não tem nome, com o aviso; só um clique de alguém da equipe o copia para o campo, nunca o preenchimento sozinho",
   "lib/lgpd/export-collector.ts":
     "o acesso do TITULAR (LGPD Art. 18 II, data.json): é dado pessoal dele, apagado na anonimização — não é mensagem, é o que ele pediu",
   "app/api/v1/lgpd/requests/[id]/preview/route.ts": "a prévia do export que a equipe confere antes de entregar",

@@ -84,6 +84,17 @@ export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com';
 export const REQUESTY_ENDPOINT = 'https://router.requesty.ai/v1';
 
 /**
+ * A AI/ML API é um agregador OpenAI-compatível como a Requesty: uma chave dá
+ * acesso a modelos de vários fabricantes, com ids `fabricante/modelo`
+ * (`openai/gpt-4o-mini`), em Chat Completions. Mesma fábrica, sem SDK novo.
+ *
+ * Diferente da Requesty, o endpoint é FIXO (`aceitaEndpointProprio: false`):
+ * a chave só viaja para `api.aimlapi.com`, e o transporte contido
+ * (`fetchDoProvedor`) recusa redirect para qualquer outro host.
+ */
+export const AIMLAPI_ENDPOINT = 'https://api.aimlapi.com/v1';
+
+/**
  * O endpoint do CODEX — o mesmo login do ChatGPT, falando a API de resposta.
  *
  * A assinatura (`openai-assinatura`) não tem chave: o `access_token` SIWC
@@ -413,6 +424,10 @@ export function createDefaultRegistry(opts?: {
       // /responses e recebia a página do chat), enquanto gpt-4o/4.1 passavam
       // por sorte do roteamento. `.chat()` fixa o formato que a OpenRouter
       // realmente serve, para qualquer família de modelo.
+      // O id do exemplo acima foi APOSENTADO pelo Google (404 "no longer
+      // available to new users", medido em 18/11/2026, #4925): a medição do
+      // FORMATO continua valendo para qualquer modelo, o id não. Para Google na
+      // OpenRouter, use um que o provedor sirva (`google/gemini-3.1-flash-lite`).
       return provider.chat(modelId);
     },
     /**
@@ -438,6 +453,16 @@ export function createDefaultRegistry(opts?: {
       const endpoint = baseUrl ?? REQUESTY_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) }).chat(modelId);
     },
+    /**
+     * AI/ML API: agregador OpenAI-compatível, em `.chat()` como a Requesty.
+     * Sem `baseUrl` de propósito: a lista diz `aceitaEndpointProprio: false`,
+     * então a chave vai sempre para o endpoint canônico, e a allowlist do
+     * egress é só ele (redirect para fora vira `EgressBlockedError`).
+     */
+    aimlapi: (apiKey, modelId) =>
+      createOpenAI({ apiKey, baseURL: AIMLAPI_ENDPOINT, fetch: contain(AIMLAPI_ENDPOINT) }).chat(
+        modelId,
+      ),
     /**
      * Provedor personalizado (#1642): o endpoint É DO OPERADOR e vem na
      * credencial (`ai_provider_credentials.base_url`), através de

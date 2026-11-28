@@ -646,6 +646,15 @@ beforeAll(() => {
                where uo.organization_id = v_org limit 1));
         end if;
 
+        -- migration 9449 (#5087): a venda registrada. A leitura e org-scoped
+        -- sem gate de papel; a escrita nao e concedida a authenticated (so a
+        -- rota /api/v1/vendas, pelo admin). A semente fica so no contato: o
+        -- valor do negocio pelas vendas e medido em outro invariante.
+        if not exists (select 1 from public.vendas_registradas where organization_id = v_org) then
+          insert into public.vendas_registradas (organization_id, contact_id, valor_cents, data)
+            values (v_org, v_contact, 18000, current_date);
+        end if;
+
         -- migration 0692 (#2041): o historico do rodizio da acao assign_owner.
         -- Semeado pelo ESCRITOR de producao (a funcao), com uma regra cuja fila
         -- e o usuario semeado (agent, elegivel). A leitura e org-scoped sem gate
@@ -720,6 +729,17 @@ beforeAll(() => {
             (organization_id, conversation_id, contact_id, channel_session_id, body, scheduled_at)
           values (v_org, v_conv, v_contact, v_sess, 'rls invariant probe', now() + interval '1 day');
         end if;
+
+        -- migration 9473 (#4431, repetição) -- o desfecho de uma ocorrência da série.
+        -- Sem linha semeada o controle positivo ficaria sem prova: 0 >= 1 nunca passaria.
+        if not exists (select 1 from public.mensagens_agendadas_envios where organization_id = v_org) then
+          insert into public.mensagens_agendadas_envios
+            (organization_id, agendamento_id, conversation_id, prevista_para, status, motivo)
+          select v_org, a.id, v_conv, now(), 'cancelada', 'numero_desconectado'
+            from public.mensagens_agendadas a
+           where a.organization_id = v_org
+           limit 1;
+        end if;
       end loop;
     end
     $seed$;
@@ -743,6 +763,9 @@ export const TABLES = [
   // leitura exige a conversa visível pela sessão; a semente usa v_conv, sem dono,
   // que o agent semeado enxerga (visibility_mode padrão).
   "mensagens_agendadas",
+  // migration 9473 (#4431) — o histórico por ocorrência da série. A leitura segue a
+  // conversa pela RLS da sessão (policy com fn_user_org_ids e conversa visível).
+  "mensagens_agendadas_envios",
   "conversations",
   "messages",
   "contacts",
@@ -942,6 +965,11 @@ export const TABLES = [
   // escrevendo — mesmo eixo separado de `catalog_products` e
   // `external_db_connections`.
   "crm_metas",
+  // migration 9449 (#5087) — a venda registrada no negócio ou no contato: valor,
+  // dia, tags e observação (texto livre sobre o cliente). Vazar entrega ao
+  // vizinho quanto e quando a outra empresa vendeu. Leitura org-scoped sem gate
+  // de papel; a escrita só pela rota (authenticated não tem INSERT).
+  "vendas_registradas",
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",

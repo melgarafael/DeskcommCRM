@@ -12,7 +12,8 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import {
@@ -23,16 +24,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "prospecting_settings" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "prospecting_settings", role: "manager", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.prospeccao", requestId);
+  if (teto) return teto;
 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", authz.org.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
@@ -47,9 +50,11 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "prospecting_settings" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "prospecting_settings", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.prospeccao", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = personalizacaoProspeccaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -63,27 +68,41 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { data: atual, error: erroLeitura } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", authz.org.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   if (erroLeitura) return fail("internal_error", erroLeitura.message, 500, { requestId });
 
   const settings = ((atual as { settings?: Record<string, unknown> } | null)?.settings ??
     {}) as Record<string, unknown>;
+  // #5179: `prospeccao` é gravada por INTEIRO (a tela manda o formulário da voz
+  // completo), então um PATCH que fala só da voz — ou de qualquer outra chave —
+  // apagaria o interruptor da pausa por omissão. Ele não é da voz: ausente no
+  // corpo, fica o que já está gravado. Desligar é explícito (`false`).
+  const fatiaAtual = (settings.prospeccao ?? {}) as Record<string, unknown>;
+  const prospeccao: Record<string, unknown> = { ...parsed.data };
+  if (
+    parsed.data.nao_pausar_antes_da_primeira_resposta === undefined &&
+    typeof fatiaAtual.nao_pausar_antes_da_primeira_resposta === "boolean"
+  ) {
+    prospeccao.nao_pausar_antes_da_primeira_resposta =
+      fatiaAtual.nao_pausar_antes_da_primeira_resposta;
+  }
   const { error } = await admin
     .from("organizations")
-    .update({ settings: { ...settings, prospeccao: parsed.data } })
-    .eq("id", authz.org.orgId);
+    .update({ settings: { ...settings, prospeccao } })
+    .eq("id", authz.organizationId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   void audit({
     action: "prospecting.settings_updated",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "organization",
-    resourceId: authz.org.orgId,
+    resourceId: authz.organizationId,
     requestId,
-    metadata: parsed.data as unknown as Record<string, unknown>,
+    metadata: prospeccao as Record<string, unknown>,
   });
 
-  return ok({ personalizacao: parsed.data }, { requestId });
+  return ok({ personalizacao: prospeccao }, { requestId });
 }

@@ -96,6 +96,39 @@ export function temSinalDePessoaNaMensagem(mensagem: string): boolean {
 }
 
 /**
+ * #5191 — a PASSAGEM explícita pedida pelo modelo dispensa o caso do fail-safe.
+ *
+ * ## O defeito que isto evita
+ *
+ * Com casos ligados, o modelo obedece à descrição de `request_human_handoff` e
+ * escreve o aviso ("vou chamar um consultor da equipe"); o `casePromiseGate`
+ * veta; na 2ª insistência o fail-safe ABRE UM CASO — e o modelo, no mesmo turno,
+ * chama a ferramenta de passagem. O cliente é atendido por dois caminhos para o
+ * MESMO pedido: um caso que ninguém pediu nasce ao lado da passagem.
+ *
+ * A passagem já é destino real: a conversa vai para `pending`, o roteamento
+ * assume e a Central é avisada. Então, quando o corpo promete PASSAGEM
+ * (`detectHumanHandoffPromise`, a família da AÇÃO) e a ferramenta está no turno,
+ * o fail-safe NÃO abre caso — devolve o erro-de-ensino que manda chamar
+ * `request_human_handoff`.
+ *
+ * ## As duas condições fechadas
+ *
+ *   - corpo com passagem EXPLÍCITA: promessa de RETORNO ("nossa equipe vai te
+ *     responder") não conta — o destino dela continua sendo caso/follow-up;
+ *   - ferramenta `request_human_handoff` NO TURNO: sem ela não há passagem para
+ *     onde mandar a conversa, e o caso (ou o veto) segue sendo a garantia.
+ */
+export function passagemDispensaCasoHumano(
+  entrada: Pick<EntradaDoFailsafeDoCaso, "corpo" | "alvosExtras"> & {
+    passagemDisponivel: boolean;
+  },
+): boolean {
+  if (!entrada.passagemDisponivel) return false;
+  return detectHumanHandoffPromise(entrada.corpo, entrada.alvosExtras);
+}
+
+/**
  * True quando o fail-safe PODE abrir caso humano. Fora das duas réguas, ele
  * devolve o erro-de-ensino e deixa o modelo reformular.
  */

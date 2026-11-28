@@ -80,7 +80,7 @@ export function Honorarios({ podeGerenciar }: { podeGerenciar: boolean }) {
 
   if (contratos.isError) {
     return (
-      <p className="text-sm text-danger">{t("Não foi possível carregar os contratos.")}</p>
+      <p className="text-sm text-destructive">{t("Não foi possível carregar os contratos.")}</p>
     );
   }
 

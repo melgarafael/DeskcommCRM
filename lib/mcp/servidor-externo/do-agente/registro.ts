@@ -61,6 +61,14 @@ export const MetadadosOauthSchema = z.object({
     .array(z.object({ name: z.string(), description: z.string().optional(), somenteLeitura: z.boolean().optional() }))
     .max(200)
     .optional(),
+  /**
+   * #5126: por quantos minutos o link de autorização pode ser ABERTO. Mora aqui
+   * (jsonb que já existia, sem coluna nova) porque é preferência do cadastro,
+   * não dado de consulta. Sem faixa AQUI de propósito: valor antigo ou estranho
+   * não pode derrubar o parse inteiro (`oauth: null` derrubaria o servidor) —
+   * quem clampa é `prazoDoLinkEmMinutos`, no momento do uso.
+   */
+  prazo_do_link_minutos: z.number().finite().optional().catch(undefined),
 });
 export type MetadadosOauth = z.infer<typeof MetadadosOauthSchema>;
 
@@ -220,6 +228,12 @@ export const EntradaDoServidorSchema = z
     escoposPedidos: z.array(escopo).max(50).default([]),
     escritaDelegada: z.boolean().default(false),
     retencaoHoras: z.number().int().min(0).max(720).default(0),
+    /**
+     * #5126: minutos em que o link de autorização pode ser ABERTO. Ausente =
+     * mantém o que o servidor já tinha (ou 10). Qualquer coisa é clampada por
+     * `prazoDoLinkEmMinutos` — a tela nunca consegue gravar `NaN` nem 0.
+     */
+    prazoDoLinkMinutos: z.unknown().optional(),
     ativo: z.boolean().default(true),
   })
   .strict()

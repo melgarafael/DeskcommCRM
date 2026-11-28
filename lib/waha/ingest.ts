@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { descartarSessaoQueNuncaPareou } from "@/lib/channels/descartar-sem-parear";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import { ehMensagemInstitucional } from "@/lib/messaging/modo-de-envio";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { gravarReacaoDeMensagem } from "@/lib/channels/reacao";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
@@ -31,6 +32,7 @@ import {
 import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
+import { lerBloqueioDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
@@ -58,6 +60,7 @@ import {
   type ChatIdentidade,
 } from "@/lib/escalacao/numero-interno-de-aviso";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
+import { pularPausaDaProspeccaoSemResposta } from "@/lib/prospecting/pausa-antes-da-resposta";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -176,11 +179,12 @@ async function ehEcoDeEnvioNosso(
   organizationId: string,
   conversationId: string,
   p: WahaPayload,
+  estado?: { institucional: boolean },
 ): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
   const { data, error } = await admin
     .from("messages")
-    .select("id, body, type, external_id, status")
+    .select("id, body, type, external_id, status, metadata")
     .eq("organization_id", organizationId)
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
@@ -243,6 +247,7 @@ async function ehEcoDeEnvioNosso(
       type?: string | null;
       external_id?: string | null;
       status?: string | null;
+      metadata?: unknown;
     };
 
     // ── MARCA 2 (#3165): o CARIMBO do envio já está NESTA linha, com o id do
@@ -254,7 +259,10 @@ async function ehEcoDeEnvioNosso(
     // pergunta e a comparação de corpo abaixo leem o MESMO retrato: o carimbo que
     // cair no meio da ingestão aparece aqui, e não escapa para o lado de fora da
     // janela como escapava quando o filtro era `.is("external_id", null)` no SQL.
-    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) return true;
+    if (l.external_id != null && idsDaMensagem.includes(l.external_id)) {
+      if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+      return true;
+    }
 
     // ── MARCA 1: linha ainda SEM id, num status de `STATUS_DE_ENVIO_NOSSO` (o
     // filtro do SQL acima; `sent` sem id é o #3138). Linha com id que NÃO é desta mensagem (outro envio
@@ -265,14 +273,20 @@ async function ehEcoDeEnvioNosso(
     if (p.type && p.type !== "chat") {
       // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
       // possível. Mais fraco, e escrito para ninguém supor o contrário.
-      if ((l.type ?? "chat") !== "chat") return true;
+      if ((l.type ?? "chat") !== "chat") {
+        if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+        return true;
+      }
       continue;
     }
     // Com a assinatura do emissor ligada (#2066), o eco traz `*Nome*\ntexto` e a
     // linha guarda `texto`: sem tirar a linha do nome, o eco do próprio envio
     // assinado seria lido como digitação no celular e calaria a IA.
     const gravado = (l.body ?? "").trim();
-    if (corpo.length > 0 && (gravado === corpo || gravado === semAssinatura(corpo).trim())) return true;
+    if (corpo.length > 0 && (gravado === corpo || gravado === semAssinatura(corpo).trim())) {
+      if (estado) estado.institucional = ehMensagemInstitucional(l.metadata);
+      return true;
+    }
   }
   return false;
 }
@@ -1205,6 +1219,8 @@ async function handleInbound(
   // dispara o pedido de rodízio pelo banco. Cortar depois já teria criado
   // contato, conversa e uma "conversa do suporte" na fila de um atendente — e o
   // "cancelar" que alguém da equipe digitasse bloquearia esse contato.
+  // Resposta citando o aviso de caso (#5257): o id citado casa com a entrega.
+  const citacaoDoAviso = citacaoDoPayload(p);
   if (await consumirRespostaDoSuporteNoWhatsApp(admin, {
     organizationId: session.organization_id,
     channelSessionId: session.id,
@@ -1212,6 +1228,9 @@ async function handleInbound(
     direction: "inbound",
     texto,
     externalId: p.id,
+    citacao: citacaoDoAviso
+      ? { idsDoAviso: wahaEchoExternalIds(citacaoDoAviso.id, chatId) }
+      : null,
   })) {
     return;
   }
@@ -1527,6 +1546,7 @@ async function nascerLeadDaConversaPeloCelular(
       // batiza é o cadastro (`rotuloDoContato`), como no caminho recebido.
       nomeDoContato: null,
       origem: ORIGEM_DO_WHATSAPP_OPERADOR,
+      channelSessionId: session.id,
     });
     logger.info(
       nascimento.criado
@@ -1801,8 +1821,6 @@ async function handleOutboundFromUserPhone(
     }
   }
 
-  await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
-
   // ── CONTROLE DO AUTOMÁTICO NESTA CONVERSA ─────────────────────────────────
   //
   // Três desfechos para uma mensagem `fromMe` que NÃO é eco:
@@ -1828,8 +1846,14 @@ async function handleOutboundFromUserPhone(
   //   mexer no automa. -> ESTRITO   (na dúvida NÃO age; calar/ligar a IA por
   //                                  engano é pior que não agir)
   // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
-  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p);
+  //
+  // #5179: motivo pelo qual a pausa foi DISPENSADA nesta fala (só a prospecção sem
+  // resposta do lead). Vai no `audit` no fim — a trilha diz por que a IA seguiu ligada.
+  // Fica ANTES da guarda porque só é preenchido DENTRO dela; nada aqui decide nada.
+  let pausaPulada: string | null = null;
   let comandoAplicado: typeof comando = null;
+  const ecoEstado = { institucional: false };
+  const ehEco = await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p, ecoEstado);
   if (!ehEco) {
     let revogar = true;
     // C-076: o interruptor é do agente que atende ESTA conversa
@@ -1853,7 +1877,8 @@ async function handleOutboundFromUserPhone(
           actor: { type: "webhook_source", id: session.id },
           requestId,
         },
-        { conversationId },
+        // `#on` é a pessoa devolvendo pelo celular (`limparClassificacaoDaIa`).
+        { conversationId, limparClassificacaoDaIa: true },
       );
       if (!devolucao.ok) {
         // O `#on` fica VISÍVEL no chat: é o único sinal de que o atendente
@@ -1867,17 +1892,32 @@ async function handleOutboundFromUserPhone(
         });
       }
     } else {
-      // #534: o aviso é o que impede a falha da pausa de virar um `false` mudo.
-      await pausarIaPorAtendimentoManual(admin, {
-        organizationId: session.organization_id,
+      // #5179: prospecção sem resposta do lead não pausa (opção por organização,
+      // padrão desligado). Fora dessa janela, a pausa é a de sempre.
+      pausaPulada = await pularPausaDaProspeccaoSemResposta(
+        admin,
+        session.organization_id,
         conversationId,
-        canal: "waha",
-        duravel: aceita,
-        avisar: avisarPausaNaoGravada,
-      });
+      );
+      if (!pausaPulada) {
+        // #534: o aviso é o que impede a falha da pausa de virar um `false` mudo.
+        await pausarIaPorAtendimentoManual(admin, {
+          organizationId: session.organization_id,
+          conversationId,
+          canal: "waha",
+          duravel: aceita,
+          avisar: avisarPausaNaoGravada,
+        });
+      }
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.
     if (comandoAplicado && revogar) await revogarComando(session, chatId, p.id);
+  }
+  // Mensagem institucional não pode alterar last_outbound_at/last_message_at/
+  // last_message_preview/contacts.last_activity_at mesmo quando o webhook de
+  // eco chega na janela anterior ao carimbo do external_id.
+  if (!(ehEco && ecoEstado.institucional)) {
+    await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
   }
 
   // ── A CONVERSA QUE COMEÇA PELO CELULAR NASCE NO FUNIL (#2448) ────────────
@@ -1901,6 +1941,7 @@ async function handleOutboundFromUserPhone(
       external_id: p.id,
       from_user_phone: true,
       ...(comandoAplicado ? { control_command: comandoAplicado } : {}),
+      ...(pausaPulada ? { pausa_pulada: pausaPulada } : {}),
     },
   });
 
@@ -2459,6 +2500,53 @@ async function handleReaction(admin: Admin, session: Session, p: WahaPayload): P
 }
 
 /**
+ * Chamada de voz que chegou no número (`call.received`).
+ *
+ * Com "Bloquear chamadas recebidas" ligado na empresa, a ligação é recusada na
+ * hora; desligado (o padrão), o evento não faz nada — a chamada toca como antes.
+ *
+ * NUNCA lança: a ligação já está tocando, e relançar faria o WAHA reentregar um
+ * evento que só tem sentido agora. Na dúvida (leitura da chave falhou, WAHA
+ * fora do ar) a ligação fica como estava — recusar por engano é pior que não
+ * recusar. Chamada de grupo não é recusada: a chave fala de ligação ao número.
+ */
+async function handleCallReceived(
+  admin: Admin,
+  session: Session,
+  p: WahaPayload,
+): Promise<void> {
+  const extra = p as Record<string, unknown>;
+  const sessionName = session.waha_session_name;
+  const callId = typeof p.id === "string" ? p.id : "";
+  const from = typeof p.from === "string" ? p.from : "";
+  if (!sessionName || !callId || !from || extra.isGroup === true) return;
+
+  try {
+    if (!(await lerBloqueioDeChamadas(admin, session.organization_id))) return;
+    const waha = getWahaClient();
+    if (!waha) {
+      logger.warn("waha.ingest: bloqueio de chamada ligado, mas o WAHA não está configurado", {
+        organization_id: session.organization_id,
+      });
+      return;
+    }
+    await waha.rejectCall(sessionName, from, callId);
+    logger.info("waha.ingest: chamada recebida recusada pelo bloqueio da empresa", {
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      call_id: callId,
+    });
+  } catch (err) {
+    logger.warn("waha.ingest: não consegui recusar a chamada recebida", {
+      organization_id: session.organization_id,
+      channel_session_id: session.id,
+      call_id: callId,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Roteador único de eventos WAHA. Os dois route handlers convergem aqui após
  * resolver a sessão e validar HMAC.
  */
@@ -2485,6 +2573,8 @@ export async function dispatchWahaEvent(
     await handleMessageRevoked(admin, session, payload, requestId);
   } else if (eventType === "message.reaction") {
     await handleReaction(admin, session, payload);
+  } else if (eventType === "call.received") {
+    await handleCallReceived(admin, session, payload);
   } else if (eventType === "session.status" || eventType === "state.change") {
     await handleSessionStatus(admin, session, payload);
   }

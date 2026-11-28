@@ -30,8 +30,10 @@ import { generateText, stepCountIs, streamText, type LanguageModel, type StopCon
 // Fonte única do endpoint — a mesma constante que o registry de produção usa.
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
 import {
+  AIMLAPI_ENDPOINT,
   cabecalhosDeAtribuicaoOpenRouter,
   DEEPSEEK_ENDPOINT,
+  fetchDoProvedor,
   OPENAI_CODEX_ENDPOINT,
   OPENROUTER_ENDPOINT,
   REQUESTY_ENDPOINT,
@@ -230,6 +232,13 @@ export function buildModel(
     // Requesty: roteador OpenAI-compatível, pelo mesmo `.chat()` do registry.
     case "requesty":
       return createOpenAI({ apiKey, baseURL: REQUESTY_ENDPOINT }).chat(modelId);
+    // AI/ML API: o mesmo transporte contido do registry (chave só para `api.aimlapi.com`).
+    case "aimlapi":
+      return createOpenAI({
+        apiKey,
+        baseURL: AIMLAPI_ENDPOINT,
+        fetch: fetchDoProvedor(AIMLAPI_ENDPOINT),
+      }).chat(modelId);
     // Provedor personalizado (#1642): o endereço vem da credencial, junto da
     // chave. SEM endereço a chamada é RECUSADA — ensaio que fosse para a
     // OpenAI com a chave de um gateway privado diria que o produto não
@@ -262,6 +271,20 @@ function totalUsage(steps: ReadonlyArray<{ usage?: { inputTokens?: number; outpu
     outputTokens += s.usage?.outputTokens ?? 0;
   }
   return { inputTokens, outputTokens };
+}
+
+/**
+ * O uso de cada passo, na forma que `computeCostCents` lê para aplicar o degrau
+ * do Haiku 5.5 POR REQUISIÇÃO (#5239). O total do turno não é a régua: um turno
+ * de vários passos curtos somaria mais de 100 mil e sairia a 5× indevidamente.
+ */
+function passosParaCusto(
+  steps: ReadonlyArray<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+) {
+  return steps.map((s) => ({
+    inputTokens: s.usage?.inputTokens,
+    outputTokens: s.usage?.outputTokens,
+  }));
 }
 
 export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
@@ -722,6 +745,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         model: version.model,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        steps: passosParaCusto(
+          steps as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+        ),
       });
       // Preço desconhecido (`null`) não estoura o limite por chamada: sem
       // número não se compara contra o teto — e também não é contado como 0
@@ -774,6 +800,9 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       model: version.model,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      steps: passosParaCusto(
+        result.steps as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }>,
+      ),
     });
     const latencyMs = Date.now() - startedAt;
     const trace = serializeSteps(result.steps as never);

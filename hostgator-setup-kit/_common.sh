@@ -1046,6 +1046,23 @@ restaurar_servicos() {
   diagnostico_de_atualizacao "$rc_da_execucao"
 }
 
+# ── A revisão que um build feito AQUI pode carimbar (#5196) ──────────────────
+# O commit do disco, e só quando a árvore É exatamente ele. Os Dockerfiles do
+# worker, do scheduler e da voz copiam a pasta inteira (`COPY . .`): um remendo
+# feito à mão, ou um arquivo novo deixado aqui, entra na imagem e não está no
+# commit — carimbar a revisão oficial nessa imagem a faria passar por
+# verificada na tela de versão. Árvore suja sai VAZIA, e a imagem segue "não
+# verificada", como antes do #5196. Git que não responde (sem `.git`, dono
+# diferente) também sai vazio: carimbar um palpite seria pior que não carimbar.
+# As marcas do próprio kit (`.update-de-onde-vim`, `.update.lock`, os `.log`)
+# moram no `.gitignore`, que o `git status` respeita.
+revisao_da_arvore_limpa() {  # revisao_da_arvore_limpa <pasta> → sha ou nada
+  local sujo
+  sujo="$(git -C "$1" status --porcelain --untracked-files=normal 2>/dev/null)" || return 0
+  [ -z "$sujo" ] || return 0
+  git -C "$1" rev-parse HEAD 2>/dev/null || true
+}
+
 # ── Imagem pronta que não serve para esta VPS: constrói a versão aqui ────────
 # Uma VPS cuja arquitetura não é a das imagens publicadas (Oracle Ampere, por
 # exemplo) recebe "no matching manifest for linux/arm64/v8" ao puxá-las. O
@@ -1121,14 +1138,56 @@ construir_aqui_e_subir() {  # construir_aqui_e_subir [versão alvo] → 0 se sub
 # O prazo é a outra metade: sem ele o `docker ps` também trava (foi o que
 # prendeu o healthcheck no passo "▶ Containers") e nenhum destes sinais chega
 # a existir — o script simplesmente nunca termina.
+# ── O prazo de um comando (#1955, #5055) ────────────────────────────────────
+#
+# `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
+# comportamento continua o antigo, não nasce um erro novo. O `busybox` também
+# tem um `timeout`, mas sem `-k` — sondado UMA vez, na carga, para o kit não
+# trocar um travamento por "todo comando falha na hora" numa VPS mínima.
+#
+# O prazo da sonda é 5 s, não 10 ms (sugestão da revisão do #5161): o `true`
+# sai na hora, então o prazo só existe para não deixar a sonda pendurada; com
+# 10 ms, uma VPS sobrecarregada podia matar o `true` antes do exec e desligar
+# o `-k` em silêncio, justo na máquina em que ele importa.
+if timeout -k 1 5 true >/dev/null 2>&1; then
+  COM_PRAZO_MATA=1
+else
+  COM_PRAZO_MATA=
+fi
+
 com_prazo() {  # com_prazo <segundos> <comando...>
   local prazo="$1"; shift
-  # `timeout` é do coreutils e está em todo Linux onde o kit roda; sem ele o
-  # comportamento continua o antigo, não nasce um erro novo.
+  # `</dev/null` (#5055) — quem roda sob prazo NÃO lê o terminal.
+  #
+  # O passo "Saúde interna do app" do healthcheck chega aqui pelo
+  # `app_health_probe 30`, que é
+  # `com_prazo 30 docker compose … exec -T app node -e …`, e o
+  # `docker compose exec -T` ENCAMINHA o stdin. O `timeout` põe o filho num
+  # grupo de processos fora do primeiro plano: ler o terminal de lá PARA o
+  # processo (SIGTTIN), e o TERM do prazo fica pendente num processo parado —
+  # o `timeout` espera por ele para sempre. Foi assim que o passo ficou parado
+  # em produção (v1.117.0) com `/api/v1/health` respondendo 200 `healthy` no
+  # mesmo instante. Nenhum chamador alimenta stdin (são `docker ps`, `info`,
+  # `buildx imagetools inspect`, `compose ps`): fechar o stdin não muda o que
+  # eles fazem e tira a leitura do terminal do caminho.
+  #
+  # `-k 5` (mesma issue) — estourado o prazo, o TERM pode ser ignorado, e o
+  # `$(…)` do healthcheck espera TODO processo que ainda tem o pipe aberto. O
+  # KILL 5s depois fecha essa porta em vez de deixar o passo pendurado.
+  #
+  # SEM `--foreground`, de propósito, e medido aqui (um comando que deixa um
+  # filho segurando o stdout): 1014 ms sem ele contra 20016 ms com ele,
+  # porque `--foreground` deixa de matar o grupo do filho. Como o stdin já
+  # está fechado, o motivo de existir dele (deixar o comando ler o tty) não
+  # se aplica, e é o grupo morto que libera a substituição de comando.
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$prazo" "$@"
+    if [ -n "$COM_PRAZO_MATA" ]; then
+      timeout -k 5 "$prazo" "$@" </dev/null
+    else
+      timeout "$prazo" "$@" </dev/null
+    fi
   else
-    "$@"
+    "$@" </dev/null
   fi
 }
 
@@ -2099,7 +2158,9 @@ relatar_saude_do_app() {
 wait_app_healthy() {
   local tentativas="${1:-20}" intervalo="${2:-3}" saida='' status='' corpo='' i=0
   while [ "$i" -lt "$tentativas" ]; do
-    saida="$(app_health_probe)"
+    # A stalled Docker exec must leave room for the next attempt. Use the
+    # same per-probe deadline as the standalone healthcheck.
+    saida="$(app_health_probe 30)"
     status="$(printf '%s\n' "$saida" | head -1 | tr -d '\r')"
     corpo="$(printf '%s\n' "$saida" | tail -n +2)"
     case "$status" in
@@ -2795,6 +2856,42 @@ completar_pin_ausente() {  # completar_pin_ausente [envfile]
   printf '%s' "${corrigidos# }"
 }
 
+# ── O pull_policy que VALE é o do .env que acabou de ser gravado (#5116) ────
+#
+# O Compose dá precedência à variável do AMBIENTE sobre a do `.env`
+# (docker-compose.prod.yml, `pull_policy: ${APP_PULL_POLICY:-missing}`), e o
+# `load_env` exporta o `.env` INTEIRO para o ambiente do processo no começo de
+# todo script do kit. As duas coisas juntas produzem o defeito medido numa VPS
+# real: o `.env` tinha `APP_PULL_POLICY=never` de uma correção de emergência
+# (imagem construída na VPS, como o runbook prevê), o `gravar_imagens` regravou
+# o `.env` com `missing` — e o ambiente do processo continuou com `never`, que é
+# quem o Compose lê. O `dc pull` registrou `Image ...:1.122.0 Skipped` só no app
+# (worker e scheduler foram baixados), o `up -d` falhou com "No such image", e o
+# script concluiu que as imagens da release "não servem para esta VPS" — foi
+# construir aqui e morreu no OOM do `pnpm build`.
+#
+# Reexportar com o valor que ACABOU de ser escrito fecha o buraco na origem:
+# quem decide o pull passa a ser o `.env` DESTA versão, não o export da
+# anterior. Lido do ARQUIVO, e não da variável `$politica` de quem chamou,
+# porque o arquivo é a fonte que o Compose usaria sem ambiente — a releitura é o
+# que garante que as duas fontes concordem (inclusive no dia em que a política
+# deixar de ser uma só para as quatro imagens).
+#
+# NÃO é "sempre puxa": o `never` do operador continua valendo em toda execução
+# que não grava imagem nenhuma — as saídas de "nada a atualizar", por exemplo.
+# Esta função só roda de dentro do `gravar_imagens`, que só é chamado quando há
+# versão nova para instalar (ou quando alguém pediu --force).
+reexportar_pull_policies() {  # reexportar_pull_policies <envfile>
+  local envfile="$1" chave valor
+  [ -f "$envfile" ] || return 0
+  for chave in APP_PULL_POLICY WORKER_PULL_POLICY SCHEDULER_PULL_POLICY VOICE_AGENT_PULL_POLICY; do
+    valor="$(sed -n "s/^${chave}=//p" "$envfile" 2>/dev/null | tail -1 | tr -d "\"'")"
+    [ -n "$valor" ] || continue
+    printf -v "$chave" '%s' "$valor"
+    export "$chave"
+  done
+}
+
 # Escreve no .env as três imagens da MESMA versão + o pull_policy que combina
 # com a mutabilidade da tag.
 #
@@ -2825,6 +2922,12 @@ gravar_imagens() {
   # não no `stable` móvel do default do compose.
   set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
   set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
+  # Os `*_PULL_POLICY` também, e AQUI dentro pela mesma razão do WAHA (abaixo):
+  # o `.env` acabou de mudar, mas o ambiente do processo ainda tem o valor do
+  # `load_env` — e é o ambiente que o Compose lê. Sem esta releitura, um
+  # `APP_PULL_POLICY=never` da execução anterior faz o `dc pull` pular o app
+  # justamente na atualização que troca a imagem dele (#5116).
+  reexportar_pull_policies "$envfile"
   # O WAHA de quem já roda em ARM mora AQUI, e não numa linha do update.sh: é
   # esta função que o update.sh ANTIGO chama depois de reler o kit, então é
   # assim que a troca chega já na atualização que a traz. O export vale porque
@@ -2842,6 +2945,11 @@ gravar_imagens() {
   # acima: é a função que o update.sh antigo chama depois de reler o kit, então
   # o par chega já na primeira atualização. E chega antes do pull e do `up -d`.
   completar_par_vapid "$envfile"
+  # A conversão do consentimento de telemetria (#4936) mora aqui pelo mesmo
+  # motivo: a chamada no corpo do update.sh só existe a partir da versão que a
+  # traz, e quem atualiza roda o corpo ANTIGO. Sem esta linha, quem aceitou
+  # perderia a telemetria na atualização que traz a mudança.
+  migrar_consentimento_de_telemetria "$envfile"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
@@ -2913,6 +3021,80 @@ gerar_par_vapid() {
   priv="$(printf '%s\n' "$pem" | openssl ec -outform DER 2>/dev/null | head -c 39 | tail -c 32 | _b64url)" || return 1
   [ "${#pub}" -eq 87 ] && [ "${#priv}" -eq 43 ] || return 1
   printf '%s %s\n' "$pub" "$priv"
+}
+
+# marcar_consentimento_de_telemetria <arquivo> — a marca de "a conversão do
+# consentimento já passou por aqui". Só é criada quando a decisão ficou tomada:
+# nas saídas em que não dá para escrever, ela não nasce, e a próxima atualização
+# tenta de novo. Falhar ao criá-la não derruba nada (devolve 0).
+marcar_consentimento_de_telemetria() {
+  ( umask 077; printf '%s\n' "# Gerado pelo kit (#4948): a conversão do consentimento de telemetria já rodou nesta instalação. Não apague." > "$1" ) 2>/dev/null || true
+}
+
+# migrar_consentimento_de_telemetria [envfile] — usada pelo update.sh (#4936).
+#
+# Antes desta versão, `SENTRY_DSN` VAZIO significava "aceito o Sentry do
+# projeto": era o que o install.sh gravava quando a pessoa respondia "sim".
+# Agora vazio significa DESLIGADO e o aceite é o token `comunidade`
+# (lib/sentry/dsn.ts). Sem esta conversão, quem já havia aceitado perderia a
+# telemetria em silêncio depois de atualizar — e o remédio seria editar o `.env`
+# à mão, que a doutrina de empacotamento proíbe exigir.
+#
+# Converte SÓ a chave DECLARADA e VAZIA. Três casos ficam intocados:
+#   - chave ausente: quem nunca decidiu; ausência já é "desligado", e gravá-la
+#     seria consentir por alguém;
+#   - `off`/`false`/`0`: escolha escrita de quem não quer telemetria;
+#   - um DSN literal: quem aponta para o próprio Sentry.
+# Sempre devolve 0: telemetria não derruba atualização. Deixa
+# TELEMETRIA_CONVERTIDA=1 quando converter (o `up -d` de lá já recria o app com
+# o `.env` novo, então não há nada a reiniciar por conta disto).
+migrar_consentimento_de_telemetria() {
+  local envfile="${1:-.env}" declarado tmp marca
+  TELEMETRIA_CONVERTIDA=""
+  [ -f "$envfile" ] || return 0
+  # UMA VEZ por instalação (#4948). Depois desta versão, vazio é "desligado": quem
+  # esvazia a chave de propósito, ou o `install.sh --yes` com SENTRY_DSN vazio no
+  # ambiente, não pode ser religado pela atualização seguinte. A marca fica num
+  # arquivo ao lado (o nome casa com `.env*`, como o `.env.cron-drain`, e o
+  # `.gitignore` já o deixa de fora), para não mexer no `.env` de quem nunca
+  # decidiu. O install.sh novo a cria: instalação nova nunca é convertida.
+  marca="$(dirname -- "$envfile")/.env.consentimento-de-telemetria"
+  [ -e "$marca" ] && return 0
+  # `export ` e recuo no começo da linha: o Compose lê as duas formas, então
+  # elas também contam como a chave declarada (mesma régua do `completar_par_vapid`).
+  declarado="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=//p' "$envfile" 2>/dev/null | tail -1 | tr -d "\"' \t\r")"
+  if [ -n "$declarado" ]; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" 2>/dev/null; then
+    marcar_consentimento_de_telemetria "$marca"
+    return 0
+  fi
+  if [ ! -w "$envfile" ]; then
+    # Montagem somente-leitura ou permissão errada: quem opera precisa saber que
+    # a conversão NÃO aconteceu, senão a telemetria some sem explicação.
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria: não consigo escrever no .env. Confira a permissão do arquivo e rode a atualização de novo.")"
+    return 0
+  fi
+
+  # Escrita atômica, como no `set_env_var`: o tmp nasce 600 e o `mv` troca o
+  # arquivo de uma vez, para uma queda no meio não deixar `.env` pela metade.
+  tmp="${envfile}.tmp.$$"
+  if ! ( umask 077
+         { { grep -vE '^[[:space:]]*(export[[:space:]]+)?SENTRY_DSN=' "$envfile" || true; } \
+           && printf 'SENTRY_DSN=%s\n' "comunidade"; } > "$tmp" ) \
+     || ! chmod 600 "$tmp" || ! mv "$tmp" "$envfile"; then
+    rm -f "$tmp"
+    c_ylw "$(t "  ⚠ Não converti o consentimento de telemetria no .env; a telemetria segue como estava. Para converter à mão: SENTRY_DSN=comunidade.")"
+    return 0
+  fi
+  # O ambiente também: o `load_env` já exportou o vazio, e é dele que o Compose
+  # lê o que interpola.
+  SENTRY_DSN="comunidade"; export SENTRY_DSN
+  TELEMETRIA_CONVERTIDA=1
+  marcar_consentimento_de_telemetria "$marca"
+  c_grn "$(t "✓ consentimento de telemetria preservado: o .env passou de SENTRY_DSN vazio para SENTRY_DSN=comunidade (vazio agora significa desligado; vale no próximo reinício do app)")"
 }
 
 # completar_par_vapid [envfile] — usada pelo install.sh (depois de escrever o
@@ -3045,6 +3227,46 @@ owner_id_by_email() {
   printf '%s' "$resp" \
     | grep -o "\"id\":\"[0-9a-f-]\{36\}\",\"aud\":\"[^\"]*\",\"role\":\"[^\"]*\",\"email\":\"${esc}\"" \
     | head -1 | sed 's/^"id":"//;s/".*//' || return 0
+}
+
+# ── Troca do e-mail de LOGIN: o caminho e o corpo (issue #5073) ──────────────
+# O e-mail de login mora em `auth.users` (GoTrue) e é o identificador da conta.
+# Numa instalação single-server o instalador cria o dono como `admin@<domínio>`,
+# que quase nunca é uma caixa de verdade: "esqueci minha senha" e os avisos por
+# e-mail não chegam a ninguém. `change-email.sh` conserta isso pela admin API,
+# no molde do `reset-password.sh`.
+#
+# Estas duas peças são PURAS (montam string, não tocam a rede) para que a prova
+# do payload rode sem VPS nem GoTrue: `test-validators.sh` confere as duas, e o
+# PR da #5073 mediu o corpo REAL com um servidor HTTP de mentira.
+#
+# `email_confirm: true` não é enfeite: sem ele o GoTrue manda a confirmação
+# para o endereço NOVO e a troca fica PENDENTE até alguém clicar no link — numa
+# instalação sem SMTP (o estado de um primeiro deploy) esse e-mail nunca sai, e
+# o dono termina com um login que não existe em lugar nenhum. É o mesmo
+# `email_confirm: true` com que o instalador cria o dono (install.sh).
+#
+# O `%/` come a barra final do NEXT_PUBLIC_SUPABASE_URL (quem edita o .env à mão
+# deixa uma) para não nascer `//auth/v1`, que o proxy pode tratar como outro
+# caminho.
+url_admin_user() { printf '%s/auth/v1/admin/users/%s' "${NEXT_PUBLIC_SUPABASE_URL%/}" "${1:?uid}"; }
+
+# O corpo é montado com `printf` e não com `jq`: o consumidor já validou o
+# endereço antes (só [A-Za-z0-9._%+-]@[A-Za-z0-9.-]), então não há aspa nem
+# barra invertida para escapar — e o kit não fica dependendo do `jq` num script
+# de emergência.
+#
+# A guarda devolve 1 (e não chama `die`): isto roda em substituição de comando,
+# e um `exit 1` ali mataria só o subshell — o `curl` seguiria com o corpo vazio.
+# Quem chama trata o status na atribuição: `corpo="$(…)" || die`.
+corpo_troca_de_email() {
+  case "${1:-}" in
+    *\"*|*\\*|"")
+      printf 'endereço impróprio para o corpo JSON: %s\n' "${1:-<vazio>}" >&2
+      return 1
+      ;;
+  esac
+  printf '{"email":"%s","email_confirm":true}' "$1"
 }
 
 # Ativa (idempotente) o cron que dispara o drain de eventos a cada minuto. SEM
@@ -3273,7 +3495,10 @@ trocar_segredo_do_cron_vazado() {
   # andamento (quem a dirige ainda fala com a senha velha), nem duas vezes ao
   # mesmo tempo (update.sh no terminal e agent.sh no cron).
   local tem_cadeado=""
-  if command -v flock >/dev/null 2>&1; then
+  # O update.sh de terminal já segura o `.update.lock` (#5052): um `flock -n`
+  # num descritor novo falharia contra o próprio processo e a troca sairia calada.
+  if [ -n "${TRAVA_PROPRIA:-}" ]; then :
+  elif command -v flock >/dev/null 2>&1; then
     exec 8>"${dir}/.update.lock"
     flock -n 8 || { exec 8>&-; return 0; }
     tem_cadeado=1
@@ -3314,12 +3539,233 @@ trocar_segredo_do_cron_vazado() {
   return 0
 }
 
+# ── Janela de manutenção da atualização: configurável (#4334) ────────────────
+#
+# O pedido da #4334: quem opera em horário comercial não quer a instalação ~5
+# minutos em manutenção no meio do expediente (clique 09:01, início 09:05, fim
+# 09:10). O primeiro desenho deste PR abria a janela mudando o HORÁRIO DA LINHA
+# do cron do agente — e o mantenedor recusou com a medição na mão: no `agent.sh`
+# a MESMA rodada manda o heartbeat ao painel e vigia a volta depois de uma
+# atualização (seção 3, #2757). Fora da janela, as duas paravam junto.
+#
+# A janela daqui segura SÓ a execução do pedido de atualização, dentro do
+# `agent.sh` (seção 4). O cron do agente continua `*/5 * * * *` — `install.sh` e
+# `update.sh` gravam a linha de sempre, e `setup_update_agent_cron` nem lê esta
+# variável —, então o batimento e a vigília seguem rodando o dia inteiro.
+#
+# Sintaxe: os CINCO campos do cron (minuto hora dia mês dia-da-semana), os
+# mesmos que quem já mexe em crontab conhece. A janela é de HORÁRIO, então os
+# três últimos têm de ser `*`: o cron da VPS casa dia-do-mês E dia-da-semana com
+# OU (regra do vixie-cron), e reproduzir essa regra aqui seria uma segunda
+# semântica com o mesmo nome — o tipo de divergência que só aparece de madrugada
+# na VPS de quem configurou. Recusar é mais honesto que adivinhar.
+#
+# Ausente ou vazia = sem janela = o comportamento de hoje, byte a byte: executa
+# assim que o app pede. Valor inválido = aviso em voz alta (no
+# `.update-agent.log`) e janela ABERTA, que é o de hoje: um erro de digitação
+# não pode deixar a instalação sem atualização para sempre, e o aviso diz
+# exatamente o que corrigir.
+#
+# O relógio da janela é o de parede do fuso `SYSTEM_UPDATE_WINDOW_TZ` (IANA),
+# `America/Sao_Paulo` quando ausente — nunca o fuso do sistema, que numa VPS
+# nova costuma ser UTC e deslocaria a janela em 3 horas sem ninguém ver. Quem
+# confere: `TZ=America/Sao_Paulo date`. Fuso desconhecido pelo `date` vira UTC
+# (é o `date`, não esta função, quem decide), então escreva o nome IANA exato.
+SYSTEM_UPDATE_WINDOW_PADRAO=''
+SYSTEM_UPDATE_WINDOW_TZ_PADRAO='America/Sao_Paulo'
+
+# O `date` no fuso da janela, numa chamada só (o formato vem de quem chama).
+_date_da_janela() { TZ="${SYSTEM_UPDATE_WINDOW_TZ:-$SYSTEM_UPDATE_WINDOW_TZ_PADRAO}" date "$@"; }
+
+# _item_cron <item> <min> <max> — analisa UM item de campo cron (`*`, `7`,
+# `2-5`, e o `/passo` opcional em qualquer um dos três) e deixa o resultado em
+# _CRON_INI/_CRON_FIM/_CRON_PASSO. Devolve 1 se o item não servir.
+_item_cron() {
+  local item="${1-}" min="$2" max="$3" passo="" n
+  case "$item" in
+    */*) passo="${item#*/}"; item="${item%%/*}" ;;
+  esac
+  case "$item" in
+    '*') _CRON_INI="$min"; _CRON_FIM="$max" ;;
+    *-*) _CRON_INI="${item%%-*}"; _CRON_FIM="${item#*-}" ;;
+    *)   _CRON_INI="$item";     _CRON_FIM="$item" ;;
+  esac
+  _CRON_PASSO="${passo:-1}"
+  # Numérico E não vazio nos três: `case` com `[!0-9]` sozinho deixa passar o
+  # vazio (nenhum caractere viola a classe), e a aritmética seguinte viraria
+  # erro de sintaxe do bash — dentro do `agent.sh`, isso é o `set -e` matando a
+  # rodada inteira, não uma recusa.
+  for n in "$_CRON_INI" "$_CRON_FIM" "$_CRON_PASSO"; do
+    [ -n "$n" ] || return 1
+    case "$n" in *[!0123456789]*) return 1 ;; esac
+  done
+  # `10#` porque zero à esquerda é octal para a aritmética do bash: `08` sem
+  # isto é "valor inválido" e a janela aberta às 8h nunca casaria.
+  _CRON_INI=$((10#$_CRON_INI)); _CRON_FIM=$((10#$_CRON_FIM)); _CRON_PASSO=$((10#$_CRON_PASSO))
+  [ "$_CRON_PASSO" -ge 1 ] || return 1
+  [ "$_CRON_INI" -ge "$min" ] && [ "$_CRON_FIM" -le "$max" ] || return 1
+  [ "$_CRON_INI" -le "$_CRON_FIM" ] || return 1
+  return 0
+}
+
+# _campo_cron_valido <campo> <min> <max> — o campo inteiro (lista separada por
+# vírgula) serve? É a régua de CONFIGURAÇÃO, e ela é mais dura que a de
+# casamento de propósito: campo malformado que passasse daqui nunca casaria, a
+# janela nunca abriria, e a instalação ficaria sem atualização para sempre, em
+# silêncio — o pior desfecho desta feature.
+_campo_cron_valido() {
+  local campo="${1-}" min="$2" max="$3" item
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  [ "${#itens[@]}" -ge 1 ] || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+  done
+  return 0
+}
+
+# _campo_cron_casa <campo> <valor> <min> <max> — o valor está coberto pelo campo?
+_campo_cron_casa() {
+  local campo="${1-}" valor="$2" min="$3" max="$4" item i
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+    i="$_CRON_INI"
+    while [ "$i" -le "$_CRON_FIM" ]; do
+      [ "$i" -eq "$valor" ] && return 0
+      i=$((i + _CRON_PASSO))
+    done
+  done
+  return 1
+}
+
+# Puro (sem `date`, sem aviso, sem tocar em disco): imprime a janela
+# normalizada — cinco campos com UM espaço entre eles — e devolve 0; devolve 1
+# SEM IMPRIMIR NADA quando o valor não serve. O silêncio é o contrato: quem
+# chama usa o comportamento de hoje, nunca o valor recusado.
+janela_normalizada() {  # janela_normalizada <valor>
+  local valor="${1-}" campo saida=""
+  local -a campos=()
+
+  # Quebra de linha (e CR, o que sobra de um `.env` editado no Windows) FORA
+  # antes de tudo: o valor não vira mais linha de crontab, então não há injeção
+  # a temer — mas um `\n` no meio de um campo só produziria uma recusa ilegível,
+  # e é mais barato recusar pelo motivo óbvio.
+  case "$valor" in
+    '' | *$'\n'* | *$'\r'*) return 1 ;;
+  esac
+
+  # Separa por branco e exige CINCO campos. `read -a` colapsa espaço/tab
+  # repetidos, e o normalizado sai com UM espaço entre campos.
+  IFS=$' \t' read -r -a campos <<<"$valor" || true
+  [ "${#campos[@]}" -eq 5 ] || return 1
+
+  # Alfabeto do cron e SÓ ele: dígitos, `*`, `,`, `-` e `/`. Qualquer outro
+  # caractere (`;`, crase, `$`, aspas) recusa o valor inteiro — este campo vem
+  # de um arquivo que qualquer um edita, e não é lugar de expressão de shell.
+  for campo in "${campos[@]}"; do
+    case "$campo" in
+      *[!0123456789*,/-]*) return 1 ;;
+    esac
+    [ -n "$saida" ] && saida="$saida "
+    saida="$saida$campo"
+  done
+
+  IFS=' ' read -r -a campos <<<"$saida"
+  # Minuto (0-59) e hora (0-23): as duas que a janela usa, validadas por
+  # inteiro — é o que impede `25:00` ou `*/0` de virarem janela que nunca abre.
+  _campo_cron_valido "${campos[0]}" 0 59 || return 1
+  # O agente roda nos minutos múltiplos de 5 (`*/5`). Um campo de minuto que
+  # não cobre nenhum deles (`1`, `3-4`) é válido para o cron e é uma janela que
+  # NUNCA abre aqui: o pedido esperaria para sempre, em silêncio. Recusar.
+  local m multiplo_de_5=""
+  for ((m = 0; m < 60; m += 5)); do
+    _campo_cron_casa "${campos[0]}" "$m" 0 59 && { multiplo_de_5=1; break; }
+  done
+  [ -n "$multiplo_de_5" ] || return 1
+  _campo_cron_valido "${campos[1]}" 0 23 || return 1
+  # Dia, mês e dia-da-semana: só `*`. Está explicado no comentário do bloco.
+  for campo in "${campos[@]:2}"; do
+    [ "$campo" = '*' ] || return 1
+  done
+
+  printf '%s\n' "$saida"
+}
+
+# Puro: a janela (já normalizada) cobre o minuto e a hora dados? 0 = dentro.
+janela_contem() {  # janela_contem <expressao> <minuto> <hora>
+  local expressao="${1-}" minuto="${2-}" hora="${3-}"
+  local -a campos=()
+  case "$minuto$hora" in '' | *[!0123456789]*) return 1 ;; esac
+  IFS=' ' read -r -a campos <<<"$expressao" || return 1
+  [ "${#campos[@]}" -eq 5 ] || return 1
+  _campo_cron_casa "${campos[0]}" "$((10#$minuto))" 0 59 || return 1
+  _campo_cron_casa "${campos[1]}" "$((10#$hora))" 0 23 || return 1
+  return 0
+}
+
+# A pergunta do `agent.sh` (seção 4): posso executar o pedido AGORA?
+#   0 = pode (sem janela, ou dentro dela);
+#   1 = fora da janela — anuncia, vigia, NÃO executa;
+#   2 = valor recusado — avisa e executa, que é o comportamento de hoje.
+# Um único `date`: duas chamadas seguidas podem cair em minutos diferentes (o
+# relógio vira entre elas) e a janela seria lida com a hora de um e o minuto do
+# outro — justo na virada da janela, que é quando isso importa.
+janela_aberta() {  # janela_aberta [valor]
+  local bruto="${1-}" normalizada="" hora minuto agora
+  [ -n "$bruto" ] || return 0
+  janela_normalizada "$bruto" >/dev/null 2>&1 || return 2
+  normalizada="$(janela_normalizada "$bruto")" || return 2
+  agora="$(_date_da_janela +%H:%M)"
+  hora="${agora%%:*}"; minuto="${agora##*:}"
+  if janela_contem "$normalizada" "$minuto" "$hora"; then return 0; fi
+  return 1
+}
+
+# Puro: quantos minutos faltam, a partir de <hora>:<minuto>, para a próxima
+# rodada do agente (minuto múltiplo de 5) DENTRO da janela já normalizada.
+# Imprime 1..1440; devolve 1 se não houver nenhuma num dia (não acontece com
+# janela que passou pela `janela_normalizada`).
+# ponytail: minutos de parede, sem horário de verão (o Brasil não tem desde
+# 2019); num fuso com DST a hora prevista erra 1h na noite da troca.
+janela_minutos_ate_abrir() {  # janela_minutos_ate_abrir <expressao> <minuto> <hora>
+  local expressao="${1-}" agora k c
+  case "${2-}${3-}" in '' | *[!0123456789]*) return 1 ;; esac
+  agora=$((10#$3 * 60 + 10#$2))
+  for ((k = 5 - agora % 5; k <= 1440; k += 5)); do
+    c=$(((agora + k) % 1440))
+    if janela_contem "$expressao" "$((c % 60))" "$((c / 60))"; then
+      printf '%s\n' "$k"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Quando o pedido que espera vai rodar: o epoch (segundos, UTC) da próxima
+# rodada do agente dentro da janela. É o que o `agent.sh` conta ao painel
+# (`run_scheduled`), para a tela dizer "agendada para 02h00" e a cerca das
+# extensões saber que o pedido segue de pé (#4334). Devolve 1 sem imprimir
+# quando o valor não serve.
+janela_proxima_abertura() {  # janela_proxima_abertura <valor>
+  local normalizada hora minuto segundo epoch k
+  normalizada="$(janela_normalizada "${1-}")" || return 1
+  read -r hora minuto segundo epoch <<<"$(_date_da_janela '+%H %M %S %s')" || return 1
+  k="$(janela_minutos_ate_abrir "$normalizada" "$minuto" "$hora")" || return 1
+  printf '%s\n' "$((epoch - 10#$segundo + k * 60))"
+}
+
 # Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele
 # avisa o app da versão instalada e, se alguém clicou em "Atualizar agora" na
-# tela, roda o update.sh sozinho. É o que faz o botão da tela existir de
-# verdade — sem cron, a tela mostra "atualização automática indisponível" pra
-# sempre. Chamada por install.sh e update.sh (bloco 7) — re-rodar não duplica
-# a linha do crontab.
+# tela, roda o update.sh sozinho — dentro da janela de manutenção, quando o
+# `.env` tem `SYSTEM_UPDATE_WINDOW` (a janela é decidida no `agent.sh`, não
+# aqui: o passo desta linha não muda nunca; #4334). É o que faz o botão da tela
+# existir de verdade — sem cron, a tela mostra "atualização automática
+# indisponível" pra sempre. Chamada por install.sh e update.sh (bloco 7) —
+# re-rodar não duplica a linha do crontab.
 setup_update_agent_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar.")"; return 0; }
   local secret="${INTERNAL_CRON_SECRET:-${INTERNAL_SECRET:-}}"
@@ -3451,3 +3897,206 @@ ultima_release_estavel() {
     *) printf '' ;;
   esac
 }
+
+
+# ── Espaço em disco, retenção de backup e poda de imagens (#4837) ──────────
+# Vivem AQUI, e não num arquivo próprio, porque o `_common.sh` é o único do kit
+# que todo mundo carrega com `source` DURO — e os fixtures da suíte copiam uma
+# lista fixa de arquivos do kit. Um módulo novo teria de entrar nessa lista em
+# cada fixture, e esquecer um deles não dá um vermelho que fale de espaço: dá a
+# atualização morrendo na linha do `source`, com vinte e tantos casos dizendo
+# "a atualização não explicou nada" (o mesmo tropeço já documentado em
+# tests/shell/update-guard.test.sh sobre o manutencao.sh).
+# ── Espaço em disco ─────────────────────────────────────────────────────────
+
+espaco_livre_kb() {  # espaco_livre_kb <diretório> → KB livres (rc 1 se não mediu)
+  local dir="${1:-.}" kb
+  # `-P` é POSIX: sem quebrar a linha em nomes longos de sistema de arquivos, que
+  # é o que faz o `awk NR==2` ler a linha errada e devolver lixo. `-k` fixa a
+  # unidade em KB — a conta daqui é toda em KB, sem parsear "1,2G".
+  kb="$(df -Pk -- "$dir" 2>/dev/null | awk 'NR==2 { print $4 }')"
+  case "$kb" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$kb"
+}
+
+kb_em_gb() {  # kb_em_gb <KB> → "12,3 GB" (texto para o operador)
+  awk -v kb="${1:-0}" 'BEGIN { printf "%.1f GB", kb / 1048576 }'
+}
+
+tamanho_do_ultimo_backup_kb() {  # tamanho_do_ultimo_backup_kb <dir> → KB
+  # O backup desta atualização é do tamanho do último que deu certo; medir o
+  # mais recente de cada tipo é a estimativa mais barata e mais fiel que existe.
+  local dir="${1:-}" glob f total=0
+  [ -n "$dir" ] || { printf '0'; return 0; }
+  for glob in 'db-*.sql.gz' 'waha-*.tgz' 'storage-*.tgz'; do
+    # SC2086 é proposital: o glob tem de ser expandido pelo shell.
+    # shellcheck disable=SC2086
+    f="$(ls -1t -- "$dir"/$glob 2>/dev/null | head -n 1)"
+    [ -n "$f" ] || continue
+    total=$(( total + $(stat -c %s -- "$f" 2>/dev/null || printf 0) / 1024 ))
+  done
+  printf '%s' "$total"
+}
+
+tamanho_das_imagens_em_uso_kb() {  # soma o tamanho das imagens desta instalação
+  local img bytes soma=0
+  for img in "${APP_IMAGE:-}" "${WORKER_IMAGE:-}" "${SCHEDULER_IMAGE:-}" "${VOICE_AGENT_IMAGE:-}"; do
+    [ -n "$img" ] || continue
+    bytes="$(docker image inspect --format '{{.Size}}' "$img" 2>/dev/null | head -n 1)"
+    case "$bytes" in ''|*[!0-9]*) continue ;; esac
+    soma=$(( soma + bytes / 1024 ))
+  done
+  printf '%s' "$soma"
+}
+
+espaco_necessario_kb() {  # → KB que a atualização precisa ter livres
+  # O piso é o chamado de última hora: quando `docker image inspect` não
+  # responde (daemon parado, imagem ainda não baixada), não há o que medir, e
+  # 1 GB é o mínimo para um pull não deixar o disco zerado no meio. Com medição,
+  # a conta das imagens + backup domina o piso em toda instalação real.
+  local piso_mb="${DESKCOMM_ESPACO_MINIMO_MB:-1024}" imagens backups medido
+  case "$piso_mb" in ''|*[!0-9]*) piso_mb=1024 ;; esac
+  imagens="$(tamanho_das_imagens_em_uso_kb)"
+  backups="$(tamanho_do_ultimo_backup_kb "${BACKUP_DIR:-${PROJECT_DIR:-.}/backups}")"
+  # O pull grava as camadas novas ANTES de as antigas perderem a referência, e o
+  # backup desta atualização ocupa o mesmo que o anterior. Os 20% de folga
+  # cobrem a diferença de compressão e o diretório temporário do Docker.
+  medido=$(( (${imagens:-0} + ${backups:-0}) * 12 / 10 ))
+  if [ "$medido" -gt $(( piso_mb * 1024 )) ]; then
+    printf '%s' "$medido"
+  else
+    printf '%s' $(( piso_mb * 1024 ))
+  fi
+}
+
+# Preenchidas por `checar_espaco_para_atualizacao` — o chamador formata a
+# mensagem com os dois números, em vez de raparsar texto.
+ESPACO_LIVRE_KB=""
+ESPACO_NECESSARIO_KB=""
+
+checar_espaco_para_atualizacao() {  # 0 = pode seguir; 1 = falta espaço
+  local livre necessario
+  ESPACO_LIVRE_KB=""; ESPACO_NECESSARIO_KB=""
+  if ! livre="$(espaco_livre_kb "${PROJECT_DIR:-.}")"; then
+    # Não conseguir medir NÃO é motivo para impedir a atualização: numa VPS com
+    # `df` quebrado, recusar trocaria um risco por uma parada garantida — e o
+    # pior caso da guarda é justamente virar ela mesma a falha.
+    c_ylw "⚠ não consegui medir o espaço livre em disco (df falhou) — sigo sem a checagem de espaço."
+    return 0
+  fi
+  necessario="$(espaco_necessario_kb)"
+  ESPACO_LIVRE_KB="$livre"; ESPACO_NECESSARIO_KB="$necessario"
+  [ "$livre" -ge "$necessario" ] || return 1
+  return 0
+}
+
+mensagem_de_espaco_curto() {  # texto pronto para o `refuse` do update.sh
+  local piso_mb="${DESKCOMM_ESPACO_MINIMO_MB:-1024}"
+  case "$piso_mb" in ''|*[!0-9]*) piso_mb=1024 ;; esac
+  cat <<EOF
+Atualização NÃO começou — nada foi parado, nada foi baixado, e a versão atual segue no ar.
+  Falta espaço em disco: há $(kb_em_gb "$ESPACO_LIVRE_KB") livres e esta atualização precisa de $(kb_em_gb "$ESPACO_NECESSARIO_KB").
+  A conta é o maior entre o piso de ${piso_mb} MB (DESKCOMM_ESPACO_MINIMO_MB, no .env) e o tamanho das imagens em uso mais o do último backup, com 20% de folga.
+  O que libera espaço sem apagar dado nenhum:
+    docker system df                                  # quem está ocupando o disco
+    docker image prune -f --filter "until=168h"       # só camadas sem tag, mais velhas que 7 dias
+    bash hostgator-setup-kit/backup.sh --podar        # aplica a retenção dos backups agora
+  NUNCA use "docker system prune --volumes": os volumes guardam o pareamento do WhatsApp e o banco.
+  Aumentar o disco da VPS também resolve — a atualização continua exatamente daqui.
+EOF
+}
+
+# ── Retenção de backup ──────────────────────────────────────────────────────
+
+podar_backups() {  # podar_backups <diretório> <manter por tipo>
+  local dir="${1:-}" manter="${2:-14}" glob total apagados=0 i
+  local -a lista
+  [ -n "$dir" ] || return 0
+  case "$manter" in
+    ''|*[!0-9]*) c_ylw "⚠ BACKUP_KEEP inválido ('$manter'): uso 14."; manter=14 ;;
+  esac
+  # ZERO não é política de retenção: apagaria o backup que a atualização acabou
+  # de fazer, que é o único que importa se o banco quebrar agora. O piso é 1.
+  [ "$manter" -ge 1 ] || manter=1
+  for glob in 'db-*.sql.gz' 'waha-*.tgz' 'storage-*.tgz'; do
+    lista=()
+    mapfile -t lista < <(ls -1t -- "$dir"/$glob 2>/dev/null || true)
+    total=${#lista[@]}
+    [ "$total" -gt "$manter" ] || continue
+    # `ls -1t` já vem do mais novo para o mais antigo: o que passa do limite é
+    # o mais ANTIGO, e é ele que sai primeiro.
+    for (( i = manter; i < total; i++ )); do
+      if rm -f -- "${lista[$i]}"; then
+        apagados=$(( apagados + 1 ))
+        c_dim "  apagado: ${lista[$i]##*/}"
+      else
+        c_ylw "⚠ não consegui apagar ${lista[$i]##*/} — ele segue no disco"
+      fi
+    done
+  done
+  if [ "$apagados" -gt 0 ]; then
+    c_grn "✓ backups antigos: $apagados apagado(s); mantendo os $manter mais recentes de cada tipo"
+  fi
+  return 0
+}
+
+# ── Poda de imagens ─────────────────────────────────────────────────────────
+
+podar_imagens_nao_usadas() {  # nunca aborta: a atualização já deu certo quando roda
+  if [ "${DESKCOMM_PODA_IMAGENS:-1}" != "1" ]; then
+    c_dim "  (poda de imagens desligada: DESKCOMM_PODA_IMAGENS=0 no .env)"
+    return 0
+  fi
+  # 1) Camadas soltas. `docker image prune` SEM `-a`: só o que já perdeu a tag.
+  #    `until=168h` poupa o que uma atualização em voo acabou de baixar, e
+  #    `dangling=true` explícito deixa registrado na saída o que foi alvo.
+  #    NUNCA `prune -a`: ele leva embora a imagem da versão anterior, que é
+  #    justamente para onde a volta automática precisa ir.
+  if ! docker image prune -f --filter "dangling=true" --filter "until=168h" >/dev/null 2>&1; then
+    c_ylw "⚠ a poda de camadas soltas não rodou (Docker ocupado?) — a atualização está concluída, siga com ela."
+  fi
+  podar_versoes_antigas_das_nossas_imagens || true
+  return 0
+}
+
+podar_versoes_antigas_das_nossas_imagens() {
+  # As imagens de terceiros (WAHA, Redis, Caddy, Supabase) NÃO entram: outra
+  # pilha Docker na mesma VPS usa as mesmas tags, e o kit não é dono delas.
+  local atual="${APP_IMAGE##*:}" anterior="" refs img usadas tag
+  if [ -f "${PROJECT_DIR:-.}/.deskcomm-env-antes-do-update" ]; then
+    # Lido pelo `load_env` do kit, não por `sed`: o snapshot vem no encoding de
+    # `envq` (aspas, escapes), e cortar por `sed` deixava a aspa de fecho dentro
+    # do nome da tag — o resultado era a versão da volta ser apagada.
+    anterior="$(
+      load_env "${PROJECT_DIR:-.}/.deskcomm-env-antes-do-update" >/dev/null 2>&1
+      printf '%s' "${APP_IMAGE:-}"
+    )"
+    anterior="${anterior##*:}"
+  fi
+  # Contêiner parado também conta: `docker image rm` se recusaria a apagar (e
+  # recusar é o certo — não se usa --force aqui de jeito nenhum). A lista evita
+  # a tentativa e o aviso inútil no meio da saída da atualização.
+  usadas="$(docker ps -a --format '{{.Image}}' 2>/dev/null || true)"
+  for refs in "${IMG_APP:-}" "${IMG_WORKER:-}" "${IMG_SCHEDULER:-}" "${IMG_VOICE_AGENT:-}"; do
+    [ -n "$refs" ] || continue
+    docker image ls --format '{{.Repository}}:{{.Tag}}' "$refs" 2>/dev/null | while IFS= read -r img; do
+      [ -n "$img" ] || continue
+      tag="${img##*:}"
+      # Só tag de versão. As nossas imagens são publicadas e gravadas no .env
+      # SEM o `v` (update.sh: VERSAO_ALVO="${TARGET_TAG#v}"); o `v[0-9]*` fica
+      # para tag escrita à mão. `stable`, `latest`, `local` e `<none>` são
+      # canais móveis ou lixo de build: mexer neles muda o que o compose sobe.
+      case "$tag" in
+        v[0-9]*|[0-9]*.[0-9]*.[0-9]*) ;;
+        *) continue ;;
+      esac
+      if [ "$tag" = "$atual" ] || [ "$tag" = "$anterior" ]; then continue; fi
+      case " $usadas " in *" $img "*) continue ;; esac
+      if docker image rm "$img" >/dev/null 2>&1; then
+        c_dim "  imagem antiga removida: $img"
+      fi
+    done
+  done
+  return 0
+}
+

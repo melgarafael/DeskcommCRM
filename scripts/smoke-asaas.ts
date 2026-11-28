@@ -160,7 +160,7 @@ try {
   }
 
   // 4. Clicar em Assinar e não pagar não é assinar (§6.2 passo 2).
-  const pendente = await adaptador.lerSituacao({ clienteRef: cliente });
+  const pendente = await adaptador.lerSituacao({ clienteRef: cliente, organizacao: orgId });
   if (pendente.existe || pendente.assinaturasVivas !== 1 || pendente.jaPagou || pendente.linkDePagamento === null) falha(`lerSituacao com só PENDING: ${pendente.statusBruto}`);
   ok("só PENDING: existe=false, 1 viva, link de pagamento presente");
 
@@ -175,7 +175,7 @@ try {
 
   // 6. Paga a 1ª (receiveInCash: o pagamento que o sandbox aceita por API; RECEIVED_IN_CASH conta como pago).
   await sandbox("POST", `/payments/${primeira.id}/receiveInCash`, { paymentDate: hojeEmSaoPaulo(), value: primeira.value, notifyCustomer: false });
-  const paga = await adaptador.lerSituacao({ clienteRef: cliente });
+  const paga = await adaptador.lerSituacao({ clienteRef: cliente, organizacao: orgId });
   const fimEsperado = fimDoDia(somarCiclo(primeira.dueDate, "MONTHLY"));
   if (!paga.existe || !paga.jaPagou || paga.emAtraso) falha(`lerSituacao depois do pagamento: ${paga.statusBruto}`);
   if (paga.proximoVencimento?.toISOString() !== fimEsperado) {
@@ -196,7 +196,7 @@ try {
   const sem = ((await sandbox("GET", `/subscriptions?customer=${cliente}`)).data ?? []) as unknown[];
   const com = ((await sandbox("GET", `/subscriptions?customer=${cliente}&includeDeleted=true`)).data ?? []) as Array<{ id: string; deleted?: boolean }>;
   if (sem.length !== 0 || !com.some((s) => s.id === assinatura && s.deleted === true)) falha(`includeDeleted: sem=${sem.length} com=${com.length}`);
-  const cancelada = await adaptador.lerSituacao({ clienteRef: cliente });
+  const cancelada = await adaptador.lerSituacao({ clienteRef: cliente, organizacao: orgId });
   if (!cancelada.cancelada || cancelada.proximoVencimento?.toISOString() !== fimEsperado) falha(`depois do DELETE: ${cancelada.statusBruto}`);
   const restantes = (await cobrancasDaAssinatura(assinatura)).filter((c) => c.status === "PENDING");
   ok(`cancelar: sem includeDeleted a assinatura some; com ele, deleted=true; cancelada e o período pago fica; pendentes que sobraram = ${restantes.length} (a §6.2 passo 8 supõe 0)`);

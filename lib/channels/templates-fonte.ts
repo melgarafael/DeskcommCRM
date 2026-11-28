@@ -55,6 +55,9 @@ const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // seletor de modelo ali ofereceria solução para um problema que o canal não
   // tem — mesma razão do canal por QR.
   olx: null,
+  // Chat no site (Spec 36): texto livre na conversa aberta pelo visitante. Não há
+  // definição aprovada a listar.
+  webchat: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */
