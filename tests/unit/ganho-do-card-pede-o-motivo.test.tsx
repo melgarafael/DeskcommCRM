@@ -17,7 +17,7 @@
  *     onde o card lê `settings.won_reasons` e `settings.won_reason_required` —
  *     a mesma fonte do quadro de verdade, não uma prop inventada para o teste.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,6 +75,44 @@ function montar(settings: Record<string, unknown>) {
       <KanbanCardActions lead={LEAD} pipelineId={PIPELINE} />
     </QueryClientProvider>,
   );
+}
+
+/**
+ * O QUADRO QUE RECARREGA (#5340).
+ *
+ * O card não lê `settings` por prop: ele lê o CACHE do quadro
+ * (`useRegraDoMotivoDeGanho`), como o quadro de verdade. Sem ninguém observando
+ * a chave, trocar o cache não re-renderiza nada — é o `KanbanBoard` quem faz
+ * isso, e aqui é o dublê dele: a consulta busca o quadro pelo `apiClient`, e
+ * `recarregar` troca o que vem na volta seguinte (o funil editado por fora).
+ */
+function QuadroQueRecarrega() {
+  useQuery({
+    queryKey: ["board", PIPELINE],
+    queryFn: async () =>
+      ((await get(`/api/v1/pipelines/${PIPELINE}/board`)) as { data: BoardData }).data,
+  });
+  return <KanbanCardActions lead={LEAD} pipelineId={PIPELINE} />;
+}
+
+function montarQuadroQueRecarrega(settings: Record<string, unknown>) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const quadro = (s: Record<string, unknown>) =>
+    ({
+      pipeline: { id: PIPELINE, settings: s },
+      stages: [],
+      leads: [LEAD],
+    }) as unknown as BoardData;
+  client.setQueryData(["board", PIPELINE], quadro(settings));
+  get.mockResolvedValue({ data: quadro(settings) });
+  render(
+    <QueryClientProvider client={client}>
+      <QuadroQueRecarrega />
+    </QueryClientProvider>,
+  );
+  /** A próxima leitura do quadro já traz a lista NOVA do funil. */
+  return (settingsNovos: Record<string, unknown>) =>
+    get.mockResolvedValue({ data: quadro(settingsNovos) });
 }
 
 /** Abre o menu do card e clica no item de ganho. */
@@ -180,5 +218,42 @@ describe("#5181 — o ganho pelo menu do card pergunta o motivo", () => {
     // A caixa NÃO some na recusa: é dentro dela que está a lista para reler.
     expect(screen.getByText("Escolha o motivo do ganho deste funil.")).toBeTruthy();
     expect(toastDeErro).not.toHaveBeenCalled();
+  });
+
+  it("#5340 — depois da recusa, a escolha que saiu da lista não fica marcada e o botão volta a ficar desabilitado", async () => {
+    const user = userEvent.setup();
+    const recarregar = montarQuadroQueRecarrega({
+      won_reasons: ["Renovação", "Expansão de contrato"],
+      won_reason_required: true,
+    });
+    post.mockRejectedValueOnce(
+      new ApiError(422, "won_reason_invalid", undefined, "req-1", "motivo fora do vocabulário"),
+    );
+
+    await abrirOGanho(user);
+    await screen.findByText("Escolha o motivo do ganho deste funil.");
+    await user.click(screen.getByRole("radio", { name: "Expansão de contrato" }));
+
+    // O funil é editado por fora ANTES do clique: é o que o servidor vai recusar
+    // e o que o quadro devolve no recarregamento disparado pela recusa.
+    recarregar({ won_reasons: ["Outro"], won_reason_required: true });
+    await user.click(screen.getByRole("button", { name: "Confirmar ganho" }));
+
+    await screen.findByRole("alert");
+    // A lista que a caixa passa a mostrar é só a atual...
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Outro" })).toBeTruthy());
+    expect(screen.queryByRole("radio", { name: "Expansão de contrato" })).toBeNull();
+    // ...e a escolha antiga NÃO continua marcada: nada selecionado.
+    expect((screen.getByRole("radio", { name: "Outro" }) as HTMLInputElement).checked).toBe(false);
+    // O botão só volta com uma escolha da lista ATUAL — era aqui que a caixa
+    // deixava reenviar o valor que o servidor acabou de recusar.
+    const confirmar = screen.getByRole("button", { name: "Confirmar ganho" }) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(true);
+
+    // E o caminho de volta continua inteiro: escolher da lista nova reabilita.
+    await user.click(screen.getByRole("radio", { name: "Outro" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Confirmar ganho" }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole("button", { name: "Confirmar ganho" }));
+    await waitFor(() => expect(ganhosEnviados()).toEqual([{ won_reason: "Expansão de contrato" }, { won_reason: "Outro" }]));
   });
 });
