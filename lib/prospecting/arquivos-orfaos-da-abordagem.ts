@@ -3,8 +3,10 @@
  *
  * O upload (`app/api/v1/prospecting/arquivo/route.ts`) grava o arquivo em
  * `{org}/prospecting/<uuid>.<ext>` no bucket `whatsapp-media` ASSIM QUE ele é
- * escolhido na tela. Só que trocar de arquivo, desistir da campanha ou apagá-la
- * deixa o objeto no bucket: nada o apaga. No self-host esse bucket é a MESMA
+ * escolhido na tela. Só que trocar de arquivo ou desistir ANTES de salvar a
+ * campanha deixa o objeto no bucket: nada o apaga. Campanha não se apaga — só
+ * se arquiva —, e a arquivada continua referenciando o arquivo, então ela nunca
+ * é a origem de um órfão. No self-host esse bucket é a MESMA
  * cota de 1 GB das mídias do atendimento, e um vídeo de abordagem pesa vários
  * MB — algumas trocas ocupam uma fatia que o operador não vê.
  *
@@ -53,6 +55,24 @@ export const PASTA_DOS_ARQUIVOS_DA_ABORDAGEM = "prospecting";
  * upload em andamento.
  */
 export const CARENCIA_DOS_ARQUIVOS_ORFAOS_DIAS = 7;
+
+/**
+ * O TETO de caminhos que uma rodada leva para a trilha (`retention.sweep_run`, #5331).
+ *
+ * A trilha é auditoria, não inventário: ela responde "quais arquivos saíram nesta
+ * rodada" para quem investiga, e o número que responde "quantos saíram" é
+ * `removidos`, que continua sendo o total REAL. Sem teto, a primeira rodada de
+ * uma instalação que acumulou arquivos escrevia milhares de caminhos numa ÚNICA
+ * linha de `api_audit_log`: o metadata daquela linha ia para TOAST, e a tela de
+ * auditoria (que abre o metadata inteiro) ficava impraticável — o custo de
+ * guardar o nome de cada arquivo passava a ser maior que o dado que ele descreve.
+ *
+ * Cinquenta é do tamanho de uma amostra que ainda se lê numa tela e cobre a
+ * pergunta normal ("o arquivo X saiu?"); o que passa disso entra em
+ * `caminhos_omitidos`, contado e dito, nunca engolido. Constante, não knob: um
+ * número por `.env` convidaria a "resolver" o problema pondo 100.000.
+ */
+export const TETO_DE_CAMINHOS_NA_TRILHA = 50;
 
 /** Um objeto como o `list` do Storage o descreve, já normalizado. */
 export interface ArquivoDaAbordagemNoBucket {
@@ -242,8 +262,18 @@ export interface ResultadoDoDrenoDaAbordagem {
   organizacoes: number;
   removidos: number;
   bytes_removidos: number;
-  /** Caminho + bytes de cada removido, na ordem das organizações. */
+  /**
+   * Caminho + bytes de cada removido, na ordem das organizações, LIMITADO a
+   * `TETO_DE_CAMINHOS_NA_TRILHA` (#5331) — é o que entra no metadata do
+   * `retention.sweep_run`, e por isso não pode crescer com o backlog.
+   */
   caminhos: Array<{ caminho: string; bytes: number | null }>;
+  /**
+   * Quantos caminhos removidos NÃO couberam na trilha por causa do teto. Existe
+   * para o total continuar auditável: `removidos` = `caminhos.length` +
+   * `caminhos_omitidos`, e a linha do cron diz a mesma coisa que a trilha.
+   */
+  caminhos_omitidos: number;
   /** Falhas por organização, já nomeadas. A rodada SEGUE as outras organizações. */
   falhas: string[];
 }
@@ -266,6 +296,7 @@ export async function drenarArquivosOrfaosDaAbordagem(
     removidos: 0,
     bytes_removidos: 0,
     caminhos: [],
+    caminhos_omitidos: 0,
     falhas: [],
   };
 
@@ -281,7 +312,14 @@ export async function drenarArquivosOrfaosDaAbordagem(
       });
       resultado.removidos += limpeza.removidos;
       resultado.bytes_removidos += limpeza.bytes_removidos;
-      resultado.caminhos.push(...limpeza.caminhos_removidos);
+      // O teto é aplicado AQUI, no acúmulo, e não dentro da limpeza de cada
+      // organização: o metadata é UM só por rodada, então o limite é da rodada
+      // inteira — cortar por organização deixaria N × teto numa instalação com N
+      // organizações, que é exatamente o caso que estourou a linha.
+      const espaco = Math.max(0, TETO_DE_CAMINHOS_NA_TRILHA - resultado.caminhos.length);
+      const guardados = limpeza.caminhos_removidos.slice(0, espaco);
+      resultado.caminhos.push(...guardados);
+      resultado.caminhos_omitidos += limpeza.caminhos_removidos.length - guardados.length;
       if (limpeza.erro) {
         resultado.falhas.push(`organizacao ${organizationId}: ${limpeza.erro}`.slice(0, 300));
       }

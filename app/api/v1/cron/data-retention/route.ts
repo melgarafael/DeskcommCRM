@@ -247,6 +247,15 @@ export interface ResultadoDaRetencao {
   arquivos_orfaos_da_abordagem_removidos: number;
   arquivos_orfaos_da_abordagem_bytes: number;
   arquivos_orfaos_da_abordagem_trilha: Array<{ caminho: string; bytes: number | null }>;
+  /**
+   * Os caminhos removidos que NÃO couberam na trilha por causa do teto (#5331).
+   *
+   * A trilha é amostra; o total é `arquivos_orfaos_da_abordagem_removidos`. Sem
+   * este campo, a rodada que removesse 3.000 arquivos mostraria 50 caminhos e
+   * ninguém saberia se foram 50 ou 3.000 — a diferença entre uma amostra
+   * declarada e uma trilha truncada em silêncio.
+   */
+  arquivos_orfaos_da_abordagem_caminhos_omitidos: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
   /**
@@ -715,8 +724,9 @@ export async function podarHistorico(
 
   // A DÉCIMA SÉTIMA etapa não é poda de banco: é a limpeza do Storage que a
   // #5139 pediu. O arquivo da primeira abordagem sobe para `{org}/prospecting/`
-  // assim que é escolhido, e trocar de arquivo/desistir/apagar a campanha deixa
-  // o anterior no bucket para sempre. `fn_enfileirar_midia_vencida` não o vê
+  // assim que é escolhido, e trocar de arquivo/desistir ANTES de salvar a
+  // campanha deixa o anterior no bucket para sempre (campanha só se arquiva, e
+  // a arquivada ainda referencia o arquivo). `fn_enfileirar_midia_vencida` não o vê
   // porque ela só enxerga linhas de banco — o órfão não tem linha. Mesmo desenho
   // das irmãs: nome próprio, falha vira linha em `falhas`, a rodada SEGUE.
   //
@@ -733,9 +743,10 @@ export async function podarHistorico(
         removidos: 0,
         bytes_removidos: 0,
         caminhos: [],
+        caminhos_omitidos: 0,
         falhas: [],
       })),
-    { organizacoes: 0, removidos: 0, bytes_removidos: 0, caminhos: [], falhas: [] },
+    { organizacoes: 0, removidos: 0, bytes_removidos: 0, caminhos: [], caminhos_omitidos: 0, falhas: [] },
   );
   for (const falhaDaOrganizacao of arquivosOrfaos.falhas) {
     falhas.push(`prospecting_arquivos_orfaos: ${falhaDaOrganizacao}`.slice(0, 300));
@@ -809,6 +820,7 @@ export async function podarHistorico(
     arquivos_orfaos_da_abordagem_removidos: arquivosOrfaos.removidos,
     arquivos_orfaos_da_abordagem_bytes: arquivosOrfaos.bytes_removidos,
     arquivos_orfaos_da_abordagem_trilha: arquivosOrfaos.caminhos,
+    arquivos_orfaos_da_abordagem_caminhos_omitidos: arquivosOrfaos.caminhos_omitidos,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
     retencao_espelho_dias: espelho.dias,
