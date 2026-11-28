@@ -21243,6 +21243,14 @@ export const DICIONARIO: Traducoes = {
   "O valor não é uma das opções cadastradas neste campo.": {
     es: "El valor no es una de las opciones registradas en este campo.",
   },
+  // #5328 — a recusa de número/booleano diz o TIPO recebido, para o agente não
+  // ler `valor "4"` e concluir que a opção "4" não existe.
+  "O valor veio como número; as opções deste campo são texto.": {
+    es: "El valor llegó como número; las opciones de este campo son texto.",
+  },
+  "O valor veio como booleano; as opções deste campo são texto.": {
+    es: "El valor llegó como booleano; las opciones de este campo son texto.",
+  },
   // ─── Alarme de SLA ao encarregado (lib/lgpd/sla-alarm.ts, issue #2347) ─────
   // O e-mail fala a LÍNGUA de quem recebe, que vem do PAÍS (`PerfilDoPais.idioma`):
   // Portugal fala `pt-PT` e cai no português daqui. A LEI continua vindo do país,

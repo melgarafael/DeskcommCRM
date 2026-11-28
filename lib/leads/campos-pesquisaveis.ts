@@ -137,9 +137,39 @@ export type ResultadoDoValor =
   | { ok: true; valor: unknown }
   | { ok: false; motivo: "fora_da_lista" };
 
+/** O TIPO do valor que veio no lugar do texto, para a recusa poder dizer qual foi (#5328). */
+export type TipoRecebido = "numero" | "booleano";
+
 /** Ausente, `null` ou branco: nada a padronizar, e limpar nunca é recusado. */
 function vazio(valor: unknown): boolean {
   return valor === undefined || valor === null || (typeof valor === "string" && valor.trim() === "");
+}
+
+/**
+ * O texto com que um item NÃO-string pode casar com a opção (#5328).
+ *
+ * O agente de IA manda `{ adultos: 4, tem_criancas: true }` e a lista guarda
+ * `"4"` e `"Sim"`: o valor está lá, só não no tipo que a régua esperava. A
+ * conversão é a MENOR possível e não afrouxa a lista — quem decide continua
+ * sendo o `valorCanonico`, e o texto convertido só entra se for opção real.
+ *
+ *  - número vira a sua forma decimal (`4` → `"4"`, `4.5` → `"4.5"`). Sem
+ *    checagem de veracidade: `0` vira `"0"`, que é opção legítima;
+ *  - booleano vira `"Sim"`/`"Não"` SÓ quando o campo declara essas opções. Num
+ *    campo numérico, `true` é engano de tipo e continua recusado — e não vira
+ *    `"true"`, que não é opção de nada;
+ *  - qualquer outro tipo (objeto, array) não tem forma textual e fica como está.
+ */
+function comoTextoDeOpcao(
+  campo: Pick<CustomFieldDef, "options" | "allow_new">,
+  item: unknown,
+): string | null {
+  if (typeof item === "number") return Number.isFinite(item) ? String(item) : null;
+  if (typeof item === "boolean") {
+    const termos = opcoesDoCampo(campo).flatMap(termosDaOpcao);
+    return termos.includes("sim") || termos.includes("nao") ? (item ? "Sim" : "Não") : null;
+  }
+  return null;
 }
 
 /**
@@ -151,15 +181,16 @@ function valorDeUmItem(
   campo: Pick<CustomFieldDef, "options" | "allow_new">,
   item: unknown,
 ): ResultadoDoValor {
-  if (typeof item !== "string") {
-    // A lista é de STRINGS; um número/booleano/objeto não tem como casar com
-    // opção nenhuma, então cai na mesma régua de "não casou".
+  // Número e booleano são convertidos ANTES de casar; o que não tem forma
+  // textual (objeto, array) segue a régua antiga.
+  const texto = typeof item === "string" ? item : comoTextoDeOpcao(campo, item);
+  if (texto === null) {
     return campo.allow_new === true ? { ok: true, valor: item } : { ok: false, motivo: "fora_da_lista" };
   }
-  const canonico = valorCanonico(opcoesDoCampo(campo), item);
+  const canonico = valorCanonico(opcoesDoCampo(campo), texto);
   if (canonico !== null) return { ok: true, valor: canonico };
   return campo.allow_new === true
-    ? { ok: true, valor: item.trim() }
+    ? { ok: true, valor: typeof item === "string" ? item.trim() : item }
     : { ok: false, motivo: "fora_da_lista" };
 }
 
@@ -296,7 +327,7 @@ const TIPOS_COM_OPCOES = new Set<string>(["select", "multiselect", TIPO_DA_LISTA
 /** O veredito de `canonizarValorDoCampo`: o que gravar, ou o item que não casou. */
 export type ResultadoCanonico =
   | { ok: true; valor: unknown }
-  | { ok: false; motivo: "fora_da_lista"; item: string };
+  | { ok: false; motivo: "fora_da_lista"; item: string; tipoRecebido?: TipoRecebido };
 
 /**
  * A RÉGUA DA OPÇÃO PARA OS TRÊS TIPOS DE LISTA (#3508).
@@ -352,7 +383,17 @@ export function canonizarValorDoCampo(
 
   const doItem = (item: unknown): ResultadoCanonico => {
     const r = valorDeUmItem(campo, item);
-    return r.ok ? r : { ok: false, motivo: "fora_da_lista", item: String(item).trim() };
+    if (r.ok) return r;
+    // O tipo do que veio no lugar do texto é o que a recusa precisa dizer: o
+    // `String(item)` mente ao pôr `4` entre aspas ("4"), que parece opção.
+    const tipoRecebido: TipoRecebido | undefined =
+      typeof item === "number" ? "numero" : typeof item === "boolean" ? "booleano" : undefined;
+    return {
+      ok: false,
+      motivo: "fora_da_lista",
+      item: String(item).trim(),
+      ...(tipoRecebido ? { tipoRecebido } : {}),
+    };
   };
 
   if (!lista) {
@@ -385,6 +426,8 @@ export interface RecusaDeOpcao {
   campo: string;
   motivo: "fora_da_lista";
   valor: string;
+  /** Presente quando o valor veio como número/booleano: a mensagem diz o tipo (#5328). */
+  tipoRecebido?: TipoRecebido;
 }
 
 /**
@@ -409,7 +452,13 @@ export function canonizarCamposDoFunil(
     if (!Object.prototype.hasOwnProperty.call(campos, def.key)) continue;
     const bruto = campos[def.key];
     const r = canonizarValorDoCampo(def, bruto);
-    if (!r.ok) recusas.push({ campo: def.key, motivo: r.motivo, valor: r.item });
+    if (!r.ok)
+      recusas.push({
+        campo: def.key,
+        motivo: r.motivo,
+        valor: r.item,
+        ...(r.tipoRecebido ? { tipoRecebido: r.tipoRecebido } : {}),
+      });
     else if (JSON.stringify(r.valor) !== JSON.stringify(bruto)) mudados[def.key] = r.valor;
   }
   return { mudados, recusas };
