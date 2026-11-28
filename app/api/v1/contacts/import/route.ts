@@ -269,6 +269,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       phone_number: contato.phone_number ?? null,
       birthdate: contato.birthdate ?? null,
       tags: contato.tags ?? [],
+      // Endereço (#3494): o importador lê as sete colunas e as grava — sem
+      // isto, exportar e reimportar perderia o endereço em silêncio, que é
+      // exatamente o defeito que o round-trip do export existe para evitar.
+      zip_code: contato.zip_code ?? null,
+      street: contato.street ?? null,
+      number: contato.number ?? null,
+      complement: contato.complement ?? null,
+      district: contato.district ?? null,
+      city: contato.city ?? null,
+      state: contato.state ?? null,
       source: SOURCE_IMPORT_CSV,
       source_metadata: {},
       consent: {},

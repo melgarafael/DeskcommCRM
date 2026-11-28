@@ -71,8 +71,10 @@ function reimporta(csv: string): {
 }
 
 describe("o CSV espelha as colunas que o importer aceita", () => {
-  it("⭐ o cabeçalho espelha os campos aceitos na importação, incluindo nascimento", () => {
-    expect(CABECALHO_DO_CSV).toBe("name,display_name,email,phone_number,cpf,birthdate,tags");
+  it("⭐ o cabeçalho espelha os campos aceitos na importação, incluindo nascimento e endereço", () => {
+    expect(CABECALHO_DO_CSV).toBe(
+      "name,display_name,email,phone_number,cpf,birthdate,tags,zip_code,street,number,complement,district,city,state",
+    );
     expect(COLUNAS_DO_CSV).toEqual([
       "name",
       "display_name",
@@ -81,6 +83,13 @@ describe("o CSV espelha as colunas que o importer aceita", () => {
       "cpf",
       "birthdate",
       "tags",
+      "zip_code",
+      "street",
+      "number",
+      "complement",
+      "district",
+      "city",
+      "state",
     ]);
 
     const mapeado = mapHeader(CABECALHO_DO_CSV.split(","));
@@ -161,7 +170,8 @@ describe("o CSV espelha as colunas que o importer aceita", () => {
   it("trecho depois de `;` que começa com fórmula também sai como texto (Excel pt-BR divide por `;`)", () => {
     const linha = linhaDoCsv({ name: "Ana;=1+1", phone_number: "+5511999998888", tags: ["vip", "=HYPERLINK(\"x\")", "+5511"] });
     expect(linha).toContain("Ana;'=1+1");
-    expect(linha.endsWith(`"vip;'=HYPERLINK(""x"");+5511"`)).toBe(true);
+    // Depois das etiquetas vêm as sete colunas de endereço (#3494), vazias.
+    expect(linha.endsWith(`"vip;'=HYPERLINK(""x"");+5511",,,,,,,`)).toBe(true);
     for (const trecho of linha.split(/[;,]/)) expect(trecho.replace(/^"/, "")).not.toMatch(/^[=@]/);
   });
 
