@@ -591,6 +591,15 @@ export function descreveEvento(
       // durante a carência e a janela de 24 h abriu de graça. Duas linhas
       // diferentes porque as duas saídas são diferentes: a reserva da IA segue
       // em texto livre; o passo de modelo puro não tem texto livre e é pulado.
+      // E a terceira saída (`janela_aberta`): não houve espera nenhuma — a
+      // janela JÁ estava aberta no turno e o corpo do modelo saiu como texto.
+      if (p.motivo === "janela_aberta") {
+        return {
+          titulo: "Nenhum modelo pago foi enviado — a janela de 24 horas já estava aberta",
+          detalhe: "o texto do modelo aprovado saiu como mensagem livre, sem custo de modelo",
+          ...motor,
+        };
+      }
       return {
         titulo: "Nenhum modelo pago foi enviado — o cliente escreveu antes",
         detalhe:
