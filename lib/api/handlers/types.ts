@@ -112,6 +112,17 @@ export type Actor =
     };
 
 export interface HandlerCtx {
+  /**
+   * POR ONDE a identidade entrou (`resolveAuthDual`): sessão de navegador ou
+   * Bearer. Opcional porque o MCP e os chamadores internos não têm `resolveAuthDual`.
+   *
+   * Existe porque `actor.type` NÃO responde isso sozinho: quando a integração
+   * chama com um ator que o runtime resolve como pessoa, a única diferença que
+   * resta é a PORTA — e é dela que dependem as escolhas de segurança do handler
+   * (o embed de `crm_leads` que a service role transforma em vazamento, por
+   * exemplo). Sem o campo, o handler cai na heurística de sempre.
+   */
+  via?: "session" | "token";
   /** Módulo `amigo`: a escrita vem do turno do agente (contexto do servidor, nunca do corpo). */
   amigoAgentExecution?: boolean;
   amigoAgentToolIds?: readonly string[];

@@ -116,8 +116,9 @@ function fazerSupabase(respostas: Resposta[]) {
   };
   vi.mocked(createClient).mockResolvedValue({ from } as never);
 
-  // A PORTA: registra SQL e parâmetros; as consultas deste arquivo (régua de
-  // demanda e INSERT da timeline) não precisam devolver linha.
+  // A PORTA: registra SQL e parâmetros. A régua do negócio e do contato
+  // (`lib/tarefas/vinculos.ts`) acha a linha da casa; as demais consultas
+  // (régua de demanda e INSERT da timeline) não precisam devolver linha.
   const consultas: Array<{ sql: string; parametros: readonly unknown[] }> = [];
   const porta: Db = {
     async query(sql, parametros = []) {
@@ -126,6 +127,9 @@ function fazerSupabase(respostas: Resposta[]) {
     },
     async queryOne(sql, parametros = []) {
       consultas.push({ sql, parametros });
+      if (/from (crm_leads|contacts) where organization_id/.test(sql)) {
+        return { id: parametros[1] } as never;
+      }
       return null;
     },
   };

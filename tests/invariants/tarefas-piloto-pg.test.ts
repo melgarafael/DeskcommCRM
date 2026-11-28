@@ -455,6 +455,16 @@ describe("conferirDemanda — a régua do vínculo com o atendimento", () => {
   });
 });
 
+/**
+ * A RÉGUA DO NEGÓCIO E DO CONTATO DA TAREFA mudou de casa no merge com a main:
+ * ela saiu do pool (`lib/tarefas/vinculos.ts`, que este bloco cobria) e passou a
+ * morar em `lib/tarefas/negocio-da-tarefa.ts`, sobre o client da chamada — é a
+ * mesma função que o ramo do token da Spec 33 usa na rota. A prova de isolamento
+ * que importa (negócio de outra organização não aparece nem grava) está em
+ * `tests/unit/token-por-area/tarefas-demandas.test.ts`, com o cliente admin falso
+ * que aponta cada cadeia sem filtro de organização.
+ */
+
 describe("conferirResponsavel — a régua da equipe, sobre SQL", () => {
   it("membro ativo é aceito", async () => {
     expect(await conferirResponsavel(db, ORG_A, DONO_A)).toBe("aceito");

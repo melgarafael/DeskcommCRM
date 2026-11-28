@@ -155,6 +155,15 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_confirm_appointment: "sem_funil",
   crm_set_appointment_outcome: "sem_funil",
 
+  // ---- tarefas: concluir e apagar (#4516) ----
+  // Estas duas a main não tem. Recebem só `task_id`: nenhum `lead_id` chega, e
+  // classificá-las `funil_vem_do_lead` liberaria 100% das vezes com aparência
+  // de escopado. Quem limita estas duas é a tabela de ESCRITA do turno
+  // (`escopo-das-escritas.ts`, dono `tarefa`) e o risco `critico` do apagar,
+  // que não entra por pacote.
+  crm_complete_task: "sem_funil",
+  crm_delete_task: "sem_funil",
+
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
   // #4129 — envia o DOCUMENTO da empresa na conversa; não lê nem move negócio,

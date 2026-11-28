@@ -31,4 +31,24 @@ export const TOOLS_TAREFAS = declararTools([
     risco: "atencao",
     pacotes: ["escalar"],
   },
+  {
+    name: "crm_complete_task",
+    category: "write",
+    rotulo: "Concluir ou reabrir uma tarefa",
+    explicacao:
+      "Fecha uma tarefa como feita, ou devolve para pendente se o trabalho não terminou, e registra isso na linha do tempo do negócio.",
+    oQueToca: "Tarefas da equipe",
+    risco: "atencao",
+    pacotes: ["escalar"],
+  },
+  {
+    name: "crm_delete_task",
+    category: "write",
+    rotulo: "Apagar uma tarefa",
+    explicacao:
+      "Remove a tarefa de vez, sem deixar registro de que ela existiu — não dá para desfazer. Para encerrar o trabalho, prefira concluir.",
+    oQueToca: "Tarefas da equipe",
+    risco: "critico",
+    pacotes: ["escalar"],
+  },
 ]);

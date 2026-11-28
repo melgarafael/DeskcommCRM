@@ -103,6 +103,18 @@ export interface AuthDualOptions {
   /** Scope exigido do token. Rotas de escrita usam `mcp:write`. */
   scope: string;
   /**
+   * Um SEGUNDO escopo aceito, para rota que ganhou escopo PRÓPRIO depois de já
+   * estar no ar com o da Spec 33.
+   *
+   * `/api/v1/tasks` é o caso: a Spec 33 (R2) entregou `mcp:read`/`mcp:write` e
+   * tokens com esse vocabulário estão emitidos; o #4516 abriu
+   * `tasks:read`/`tasks:write`, mais estreito, para quem emite token hoje. Aceitar
+   * os dois mantém a integração que já existe funcionando e deixa o escopo novo
+   * valer para os tokens novos — exigir só o novo seria 403 em produção no dia do
+   * deploy. Não é "qualquer escopo": é o par declarado por rota.
+   */
+  scopeAlternativo?: string;
+  /**
    * Rank mínimo do TOKEN, quando a tool MCP da mesma escrita exige mais que a
    * sessão. Sem isto a rota REST vira atalho: o token que leva 403 pela tool
    * passa pela rota, porque as duas chamam o mesmo handler.
@@ -121,7 +133,7 @@ export interface AuthDualOptions {
  */
 export async function resolveAuthDual(
   req: NextRequest,
-  { requestId, resource, role, scope, tokenRole, portaModelo }: AuthDualOptions,
+  { requestId, resource, role, scope, scopeAlternativo, tokenRole, portaModelo }: AuthDualOptions,
 ): Promise<AuthDual> {
   const authHeader = req.headers.get("authorization");
 
@@ -210,7 +222,14 @@ export async function resolveAuthDual(
     }
 
     try {
-      ensureScope(auth.scopes, scope);
+      // O alternativo SÓ dispensa a exigência quando ele está de fato no token;
+      // sem ele (ou sem o escopo), `ensureScope` recusa com a mensagem de sempre.
+      // As duas réguas convivem: o escopo é o da rota, o papel é o do bearer já
+      // resolvido pelo bloco do módulo (`papelDoBearer`, que só existe desde o
+      // F3 da Spec 33 — sessão e token comum veem `auth.role`).
+      const temAlternativo =
+        scopeAlternativo !== undefined && auth.scopes.includes(scopeAlternativo);
+      if (!temAlternativo) ensureScope(auth.scopes, scope);
       ensureRole(papelDoBearer, tokenRole ?? role);
     } catch (err) {
       if (err instanceof McpAuthError) {

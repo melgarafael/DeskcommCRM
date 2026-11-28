@@ -9092,6 +9092,13 @@ export const DICIONARIO: Traducoes = {
     es: "Leer transcripciones de audios y textos extraídos de archivos multimedia en el historial MCP (puede contener datos personales)",
   },
   "Enviar mensagens": { es: "Enviar mensajes" },
+  // #4516: as duas caixas de escopo de tarefa em `ApiTokensClient.tsx` são
+  // renderizadas por `t(s.label)`; sem estas linhas a tela de tokens fica em
+  // português para quem escolheu espanhol.
+  "Ler as tarefas da equipe": { es: "Leer las tareas del equipo" },
+  "Criar, editar, concluir, reabrir e APAGAR tarefas da equipe (sem esta caixa o token só lê)": {
+    es: "Crear, editar, completar, reabrir y ELIMINAR tareas del equipo (sin esta casilla el token solo lee)",
+  },
   "Integração pode enviar em nome de um atendente": {
     es: "La integración puede enviar en nombre de un asesor",
   },

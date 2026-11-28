@@ -45,6 +45,24 @@ export const ESCOPO_CONVERSAS_ESCRITA = "conversations:write";
 export const ESCOPO_MENSAGENS_INSTITUCIONAIS = "messages:institutional";
 
 /**
+ * AS PORTAS DE TAREFA POR TOKEN (#4516). Leitura e escrita separadas porque
+ * consultar a lista da equipe é inofensivo e apagar/concluir não é: mexer na
+ * tarefa de alguém tem efeito fora do registro (a exclusão some da rotina de
+ * quem a cumpria), e quem emite o token decide se a integração tem esse poder —
+ * a mesma decisão de produto que abriu `config:read`/`config:write` no #2052 e
+ * `messages:on_behalf` no #1613.
+ *
+ * Os nomes são os DA ISSUE (#4516): `tasks:read` e `tasks:write`. Trocar por
+ * outro vocabulário quebraria a promessa feita ao cliente que pediu a porta.
+ *
+ * ⚠️ O vocabulário NÃO substitui `mcp:read`/`mcp:write`: as rotas de tarefa
+ * aceitam os DOIS pares (`scopeAlternativo` em `lib/api/auth-dual.ts`), porque os
+ * tokens já emitidos carregam `mcp:*` e exigir só o novo daria 403 no deploy.
+ */
+export const ESCOPO_TAREFAS_LEITURA = "tasks:read";
+export const ESCOPO_TAREFAS_ESCRITA = "tasks:write";
+
+/**
  * O token tem o escopo? `undefined` (sessão de navegador, que não tem escopos)
  * devolve `false` de propósito: quem pergunta isto está no ramo de TOKEN, e uma
  * resposta "sim" para quem não é token abriria a porta pelo caminho errado.

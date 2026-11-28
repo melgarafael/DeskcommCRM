@@ -145,6 +145,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
+  "crm_complete_task": {
+    tokens: 245,
+    motivo:
+      "ferramenta exclusiva do #4516 (a main nao tem esta): conclusao e reabertura pelo MCP, medida na criacao (2026-11-12)",
+  },
+  "crm_delete_task": {
+    tokens: 186,
+    motivo:
+      "ferramenta exclusiva do #4516 (a main nao tem esta): exclusao pelo MCP, medida na criacao (2026-11-12)",
+  },
   "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
   "crm_update_lead": {
     tokens: 966,
@@ -278,6 +288,12 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +117 de `crm_count_conversations` (#4996, item 2). MEDIDO neste head sobre a main de
 // 2026-11-24 (`ceaa51d67`, que tinha 47562): 47679 = 47562 + 117, não somado à mão.
 // +8 da descrição de `crm_count_leads` corrigida (por_etapa traz stage_id). MEDIDO: 47687 = 47679 + 8.
+// +431 com as DUAS ferramentas de tarefa que a main ainda não tem (#4516): 245 de
+// `crm_complete_task` e 186 de `crm_delete_task`. As outras três da família
+// (`list/create/update`) são as da main (#4838) e já estão contadas acima — o
+// `lib/mcp/tools/tarefas.ts` deste PR é byte a byte o da main. MEDIDO na árvore
+// mesclada com a main de 2026-11-24 (`4375600d37`, que já tinha 47687), não somado
+// à mão: 48118 = 47687 + 431 (o teste imprime a tabela com a soma medida).
 // +254 da sala em `crm_book_appointment` e `crm_find_and_book_appointment` (#5225, @paulolimajr77).
 // MEDIDO no merge com a main de 2026-11-24 (`a33492d523`, que tinha 47687): 47941 = 47687 + 254,
 // não somado à mão.
@@ -290,7 +306,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // +459 em `crm_close_conversation` com as pré-condições de encerramento seguro condicional
 // (#5311, @fcostamil-hub). MEDIDO no merge com a main de 2026-11-27 (`795f5f2379`, que tinha
 // 48071): 48530 = 48071 + 459, não somado à mão.
-const TETO_TOTAL = 48530;
+// +431 das DUAS ferramentas de tarefa do #4516 (`crm_complete_task`/`crm_delete_task`), que a
+// main ainda não tem. MEDIDO no merge com a main de 2026-11-28 (`2cffb7ed9`, que tinha 48530):
+// 48961 = 48530 + 431, não somado à mão (o teste imprime a tabela com a soma medida).
+const TETO_TOTAL = 48961;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

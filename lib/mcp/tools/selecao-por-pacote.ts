@@ -134,6 +134,14 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * 1 vaga", `tests/unit/teto-do-atender-bate-com-a-recusa-da-spec.test.ts` e
  * `tests/e2e/capacidades-do-agente.spec.ts`). Com 32 essa recusa deixa de
  * existir. Se o `organizar` do #4523 precisar de 32, ele sobe com a medição dele.
+ *
+ * ═══ #4523: REMEDIDO NA ÁRVORE MESCLADA, E CONTINUA 31 ═══════════════════════
+ *
+ * Com as duas ferramentas de tarefa do #4523 (`crm_complete_task`,
+ * `crm_delete_task`) no `escalar`, medido em 2026-11-23 contra `origin/main`
+ * `03604fd978` com `vagasExigidasPeloPacote([], TOOL_CATALOG, pacote)`:
+ * `atender` 31, `escalar` 23, `vender` 26, `reter` 27, `organizar` 27,
+ * `evoluir` 5. O `organizar` não chega a 32; o teto continua 31.
  */
 export const TETO_TOOLS_POR_AGENTE = 31;
 

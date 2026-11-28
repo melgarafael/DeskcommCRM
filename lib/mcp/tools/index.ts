@@ -99,6 +99,11 @@ import {
   crmSetAppointmentOutcome,
 } from "./agendamento";
 import {
+  crmCreateTask,
+  crmListTasks,
+  crmUpdateTask,
+} from "./tarefas";
+import {
   crmScheduleFollowup,
   crmEnrollFollowupFlow,
   crmCancelFollowup,
@@ -117,8 +122,11 @@ import {
   crmSaveAiAgentDraft,
   crmTestAiAgentVersion,
 } from "./agentes";
-import { crmCreateTask, crmListTasks, crmUpdateTask } from "./tarefas";
 import { crmSaveLeadDiagnosis } from "./diagnostico";
+// As DUAS ferramentas de tarefa que a main não tem (#4516). `./tarefas` é o
+// arquivo da main, intocado; a conclusão e a exclusão moram separadas para não
+// registrar o mesmo nome de wire duas vezes.
+import { crmCompleteTask, crmDeleteTask } from "./tarefas-escrita";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -244,6 +252,9 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmRollbackAiAgent,
   crmCreateTask,
   crmUpdateTask,
+  // Concluir e apagar (#4516): as duas que o arquivo da main não traz.
+  crmCompleteTask,
+  crmDeleteTask,
   // handoff (special)
   crmRequestHumanHandoff,
 ] as unknown as ReadonlyArray<McpToolDefinition>;
