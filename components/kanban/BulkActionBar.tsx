@@ -425,8 +425,8 @@ export function BulkActionBar({
           <DialogHeader>
             <DialogTitle>
               {selectedIds.length === 1
-                ? `${t("Excluir")} 1 ${noMeioDaFrase(t(vocab.deal), idioma)}?`
-                : `${t("Excluir")} ${selectedIds.length} ${t("selecionados")}?`}
+                ? t("Excluir 1 {item}?").replace("{item}", noMeioDaFrase(t(vocab.deal), idioma))
+                : t("Excluir {n} selecionados?").replace("{n}", String(selectedIds.length))}
             </DialogTitle>
             <DialogDescription>
               {t("Esta ação remove o que está selecionado. Não pode ser desfeita.")}

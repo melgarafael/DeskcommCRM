@@ -12423,6 +12423,11 @@ export const DICIONARIO: Traducoes = {
   "marcados como perdidos.": { es: "marcados como perdidos." },
   "selecionado": { es: "seleccionado" },
   "selecionados": { es: "seleccionados" },
+  // Confirmação de excluir em lote: a frase inteira mora aqui porque o "¿" de
+  // abertura do espanhol não existe no português — montada no componente com a
+  // palavra "Excluir" mais um "?" colado, a tela saía só com o fechamento.
+  "Excluir 1 {item}?": { es: "¿Eliminar 1 {item}?" },
+  "Excluir {n} selecionados?": { es: "¿Eliminar {n} seleccionados?" },
   "Mover para…": { es: "Mover a…" },
   "Atribuir a…": { es: "Asignar a…" },
   "Responsável…": { es: "Responsable…" },
@@ -23612,6 +23617,9 @@ export const DICIONARIO: Traducoes = {
     es: "El negocio ya se creó en el embudo de destino. Revíselo antes de volver a intentarlo.",
   },
   "levados para": { es: "llevados a" },
+  // O verbo do toast no singular: a contagem sozinha não flexiona a palavra, e
+  // "1 levados para FUNIL" chegava à tela em todo lote de um negócio só.
+  "levado para": { es: "llevado a" },
   "Não foi possível levar este negócio.": { es: "No fue posible llevar este negocio." },
   "ficaram de fora pelo limite de 50 por vez. Selecione-os de novo para levar.": {
     es: "quedaron fuera por el límite de 50 por vez. Selecciónelos de nuevo para llevarlos.",
